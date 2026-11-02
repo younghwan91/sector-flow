@@ -11,6 +11,7 @@ import inspect
 import json
 import os
 import pty
+import select
 import subprocess
 import sys
 import tempfile
@@ -73,6 +74,33 @@ def _spawn(d: str, app: str, lines: str, cols: str, stderr=subprocess.PIPE,
         stdin=replica, stdout=replica, stderr=stderr, env=env)
     os.close(replica)
     return primary, proc
+
+
+def _settle(primary: int, sec: float) -> None:
+    """``sec`` 초 동안 pty 출력을 **같은 스레드에서** 읽어 비운다.
+
+    배수 스레드를 쓰지 않는다 — 읽는 중에 같은 fd 를 닫으면 경합이라 앱이 아니라
+    테스트 쪽 사정으로 프로세스가 끝날 수 있다. 안 비우면 앱이 꽉 찬 pty 에 쓰다 멈춘다.
+    """
+    end = time.monotonic() + sec
+    while (left := end - time.monotonic()) > 0:
+        if select.select([primary], [], [], left)[0]:
+            try:
+                os.read(primary, 65536)
+            except OSError:
+                return
+
+
+def _enter_main_loop(primary: int) -> None:
+    """앱을 **본 루프까지** 들여보낸다 — 터미널을 끊기 전에.
+
+    ⚠️ 첫 화면(배너)의 읽기는 -1 을 자기 분기로 처리한다. 거기서 끊으면 ``handle_key`` 의
+    -1 분기를 한 번도 안 지나가고 통과한다 — ``ssh-zombie`` 변이가 이 검사를 살아서
+    지나간 이유다(변이 주입 실측, 2026-11-02). 아무 키 하나로 표까지 넘어간다.
+    """
+    _settle(primary, 0.5)
+    os.write(primary, b"x")
+    _settle(primary, 0.5)
 
 
 def _run_tui(d: str, keys: bytes, lines: str = "24", cols: str = "100",
@@ -191,9 +219,7 @@ def test_app_exits_when_the_terminal_disappears():
              "from sectorflow.tui.flow_app import main; main()", "--dir", d],
             stdin=replica, stdout=replica, stderr=subprocess.DEVNULL, env=env)
         os.close(replica)
-        # 배수 스레드를 쓰지 않는다 — 읽는 중에 같은 fd 를 닫으면 경합이라
-        # 앱이 아니라 테스트 쪽 사정으로 프로세스가 끝날 수 있다.
-        time.sleep(0.5)                        # 한 번은 그리게 둔다
+        _enter_main_loop(primary)
         os.close(primary)                      # 터미널이 사라진다
         try:
             proc.communicate(timeout=10)
@@ -771,9 +797,7 @@ def test_ledger_exits_when_the_terminal_disappears():
     with tempfile.TemporaryDirectory() as d:
         primary, proc = _spawn(_ledger_dir(d), "ledger_app", "24", "100",
                                stderr=subprocess.DEVNULL)
-        # 배수 스레드를 쓰지 않는다 — 읽는 중에 같은 fd 를 닫으면 경합이라
-        # 앱이 아니라 테스트 쪽 사정으로 프로세스가 끝날 수 있다.
-        time.sleep(0.5)                        # 한 번은 그리게 둔다
+        _enter_main_loop(primary)
         os.close(primary)                      # 터미널이 사라진다
         try:
             proc.communicate(timeout=10)
@@ -936,3 +960,25 @@ def test_drill_mode_reserves_room_for_the_stock_panel():
         assert lay.rows >= 0 and lay.detail >= 0
         if lay.detail:
             assert lay.rows >= 1, f"h={h}: 패널이 표를 다 먹었다"
+
+
+# ── 리포트 상태: 화면이 검증 실패·수집 미완을 말하는가 ─────────────────────────
+
+def _with_report(root, name="2026-11-02") -> str:
+    d = os.path.join(root, name)
+    os.makedirs(d)
+    with open(os.path.join(d, "numbers.html"), "w", encoding="utf-8") as f:
+        f.write("<script>\nconst D = " + json.dumps(MINIMAL, ensure_ascii=False)
+                + ";\n</script>")
+    return d
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="pty 는 POSIX 전용")
+def test_flow_screen_shows_verify_failed():
+    with tempfile.TemporaryDirectory() as root:
+        d = _with_report(root)
+        with open(os.path.join(d, "VERIFY_FAILED.txt"), "w", encoding="utf-8") as f:
+            f.write("실패\n")
+        rc, screen, err = _run_tui(d, b"xq", cols="120")
+        assert rc == 0, err[-1500:]
+        assert "검증 실패" in screen

@@ -819,3 +819,91 @@ guards = ["tests/test_verify_report.py::test_cursor_range_check_starts_from_a_st
 file = "scripts/verify_report.py"
 find = "            setattr(o, cur, min(3, max(n - 1, 0)))"
 replace = "            setattr(o, cur, 3)"
+
+[[mutation]]
+id = "gate-name-count-off"
+why = "종목수를 안 보면 코스닥 10%만 들어온 날이 리포트가 된다(2026-10-27)"
+guards = ["tests/test_completeness_gate.py::test_shrunk_market_fails_on_name_count"]
+file = "scripts/completeness_gate.py"
+find = "            if n < base_n * MIN_COVERAGE:"
+replace = "            if False:"
+
+[[mutation]]
+id = "gate-zero-cap-off"
+why = "시총 합 0 을 통과시키면 비중 변화의 분모가 통째로 빈다"
+guards = ["tests/test_completeness_gate.py::test_zero_market_cap_fails_regardless_of_count"]
+file = "scripts/completeness_gate.py"
+find = "        if cap_sum <= 0:"
+replace = "        if False:"
+
+[[mutation]]
+id = "gate-baseline-prev-day-only"
+why = "전 거래일 하나만 기준이면 이틀 연속 부분 수집이 서로를 통과시킨다"
+guards = ["tests/test_completeness_gate.py::test_baseline_is_not_fooled_by_a_partial_previous_day"]
+file = "scripts/completeness_gate.py"
+find = "by_date if d < asof)[-BASELINE_DAYS:]"
+replace = "by_date if d < asof)[-1:]"
+
+[[mutation]]
+id = "report-publishes-partial-day"
+why = "관문이 막아도 계속 가면 부분 수집이 latest 가 된다"
+guards = ["tests/test_daily_report_flow.py::test_partial_day_is_not_published_and_keeps_latest"]
+file = "scripts/daily_report.sh"
+find = "  exit 75"
+replace = "  true"
+
+[[mutation]]
+id = "report-skips-verify-failed-retry"
+why = "검증 실패 폴더를 건너뛰면 재시도가 그 기준일을 안 고친다"
+guards = ["tests/test_daily_report_flow.py::test_verify_failure_publishes_alerts_and_is_retried"]
+file = "scripts/daily_report.sh"
+find = """[ ! -f "$DEST/VERIFY_FAILED.txt" ] && """
+replace = ""
+
+[[mutation]]
+id = "cron-log-dir-missing"
+why = "새 clone 엔 reports/ 가 없어 리다이렉트가 스크립트보다 먼저 터진다"
+guards = ["tests/test_daily_report_flow.py::test_every_report_cron_line_makes_the_log_dir_and_wraps"]
+file = "deploy/crontab.simnode"
+find = "10 18 * * 1-5 mkdir -p /home/young/git/sector-flow/reports && "
+replace = "10 18 * * 1-5 "
+
+[[mutation]]
+id = "verify-empty-market-cap-ok"
+why = "시장 시총이 통째로 0 인 리포트가 검사를 지나간다"
+guards = ["tests/test_verify_report.py::test_market_presence_fails_on_empty_market"]
+file = "scripts/verify_report.py"
+find = """기준일 시총이 비어 있지 않은가", cap > 0,"""
+replace = """기준일 시총이 비어 있지 않은가", True,"""
+
+[[mutation]]
+id = "verify-comove-none-crash"
+why = "None * 100 으로 검증 전체가 트레이스백으로 죽는다"
+guards = ["tests/test_verify_report.py::test_comove_table_reports_empty_market_instead_of_crashing"]
+file = "scripts/verify_report.py"
+find = "                if o is None or nul is None:"
+replace = "                if False:"
+
+[[mutation]]
+id = "verify-layer-crash-escapes"
+why = "한 층이 터지면 뒤 층이 안 돌고 실패 목록도 안 남는다"
+guards = ["tests/test_verify_report.py::test_a_crashing_layer_is_an_explicit_failure_and_later_layers_still_run"]
+file = "scripts/verify_report.py"
+find = "        traceback.print_exc(file=sys.stdout)"
+replace = "        raise"
+
+[[mutation]]
+id = "chip-claims-final"
+why = "당일 잠정값을 확정이라고 적는다"
+guards = ["tests/test_tui_flow_view.py::test_chip_does_not_claim_final_values"]
+file = "src/sectorflow/tui/flow_view.py"
+find = """base = "마감·잠정" if"""
+replace = """base = "확정" if"""
+
+[[mutation]]
+id = "tui-hides-verify-failed"
+why = "검증 실패가 파일로만 남으면 화면만 보는 사람은 모른다"
+guards = ["tests/test_tui_flow_view.py::test_report_warnings_reads_verify_failed_and_newer_incomplete"]
+file = "src/sectorflow/tui/flow_view.py"
+find = """        out.append("검증 실패(VERIFY_FAILED.txt)")"""
+replace = "        pass"

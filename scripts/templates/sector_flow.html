@@ -573,8 +573,8 @@ function renderTable(order){
 }
 
 const chip=el("span",D.finalized?"chip":"chip live");
-chip.append(el("span","dot"),document.createTextNode(D.finalized?"확정":"장중 · 미확정"));
-chip.title=D.finalized?"16:50 KST 이후 전 종목 재수집이 끝난 확정 데이터":"16:50 KST 이전이라 부분 데이터일 수 있다";
+chip.append(el("span","dot"),document.createTextNode(D.finalized?"마감 · 잠정":"장중 · 미확정"));
+chip.title=D.finalized?"수집 창(17시 KST) 뒤에 만든 리포트. 당일 값은 잠정이고 확정치는 다음날 새벽 DB 에 덮어쓴다 — 이 리포트는 안 바뀐다":"17시 KST 이전이라 부분 데이터일 수 있다";
 document.getElementById("hdr-chip").append(chip);
 
 render();

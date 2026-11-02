@@ -34,7 +34,7 @@ import random
 
 from sectorflow.tui.flow_view import (
     HELP_TITLE_TIERS, MARKET_ORDER, cell_len, cell_width, fit_widths, fmt_amt, help_desc,
-    help_lines, hint_line, pad, tier_for)
+    help_lines, hint_line, missing_report_hint, pad, report_warnings, status_chip, tier_for)
 
 ACTORS = (("indiv", "개인"), ("forgn", "외국인"), ("inst", "기관"), ("etc", "기타법인"))
 ACTOR_KEYS = tuple(k for k, _ in ACTORS)
@@ -123,7 +123,8 @@ def load(report_dir: str) -> dict:
     if not os.path.exists(path):
         raise SystemExit(
             f"페이로드를 찾을 수 없다: {path}\n"
-            f"  먼저 scripts/daily_report.sh 를 돌리거나 --dir 로 지정하라.")
+            f"  먼저 scripts/daily_report.sh 를 돌리거나 --dir 로 지정하라."
+            f"{missing_report_hint(report_dir)}")
     try:
         with open(path, encoding="utf-8") as f:
             d = json.load(f)
@@ -145,6 +146,7 @@ def load(report_dir: str) -> dict:
     if no_flow:
         raise SystemExit(f"{path}: 시장 {', '.join(no_flow)} 의 흐름이 없다 — "
                          f"markets 와 flows 가 어긋난다.")
+    d["report_warnings"] = report_warnings(report_dir, d["dates"][-1])
     return d
 
 
@@ -691,7 +693,7 @@ class Model:
 
 def header_lines(mo: Model, width: int) -> list[str]:
     d = mo.d
-    chip = "확정" if d.get("finalized") else "장중·미확정"
+    chip = status_chip(d)
     l1 = (f" 자금 원장 · {mo.dates[-1]} {chip} · "
           f"{mo.dates[max(0, len(mo.dates) - mo.window)]}~{mo.dates[-1]} "
           f"({mo.window}거래일)")

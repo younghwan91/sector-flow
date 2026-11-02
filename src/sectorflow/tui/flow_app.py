@@ -30,7 +30,8 @@ from sectorflow.tui.flow_view import (
     State, banner_lines, cell_len as view_cell_len, color_spans,
     detail_lines, detail_title_span, footer_line, header_lines, help_lines,
     hint_desc, hint_line,
-    is_section, name_sort_span, names_lines, sort_span, table_lines, tier_for,
+    is_section, missing_report_hint, name_sort_span, names_lines, report_warnings, sort_span,
+    table_lines, tier_for,
     view_width)
 
 # `scripts/daily_report.sh` 가 `<repo>/reports/<기준일>` 에 쓰고 `latest` 를 그리로
@@ -45,7 +46,8 @@ def load(report_dir: str) -> dict:
     path = os.path.join(os.path.expanduser(report_dir), "numbers.html")
     if not os.path.exists(path):
         raise SystemExit(f"리포트를 찾을 수 없다: {path}\n"
-                         f"  먼저 scripts/daily_report.sh 를 돌리거나 --dir 로 지정하라.")
+                         f"  먼저 scripts/daily_report.sh 를 돌리거나 --dir 로 지정하라."
+                         f"{missing_report_hint(report_dir)}")
     html = open(path, encoding="utf-8").read()
     m = re.search(r"const D = (\{.*?\});\n", html, re.S)
     if not m:
@@ -61,6 +63,7 @@ def load(report_dir: str) -> dict:
     if missing:
         raise SystemExit(f"{path} 의 데이터에 없는 키: {', '.join(missing)} — "
                          f"리포트 형식이 바뀌었나?\n  있는 키: {sorted(d)}")
+    d["report_warnings"] = report_warnings(report_dir, d["asof"])
     return d
 
 

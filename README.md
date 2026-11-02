@@ -22,6 +22,7 @@ sw-ledger --dir <리포트 폴더>                 # 자금 원장
 
 - §1 [무엇을 하나](#1-무엇을-하나)
 - §2 [구조](#2-구조)
+- §3 [일일 배치 — 언제 무엇이 도나](#3-일일-배치--언제-무엇이-도나)
 - §4 [설치와 실행](#4-설치와-실행) · [리포트 폴더를 그대로 주고받는다](#43-리포트-폴더를-그대로-주고받는다)
 - §5 [화면 읽는 법](#5-화면-읽는-법) · [종목 선정 가이드](docs/trading-guide.md)
 - §6 [자금 원장 — `sw-ledger`](#6-자금-원장--sw-ledger)
@@ -69,7 +70,7 @@ flowchart TD
 
     DB -->|"SELECT 전용"| ST["storage.py\nDB 접근 정문"]
 
-    ST --> CRON["daily_report.sh (cron 평일 18:10)"]
+    ST --> CRON["daily_report.sh (cron 평일 18:10, 재시도 19:10·07:30)"]
     CRON --> SF["sector_flow.py\n--days 260 --json"]
     SF --> PAYLOAD["payload.json"]
     PAYLOAD --> SN["sector_numbers.py\n--payload"]
@@ -98,6 +99,29 @@ scripts/                 # daily_report.sh · sector_flow · sector_numbers · v
                          # ledger_numbers · verify_merge
 docs/                    # kqflow-formulas.pdf · trading-guide.md
 ```
+
+## 3. 일일 배치 — 언제 무엇이 도나
+
+리포트 폴더는 [`scripts/daily_report.sh`](scripts/daily_report.sh) 가 만들고 크론이 같은 명령을 세 번 부른다(`deploy/crontab.simnode`).
+리포트가 이미 있으면 기준일만 읽고 건너뛴다.
+
+| 시각 | 하는 일 |
+|---|---|
+| 평일 18:10 | 수집이 끝났으면 리포트를 만들어 `latest` 로 건다 |
+| 평일 19:10 | 18:10 에 못 만든 날을 다시 시도한다(수집이 18:47 까지 간 날이 있었다) |
+| 화~토 07:30 | 그래도 못 만든 날의 마지막 기회. 다음 18:10 이면 기준일이 넘어간다 |
+
+**만들기 전에 완전성 관문을 본다**([`scripts/completeness_gate.py`](scripts/completeness_gate.py)). 시장별로 기준일의 수급 종목수와
+시총 잡히는 종목수가 직전 5거래일 중앙값의 97% 이상이고 시총 합이 0 보다 커야 한다. 279거래일 실측 최저가 99.1% 여서 평소엔 안 막힌다.
+
+| 폴더에 있는 것 | 뜻 | 화면 |
+|---|---|---|
+| `INCOMPLETE.txt` 만 | 수집 미완이라 안 만들었다. `latest` 는 전날에 머물고, 다음 시도가 성공하면 폴더가 바뀐다 | 전날 리포트 제목에 `⚠ MM-DD 수집 미완` |
+| `VERIFY_FAILED.txt` | 만들었지만 검사에 걸렸다(§9). 다음 시도가 다시 만들어 본다 | 제목에 `⚠ 검증 실패` |
+
+종료코드는 75(미완)·그 밖 비정상이면 [`scripts/cron_run.sh`](scripts/cron_run.sh) 가 알림을 보낸다.
+
+제목의 `마감·잠정` 은 수집 창이 지난 뒤 만든 리포트라는 뜻이다. 당일 수급은 잠정값이고 확정치는 다음날 새벽 DB 에 덮이며, 만들어 둔 리포트는 안 바뀐다.
 
 ## 4. 설치와 실행
 
@@ -170,7 +194,7 @@ ln -sfn ~/reports/2026-09-01 <저장소>/reports/latest    # 이제 sw-flow 만 
 ⚠️ `VERIFY_FAILED.txt` 가 같이 들어 있으면 **그 리포트는 검사에 걸린 것이다.** 파일을 지우고
 보내지 마라. 받는 쪽이 알아야 할 사실이다.
 
-**받은 폴더는 그날의 사진이다.** 화면 제목의 날짜(`2026-09-01 확정`)가 그 사실을 늘 적는다.
+**받은 폴더는 그날의 사진이다.** 화면 제목의 날짜(`2026-09-01 마감·잠정`)가 그 사실을 늘 적는다.
 매일 보려면 매일 받거나, 만드는 쪽 서버에 SSH 로 들어가 거기서 `sw-flow` 를 띄우는 편이 낫다.
 두 화면이 `curses` 만 쓰는 이유가 그것이다.
 
@@ -419,7 +443,7 @@ dW/dt 174 · 종목[수] 183. 앞의 넷(섹터·마커·가속·임펄스)은 4
 
 **조용히 틀린 리포트가 쌓이는 것이 검증 없이 도는 것보다 나쁘다.** 그래서 배치는 저장 직후
 같은 폴더를 검사하고([`scripts/verify_report.py`](scripts/verify_report.py)), 실패하면 그
-사실을 폴더에 `VERIFY_FAILED.txt` 로 남긴다.
+사실을 폴더에 `VERIFY_FAILED.txt` 로 남긴다. 그 앞에 수집 미완을 거르는 관문이 있다(§3).
 
 | 계층 | 묻는 것 | 예 |
 |---|---|---|

@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import os
+import re
 import unicodedata
 from collections import namedtuple
 
@@ -940,7 +941,7 @@ def banner_lines(st: State, width: int) -> list[str]:
     먼저 보는 사실 요약이다.
     """
     d = st.d
-    chip = "확정" if d.get("finalized") else "장중·미확정"
+    chip = status_chip(d)
     lines = [pad(f" 오늘의 요약 · {d.get('asof', '')} {chip} — 아무 키나 눌러 표로", width),
              pad("", width)]
 
@@ -991,9 +992,53 @@ def banner_lines(st: State, width: int) -> list[str]:
     return lines
 
 
+_REPORT_DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
+def status_chip(d: dict) -> str:
+    """제목 옆 상태 칩 — 값의 지위와 리포트 경고.
+
+    ``finalized`` 는 **시계만 본다**(수집 창이 지났나). 값이 확정됐다는 뜻이 아니다 — 당일 수급은
+    잠정이고 확정치는 다음날 새벽 ``daily_finalize`` 가 DB 에 덮어쓰며, 만들어 둔 리포트는 안 바뀐다.
+    한때 "확정" 이라고 적었다. 페이로드 키 이름은 옛 리포트와 맞추려고 그대로 둔다.
+    """
+    base = "마감·잠정" if d.get("finalized") else "장중·미확정"
+    return " ".join([base, *(f"⚠ {w}" for w in d.get("report_warnings") or ())])
+
+
+def report_warnings(report_dir: str, asof: str) -> list[str]:
+    """열린 리포트에 대해 화면이 먼저 말해야 할 것 — 폴더만 읽는다.
+
+    * 그 폴더에 ``VERIFY_FAILED.txt`` — 검사에 걸린 리포트다. 파일로만 남기면 화면만 보는 사람은 모른다.
+    * 더 **뒤** 기준일 폴더에 ``INCOMPLETE.txt`` — 오늘 수집이 안 끝나 ``latest`` 가 전날에 머문다.
+      제목의 날짜만으로는 "어제 것을 보고 있다" 는 걸 놓친다.
+    """
+    real = os.path.realpath(os.path.expanduser(report_dir))
+    out = []
+    if os.path.exists(os.path.join(real, "VERIFY_FAILED.txt")):
+        out.append("검증 실패(VERIFY_FAILED.txt)")
+    root = os.path.dirname(real)
+    try:
+        days = sorted(n for n in os.listdir(root) if _REPORT_DAY.fullmatch(n) and n > str(asof))
+    except OSError:
+        days = []
+    out.extend(f"{n[5:]} 수집 미완" for n in days
+               if os.path.exists(os.path.join(root, n, "INCOMPLETE.txt")))
+    return out
+
+
+def missing_report_hint(report_dir: str) -> str:
+    """리포트가 없는 폴더를 열었을 때 — 수집 미완 폴더면 그 사유를 말한다."""
+    path = os.path.join(os.path.expanduser(report_dir), "INCOMPLETE.txt")
+    if not os.path.exists(path):
+        return ""
+    with open(path, encoding="utf-8") as f:
+        return "\n  수집 미완이라 만들지 않은 폴더다:\n  " + f.read().strip().replace("\n", "\n  ")
+
+
 def header_lines(st: State, width: int) -> list[str]:
     d = st.d
-    chip = "확정" if d.get("finalized") else "장중·미확정"
+    chip = status_chip(d)
     l1 = f" 섹터 자금 흐름 · {d['asof']} {chip}"
     label, note = SORTS[st.si][1], ""
     # 종합 화면은 **정렬 자체가 없다**(페이로드 순서). 예전엔 방향 화살표만 빼고
