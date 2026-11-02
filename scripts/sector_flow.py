@@ -38,7 +38,9 @@ INDEX_RET: dict = {}
 DEFAULT_DAYS = 260        # 거래일 ≈ 1년
 #: 종목 집계를 낼 구간(거래일). 수치표·TUI 의 프리셋과 같아야 한다.
 NAME_WINDOWS = (5, 20, 60, 120)
-FINALIZED_KST_HOUR = 17   # 16:00 DAG + ~48분 → 그날 수급은 16:50 경 확정
+#: 이 시각 전의 "오늘" 은 장중으로 친다. 수집이 끝났다는 보장이 **아니다**(끝나는 시각은 18:47 까지
+#: 갔다, 2026-10-27) — 그 판정은 ``completeness_gate.py`` 몫이다.
+FINALIZED_KST_HOUR = 17
 
 ACTORS = (("individual", "indiv"), ("foreign_", "forgn"),
           ("institution", "inst"), ("etc_corp", "etc"))
@@ -48,7 +50,11 @@ INST_DETAIL = (("fnnc_invt", "금투"), ("insrnc", "보험"), ("invtrt", "투신
 
 
 def _finalized(date: str) -> bool:
-    """그 날짜 수급이 확정됐나 — 오늘이면 16:50(KST) 이후여야 한다."""
+    """수집 창이 지난 날짜인가 — 오늘이면 17시(KST) 이후. **시계만 본다.**
+
+    값이 확정됐다는 뜻이 아니다. 당일 수급은 잠정이고 확정치는 다음날 새벽 ``daily_finalize`` 가
+    DB 에 덮어쓴다. 키 이름은 리포트 형식(payload.json 바이트 동일)을 지키려고 그대로 둔다.
+    """
     now = datetime.now(timezone(timedelta(hours=9)))
     return date != now.strftime("%Y-%m-%d") or now.hour >= FINALIZED_KST_HOUR
 
@@ -378,7 +384,7 @@ def main():
         with open(a.html, "w", encoding="utf-8") as f:
             f.write(html.replace("__DATA__", json.dumps(payload, ensure_ascii=False)))
         print(f"wrote {a.html}  ({dates[0]} ~ {dates[-1]}, {len(dates)}거래일, "
-              f"{payload['n_names']}종목, 확정={payload['finalized']})")
+              f"{payload['n_names']}종목, 마감후={payload['finalized']})")
         return
 
     out = a.json or "-"

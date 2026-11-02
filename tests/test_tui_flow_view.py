@@ -2747,3 +2747,59 @@ def test_sector_trusted_flow_is_cached_per_market(data):
     b = dict(st.trusted_recent())
     assert a != b or all(v == 0 for v in b.values()), \
         "시장을 바꿔도 같은 값이면 캐시가 시장을 안 본다"
+
+
+# ── 칩: "확정" 이라고 말하지 않는다 ─────────────────────────────────────────────
+#
+# 리포트의 당일 수급은 잠정값이다. 확정치는 다음날 새벽 daily_finalize 가 DB 에 덮어쓴다.
+
+def test_chip_does_not_claim_final_values():
+    from sectorflow.tui.flow_view import status_chip  # noqa: PLC0415
+
+    assert status_chip({"finalized": True}) == "마감·잠정"
+    assert status_chip({"finalized": False}) == "장중·미확정"
+
+
+def test_chip_carries_report_warnings():
+    from sectorflow.tui.flow_view import status_chip  # noqa: PLC0415
+
+    chip = status_chip({"finalized": True, "report_warnings": ["검증 실패"]})
+    assert chip == "마감·잠정 ⚠ 검증 실패"
+
+
+def test_report_warnings_reads_verify_failed_and_newer_incomplete(tmp_path):
+    from sectorflow.tui.flow_view import report_warnings  # noqa: PLC0415
+
+    old = tmp_path / "2026-10-30"
+    new = tmp_path / "2026-11-02"
+    older = tmp_path / "2026-10-29"
+    for d in (old, new, older):
+        d.mkdir()
+    assert report_warnings(str(old), "2026-10-30") == []
+    (older / "INCOMPLETE.txt").write_text("x")
+    assert report_warnings(str(old), "2026-10-30") == [], "지난 미완은 지금 화면과 무관하다"
+    (new / "INCOMPLETE.txt").write_text("x")
+    (old / "VERIFY_FAILED.txt").write_text("x")
+    out = report_warnings(str(old), "2026-10-30")
+    assert any("검증 실패" in w for w in out)
+    assert any("11-02" in w and "미완" in w for w in out)
+
+
+def test_report_warnings_follows_the_latest_symlink(tmp_path):
+    from sectorflow.tui.flow_view import report_warnings  # noqa: PLC0415
+
+    old = tmp_path / "2026-10-30"
+    new = tmp_path / "2026-11-02"
+    old.mkdir()
+    new.mkdir()
+    (new / "INCOMPLETE.txt").write_text("x")
+    (tmp_path / "latest").symlink_to(old)
+    assert any("11-02" in w for w in report_warnings(str(tmp_path / "latest"), "2026-10-30"))
+
+
+def test_missing_report_message_explains_incomplete_folder(tmp_path):
+    from sectorflow.tui.flow_app import load  # noqa: PLC0415
+
+    (tmp_path / "INCOMPLETE.txt").write_text("수집 미완 사유\n")
+    with pytest.raises(SystemExit, match="수집 미완"):
+        load(str(tmp_path))

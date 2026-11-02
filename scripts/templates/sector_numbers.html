@@ -127,7 +127,7 @@ const P=n=>n==null?"—":sg(n)+Math.abs(n).toFixed(2);
 const N0=n=>n==null?"—":Math.round(n).toLocaleString("ko-KR");
 
 document.getElementById("asof").textContent = D.dates[0]+" ~ "+D.dates[1];
-const chip=el("span","chip", D.finalized?"확정":"장중 · 미확정");
+const chip=el("span","chip", D.finalized?"마감 · 잠정":"장중 · 미확정");
 document.getElementById("chip").append(chip);
 
 function seg(id,opts,get,set){
