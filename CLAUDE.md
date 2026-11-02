@@ -17,6 +17,9 @@
 - 크론 정본 `deploy/crontab.simnode` — dotfiles `cron-install` 이 `~/git/*/deploy/crontab.<호스트>` 를 훑어 설치한다. `crontab -e` 금지.
   07:50 `pull-all --ci-gate` 가 ff 한 뒤 설치하니 main 푸시가 곧 다음날 배포다. 당장은 `git -C ~/git/sector-flow pull --ff-only`.
 - 산출물은 `$REPO/reports/<기준일>`(gitignore) + `latest` 링크. 폴더 이름은 실행일이 아니라 데이터 기준일이다.
+- 크론은 평일 18:10·19:10, 화~토 07:30 에 같은 `daily_report.sh` 를 부른다. 완전성 관문(`scripts/completeness_gate.py`)이 막으면
+  폴더에 `INCOMPLETE.txt` 만 남기고 75 로 끝나며(`latest` 유지) 다음 실행이 그 기준일을 다시 만든다. `KR_QUANT_FORCE` 도 관문은 못 끈다.
+  이상 종료는 `scripts/cron_run.sh` 가 quant-airflow `alert.sh` 로 알린다.
 - 이 레포는 PRIVATE 다. 공개 전환은 사용자가 정한다.
 
 ## 데이터 함정 (kr_quant)
