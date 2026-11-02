@@ -29,6 +29,8 @@ cd "$REPO"
 # 접속정보의 사본을 레포마다 두지 않는다 — 없으면 kr_quant 의 정본(quant-airflow/.env)을 불러 쓴다.
 ENV_FILE="$REPO/.env"
 [ -f "$ENV_FILE" ] || ENV_FILE="$REPO/../quant-airflow/.env"
+# 워크트리(~/orca/workspaces/...)에는 옆자리 quant-airflow 가 없다.
+[ -f "$ENV_FILE" ] || ENV_FILE="$HOME/git/quant-airflow/.env"
 set -a; . "$ENV_FILE"; set +a
 
 ASOF="$("${UVR[@]}" python - <<'PY' 2>/dev/null

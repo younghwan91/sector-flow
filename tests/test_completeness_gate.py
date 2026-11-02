@@ -55,8 +55,10 @@ def test_real_incident_shape_fails():
 
 @pytest.mark.parametrize("n", [1, 900, 1700])
 def test_shrunk_market_fails_on_name_count(n):
-    ok, _ = G.evaluate(_counts(today_kosdaq=(n, n, 500.0)), DAYS[-1])
+    # 시총 종목수는 온전하게 둔다 — 그쪽 판정이 대신 잡으면 종목수 판정이 죽어도 이 검사가 초록이다.
+    ok, lines = G.evaluate(_counts(today_kosdaq=(n, 1800, 500.0)), DAYS[-1])
     assert not ok
+    assert any("수급 종목수" in x for x in lines)
 
 
 def test_threshold_boundary():
