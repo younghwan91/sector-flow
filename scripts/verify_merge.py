@@ -679,6 +679,14 @@ for width in widths:
                             bad.append(f"{tag} 정렬 하이라이트가 다른 열을 가리킨다")
                     # 종목 목록 화면
                     if si == 0:
+                        # 고를 섹터가 없는 화면(실측: 종합/코스닥에 G 통과가 0개인 날)의 종목
+                        # 목록은 헤더 없는 안내 한 줄이다. 그 줄을 헤더로 읽고 "헤더가 제자리에
+                        # 없다" 고 하면 폭마다 거짓 위반이 3,080건 쌓인다(2026-11-02 리포트).
+                        if st.selected() is None:
+                            nl, nh = V.names_lines(st, width)
+                            if nh != 1 or len(nl) != 1 or W(nl[0]) != width:
+                                bad.append(f"{tag} 빈 종목 목록 안내가 한 줄·폭 {width} 가 아니다")
+                            continue
                         for nsi in range(len(V.NAME_SORTS)):
                             st.nsi = nsi
                             try:
@@ -693,6 +701,13 @@ for width in widths:
 
 for line in bad[:40]:
     print("  " + line)
+# 앞 40줄만 보면 폭 40 만 틀린 것처럼 읽힌다(실제로 그렇게 오독했다). 폭별 건수를 같이 적는다.
+if bad:
+    by_width = {}
+    for line in bad:
+        key = line.split(" ", 1)[0]
+        by_width[key] = by_width.get(key, 0) + 1
+    print("폭별 위반: " + " ".join(f"{k}={v}" for k, v in sorted(by_width.items())))
 print(f"조합 {n}개 · 정렬키 {len(seen_sort_keys)}종 · 위반 {len(bad)}건")
 sys.exit(1 if bad else 0)
 '''
