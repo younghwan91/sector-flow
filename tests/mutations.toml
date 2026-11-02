@@ -853,6 +853,14 @@ find = "  exit 75"
 replace = "  true"
 
 [[mutation]]
+id = "report-stale-day-stays-warning"
+why = "오늘이 아닌 기준일의 미완을 75 로 끝내면 07:30 포기가 재시도 경고로 묻힌다"
+guards = ["tests/test_daily_report_flow.py::test_partial_day_that_is_no_longer_today_exits_1_and_keeps_latest"]
+file = "scripts/daily_report.sh"
+find = """if [[ "$ASOF" < "$(TZ=Asia/Seoul date +%F)" ]]; then"""
+replace = "if false; then"
+
+[[mutation]]
 id = "report-skips-verify-failed-retry"
 why = "검증 실패 폴더를 건너뛰면 재시도가 그 기준일을 안 고친다"
 guards = ["tests/test_daily_report_flow.py::test_verify_failure_publishes_alerts_and_is_retried"]
@@ -865,8 +873,8 @@ id = "cron-log-dir-missing"
 why = "새 clone 엔 reports/ 가 없어 리다이렉트가 스크립트보다 먼저 터진다"
 guards = ["tests/test_daily_report_flow.py::test_every_report_cron_line_makes_the_log_dir_and_wraps"]
 file = "deploy/crontab.simnode"
-find = "10 18 * * 1-5 mkdir -p /home/young/git/sector-flow/reports && "
-replace = "10 18 * * 1-5 "
+find = "10 18,19 * * 1-5 mkdir -p /home/young/git/sector-flow/reports && "
+replace = "10 18,19 * * 1-5 "
 
 [[mutation]]
 id = "verify-empty-market-cap-ok"
