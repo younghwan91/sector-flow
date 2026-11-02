@@ -845,6 +845,47 @@ find = "by_date if d < asof)[-BASELINE_DAYS:]"
 replace = "by_date if d < asof)[-1:]"
 
 [[mutation]]
+id = "gate-counts-null-rows"
+why = "수급이 아직 NULL 인 행을 세면 빈 칸이 찬 것으로 보여 부분 수집이 통과한다"
+guards = ["tests/test_completeness_gate.py::test_null_supply_rows_do_not_count"]
+file = "scripts/completeness_gate.py"
+find = """sd.dropna(subset=["close", "institution"]).merge("""
+replace = "sd.merge("
+
+[[mutation]]
+id = "gate-drops-market-without-rows"
+why = "행이 하루도 없는 시장의 키가 빠지면 evaluate 가 그 시장을 안 보고 통과시킨다"
+guards = ["tests/test_completeness_gate.py::test_market_with_no_rows_stays_in_the_counts_as_an_empty_market"]
+file = "scripts/completeness_gate.py"
+find = """for m in meta["market"].dropna().unique()}"""
+replace = """for m in sd.merge(meta, on="code")["market"].dropna().unique()}"""
+
+[[mutation]]
+id = "recent-dates-ignores-asof"
+why = "기준일을 무시하면 관문이 검사할 날이 아니라 최신 날들을 읽는다"
+guards = ["tests/test_sector_flow_cap.py::test_recent_dates_stops_at_asof_inclusive",
+          "tests/test_completeness_gate.py::test_read_counts_reads_only_the_recent_days_up_to_asof"]
+file = "src/sectorflow/storage.py"
+find = "    if asof is not None:"
+replace = "    if False:"
+
+[[mutation]]
+id = "recent-dates-descending"
+why = "내림차순이면 dates[0]·dates[-1] 이 뒤집혀 조회 구간이 빈다"
+guards = ["tests/test_sector_flow_cap.py::test_recent_dates_is_ascending_and_counts_distinct_days_of_every_source"]
+file = "src/sectorflow/storage.py"
+find = "    return sorted(str(r[0]) for r in cur.fetchall())"
+replace = "    return [str(r[0]) for r in cur.fetchall()]"
+
+[[mutation]]
+id = "cron-loses-1910-retry"
+why = "19:10 재시도가 빠지면 18:47 까지 도는 수집을 놓치고 다음날 07:30 까지 latest 가 전날에 머문다"
+guards = ["tests/test_daily_report_flow.py::test_cron_retries_after_the_longest_seen_collection_and_before_next_day"]
+file = "deploy/crontab.simnode"
+find = "10 18,19 * * 1-5 mkdir"
+replace = "10 18 * * 1-5 mkdir"
+
+[[mutation]]
 id = "report-publishes-partial-day"
 why = "관문이 막아도 계속 가면 부분 수집이 latest 가 된다"
 guards = ["tests/test_daily_report_flow.py::test_partial_day_is_not_published_and_keeps_latest"]
@@ -855,7 +896,8 @@ replace = "  true"
 [[mutation]]
 id = "report-stale-day-stays-warning"
 why = "오늘이 아닌 기준일의 미완을 75 로 끝내면 07:30 포기가 재시도 경고로 묻힌다"
-guards = ["tests/test_daily_report_flow.py::test_partial_day_that_is_no_longer_today_exits_1_and_keeps_latest"]
+guards = ["tests/test_daily_report_flow.py::test_partial_day_that_is_no_longer_today_exits_1_and_keeps_latest",
+          "tests/test_daily_report_flow.py::test_giving_up_on_a_past_day_alerts_as_error_through_cron_run"]
 file = "scripts/daily_report.sh"
 find = """if [[ "$ASOF" < "$(TZ=Asia/Seoul date +%F)" ]]; then"""
 replace = "if false; then"

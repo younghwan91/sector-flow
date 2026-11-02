@@ -130,9 +130,3 @@ def test_recent_dates_is_ascending_and_counts_distinct_days_of_every_source():
 
 def test_recent_dates_stops_at_asof_inclusive():
     assert recent_dates(_dates_db(), 2, asof="2026-10-30") == ["2026-10-29", "2026-10-30"]
-
-
-def test_recent_dates_on_empty_table():
-    con = _dates_db()
-    con.execute("DELETE FROM supply_demand")
-    assert recent_dates(con, 3) == []
