@@ -27,13 +27,19 @@
 from __future__ import annotations
 
 import argparse
-import os
 import statistics
 import sys
 
 import pandas as pd
 
-from sectorflow.storage import _is_pg, connect, db_default, market_cap_asof_bulk
+from sectorflow.storage import (
+    _is_pg,
+    connect,
+    db_default,
+    market_cap_asof_bulk,
+    read_supply_demand,
+    recent_dates,
+)
 
 MIN_COVERAGE = 0.97
 BASELINE_DAYS = 5
@@ -45,42 +51,29 @@ STATEMENT_TIMEOUT = "120s"
 def read_counts(con, asof: str) -> dict[str, dict[str, tuple[int, int, float]]]:
     """시장 → 날짜 → (수급 종목수, 시총 있는 종목수, 시총 합). 기준일과 직전 거래일들.
 
-    날짜는 ``sector_flow.load`` 처럼 모든 소스의 날짜에서 고른다. 키움 행이 없는 날도 "빈 날"로
-    남아야 한다 — 소스를 좁혀 고르면 그날을 건너뛰어 직전 날을 기준일로 착각한다.
+    날짜는 ``sector_flow.load`` 와 같은 :func:`recent_dates` 로 고른다. 키움 행이 없는 날도 "빈 날"로
+    남아야 한다.
     """
-    ph = "%s" if _is_pg(con) else "?"
-    cur = con.cursor()
     if _is_pg(con):
-        cur.execute(f"SET statement_timeout = '{STATEMENT_TIMEOUT}'")
-    cur.execute(f"SELECT DISTINCT date FROM supply_demand WHERE date <= {ph} "
-                f"ORDER BY date DESC LIMIT {ph}", (asof, BASELINE_DAYS + 1))
-    dates = [str(r[0]) for r in cur.fetchall()]
+        con.cursor().execute(f"SET statement_timeout = '{STATEMENT_TIMEOUT}'")
+    dates = recent_dates(con, BASELINE_DAYS + 1, asof=asof)
     if not dates:
         return {}
-    date_ph = ",".join([ph] * len(dates))
+    sd = read_supply_demand(con, cols=("code", "date", "close", "institution"),
+                            start=dates[0], end=dates[-1], sources=("kiwoom",),
+                            require_delisted=False)
+    meta = pd.read_sql_query("SELECT code, market FROM stocks", con)
+    out: dict = {m: {} for m in meta["market"].dropna().unique()}
     # institution·close 가 NULL 인 행은 그날 수급이 아직 없는 행이다 — 세면 빈 칸이 찬 것으로 보인다.
-    cur.execute(
-        "SELECT s.code, s.date, m.market FROM supply_demand s JOIN stocks m ON m.code = s.code "
-        f"WHERE s.date IN ({date_ph}) AND s.source = 'kiwoom' "
-        "AND s.close IS NOT NULL AND s.institution IS NOT NULL",
-        dates)
-    df = pd.DataFrame(cur.fetchall(), columns=["code", "date", "market"])
-    markets = [r[0] for r in _distinct_markets(cur)]
-    out: dict = {m: {} for m in markets}
+    df = sd.dropna(subset=["close", "institution"]).merge(meta, on="code", how="inner")
     if df.empty:
         return out
     df["date"] = df["date"].astype(str)
     df["cap"] = market_cap_asof_bulk(con, df).to_numpy()
     df["has_cap"] = df["cap"].fillna(0) > 0
     for (market, date), g in df.groupby(["market", "date"]):
-        if market in out:
-            out[market][date] = (len(g), int(g["has_cap"].sum()), float(g["cap"].fillna(0).sum()))
+        out[market][date] = (len(g), int(g["has_cap"].sum()), float(g["cap"].fillna(0).sum()))
     return out
-
-
-def _distinct_markets(cur) -> list:
-    cur.execute("SELECT DISTINCT market FROM stocks WHERE market IS NOT NULL ORDER BY market")
-    return cur.fetchall()
 
 
 def evaluate(counts: dict, asof: str) -> tuple[bool, list[str]]:
@@ -118,7 +111,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--db", default=None)
     a = ap.parse_args(argv)
 
-    con = connect(a.db or os.environ.get("KR_QUANT_DB") or db_default())
+    con = connect(a.db or db_default())
     try:
         counts = read_counts(con, a.asof)
     finally:

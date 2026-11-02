@@ -162,6 +162,39 @@ def test_non_kiwoom_rows_do_not_count(tmp_path):
     assert not G.evaluate(counts, DAYS[-1])[0]
 
 
+def test_null_supply_rows_do_not_count(tmp_path):
+    """close·institution 이 NULL 인 행은 그날 수급이 아직 없는 행이다 — 세면 빈 칸이 찬 것으로 보인다."""
+    path = _db(tmp_path / "a.db", today_kosdaq=50)
+    con = sqlite3.connect(path)
+    con.execute("UPDATE supply_demand SET institution = NULL WHERE date = ? AND code = '000060'",
+                (DAYS[-1],))
+    con.execute("UPDATE supply_demand SET close = NULL WHERE date = ? AND code = '000061'",
+                (DAYS[-1],))
+    counts = G.read_counts(con, DAYS[-1])
+    con.close()
+    assert counts[KOSDAQ][DAYS[-1]][0] == 48
+    assert counts[KOSDAQ][DAYS[-2]][0] == 50
+
+
+def test_read_counts_reads_only_the_recent_days_up_to_asof(tmp_path):
+    con = sqlite3.connect(_db(tmp_path / "a.db", today_kosdaq=50))
+    con.execute("INSERT INTO supply_demand VALUES('000000', '2026-01-02', 100.0, 1.0, 'kiwoom')")
+    assert sorted(G.read_counts(con, DAYS[-1])[KOSPI]) == DAYS
+    assert sorted(G.read_counts(con, DAYS[-2])[KOSPI]) == ["2026-01-02", *DAYS[:-1]]
+    con.close()
+
+
+def test_market_with_no_rows_stays_in_the_counts_as_an_empty_market(tmp_path):
+    """그 시장 종목이 하루도 안 들어온 경우 — 키가 빠지면 evaluate 가 그 시장을 안 본다."""
+    path = _db(tmp_path / "a.db", today_kosdaq=50)
+    con = sqlite3.connect(path)
+    con.execute("INSERT INTO stocks VALUES('999999', 'x', '넥스트', 'S')")
+    counts = G.read_counts(con, DAYS[-1])
+    con.close()
+    assert counts["넥스트"] == {}
+    assert not G.evaluate(counts, DAYS[-1])[0]
+
+
 def test_main_exit_codes(tmp_path, capsys):
     db = _db(tmp_path / "a.db", today_kosdaq=50)
     assert G.main(["--db", db, "--asof", DAYS[-1]]) == 0

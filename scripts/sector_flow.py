@@ -31,7 +31,7 @@ from datetime import datetime, timedelta, timezone
 import pandas as pd
 
 from sectorflow.storage import (
-    connect, db_default, market_cap_asof_bulk, read_supply_demand)
+    connect, db_default, market_cap_asof_bulk, read_supply_demand, recent_dates)
 
 EOK = 1e8                 # 원 → 억원
 INDEX_RET: dict = {}
@@ -60,12 +60,7 @@ def _finalized(date: str) -> bool:
 
 
 def load(con, days: int) -> tuple[pd.DataFrame, list[str]]:
-    cur = con.cursor()
-    cur.execute("SELECT DISTINCT date FROM supply_demand ORDER BY date DESC LIMIT %s"
-                if hasattr(con, "cursor") and con.__class__.__module__.startswith("psycopg2")
-                else "SELECT DISTINCT date FROM supply_demand ORDER BY date DESC LIMIT ?",
-                (days,))
-    dates = sorted(str(r[0]) for r in cur.fetchall())
+    dates = recent_dates(con, days)
 
     sd = read_supply_demand(
         con,

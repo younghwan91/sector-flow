@@ -232,6 +232,22 @@ def read_supply_demand(con: Any, *, cols: "tuple[str, ...] | None" = None,
     return df
 
 
+def recent_dates(con: Any, n: int, asof: "str | None" = None) -> list[str]:
+    """최근 ``n`` 거래일(오름차순). ``asof`` 를 주면 그날까지만 본다.
+
+    **모든 소스**의 날짜에서 고른다. 소스를 좁히면 그 소스 행이 없는 날을 건너뛰어 직전 날을
+    기준일로 착각한다.
+    """
+    ph = "%s" if _is_pg(con) else "?"
+    where, params = "", [n]
+    if asof is not None:
+        where, params = f"WHERE date <= {ph} ", [asof, n]
+    cur = con.cursor()
+    cur.execute(f"SELECT DISTINCT date FROM {SUPPLY_TABLE} {where}"  # noqa: S608 — 모듈 상수
+                f"ORDER BY date DESC LIMIT {ph}", tuple(params))
+    return sorted(str(r[0]) for r in cur.fetchall())
+
+
 def _assert_supply_has_delisted(con: Any, df, *, start, end) -> None:
     """조회 구간에 수급이 있는 폐지 종목이 결과에도 담겼는지 확인."""
     ph = "%s" if _is_pg(con) else "?"
