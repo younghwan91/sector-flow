@@ -86,11 +86,22 @@ def repo(tmp_path):
     return r
 
 
-def _run(repo: Path, **env) -> subprocess.CompletedProcess:
+def _env(repo: Path, today: str = TODAY, **env) -> dict[str, str]:
+    """``today`` 를 오늘로 보는 환경. 시험 날짜는 고정이라 ``date +%F`` 만 가짜로 바꾼다."""
+    shim = repo.parent / "bin"
+    shim.mkdir(exist_ok=True)
+    fake = shim / "date"
+    fake.write_text(f'#!/bin/sh\n[ "$1" = "+%F" ] && {{ echo "{today}"; exit 0; }}\n'
+                    f'exec "{shutil.which("date")}" "$@"\n')
+    fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
     e = {k: v for k, v in os.environ.items() if k not in ("KR_QUANT_DB", "KR_QUANT_REPORTS")}
-    e.update(KR_QUANT_UV=str(repo.parent / "uv"), **env)
+    e.update(KR_QUANT_UV=str(repo.parent / "uv"), PATH=f"{shim}{os.pathsep}{e['PATH']}", **env)
+    return e
+
+
+def _run(repo: Path, today: str = TODAY, **env) -> subprocess.CompletedProcess:
     return subprocess.run([str(repo / "scripts" / "daily_report.sh")], capture_output=True,
-                          text=True, env=e, timeout=120)
+                          text=True, env=_env(repo, today, **env), timeout=120)
 
 
 def _publish_previous(repo: Path) -> Path:
@@ -113,6 +124,34 @@ def test_partial_day_is_not_published_and_keeps_latest(repo):
     assert not (dest / "numbers.html").exists()
     assert not (dest / "payload.json").exists()
     assert (repo / "reports" / "latest").resolve() == prev.resolve()
+
+
+def test_partial_day_that_is_no_longer_today_exits_1_and_keeps_latest(repo):
+    """다음날 07:30 도 못 만들면 마지막 기회를 놓친 것이다 — 재시도 경고(75)로 묻히면 안 된다."""
+    _seed(repo.parent / "db.sqlite", today_kosdaq=1)
+    prev = _publish_previous(repo)
+    p = _run(repo, today="2026-11-03")
+    assert p.returncode == 1, p.stdout + p.stderr
+    assert TODAY in p.stderr
+    dest = repo / "reports" / TODAY
+    assert (dest / "INCOMPLETE.txt").is_file()
+    assert not (dest / "numbers.html").exists()
+    assert (repo / "reports" / "latest").resolve() == prev.resolve()
+
+
+def test_giving_up_on_a_past_day_alerts_as_error_through_cron_run(repo, tmp_path):
+    _seed(repo.parent / "db.sqlite", today_kosdaq=1)
+    _publish_previous(repo)
+    log, stub = tmp_path / "alert.log", tmp_path / "alert.sh"
+    stub.write_text(f'#!/bin/sh\necho "$1|$2" >> "{log}"\ncat >> "{log}"\n')
+    stub.chmod(stub.stat().st_mode | stat.S_IEXEC)
+    p = subprocess.run(
+        [str(repo / "scripts" / "cron_run.sh"), "rpt", "--",
+         str(repo / "scripts" / "daily_report.sh")],
+        capture_output=True, text=True, timeout=120,
+        env=_env(repo, "2026-11-03", SECTOR_FLOW_ALERT=str(stub)))
+    assert p.returncode == 1, p.stdout + p.stderr
+    assert log.read_text().startswith("error|")
 
 
 def test_later_run_regenerates_the_incomplete_day(repo):
@@ -232,6 +271,5 @@ def test_every_report_cron_line_makes_the_log_dir_and_wraps():
 def test_cron_retries_after_the_longest_seen_collection_and_before_next_day():
     """18:47 까지 간 수집을 놓치지 않고, 기준일이 넘어가기 전(다음날 아침)에도 한 번 더 본다."""
     sched = [tuple(ln.split()[:5]) for ln in _cron_lines()]
-    assert ("10", "18", "*", "*", "1-5") in sched
-    assert ("10", "19", "*", "*", "1-5") in sched
+    assert ("10", "18,19", "*", "*", "1-5") in sched
     assert ("30", "7", "*", "*", "2-6") in sched

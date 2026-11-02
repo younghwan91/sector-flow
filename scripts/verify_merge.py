@@ -464,6 +464,7 @@ def sec_mutations(wt: Path, py: str, base_sha: str, spec_path: Path | None) -> S
 RENDER_SMOKE = r'''
 """실데이터 렌더 스모크 — 예외·행폭·헤더정렬·숫자잘림."""
 import bisect, pathlib, sys
+from collections import Counter
 from sectorflow.tui.flow_app import load
 from sectorflow.tui import flow_view as V
 
@@ -703,10 +704,7 @@ for line in bad[:40]:
     print("  " + line)
 # 앞 40줄만 보면 폭 40 만 틀린 것처럼 읽힌다(실제로 그렇게 오독했다). 폭별 건수를 같이 적는다.
 if bad:
-    by_width = {}
-    for line in bad:
-        key = line.split(" ", 1)[0]
-        by_width[key] = by_width.get(key, 0) + 1
+    by_width = Counter(line.split(" ", 1)[0] for line in bad)
     print("폭별 위반: " + " ".join(f"{k}={v}" for k, v in sorted(by_width.items())))
 print(f"조합 {n}개 · 정렬키 {len(seen_sort_keys)}종 · 위반 {len(bad)}건")
 sys.exit(1 if bad else 0)

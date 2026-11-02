@@ -1018,10 +1018,11 @@ def layer_g(P: dict, D: dict) -> None:
     txt = LV.render_text(LV.Model(P), 400)
     left = [t for t in LV.COMOVE_TOKENS if t in txt]
     chk("G", "도움말·한계에 끼우지 못한 자리표가 없는가", not left, " ".join(left))
-    chk("G", "도움말·한계의 동시성 범위가 오늘 실측을 덮는가(β제거 끈 상태)",
-        f"{lo3:.0f}~{hi3:.0f}%" in txt,
-        f"실측 개인·외국인·기관 {lo3:.0f}~{hi3:.0f}% · "
-        f"기타법인 {min(etc):.0f}~{max(etc):.0f}%")
+    if not left:  # 자리표가 남았으면 범위 글도 없다 — 같은 원인으로 두 번 빨개지지 않는다.
+        chk("G", "도움말·한계의 동시성 범위가 오늘 실측을 덮는가(β제거 끈 상태)",
+            f"{lo3:.0f}~{hi3:.0f}%" in txt,
+            f"실측 개인·외국인·기관 {lo3:.0f}~{hi3:.0f}% · "
+            f"기타법인 {min(etc):.0f}~{max(etc):.0f}%")
     # 그리고 판정 자체("셋은 널보다 드물다")가 12조합 전부에서 유지되는가.
     bad = [f"{ko}/{m}/{W} 관측 {v:.0f}% ≥ 널 {n:.0f}%"
            for ko in ("개인", "외국인", "기관") for v, n, m, W in obs.get(ko, [])

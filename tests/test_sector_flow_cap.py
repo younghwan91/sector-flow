@@ -8,13 +8,14 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import sqlite3
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import pytest
 
-from sectorflow.storage import connect, market_cap_asof_bulk
+from sectorflow.storage import connect, market_cap_asof_bulk, recent_dates
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -109,3 +110,23 @@ def test_sector_cap_monthly_matches_original(tmp_path, seed):
         want = json.dumps(_old_sector_cap_monthly(con, df, ds), ensure_ascii=False)
         assert json.dumps(sf.sector_cap_monthly(con, with_cap, ds), ensure_ascii=False) == want
         assert json.dumps(sf.sector_cap_monthly(con, df, ds), ensure_ascii=False) == want
+
+
+# ── storage.recent_dates: 관문과 리포트가 같은 함수로 날짜를 고른다 ─────────────────
+
+def _dates_db():
+    con = sqlite3.connect(":memory:")
+    con.execute("CREATE TABLE supply_demand(code TEXT, date TEXT, source TEXT)")
+    for d, src in [("2026-10-28", "kiwoom"), ("2026-10-29", "naver"), ("2026-10-29", "kiwoom"),
+                   ("2026-10-30", "naver"), ("2026-11-02", "kiwoom")]:
+        con.execute("INSERT INTO supply_demand VALUES('000001', ?, ?)", (d, src))
+    return con
+
+
+def test_recent_dates_is_ascending_and_counts_distinct_days_of_every_source():
+    """키움 행이 없는 날(10-30)도 날짜다 — 좁혀 고르면 그날을 건너뛰어 직전 날을 기준일로 착각한다."""
+    assert recent_dates(_dates_db(), 3) == ["2026-10-29", "2026-10-30", "2026-11-02"]
+
+
+def test_recent_dates_stops_at_asof_inclusive():
+    assert recent_dates(_dates_db(), 2, asof="2026-10-30") == ["2026-10-29", "2026-10-30"]
