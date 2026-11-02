@@ -162,3 +162,83 @@ def test_end_key_check_still_bites_when_end_stops_short(monkeypatch, capsys):
     assert [f for f in fails if END_CHECK in f], (
         "끝 키가 끝에 못 가는데 검사가 통과했다: " + repr(fails))
     assert "끝=2" in capsys.readouterr().out
+
+
+# ── 빈 시장: 건너뛰지 말고 실패로 ─────────────────────────────────────────────
+#
+# 2026-10-27 리포트는 코스닥 시총이 통째로 0 이었고, 다른 날의 떠돌이 한 행은
+# ``obs_neg_frac()`` 를 None 으로 만들어 ``None * 100`` 에서 검증을 죽였다.
+
+def _market_payload(last_kosdaq_tv: float = 100.0, kosdaq_cap: float = 500.0) -> dict:
+    n = 10
+    dates = [f"2026-08-{i + 1:02d}" for i in range(n)]
+    flow = lambda last: {"tv": [100.0] * (n - 1) + [last]}  # noqa: E731
+    return {"dates": dates, "sectors": ["S"], "markets": ["거래소", "코스닥"],
+            "flows": {"거래소": {"S": flow(100.0)}, "코스닥": {"S": flow(last_kosdaq_tv)}},
+            "cap": {"거래소": {"S": 500.0}, "코스닥": {"S": kosdaq_cap}}}
+
+
+def _fails(vr, layer_call) -> list[str]:
+    vr.FAILS.clear()
+    layer_call()
+    return list(vr.FAILS)
+
+
+def test_market_presence_passes_a_normal_day():
+    vr = _load()
+    assert _fails(vr, lambda: vr.check_market_presence(_market_payload())) == []
+
+
+@pytest.mark.parametrize("kw", [{"kosdaq_cap": 0.0}, {"last_kosdaq_tv": 0.0},
+                                {"last_kosdaq_tv": 1.9}])
+def test_market_presence_fails_on_empty_market(kw):
+    vr = _load()
+    assert _fails(vr, lambda: vr.check_market_presence(_market_payload(**kw)))
+
+
+def test_market_presence_tolerates_real_quiet_day():
+    """260거래일 실측 최저(직전 5일 중앙값의 0.60배)는 빈 시장이 아니다."""
+    vr = _load()
+    assert _fails(vr, lambda: vr.check_market_presence(_market_payload(last_kosdaq_tv=60.0))) == []
+
+
+class _FakeModel:
+    """구간·시장에 따라 ``obs_neg_frac`` 가 None 인 원장 모델."""
+    markets = ["거래소", "코스닥"]
+
+    def __init__(self):
+        self.mi = self.wi = self.ai = 0
+        self.detrend = False
+
+    @property
+    def market(self):
+        return self.markets[self.mi]
+
+    def obs_neg_frac(self):
+        return None if self.market == "코스닥" else 0.2
+
+    def null_neg_frac(self):
+        return 0.5
+
+
+def test_comove_table_reports_empty_market_instead_of_crashing():
+    vr = _load()
+    obs, empty = vr.comove_table(_FakeModel(), windows=(20, 60), min_n=20,
+                                 actors=(("inst", "기관"),))
+    assert obs["기관"] == [(20.0, 50.0, "거래소", 20), (20.0, 50.0, "거래소", 60)]
+    assert empty == ["코스닥/20/기관", "코스닥/60/기관"]
+
+
+def test_a_crashing_layer_is_an_explicit_failure_and_later_layers_still_run(capsys):
+    vr = _load()
+    ran = []
+
+    def boom(_):
+        raise TypeError("unsupported operand type(s) for *: 'NoneType' and 'int'")
+
+    vr.FAILS.clear()
+    vr.run_layer("G", boom, 1)
+    vr.run_layer("H", ran.append, 2)
+    assert ran == [2]
+    assert any("G" in f and "끝까지" in f for f in vr.FAILS)
+    assert "NoneType" in capsys.readouterr().out

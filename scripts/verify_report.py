@@ -39,7 +39,9 @@ import json
 import math
 import os
 import re
+import statistics
 import sys
+import traceback
 
 TOL_EXACT = 1e-9      # 항등식 — 기계정밀도
 TOL_FIT = 1e-8        # 재적합 경유 — 누적 부동소수 오차 여유
@@ -299,12 +301,31 @@ def layer_a2(D: dict) -> None:
 
 # ─────────────────────────────────────────────── B. 데이터
 
+#: 기준일 시장 거래대금이 직전 5일 중앙값의 이 몫 아래면 빈 시장으로 본다. 260거래일 실측 최저는
+#: 0.60배(코스닥 2026-02-04)이고 2026-10-27 부분 수집 코스닥은 0.02배 수준이었다. 관문
+#: (``completeness_gate.py``)이 종목수로 먼저 막는다 — 이건 관문을 지난 뒤의 두 번째 그물이다.
+MIN_LAST_DAY_TV_RATIO = 0.5
+
+
+def check_market_presence(payload: dict) -> None:
+    """시장이 통째로 비었으면 **실패**다 — 없는 값을 건너뛰면 "검사 통과" 가 거짓이 된다."""
+    secs, tv_days = payload["sectors"], len(payload["dates"])
+    for m in payload["markets"]:
+        cap = sum(payload["cap"].get(m, {}).get(s) or 0 for s in secs)
+        chk("B", f"{m} 기준일 시총이 비어 있지 않은가", cap > 0, f"합 {cap:,.0f}억")
+        tv = [sum(payload["flows"][m][s]["tv"][i] or 0 for s in secs) for i in range(tv_days)]
+        base = statistics.median(tv[-6:-1]) if tv_days > 1 else 0
+        ok = base > 0 and tv[-1] >= base * MIN_LAST_DAY_TV_RATIO
+        chk("B", f"{m} 기준일 거래대금이 비어 있지 않은가", ok,
+            f"{tv[-1]:,.0f}억 / 직전 5일 중앙값 {base:,.0f}억")
+
+
 def layer_b(payload: dict, db: str | None) -> None:
     print("\nB. 데이터 — DB 에서 들어온 것이 온전한가")
     dates = payload["dates"]
     chk("B", "거래일 수", len(dates) >= 60, f"{len(dates)}일")
     chk("B", "날짜 오름차순·중복 없음", dates == sorted(set(dates)))
-    chk("B", "기준일 확정 플래그 존재", isinstance(payload.get("finalized"), bool),
+    chk("B", "기준일 마감 플래그 존재", isinstance(payload.get("finalized"), bool),
         f"finalized={payload.get('finalized')}")
 
     n = len(dates)
@@ -312,6 +333,7 @@ def layer_b(payload: dict, db: str | None) -> None:
     lens = {len(payload["flows"][m][s][k])
             for m in mkts for s in secs for k in ("inst", "forgn", "indiv", "etc", "tv")}
     chk("B", "모든 유량 배열 길이 = 거래일 수", lens == {n}, f"{lens}")
+    check_market_presence(payload)
 
     # 4주체 항등식 — 합이 0 에 가까워야(기타법인 포함)
     tot = {k: sum(sum(payload["flows"][m][s][k]) for m in mkts for s in secs)
@@ -708,6 +730,28 @@ def layer_e(D: dict) -> None:
 LEDGER_WIDTHS = (48, 51, 71, 79, 80, 119, 120, 199)
 
 
+def comove_table(mo, windows, min_n: int, actors) -> tuple[dict, list[str]]:
+    """시장×구간×주체의 (관측, 널) 음수쌍 비율[%]과 **못 잰 조합**.
+
+    못 재는 것은 시장이 비어 상관을 낼 섹터가 2개 미만일 때다. 예전엔 ``None * 100`` 에서 검증 전체가
+    트레이스백으로 죽었다. 건너뛰지 않고 호출자가 실패로 적게 돌려준다.
+    """
+    obs: dict = {}
+    empty: list[str] = []
+    for mi in range(len(mo.markets)):
+        for wi, W in enumerate(windows):
+            if W < min_n:
+                continue
+            for ai, (_k, ko) in enumerate(actors):
+                mo.mi, mo.wi, mo.ai, mo.detrend = mi, wi, ai, False
+                o, nul = mo.obs_neg_frac(), mo.null_neg_frac()
+                if o is None or nul is None:
+                    empty.append(f"{mo.market}/{W}/{ko}")
+                    continue
+                obs.setdefault(ko, []).append((o * 100, nul * 100, mo.market, W))
+    return obs, empty
+
+
 def layer_g(P: dict, D: dict) -> None:
     """G. **자금 원장 화면**(``sw-ledger``) — 값·그림·두 앱의 대조.
 
@@ -957,17 +1001,14 @@ def layer_g(P: dict, D: dict) -> None:
     # ``sw-flow`` 가 밟은 자리다 — "4개 구간 전부 Spearman 1.0000" 이 시장=전체
     # 에서만 잰 값이었다. 원장의 도움말·한계도 범위를 적어 두고 있으므로,
     # 그 범위를 **오늘 데이터로 다시 재서** 벗어나면 말한다.
-    obs = {}
-    for mi in range(len(mo.markets)):
-        for wi, W in enumerate(LV.WINDOWS):
-            if W < LV._MIN_CORR_N:
-                continue
-            for ai, (k, ko) in enumerate(LV.ACTORS):
-                mo.mi, mo.wi, mo.ai, mo.detrend = mi, wi, ai, False
-                o, nul = mo.obs_neg_frac(), mo.null_neg_frac()
-                obs.setdefault(ko, []).append((o * 100, nul * 100, mo.market, W))
-    three = [v for ko in ("개인", "외국인", "기관") for v, *_ in obs[ko]]
-    etc = [v for v, *_ in obs["기타법인"]]
+    obs, empty = comove_table(mo, LV.WINDOWS, LV._MIN_CORR_N, LV.ACTORS)
+    chk("G", "모든 시장·구간에서 동시성을 잴 수 있는가(빈 시장 없음)", not empty,
+        f"{len(empty)}조합 못 잼: " + " ".join(empty[:4]))
+    three = [v for ko in ("개인", "외국인", "기관") for v, *_ in obs.get(ko, [])]
+    etc = [v for v, *_ in obs.get("기타법인", [])]
+    if not three or not etc:
+        chk("G", "동시성 범위를 잴 조합이 남아 있는가", False, "전 조합이 비었다")
+        three, etc = three or [0.0], etc or [0.0]
     lo3, hi3 = min(three), max(three)
     # **그려진 글**을 본다(소스 상수가 아니라). 한계 §6·도움말 `널` 의 범위는
     # 이제 연 리포트에서 재서 끼운다(`ledger_view.comove_claims`) — 예전엔
@@ -983,7 +1024,7 @@ def layer_g(P: dict, D: dict) -> None:
         f"기타법인 {min(etc):.0f}~{max(etc):.0f}%")
     # 그리고 판정 자체("셋은 널보다 드물다")가 12조합 전부에서 유지되는가.
     bad = [f"{ko}/{m}/{W} 관측 {v:.0f}% ≥ 널 {n:.0f}%"
-           for ko in ("개인", "외국인", "기관") for v, n, m, W in obs[ko]
+           for ko in ("개인", "외국인", "기관") for v, n, m, W in obs.get(ko, [])
            if v >= n - 3]
     chk("G", "개인·외국인·기관은 어느 조합에서도 널보다 음수쌍이 드문가(β제거 끈 상태)",
         not bad,
@@ -2111,6 +2152,18 @@ def layer_h(D: dict, P: dict) -> None:
         not bad, f"{len(bad)}건  " + "; ".join(bad[:3]))
 
 
+def run_layer(layer: str, fn, *args) -> None:
+    """한 층이 터져도 나머지 층은 돈다 — 터진 것은 그 층의 **실패**로 적는다.
+
+    생 트레이스백으로 끝나면 VERIFY.txt 에 실패 목록이 안 남고, 뒤 층은 검사도 못 한다.
+    """
+    try:
+        fn(*args)
+    except Exception as e:                             # noqa: BLE001
+        traceback.print_exc(file=sys.stdout)
+        chk(layer, "검사가 끝까지 돌았는가", False, f"{type(e).__name__}: {e}")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--dir", required=True, help="리포트 폴더(numbers.html·payload.json)")
@@ -2126,15 +2179,15 @@ def main() -> int:
     print(f"검증 대상: {d}")
     print(f"  기준일 {payload['dates'][-1]} · 거래일 {len(payload['dates'])} · "
           f"섹터 {len(payload['sectors'])} · 블록 {len(D['blocks'])}")
-    layer_a(D)
-    layer_b(payload, a.db if a.db_check else None)
-    layer_c(D, html)
-    layer_d(D, payload, html)
-    layer_e(D)
-    layer_g(payload, D)
-    layer_h(D, payload)
+    run_layer("A", layer_a, D)
+    run_layer("B", layer_b, payload, a.db if a.db_check else None)
+    run_layer("C", layer_c, D, html)
+    run_layer("D", layer_d, D, payload, html)
+    run_layer("E", layer_e, D)
+    run_layer("G", layer_g, payload, D)
+    run_layer("H", layer_h, D, payload)
     if a.db_check:
-        layer_f(payload, a.db)
+        run_layer("F", layer_f, payload, a.db)
 
     print(f"\n검사 {CHECKS}건 · 실패 {len(FAILS)}건")
     if FAILS:
