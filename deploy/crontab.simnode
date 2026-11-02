@@ -9,8 +9,4 @@
 # 생성 직후 verify_report.py 가 수식·데이터·계산을 점검하고,
 # 실패하면 폴더에 VERIFY_FAILED.txt 를 남긴다.
 #
-# 앞의 [ -e ... ] 는 swing-it 에서 넘어오는 동안의 전환 가드다(2026-11-02). 두 크론 줄이 함께
-# 설치된 어느 순간에도 정확히 하나만 돈다 — swing-it 운영 체크아웃에 옛 스크립트가 있으면 그쪽이 돌고,
-# ff 로 그 스크립트가 사라지면(분리 PR 머지 뒤 첫 07:50 동기화) 이 줄이 이어받는다.
-# 전환이 끝나면 가드를 지운다.
-10 18 * * 1-5 [ -e /home/young/git/swing-it/scripts/daily_report.sh ] || /home/young/git/sector-flow/scripts/daily_report.sh >> /home/young/git/sector-flow/reports/cron.log 2>&1
+10 18 * * 1-5 /home/young/git/sector-flow/scripts/daily_report.sh >> /home/young/git/sector-flow/reports/cron.log 2>&1
