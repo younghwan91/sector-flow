@@ -34,7 +34,7 @@
     id      = "drop-accel-cell"
     why     = "가속 셀을 통째로 빼면 그 뒤 열이 한 칸씩 밀린다"
     guards  = ["tests/test_tui_flow_view.py::test_data_cells_sit_under_their_headers"]
-    file    = "src/swing_it/tui/flow_view.py"
+    file    = "src/sectorflow/tui/flow_view.py"
     find    = "pad(fmt_pct(r.get(\"accel\")), 9, True),"
     replace = ""
 
@@ -62,8 +62,8 @@ except ModuleNotFoundError:             # pragma: no cover — 인터프리터�
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent
-DEFAULT_BASE = "feat/sector-flow"
-DEFAULT_REPORT = "~/Documents/swing-it-reports/latest"
+DEFAULT_BASE = "main"
+DEFAULT_REPORT = str(REPO / "reports" / "latest")
 
 PASS, REJECT, WARN, SKIP = "PASS", "REJECT", "WARN", "SKIP"
 
@@ -172,11 +172,11 @@ def sec_worktree(wt: Path, base: str, py: str) -> tuple[Section, list[str]]:
     s.say(f"바뀐 파일 {len(set(changed))}개: " + ", ".join(sorted(set(changed))[:12]))
 
     # 임포트 출처 — 여기서 틀리면 아래 모든 초록이 거짓말이다.
-    p = run([py, "-c", "import swing_it, sys; print(swing_it.__file__)"],
+    p = run([py, "-c", "import sectorflow, sys; print(sectorflow.__file__)"],
             wt, py_env(wt), timeout=120)
     got = p.stdout.strip()
     if not got.startswith(str(wt.resolve())):
-        s.fail(f"swing_it 가 워크트리 밖에서 임포트된다: {got or p.stderr.strip()}\n"
+        s.fail(f"sectorflow 가 워크트리 밖에서 임포트된다: {got or p.stderr.strip()}\n"
                f"      (이 상태로 돌린 테스트는 워크트리가 아니라 다른 소스를 검사한다)")
     else:
         s.say(f"임포트 출처 확인: {got}")
@@ -204,13 +204,10 @@ def sec_identity(wt: Path, commits: list[str]) -> Section:
     """새 커밋의 author/committer 가 레포 설정과 같은가.
 
     공개 레포라 의도치 않은 주소가 이력에 박히면 되돌리기 어렵다.
-    ``scripts/check_guardrails.py`` 규칙 (i) 와 같은 검사지만, 여기서는 **기준
-    브랜치 이후의 새 커밋만** 본다(규칙 (i) 는 최근 30건 고정이라 새 커밋이 30건을
-    넘으면 오래된 것부터 시야에서 사라진다).
+    **기준 브랜치 이후의 새 커밋만** 본다.
 
-    ⚠️ 같은 규칙이 세 곳에 있다 — 여기, ``check_guardrails.check_commit_identity``,
-    그리고 ``.github/workflows/commit-identity.yml``. 봐주는 주소를 바꿀 때는
-    **셋을 같이** 고쳐야 한다. 한쪽만 고쳐서 PR 검사가 계속 빨갛던 적이 있다.
+    ⚠️ 같은 규칙이 ``.github/workflows/commit-identity.yml`` 에도 있다. 봐주는 주소를 바꿀 때는
+    둘을 같이 고쳐야 한다. 한쪽만 고쳐서 PR 검사가 계속 빨갛던 적이 있다.
     """
     s = Section("identity")
     want_mail = git(wt, "config", "--get", "user.email")
@@ -241,7 +238,7 @@ def sec_identity(wt: Path, commits: list[str]) -> Section:
 
 #: CI 와 **같은 범위**를 본다. `src/ tests/` 만 보고 "통과" 라고 적었다가 CI 가
 #: 빨간 채로 남은 적이 있다 — 범위가 다르면 통과 보고가 거짓말이 된다.
-RUFF_PATHS = ("src/", "tests/", "research/", "scripts/", "examples/")
+RUFF_PATHS = ("src/", "tests/", "scripts/")
 
 
 def _ruff(py: str, cwd: Path, env: dict) -> set[str]:
@@ -285,16 +282,6 @@ def sec_lint(wt: Path, py: str, base_sha: str, scratch: Path) -> Section:
                + "\n".join("      " + v for v in sorted(kept)))
     if gone:
         s.say(f"고쳐진 위반 {len(gone)}건")
-    return s
-
-
-def sec_guardrails(wt: Path, py: str) -> Section:
-    s = Section("guardrails")
-    p = run([py, "scripts/check_guardrails.py"], wt, py_env(wt), timeout=300)
-    if p.returncode != 0:
-        s.fail("check_guardrails 실패\n" + tail(p.stdout + p.stderr))
-    else:
-        s.say(p.stdout.strip().splitlines()[-1] if p.stdout.strip() else "ok")
     return s
 
 
@@ -477,8 +464,8 @@ def sec_mutations(wt: Path, py: str, base_sha: str, spec_path: Path | None) -> S
 RENDER_SMOKE = r'''
 """실데이터 렌더 스모크 — 예외·행폭·헤더정렬·숫자잘림."""
 import bisect, pathlib, sys
-from swing_it.tui.flow_app import load
-from swing_it.tui import flow_view as V
+from sectorflow.tui.flow_app import load
+from sectorflow.tui import flow_view as V
 
 report = sys.argv[1]
 d = load(report)
@@ -756,7 +743,7 @@ PTY_SMOKE = r'''
 import os, pty, subprocess, sys, threading, time
 
 report = sys.argv[1]
-LAUNCH = "from swing_it.tui.flow_app import main; main()"
+LAUNCH = "from sectorflow.tui.flow_app import main; main()"
 bad = []
 
 
@@ -860,7 +847,7 @@ def sec_pty(wt: Path, py: str, report: str, scratch: Path) -> Section:
 
 # --------------------------------------------------------------------------- 판정
 
-ALL = ("worktree", "identity", "lint", "guardrails", "tests", "mutations",
+ALL = ("worktree", "identity", "lint", "tests", "mutations",
        "render", "pty")
 
 
@@ -877,7 +864,6 @@ def verify(wt: Path, base: str, report: str, only: set[str], py: str,
         table = {
             "identity": lambda: sec_identity(wt, commits),
             "lint": lambda: sec_lint(wt, py, base_sha, scratch),
-            "guardrails": lambda: sec_guardrails(wt, py),
             "tests": lambda: sec_tests(wt, py),
             "mutations": lambda: sec_mutations(wt, py, base_sha, spec),
             "render": lambda: sec_render(wt, py, report, scratch, spec),
@@ -973,7 +959,7 @@ def self_test(py: str, report: str) -> int:
                        capture_output=True, env=env)
 
     # ① 대조군 — 손 안 댄 기준 트리는 PASS 여야 한다(늘 REJECT 도 장식이다).
-    scenario("clean", {"identity", "lint", "guardrails", "tests", "mutations"},
+    scenario("clean", {"identity", "lint", "tests", "mutations"},
              PASS, lambda wt: None)
 
     # ② 테스트 실패
@@ -995,7 +981,7 @@ def self_test(py: str, report: str) -> int:
     def blind_guard(wt: Path) -> None:
         (wt / "tests/test_zz_blind.py").write_text(
             '"""폭만 보는 검사 — 셀이 통째로 빠져도 초록이다."""\n'
-            "from swing_it.tui.flow_view import cell_width\n\n\n"
+            "from sectorflow.tui.flow_view import cell_width\n\n\n"
             "def test_blind():\n"
             "    assert cell_width('가') == 2\n", "utf-8")
         (wt / "tests/mutations.toml").write_text(
@@ -1003,7 +989,7 @@ def self_test(py: str, report: str) -> int:
             'id = "drop-accel-cell"\n'
             'why = "가속 셀을 빼면 그 뒤 열이 밀린다"\n'
             'guards = ["tests/test_zz_blind.py::test_blind"]\n'
-            'file = "src/swing_it/tui/flow_view.py"\n'
+            'file = "src/sectorflow/tui/flow_view.py"\n'
             'find = "pad(fmt_pct(r.get(\\"accel\\")), 9, True),"\n'
             'replace = ""\n', "utf-8")
         commit(wt, "blind guard")
@@ -1018,7 +1004,7 @@ def self_test(py: str, report: str) -> int:
             'why = "가속 셀을 빼면 그 뒤 열이 밀린다"\n'
             'guards = ["tests/test_tui_flow_view.py::'
             'test_data_cells_sit_under_their_headers"]\n'
-            'file = "src/swing_it/tui/flow_view.py"\n'
+            'file = "src/sectorflow/tui/flow_view.py"\n'
             'find = "pad(fmt_pct(r.get(\\"accel\\")), 9, True),"\n'
             'replace = ""\n', "utf-8")
         commit(wt, "real guard")

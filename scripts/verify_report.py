@@ -28,7 +28,7 @@ U=½kx² 를 검산하면 1e-3 오차가 나서 멀쩡한 수식이 FAIL 로 뜬
 +2.0억)에서 상대오차는 무의미하게 커진다. 허용오차는 페이로드가 반올림하는
 자릿수에서 유도한 **절대값**이다(`TOL_FLOW`·`TOL_CAP`·`TOL_RET`).
 
-Run:  python scripts/verify_report.py --dir ~/Documents/swing-it-reports/2026-08-27
+Run:  python scripts/verify_report.py --dir reports/2026-08-27
       python scripts/verify_report.py --dir <폴더> --db-check     # B·F 층까지
 """
 
@@ -370,7 +370,7 @@ def layer_b(payload: dict, db: str | None) -> None:
         print("       (--db-check 없음 — DB 대조는 건너뛴다)")
         return
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
-    from swing_it.storage import connect  # noqa: PLC0415
+    from sectorflow.storage import connect  # noqa: PLC0415
     con = connect(db)
     cur = con.cursor()
     cur.execute("SELECT max(date) FROM supply_demand")
@@ -550,7 +550,7 @@ def layer_e(D: dict) -> None:
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                     "..", "src"))
     try:
-        from swing_it.tui import flow_view as FV  # noqa: PLC0415
+        from sectorflow.tui import flow_view as FV  # noqa: PLC0415
     except ImportError as e:                      # pragma: no cover
         chk("E", "flow_view 를 읽을 수 있는가", False, str(e))
         return
@@ -726,8 +726,8 @@ def layer_g(P: dict, D: dict) -> None:
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                     "..", "src"))
     try:
-        from swing_it.tui import flow_view as FV  # noqa: PLC0415
-        from swing_it.tui import ledger_view as LV  # noqa: PLC0415
+        from sectorflow.tui import flow_view as FV  # noqa: PLC0415
+        from sectorflow.tui import ledger_view as LV  # noqa: PLC0415
     except ImportError as e:                      # pragma: no cover
         chk("G", "ledger_view 를 읽을 수 있는가", False, str(e))
         return
@@ -1094,7 +1094,7 @@ def layer_f(P: dict, db: str | None) -> None:
         return
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                     "..", "src"))
-    from swing_it.storage import connect  # noqa: PLC0415
+    from sectorflow.storage import connect  # noqa: PLC0415
     con = connect(db)
     pg = con.__class__.__module__.startswith("psycopg2")
     ph = "%s" if pg else "?"
@@ -1288,7 +1288,7 @@ def layer_f(P: dict, db: str | None) -> None:
     # 시장 '전체' 도 화면과 같은 방식(두 시장의 합)으로 만들어 대조한다.
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                     "..", "src"))
-    from swing_it.tui import ledger_view as LV  # noqa: PLC0415
+    from sectorflow.tui import ledger_view as LV  # noqa: PLC0415
     mo = LV.Model(P)
     for W in LV.WINDOWS:
         if W > n:
@@ -1545,10 +1545,10 @@ def layer_h(D: dict, P: dict) -> None:
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                     "..", "src"))
     try:
-        from swing_it.tui import flow_app as FA  # noqa: PLC0415
-        from swing_it.tui import flow_view as FV  # noqa: PLC0415
-        from swing_it.tui import ledger_app as LA  # noqa: PLC0415
-        from swing_it.tui import ledger_view as LV  # noqa: PLC0415
+        from sectorflow.tui import flow_app as FA  # noqa: PLC0415
+        from sectorflow.tui import flow_view as FV  # noqa: PLC0415
+        from sectorflow.tui import ledger_app as LA  # noqa: PLC0415
+        from sectorflow.tui import ledger_view as LV  # noqa: PLC0415
     except ImportError as e:                      # pragma: no cover
         chk("H", "TUI 모듈을 읽을 수 있는가", False, str(e))
         return

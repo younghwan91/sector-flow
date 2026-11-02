@@ -1,14 +1,14 @@
 # 종목 선정 가이드
 
 `sw-flow` 로 섹터를 훑고 종목을 고르는 순서. 화면의 각 열이 무슨 뜻인지는
-[README §3](../README.md#3-화면-읽는-법), 정확한 수식은
+[README §5](../README.md#5-화면-읽는-법), 정확한 수식은
 [kqflow-formulas.pdf](kqflow-formulas.pdf) 에 있다.
 
 > **먼저 알 것.** 이 화면의 지표는 **동시기(同時期) 측정값**이다. "지금 무슨 일이
 > 일어났나"를 재지, 그 자체로 미래를 말하지 않는다. 진입 판단은 그 위에 얹는 재량이다.
 >
 > **기각된 것은 한 가지 형태이고, "수급은 쓸모없다"가 아니다.**
-> [VERDICT](../research/logs/inst_flow_accel/VERDICT.md) 가 NO-GO 를 준 대상은
+> [VERDICT](https://github.com/younghwan91/swing-it/blob/main/research/logs/inst_flow_accel/VERDICT.md) 가 NO-GO 를 준 대상은
 > *"20일 가속도의 변화 상위 10%를 t+1 종가에 사서 21거래일 보유하는 월리밸 횡단면
 > 롱온리 포트폴리오"* 하나다. 판정문 자신이 "뷰어의 임펄스·가속도 지표는 **측정값**
 > 이므로 이 기각과 무관하게 유효하다" 고 적었고, 다음으로 넘길 셋을 남겼다 —

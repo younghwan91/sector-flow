@@ -20,9 +20,9 @@ import os
 
 import pytest
 
-from swing_it.tui import ledger_app as app
-from swing_it.tui.flow_view import cell_width
-from swing_it.tui.ledger_view import (
+from sectorflow.tui import ledger_app as app
+from sectorflow.tui.flow_view import cell_width
+from sectorflow.tui.ledger_view import (
     HEAT_RAMP, VIEWS, Model, heat_cell, screen)
 
 _COMOVE_VI = [v for v, _ in VIEWS].index("comove")
@@ -242,7 +242,7 @@ def test_dump_carries_the_key_and_column_help():
 
     주입: `render_text` 의 도움말 절을 빼면 실패한다.
     """
-    from swing_it.tui.ledger_view import render_text
+    from sectorflow.tui.ledger_view import render_text
 
     text = render_text(Model(_payload()), 100)
     assert "── 키 ──" in text and "최대일몫[%]" in text
@@ -274,7 +274,7 @@ def test_hangul_jamo_keys_do_what_their_latin_twins_do():
 
     주입: `_read_key`/`normalize_key` 경로를 걷어내고 `getch` 로 되돌리면 실패한다.
     """
-    from swing_it.tui.flow_app import JAMO_TO_ASCII
+    from sectorflow.tui.flow_app import JAMO_TO_ASCII
 
     # `v`(화면)·`d`(β제거)는 **원장에만 있는 키**다 — 공용 표에 없으므로 여기서
     # 더한다. 그 둘이 빠지면 한글 상태에서 화면조차 못 바꾼다.
@@ -360,7 +360,7 @@ def test_the_app_paints_the_sector_name_using_the_coordinates_the_view_gives(
 
     주입: `_draw` 에서 `status_title_span` 덧칠을 빼면 실패한다.
     """
-    from swing_it.tui.ledger_view import status_title_span
+    from sectorflow.tui.ledger_view import status_title_span
 
     monkeypatch.setattr(curses, "color_pair", lambda n: n * 256)
     mo = Model(_payload())

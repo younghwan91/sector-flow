@@ -32,7 +32,7 @@ import math
 import os
 import random
 
-from swing_it.tui.flow_view import (
+from sectorflow.tui.flow_view import (
     HELP_TITLE_TIERS, MARKET_ORDER, cell_len, cell_width, fit_widths, fmt_amt, help_desc,
     help_lines, hint_line, pad, tier_for)
 

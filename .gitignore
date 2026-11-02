@@ -1,0 +1,26 @@
+# 비밀키
+.env
+
+# 데이터 산출물
+data/
+*.db
+*.csv
+*.png
+!docs/images/*.png
+
+# 일일 리포트 산출물 (scripts/daily_report.sh) — 생성물이지 소스가 아니다
+/reports/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# 에이전트·앱 로컬 상태
+.claude/worktrees/
+.orca/

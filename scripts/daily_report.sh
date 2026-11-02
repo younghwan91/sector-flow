@@ -23,11 +23,14 @@ UV="/home/young/.local/bin/uv"
 UVR=("$UV" run --quiet --extra pg)
 
 cd "$REPO"
-set -a; . ./.env; set +a
+# 접속정보의 사본을 레포마다 두지 않는다 — 없으면 kr_quant 의 정본(quant-airflow/.env)을 불러 쓴다.
+ENV_FILE="$REPO/.env"
+[ -f "$ENV_FILE" ] || ENV_FILE="$REPO/../quant-airflow/.env"
+set -a; . "$ENV_FILE"; set +a
 
 ASOF="$("${UVR[@]}" python - <<'PY' 2>/dev/null
 import os
-from swing_it.storage import connect, db_default
+from sectorflow.storage import connect, db_default
 con = connect(os.environ.get("KR_QUANT_DB") or db_default())
 cur = con.cursor(); cur.execute("SELECT max(date) FROM supply_demand")
 print(cur.fetchone()[0]); con.close()

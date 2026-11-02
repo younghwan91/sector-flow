@@ -74,7 +74,7 @@ def _ledger() -> dict:
     거짓 경보를 냈다("ledger/원장 G 가 끝으로 안 간다 (row=3)"). 실제 리포트는
     27섹터라 안 드러났을 뿐이다. 섹터를 늘리면 H 층 폭 전수가 수십 배 느려진다.
     """
-    from swing_it.tui.ledger_view import ACTOR_KEYS
+    from sectorflow.tui.ledger_view import ACTOR_KEYS
 
     n = 40
     dates = [f"2026-0{1 + i // 28}-{1 + i % 28:02d}" for i in range(n)]
@@ -110,7 +110,7 @@ def test_end_key_check_accepts_the_true_last_row_of_a_short_list(n_names):
     종합이 0행인 것도 같이 태운다(10-07 의 `flow/종합 … row=0`).
     주입: 검사를 예전 `v <= 3` 판정으로 되돌리면 실패한다.
     """
-    from swing_it.tui.flow_view import State
+    from sectorflow.tui.flow_view import State
 
     st = State(_flow(n_names))
     st.allv = True
@@ -147,7 +147,7 @@ def test_end_key_check_still_bites_when_end_stops_short(monkeypatch, capsys):
     `> 3` 을 지운 대가로 검사가 이빨을 잃으면 안 된다. 짧은 목록(3행)에서
     G 가 끝-1 에 서는 결함은 예전 검사로는 **원리적으로** 못 잡던 것이다.
     """
-    from swing_it.tui import flow_app as FA
+    from sectorflow.tui import flow_app as FA
 
     real = FA.handle_key
 

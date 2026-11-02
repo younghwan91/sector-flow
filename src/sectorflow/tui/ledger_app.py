@@ -1,6 +1,6 @@
 """자금 원장 TUI — SSH 에서 바로 보는 화면.
 
-렌더 로직은 :mod:`swing_it.tui.ledger_view` 에 있고 여기는 **화면 그리기와 키 입력만**
+렌더 로직은 :mod:`sectorflow.tui.ledger_view` 에 있고 여기는 **화면 그리기와 키 입력만**
 한다. 설계 근거·한계는 ``docs/superpowers/specs/2026-08-29-money-flow-ledger.md``.
 
 ``sw-flow`` 와 나란히 산다. 다른 점은 하나다 — ``sw-flow`` 는 섹터의 **동역학**(임펄스·
@@ -26,11 +26,11 @@ import curses
 import locale
 import os
 
-from swing_it.tui.flow_app import (
+from sectorflow.tui.flow_app import (
     DEFAULT_DIR, JAMO_TO_ASCII, RICH_AMBER, RICH_BG, RICH_BODY, RICH_DIM,
     RICH_DOWN, RICH_SEL_BG, RICH_SEL_FG, RICH_UP, normalize_key)
-from swing_it.tui.flow_view import color_spans, is_section
-from swing_it.tui.ledger_view import (
+from sectorflow.tui.flow_view import color_spans, is_section
+from sectorflow.tui.ledger_view import (
     Model, help_total, load, render_text, screen, status_title_span)
 
 # 기본 리포트 경로 판정은 `flow_app` **한 곳**에 둔다 — 두 앱이 각자 저장소 루트를

@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from swing_it.storage import connect, market_cap_asof_bulk
+from sectorflow.storage import connect, market_cap_asof_bulk
 
 REPO = Path(__file__).resolve().parent.parent
 
