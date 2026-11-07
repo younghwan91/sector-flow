@@ -22,6 +22,7 @@ import json
 import locale
 import os
 import re
+import sys
 from collections import namedtuple
 from pathlib import Path
 
@@ -30,8 +31,8 @@ from sectorflow.tui.flow_view import (
     State, banner_lines, cell_len as view_cell_len, color_spans,
     detail_lines, detail_title_span, footer_line, header_lines, help_lines,
     hint_desc, hint_line,
-    is_section, missing_report_hint, name_sort_span, names_lines, report_warnings, sort_span,
-    table_lines, tier_for,
+    is_section, missing_report_hint, name_sort_span, names_lines, report_warnings,
+    scroll_mark, sort_span, staleness_warning, table_lines, tier_for,
     view_width)
 
 # `scripts/daily_report.sh` 가 `<repo>/reports/<기준일>` 에 쓰고 `latest` 를 그리로
@@ -48,7 +49,12 @@ def load(report_dir: str) -> dict:
         raise SystemExit(f"리포트를 찾을 수 없다: {path}\n"
                          f"  먼저 scripts/daily_report.sh 를 돌리거나 --dir 로 지정하라."
                          f"{missing_report_hint(report_dir)}")
-    html = open(path, encoding="utf-8").read()
+    try:
+        with open(path, encoding="utf-8") as f:
+            html = f.read()
+    except UnicodeDecodeError:
+        raise SystemExit(f"{path} 가 UTF-8 이 아니다 — 리포트가 아닌 파일이거나 깨졌다.\n"
+                         f"  리포트를 다시 생성하라 — scripts/daily_report.sh") from None
     m = re.search(r"const D = (\{.*?\});\n", html, re.S)
     if not m:
         raise SystemExit(f"{path} 에서 데이터를 못 읽었다 — 리포트 형식이 바뀌었나?")
@@ -63,7 +69,7 @@ def load(report_dir: str) -> dict:
     if missing:
         raise SystemExit(f"{path} 의 데이터에 없는 키: {', '.join(missing)} — "
                          f"리포트 형식이 바뀌었나?\n  있는 키: {sorted(d)}")
-    d["report_warnings"] = report_warnings(report_dir, d["asof"])
+    d["report_warnings"] = staleness_warning(d["asof"]) + report_warnings(report_dir, d["asof"])
     return d
 
 
@@ -343,7 +349,8 @@ def hint_text(st: State, width: int = 200) -> str:
     if st.drill:
         key = st.name_sort
         header = NAME_SORT_COL.get(key) or dict(NAME_SORTS).get(key, key)
-        arrow = "▲" if st.nrev else "▼"
+        # 종목명만 기본이 가나다 **오름차순**이다.
+        arrow = "▲" if st.nrev != (key == "name") else "▼"
     elif st.allv:
         # 전 종목은 곱 내림차순 **고정**이다 — 없는 정렬을 있는 척하지 않는다.
         return tier_for(HINT_ALL_TIERS, width)
@@ -357,6 +364,8 @@ def hint_text(st: State, width: int = 200) -> str:
         arrow = "▲" if st.rev else "▼"
     desc = _help_desc(header) or "? 로 설명"
     order = "오름차순" if arrow == "▲" else "내림차순"
+    if st.drill and st.name_sort == "flow":
+        order = "가장 많이 판 순" if st.nrev else "절댓값 큰 순"
     # 좁은 화면에서는 방향 풀이를 접는다 — 잘려나갈 자리는 열 설명에 준다.
     tag = f"({order}, r 로 뒤집기)" if width >= 90 else ""
     # 자르기는 `flow_view.hint_line` 하나가 한다 — 원장 힌트바도 같은 함수다.
@@ -403,6 +412,7 @@ def _draw(scr, st: State) -> None:
         first = max(0, min(st.arow - rows_avail // 2, len(body) - rows_avail))
         first = max(first, 0)
         view = lines[:nhead] + body[first:first + rows_avail]
+        mark = scroll_mark(first, min(rows_avail, max(len(body) - first, 0)), len(body))
         for i, line in enumerate(view):
             if top + i >= (hint_y if hint_y >= 0 else foot_y):
                 break
@@ -412,7 +422,7 @@ def _draw(scr, st: State) -> None:
                 _put(scr, top + i, line, base, False)
             else:
                 _put(scr, top + i, line, _row_attr(col, sel), col, sel)
-        _draw_hint_and_footer(scr, st, w, hint_y, foot_y, col)
+        _draw_hint_and_footer(scr, st, w, hint_y, foot_y, col, mark)
         # 다른 세 갈래는 전부 여기서 refresh 한다. 이 갈래만 빠져 있었다 —
         # `get_wch` 가 암묵적으로 refresh 해 줘서 **우연히** 보였을 뿐이다.
         scr.refresh()
@@ -437,7 +447,14 @@ def _draw(scr, st: State) -> None:
             _put(scr, top + i, line, base, col and i > 1, sel)
             if i == 1:
                 _hl_sort(scr, top + i, nspan, col)
-        _draw_hint_and_footer(scr, st, w, hint_y, foot_y, col)
+        shown = min(rows_avail, max(len(body) - first, 0))
+        # 종목 패널 — `layout` 이 자리를 잡아 두고 `_stock_detail_lines` 가 내용을 내는데, 이 갈래가
+        # 안 그려서 빈 줄만 남았다. 그 종목의 돈이 **언제** 들어왔나는 여기밖에 없다.
+        if dh:
+            limit = hint_y if hint_y >= 0 else foot_y
+            _draw_detail(scr, st, w, min(top + nhead + shown + gap, limit - dh), dh, col)
+        _draw_hint_and_footer(scr, st, w, hint_y, foot_y, col,
+                              scroll_mark(first, shown, len(body)))
         scr.refresh()
         return
 
@@ -467,18 +484,22 @@ def _draw(scr, st: State) -> None:
     # 붙이되 **한 줄은 띄운다**(`gap`) — 붙여 놓으니 패널 첫 줄이 표의 다음 행처럼
     # 읽혔다. 그 한 줄은 자리가 모자라면 `layout` 이 가장 먼저 도로 가져간다.
     if dh:
-        dtop = min(top + 1 + shown + gap, (hint_y if hint_y >= 0 else foot_y) - dh)
-        for i, line in enumerate(detail_lines(st, w)[:dh]):
-            base = curses.color_pair(C_BODY) if col else curses.A_NORMAL
-            _put(scr, dtop + i, line, base, col and i > 0)
-        # 첫 줄에서 **섹터 이름만** 앰버로 세운다 — 그 줄에서 "지금 무엇을 보고
-        # 있는가" 를 말하는 건 이름 하나뿐인데 부속 정보에 묻혀 있었다. 좌표는
-        # 뷰가 낸다(`detail_title_span`) — 앱이 문구를 다시 뜯으면 어긋난다.
-        # 무색 터미널에서는 굵게만 — 글자는 안 바꾸므로 정보가 사라지지 않는다.
-        _hl_span(scr, dtop, detail_title_span(st, w),
-                 (curses.color_pair(C_AMBER) if col else 0) | curses.A_BOLD)
-    _draw_hint_and_footer(scr, st, w, hint_y, foot_y, col)
+        _draw_detail(scr, st, w,
+                     min(top + 1 + shown + gap, (hint_y if hint_y >= 0 else foot_y) - dh), dh, col)
+    _draw_hint_and_footer(scr, st, w, hint_y, foot_y, col, scroll_mark(first, shown, total))
     scr.refresh()
+
+
+def _draw_detail(scr, st: State, w: int, dtop: int, dh: int, col: bool) -> None:
+    for i, line in enumerate(detail_lines(st, w)[:dh]):
+        base = curses.color_pair(C_BODY) if col else curses.A_NORMAL
+        _put(scr, dtop + i, line, base, col and i > 0)
+    # 첫 줄에서 **이름만** 앰버로 세운다 — 그 줄에서 "지금 무엇을 보고
+    # 있는가" 를 말하는 건 이름 하나뿐인데 부속 정보에 묻혀 있었다. 좌표는
+    # 뷰가 낸다(`detail_title_span`) — 앱이 문구를 다시 뜯으면 어긋난다.
+    # 무색 터미널에서는 굵게만 — 글자는 안 바꾸므로 정보가 사라지지 않는다.
+    _hl_span(scr, dtop, detail_title_span(st, w),
+             (curses.color_pair(C_AMBER) if col else 0) | curses.A_BOLD)
 
 
 def help_foot(hrow: int, shown: int, total: int, width: int) -> str:
@@ -499,14 +520,17 @@ def help_foot(hrow: int, shown: int, total: int, width: int) -> str:
 
 
 def _draw_hint_and_footer(scr, st: State, w: int, hint_y: int, foot_y: int,
-                          col: bool) -> None:
+                          col: bool, mark: str = "") -> None:
     if hint_y >= 0:
         _put(scr, hint_y, pad_footer(hint_text(st, w), w),
              curses.color_pair(C_AMBER) if col else curses.A_DIM, False)
     # 어느 화면이 어느 푸터를 쓰는지의 판정은 **뷰 한 곳**이다(`footer_tiers`).
     # 여기서 `if` 로 고르던 시절, 화면이 하나 늘었는데 그 `if` 를 안 늘려서
     # 전 종목 화면이 섹터 표의 푸터를 그렸다 — 안 듣는 키를 광고하면서.
-    _put(scr, foot_y, pad_footer(footer_line(w, st.drill, st.allv), w),
+    # 위치 표시가 먼저 자리를 잡는다(`help_foot` 와 같은 규칙 — 잘린 숫자는 다른 숫자다).
+    room = max(w - view_cell_len(mark), 0)
+    line = pad_footer(footer_line(room, st.drill, st.allv, not st.sortable), room) + mark
+    _put(scr, foot_y, pad_footer(line, w),
          curses.color_pair(C_HEAD) if col else curses.A_REVERSE, False)
 
 
@@ -767,12 +791,14 @@ def handle_key(st: State, k: int, page: int = 10, help_page: int = 10) -> bool:
     elif k == ord("r") and st.sortable:
         # 역순이 없어서 "누가 털렸나"(순매도 상위)로 가는 유일한 길이 G 였다.
         _keep_selection(st, lambda: _toggle_rev(st))
+    # 구간·시장·주체를 바꿔도 **보던 섹터에 머문다** — "이 섹터를 5일로도 볼까" 인데 커서가 맨
+    # 위로 가면 다른 섹터의 값을 보게 된다. 정렬(`s`)만 맨 위로 간다: 새 순서의 1등을 보려는 키다.
     elif k in (ord("w"), ord("W")):
-        st.cycle("w", 1 if k == ord("w") else -1)
+        _keep_selection(st, lambda: st.cycle("w", 1 if k == ord("w") else -1))
     elif k in (ord("m"), ord("M")):
-        st.cycle("m", 1 if k == ord("m") else -1)
+        _keep_selection(st, lambda: st.cycle("m", 1 if k == ord("m") else -1))
     elif k in (ord("a"), ord("A")):
-        st.cycle("a", 1 if k == ord("a") else -1)
+        _keep_selection(st, lambda: st.cycle("a", 1 if k == ord("a") else -1))
     elif k in (ord("s"), ord("S")) and st.sortable:
         # 종합에서는 **아무 일도 안 한다.** 예전엔 `si` 를 돌려서 헤더 라벨과
         # 힌트바가 따라 움직였는데 표는 그대로였다 — 라벨이 바뀌는 것을 보고
@@ -800,6 +826,19 @@ def _draw_banner(scr, st: State) -> None:
     scr.refresh()
 
 
+def leave_banner(st: State, k: int) -> bool:
+    """배너를 닫는 키 처리 — 계속 돌면 True. 터미널이 사라졌거나(-1) `q` 면 False.
+
+    "아무 키" 라도 `q` 와 `?` 는 제 일을 한다. 닫기만 하면 `q` 를 두 번 눌러야 끝나고,
+    `?` 를 누른 사람은 도움말 대신 표를 본다.
+    """
+    if k in (-1, ord("q")):
+        return False
+    if k in (ord("?"), curses.KEY_F1):
+        handle_key(st, k)
+    return True
+
+
 def _loop(scr, data: dict) -> None:
     try:
         curses.curs_set(0)
@@ -807,12 +846,16 @@ def _loop(scr, data: dict) -> None:
         pass
     _init_colors(scr)
     st = State(data)
-    _draw_banner(scr, st)
-    try:
-        k = _read_key(scr)
-    except KeyboardInterrupt:
-        return
-    if k == -1:      # 터미널이 이미 사라졌다(SSH 끊김) — 본 루프와 같은 판정
+    while True:
+        _draw_banner(scr, st)
+        try:
+            k = _read_key(scr)
+        except KeyboardInterrupt:
+            return
+        # 리사이즈는 "아무 키" 가 아니다 — 다시 그리고 기다린다.
+        if k != curses.KEY_RESIZE:
+            break
+    if not leave_banner(st, k):
         return
     while True:
         _draw(scr, st)
@@ -826,6 +869,45 @@ def _loop(scr, data: dict) -> None:
             return
 
 
+def terminal_problem(term: str, stdin_tty: bool, stdout_tty: bool, encoding: str) -> str | None:
+    """이 환경에서 화면을 못 그리는 이유. 그릴 수 있으면 None. 두 앱이 같은 판정을 쓴다."""
+    if term in ("", "dumb"):
+        # dumb 터미널에서는 curses 가 커서를 못 옮긴다. 예전 동작은 실측하면
+        # 이랬다 — TERM 미설정은 생 트레이스백으로 죽었고, TERM=dumb 은 헤더와
+        # 푸터 두 줄만 나오고 **표가 안 그려졌다**. 표가 전부인 앱이 표를 못
+        # 그리면 그렇다고 말하는 편이 낫다.
+        return (f"TERM={term or '(비어 있음)'} — 이 터미널은 화면 제어(커서 이동·지우기)를"
+                f" 못 해 TUI 를 그릴 수 없다.\n"
+                f"  TERM=xterm-256color 로 설정하고 다시 실행하라"
+                f" (숫자만 필요하면 리포트의 numbers.html 이나 sw-ledger --dump 를 보라).")
+    if not (stdin_tty and stdout_tty):
+        # 파이프로 흘리면 이스케이프를 쏟은 뒤 입력을 기다리며 멈춘다.
+        return ("입출력이 터미널이 아니다(파이프·리다이렉트) — TUI 를 그릴 수 없다.\n"
+                "  터미널에서 직접 실행하라 (평문이 필요하면 sw-ledger --dump 를 보라).")
+    if "UTF" not in encoding.upper().replace("-", ""):
+        # 비 UTF-8 로케일에서 curses 는 한글을 전부 빈칸으로 그린다. 이름 없는 표는 오독을 낳는다.
+        return (f"로케일 인코딩이 {encoding or '(알 수 없음)'} 이라 한글이 빈칸으로 나온다.\n"
+                f"  UTF-8 로케일로 실행하라 — 예: LC_ALL=C.UTF-8 sw-flow")
+    return None
+
+
+def run_curses(fn, *args) -> None:
+    """환경을 먼저 보고 curses 를 띄운다 — 못 그리면 트레이스백 대신 할 일을 말한다."""
+    term = os.environ.get("TERM", "")
+    problem = terminal_problem(term, sys.stdin.isatty(), sys.stdout.isatty(),
+                               locale.nl_langinfo(locale.CODESET))
+    if problem:
+        raise SystemExit(problem)
+    # 기본 1초면 Esc 로 나가는 데 1초가 걸린다. 너무 줄이면 느린 SSH 에서 방향키가 쪼개져
+    # 드릴다운이 닫힌다. 사용자가 ESCDELAY 를 정했으면 그 값을 따른다.
+    os.environ.setdefault("ESCDELAY", "200")
+    try:
+        curses.wrapper(fn, *args)
+    except curses.error as e:
+        raise SystemExit(f"터미널 화면을 다루지 못했다(TERM={term}): {e}\n"
+                         f"  TERM=xterm-256color 로 설정하고 다시 실행하라.") from None
+
+
 def main() -> None:
     # `get_wch` 가 한글을 한 글자로 주려면 로케일이 **와이드 문자를 아는** 상태여야
     # 한다. 파이썬은 C 로케일로 시작하므로 여기서 사용자 환경을 따라간다 —
@@ -835,21 +917,11 @@ def main() -> None:
     except locale.Error:
         pass
     ap = argparse.ArgumentParser(description="섹터 자금흐름 TUI")
-    ap.add_argument("--dir", default=DEFAULT_DIR, help="리포트 폴더")
+    ap.add_argument("--dir", default=DEFAULT_DIR,
+                    help="리포트 폴더 (기본: %(default)s)")
     a = ap.parse_args()
     data = load(a.dir)
-    term = os.environ.get("TERM", "")
-    if term in ("", "dumb"):
-        # dumb 터미널에서는 curses 가 커서를 못 옮긴다. 예전 동작은 실측하면
-        # 이랬다 — TERM 미설정은 생 트레이스백으로 죽었고, TERM=dumb 은 헤더와
-        # 푸터 두 줄만 나오고 **표가 안 그려졌다**. 표가 전부인 앱이 표를 못
-        # 그리면 그렇다고 말하는 편이 낫다.
-        raise SystemExit(
-            f"TERM={term or '(비어 있음)'} — 이 터미널은 화면 제어(커서 이동·지우기)를"
-            f" 못 해 TUI 를 그릴 수 없다.\n"
-            f"  TERM=xterm-256color 로 설정하고 다시 실행하라"
-            f" (숫자만 필요하면 리포트의 numbers.html 을 보라).")
-    curses.wrapper(_loop, data)
+    run_curses(_loop, data)
 
 
 if __name__ == "__main__":

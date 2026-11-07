@@ -2722,7 +2722,7 @@ def test_sector_table_shows_recent_trusted_flow(data):
     st = State(data)
     st.wi = WINDOWS.index("20")
     lines, _thin, _nh = table_lines(st, 200, 20)
-    assert "투신+연금[억]" in lines[0], lines[0]
+    assert "투신+연금5일[억]" in lines[0], lines[0]
 
 
 def test_sector_trusted_flow_is_summed_from_names_not_invented(data):

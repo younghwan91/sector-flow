@@ -34,7 +34,8 @@ import random
 
 from sectorflow.tui.flow_view import (
     HELP_TITLE_TIERS, MARKET_ORDER, cell_len, cell_width, fit_widths, fmt_amt, help_desc,
-    help_lines, hint_line, missing_report_hint, pad, report_warnings, status_chip, tier_for)
+    help_lines, hint_line, missing_report_hint, pad, report_warnings, staleness_warning,
+    status_chip, tier_for)
 
 ACTORS = (("indiv", "개인"), ("forgn", "외국인"), ("inst", "기관"), ("etc", "기타법인"))
 ACTOR_KEYS = tuple(k for k, _ in ACTORS)
@@ -132,6 +133,12 @@ def load(report_dir: str) -> dict:
         raise SystemExit(
             f"{path} 의 JSON 이 깨졌다 ({e.lineno}행 {e.colno}칸): {e.msg}\n"
             f"  리포트를 다시 생성하라 — scripts/daily_report.sh") from None
+    except UnicodeDecodeError:
+        raise SystemExit(f"{path} 가 UTF-8 이 아니다 — 리포트가 아닌 파일이거나 깨졌다.\n"
+                         f"  리포트를 다시 생성하라 — scripts/daily_report.sh") from None
+    if not isinstance(d, dict):
+        raise SystemExit(f"{path} 가 리포트 형식이 아니다(최상위가 {type(d).__name__}).\n"
+                         f"  리포트를 다시 생성하라 — scripts/daily_report.sh")
     # 방어가 행 수준(.get)에만 있으면 문서가 통째로 다른 형식일 때 curses 안에서
     # 생 트레이스백으로 터진다. 문 앞에서 잡는다.
     # ⚠️ 여기서 안 보는 키는 나중에 **대괄호로** 집힌다 — `cap`·`n_by_sector` 가
@@ -146,7 +153,8 @@ def load(report_dir: str) -> dict:
     if no_flow:
         raise SystemExit(f"{path}: 시장 {', '.join(no_flow)} 의 흐름이 없다 — "
                          f"markets 와 flows 가 어긋난다.")
-    d["report_warnings"] = report_warnings(report_dir, d["dates"][-1])
+    d["report_warnings"] = (staleness_warning(d["dates"][-1])
+                            + report_warnings(report_dir, d["dates"][-1]))
     return d
 
 
@@ -704,6 +712,9 @@ def header_lines(mo: Model, width: int) -> list[str]:
     order = (f"정렬[{SORTS[mo.si][1]}]" if mo.sortable else "순서[평균상관]")
     l2 = (f" 화면[{VIEWS[mo.vi][1]}] 구간[{mo.window}일] 시장[{mo.market}]"
           f" 주체[{mo.actor_ko}] {order}")
+    # d 는 숫자를 통째로 바꾸는데 켜졌는지가 안 보이면 다른 해석을 읽는다.
+    if VIEWS[mo.vi][0] == "comove":
+        l2 += f" β제거[{'켬' if mo.detrend else '끔'}]"
     return [pad(l1, width), pad(l2, width)]
 
 

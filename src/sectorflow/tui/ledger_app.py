@@ -25,10 +25,11 @@ import argparse
 import curses
 import locale
 import os
+import sys
 
 from sectorflow.tui.flow_app import (
     DEFAULT_DIR, JAMO_TO_ASCII, RICH_AMBER, RICH_BG, RICH_BODY, RICH_DIM,
-    RICH_DOWN, RICH_SEL_BG, RICH_SEL_FG, RICH_UP, normalize_key)
+    RICH_DOWN, RICH_SEL_BG, RICH_SEL_FG, RICH_UP, normalize_key, run_curses)
 from sectorflow.tui.flow_view import color_spans, is_section
 from sectorflow.tui.ledger_view import (
     Model, help_total, load, render_text, screen, status_title_span)
@@ -261,6 +262,16 @@ def _draw(scr, mo: Model) -> None:
     scr.refresh()
 
 
+def _keep_row(mo: Model, change) -> None:
+    """구간·시장·주체를 바꿔도 보던 섹터에 머문다(``flow_app._keep_selection`` 과 같은 규칙)."""
+    sec = (mo.selected() or {}).get("sector")
+    change()
+    for i, r in enumerate(mo.rows()):
+        if r["sector"] == sec:
+            mo.row = i
+            return
+
+
 def _key(mo: Model, ch: int, page: int) -> bool:
     """키 하나 처리. False 를 돌려주면 종료.
 
@@ -317,11 +328,11 @@ def _key(mo: Model, ch: int, page: int) -> bool:
     elif ch == ord("V"):
         mo.cycle("v", -1)
     elif ch in (ord("w"), ord("W")):
-        mo.cycle("w", 1 if ch == ord("w") else -1)
+        _keep_row(mo, lambda: mo.cycle("w", 1 if ch == ord("w") else -1))
     elif ch in (ord("m"), ord("M")):
-        mo.cycle("m", 1 if ch == ord("m") else -1)
+        _keep_row(mo, lambda: mo.cycle("m", 1 if ch == ord("m") else -1))
     elif ch in (ord("a"), ord("A")):
-        mo.cycle("a", 1 if ch == ord("a") else -1)
+        _keep_row(mo, lambda: mo.cycle("a", 1 if ch == ord("a") else -1))
     elif ch in (ord("s"), ord("S")) and mo.sortable:
         # 동시성·한계에서는 **아무 일도 안 한다.** 예전엔 `si` 가 돌아서, 그
         # 화면에서는 아무 것도 안 바뀌는데 돌아오면 정렬이 바뀌어 있었다.
@@ -383,7 +394,11 @@ def _read_key(scr) -> int:
 
 
 def _loop(scr, mo: Model) -> None:
-    curses.curs_set(0)
+    # vt100 등은 커서 숨기기를 모른다. 안 숨겨도 화면은 그려진다.
+    try:
+        curses.curs_set(0)
+    except curses.error:
+        pass
     _init_colors(scr)
     scr.keypad(True)
     while True:
@@ -413,15 +428,22 @@ def main() -> None:
     except locale.Error:
         pass
     ap = argparse.ArgumentParser(description="자금 원장 — 주체×섹터 순매수")
-    ap.add_argument("--dir", default=DEFAULT_DIR)
+    ap.add_argument("--dir", default=DEFAULT_DIR, help="리포트 폴더 (기본: %(default)s)")
     ap.add_argument("--dump", action="store_true", help="색 없는 평문으로 찍고 끝낸다")
     ap.add_argument("--width", type=int, default=100, help="--dump 의 폭")
     a = ap.parse_args()
+    if a.width < 1:
+        ap.error("--width 는 1 이상이어야 한다")
     mo = Model(load(a.dir))
     if a.dump:
-        print(render_text(mo, a.width))
+        try:
+            print(render_text(mo, a.width))
+            sys.stdout.flush()
+        except BrokenPipeError:
+            # `| head` 가 먼저 닫은 것은 오류가 아니다. 종료 시 플러시가 또 터지지 않게 돌려 둔다.
+            os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
         return
-    curses.wrapper(_loop, mo)
+    run_curses(_loop, mo)
 
 
 if __name__ == "__main__":
