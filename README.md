@@ -10,10 +10,15 @@
 ## Quick start
 
 ```bash
-uv venv && uv pip install -e ".[pg,dev]"
-sw-flow   --dir <리포트 폴더>                 # 섹터 자금 흐름 — DB 없이 리포트 폴더만 있으면 뜬다 (§4.3)
-sw-ledger --dir <리포트 폴더>                 # 자금 원장
+uv sync
+uv run sw-flow   --dir <리포트 폴더>          # 섹터 자금 흐름
+uv run sw-ledger --dir <리포트 폴더>          # 자금 원장
 ```
+
+**리포트 폴더가 있어야 뜬다.** 둘 중 하나로 구한다.
+
+- 만들어 둔 폴더를 받는다. DB 가 필요 없다([§4.3](#43-리포트-폴더를-그대로-주고받는다)).
+- 수급 DB 에 접속할 수 있으면 직접 만든다([§4.1](#41-리포트-만들기-db-필요)). 이 저장소에 샘플 데이터는 없다.
 
 > **데이터 수집은 이 저장소에 없다.** 수급·시세 적재는
 > [quant-airflow](https://github.com/younghwan91/quant-airflow) 의 몫이고, 여기서는 그 DB 를 읽기만 한다.
@@ -49,7 +54,7 @@ sw-ledger --dir <리포트 폴더>                 # 자금 원장
 순매수와 순매수·순매도 상위 3개, 그 아래 정렬 열 한 줄 설명과 키 푸터가 있다.](docs/images/kqflow-table.png)
 
 *`sw-flow` 기본 화면(20거래일·전체 시장·기관, 120×30). 한 행이 한 섹터이고 가속 내림차순이다.
-순매수·순매도 상위 열은 125칸부터 나온다(§5.2).*
+순매수 상위 열은 124칸, 순매도 상위 열은 148칸부터 나온다(§5.2).*
 
 <!-- SCREENSHOT: Enter 드릴다운 종목 목록 (120×30) -->
 ![드릴다운 종목 목록. 종목명·코드·순매수·누적 기여율·투신·연기금·상대수익·최근집중·
@@ -117,7 +122,7 @@ docs/                    # kqflow-formulas.pdf · trading-guide.md
 | 폴더에 있는 것 | 뜻 | 화면 |
 |---|---|---|
 | `INCOMPLETE.txt` 만 | 수집 미완이라 안 만들었다. `latest` 는 전날에 머물고, 다음 크론이 성공하면 폴더가 바뀐다 | 전날 리포트 제목에 `⚠ MM-DD 수집 미완` |
-| `VERIFY_FAILED.txt` | 만들었지만 검사에 걸렸다(§9). 다음 시도가 다시 만들어 본다 | 제목에 `⚠ 검증 실패` |
+| `VERIFY_FAILED.txt` | 만들었지만 검사에 걸렸다(§9). 다음 시도가 다시 만들어 본다 | 화면 제목에 `⚠ 검증 실패`, HTML 맨 위에 경고 |
 
 종료코드가 75(오늘 기준일 수집 미완, 다음 크론이 재시도)면 경고, 그 밖 비정상이면 오류로 [`scripts/cron_run.sh`](scripts/cron_run.sh) 가 알림을 보낸다. 기준일이 오늘이 아닌데 아직 미완이면 75 가 아니라 1 로 끝난다.
 
@@ -125,9 +130,10 @@ docs/                    # kqflow-formulas.pdf · trading-guide.md
 
 ## 4. 설치와 실행
 
-**요구사항:** Python 3.11 이상, [uv](https://docs.astral.sh/uv/). 설치는 Quick start 의 두 줄이다.
-DB 없이 화면만 보려면(§4.3) 그걸로 끝이고, 리포트를 직접 만들려면(§4.1) PostgreSQL/TimescaleDB
-접속정보가 `.env` 의 `KR_QUANT_DB` 에 있어야 한다.
+**요구사항:** Python 3.11 이상, [uv](https://docs.astral.sh/uv/), 리눅스·macOS 터미널(`curses` 를 쓴다).
+설치는 `uv sync` 한 줄이다. DB 없이 화면만 보려면(§4.3) 그걸로 끝이다. 리포트를 직접 만들려면(§4.1)
+PostgreSQL/TimescaleDB 접속정보가 필요하다. `cp .env.example .env` 뒤 `KR_QUANT_DB` 를 채운다.
+옆자리에 quant-airflow 체크아웃이 있으면 그 `.env` 를 불러 쓰므로 이 단계가 필요 없다.
 
 ### 4.1 리포트 만들기 (DB 필요)
 
@@ -146,19 +152,20 @@ KR_QUANT_FORCE=1 scripts/daily_report.sh     # 같은 기준일이어도 다시 
 배치가 하는 일을 손으로 풀면 이렇다. 페이로드는 한 번만 만들고 수치표·뷰어가 공유한다.
 
 ```bash
-uv run python scripts/sector_flow.py    --days 260 --json payload.json
+set -a; . ./.env; set +a      # 손으로 돌릴 때는 접속정보를 직접 불러온다
+uv run --extra pg python scripts/sector_flow.py --days 260 --json payload.json
 uv run python scripts/sector_flow.py    --from-json payload.json --html viewer.html
 uv run python scripts/sector_numbers.py --payload payload.json --html numbers.html
-uv run python scripts/verify_report.py  --dir <리포트폴더> --db-check
+uv run --extra pg python scripts/verify_report.py --dir <리포트폴더> --db-check
 ```
 
 ### 4.2 화면 띄우기 (DB 불요)
 
 ```bash
-sw-flow                          # <저장소>/reports/latest 를 연다
-sw-flow --dir <리포트 폴더>       # 특정 날짜의 리포트
-sw-ledger                        # 자금 원장 (§6)
-sw-ledger --dump --width 100     # 색 없는 평문 — 파이프·리다이렉트용
+uv run sw-flow                          # <저장소>/reports/latest 를 연다
+uv run sw-flow --dir <리포트 폴더>       # 특정 날짜의 리포트
+uv run sw-ledger                        # 자금 원장 (§6)
+uv run sw-ledger --dump --width 100     # 색 없는 평문 — 파이프·리다이렉트용
 ```
 
 새 의존성이 없고 40×10 짜리 창에서도 산다. 폭이 모자라면 열이 경계에서 통째로 빠진다(숫자가
@@ -175,11 +182,11 @@ sw-ledger --dump --width 100     # 색 없는 평문 — 파이프·리다이렉
 # 보내는 쪽 — 폴더째 압축 (2026-09-01 기준 약 1.9 MB)
 tar czf sector-flow-2026-09-01.tar.gz -C <저장소>/reports 2026-09-01
 
-# 받는 쪽 — 풀고 --dir 로 연다. 설치는 clone + uv pip install -e . 까지만 하면 된다
-tar xzf sector-flow-2026-09-01.tar.gz -C ~/reports
-sw-flow   --dir ~/reports/2026-09-01
-sw-ledger --dir ~/reports/2026-09-01
-ln -sfn ~/reports/2026-09-01 <저장소>/reports/latest    # 이제 sw-flow 만 쳐도 된다
+# 받는 쪽 — 풀고 --dir 로 연다. 설치는 clone + uv sync 까지만 하면 된다
+mkdir -p ~/reports && tar xzf sector-flow-2026-09-01.tar.gz -C ~/reports
+uv run sw-flow   --dir ~/reports/2026-09-01
+uv run sw-ledger --dir ~/reports/2026-09-01
+mkdir -p <저장소>/reports && ln -sfn ~/reports/2026-09-01 <저장소>/reports/latest    # 이제 --dir 없이 뜬다
 ```
 
 어떤 화면이 어떤 파일을 읽는지는 다르다. 하나만 보내면 다른 하나가 안 뜬다.
@@ -194,7 +201,8 @@ ln -sfn ~/reports/2026-09-01 <저장소>/reports/latest    # 이제 sw-flow 만 
 ⚠️ `VERIFY_FAILED.txt` 가 같이 들어 있으면 **그 리포트는 검사에 걸린 것이다.** 파일을 지우고
 보내지 마라. 받는 쪽이 알아야 할 사실이다.
 
-**받은 폴더는 그날의 사진이다.** 화면 제목의 날짜(`2026-09-01 마감·잠정`)가 그 사실을 늘 적는다.
+**받은 폴더는 그날의 사진이다.** 화면 제목의 날짜(`2026-09-01 마감·잠정`)가 그 사실을 늘 적고,
+기준일이 4일 넘게 지나면 화면과 HTML 이 `⚠ N일 지난 리포트` 로 말한다.
 매일 보려면 매일 받거나, 만드는 쪽 서버에 SSH 로 들어가 거기서 `sw-flow` 를 띄우는 편이 낫다.
 두 화면이 `curses` 만 쓰는 이유가 그것이다.
 
@@ -215,8 +223,12 @@ ln -sfn ~/reports/2026-09-01 <저장소>/reports/latest    # 이제 sw-flow 만 
 | `a` `A` | 주체 기관 · 외국인 · 개인 · 기타법인 |
 | `s` `S` | 정렬 열 바꾸기. 드릴다운에서는 종목 정렬 |
 | `r` | 정렬 역순. 순매도 상위(가장 많이 판 쪽)를 보려면 이걸 켠다 |
+| `t` | 전 종목 화면 — 전 섹터의 종목을 곱(섹터선정×종목선정) 순으로. `t`·`h`·`←`·`Esc` 로 돌아온다 |
 | `?` `F1` | 도움말 — 모든 열의 뜻과 계산식이 여기 있다 |
 | `q` | 종료. 도움말 안에서는 닫기만 한다 |
+
+`sw-flow` 를 띄우면 먼저 오늘의 요약이 뜬다. 아무 키나 누르면 표로 넘어가고, `q` 는 바로 끝내며 `?` 는 도움말을 연다.
+구간·시장·주체를 바꿔도 커서는 보던 섹터에 머문다. 정렬(`s`)만 맨 위로 간다.
 
 한영 상태에서도 위 키가 그대로 듣는다(두벌식 자리를 그대로 대응시킨다: `ㅈ`→`w`,
 `ㅡ`→`m`, `ㅁ`→`a`, `ㄴ`→`s`, `ㄱ`→`r`). 다만 두벌식은 이 자리들에서 Shift 를 구분하지
