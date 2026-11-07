@@ -273,3 +273,96 @@ def test_cron_retries_after_the_longest_seen_collection_and_before_next_day():
     sched = [tuple(ln.split()[:5]) for ln in _cron_lines()]
     assert ("10", "18,19", "*", "*", "1-5") in sched
     assert ("30", "7", "*", "*", "2-6") in sched
+
+
+def test_past_day_incomplete_note_tells_what_to_do_next(repo):
+    """포기한 뒤에도 '다음 크론이 다시 시도' 라고 적으면 아무도 안 움직인다."""
+    _seed(repo.parent / "db.sqlite", today_kosdaq=1)
+    _publish_previous(repo)
+    _run(repo, today="2026-11-03")
+    note = (repo / "reports" / TODAY / "INCOMPLETE.txt").read_text()
+    assert "다음 크론이 다시" not in note
+    assert "손으로 돌려라" in note
+
+
+def test_todays_incomplete_note_still_promises_the_retry(repo):
+    _seed(repo.parent / "db.sqlite", today_kosdaq=1)
+    _publish_previous(repo)
+    _run(repo)
+    assert "다음 크론이 다시" in (repo / "reports" / TODAY / "INCOMPLETE.txt").read_text()
+
+
+def test_crash_after_numbers_html_does_not_block_the_retry(repo):
+    """처음 만드는 날 도중에 죽으면 numbers.html 만 남아 다음 재시도가 '이미 있다' 로 건너뛰었다."""
+    _seed(repo.parent / "db.sqlite", today_kosdaq=50)
+    prev = _publish_previous(repo)
+    good = (repo / "scripts" / "sector_numbers.py").read_text()
+    (repo / "scripts" / "sector_numbers.py").write_text(good + "\nsys.exit(3)\n")
+    p = _run(repo)
+    assert p.returncode == 3, p.stdout + p.stderr
+    assert not (repo / "reports" / TODAY).exists()
+    assert not list((repo / "reports").glob("*.building.*")), "짓다 만 폴더가 남았다"
+    assert (repo / "reports" / "latest").resolve() == prev.resolve()
+
+    (repo / "scripts" / "sector_numbers.py").write_text(good)
+    p = _run(repo)
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert (repo / "reports" / "latest").resolve() == (repo / "reports" / TODAY).resolve()
+
+
+def test_verify_failure_is_visible_in_the_html_and_the_log(repo):
+    """브라우저로만 보는 사람은 화면 제목의 ⚠ 를 못 본다."""
+    _seed(repo.parent / "db.sqlite", today_kosdaq=50)
+    (repo / "scripts" / "sector_numbers.py").write_text(
+        FAKE_NUMBERS.replace('"<html>"', '"<header>"'))
+    p = _run(repo, FAKE_VERIFY_RC="1")
+    assert p.returncode == 1
+    html = (repo / "reports" / TODAY / "numbers.html").read_text()
+    assert "VERIFY_FAILED.txt" in html and html.endswith("<header>")
+    assert "게시했지만 검증에 걸렸다" in p.stdout
+    assert "완료" not in p.stdout
+
+
+def test_db_failure_explains_itself_and_hides_the_password(repo):
+    """stderr 를 버려 `set -e` 로 죽으면 제목만 있고 본문이 빈 알림이 간다."""
+    (repo / ".env").write_text("KR_QUANT_DB=postgresql://u:s3cret@127.0.0.1:1/x\n")
+    p = _run(repo)
+    assert p.returncode == 1
+    assert "DB 에서 기준일을 못 읽었다" in p.stderr
+    assert "s3cret" not in p.stderr + p.stdout
+
+
+def test_empty_database_is_not_called_a_connection_failure(repo):
+    con = sqlite3.connect(repo.parent / "db.sqlite")
+    con.execute("CREATE TABLE supply_demand(code TEXT, date TEXT)")
+    con.commit()
+    con.close()
+    p = _run(repo)
+    assert p.returncode == 1
+    assert "supply_demand 가 비었다" in p.stderr
+    assert not (repo / "reports" / "None").exists()
+
+
+def test_no_connection_info_says_what_to_do(repo, tmp_path):
+    (repo / ".env").unlink()
+    p = _run(repo, HOME=str(tmp_path))
+    assert p.returncode == 1
+    assert "cp .env.example .env" in p.stderr
+
+
+def test_missing_uv_says_what_to_do(repo):
+    e = _env(repo)
+    e["KR_QUANT_UV"] = "/nonexistent/uv"
+    p = subprocess.run([str(repo / "scripts" / "daily_report.sh")], capture_output=True,
+                       text=True, env=e, timeout=60)
+    assert p.returncode == 127
+    assert "uv 를 찾지 못했다" in p.stderr
+
+
+def test_skip_on_a_later_day_mentions_the_collection(repo):
+    """휴장과 수집 실패를 못 가르므로 갈라야 할 사람에게 사실을 준다."""
+    _seed(repo.parent / "db.sqlite", today_kosdaq=50)
+    _run(repo)
+    p = _run(repo, today="2026-11-03")
+    assert p.returncode == 0
+    assert "quant-airflow 를 확인하라" in p.stdout

@@ -2180,6 +2180,10 @@ def main() -> int:
     print(f"검증 대상: {d}")
     print(f"  기준일 {payload['dates'][-1]} · 거래일 {len(payload['dates'])} · "
           f"섹터 {len(payload['sectors'])} · 블록 {len(D['blocks'])}")
+    # DB 대조를 요구했는데 DB 가 없으면 **실패**다. 건너뛰고 "전부 통과" 를 내면 DB 를 본 것처럼 읽힌다.
+    if a.db_check and not a.db:
+        chk("F", "--db-check 인데 DB 접속정보가 있는가", False,
+            "KR_QUANT_DB 나 --db 가 없다 — set -a; . ~/git/quant-airflow/.env; set +a")
     run_layer("A", layer_a, D)
     run_layer("B", layer_b, payload, a.db if a.db_check else None)
     run_layer("C", layer_c, D, html)
@@ -2187,7 +2191,7 @@ def main() -> int:
     run_layer("E", layer_e, D)
     run_layer("G", layer_g, payload, D)
     run_layer("H", layer_h, D, payload)
-    if a.db_check:
+    if a.db_check and a.db:
         run_layer("F", layer_f, payload, a.db)
 
     print(f"\n검사 {CHECKS}건 · 실패 {len(FAILS)}건")

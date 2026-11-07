@@ -12,6 +12,7 @@ import os
 import re
 import unicodedata
 from collections import namedtuple
+from datetime import date
 
 #: East Asian Width 가 'A'(Ambiguous) 인 글자를 **두 칸으로 센다**.
 #:
@@ -397,7 +398,11 @@ class State:
         out = {}
         for sec, arr in best.items():
             arr.sort(key=lambda t: -t["flow"])
-            out[sec] = {"buy": arr[:3], "sell": arr[::-1][:3], "n": len(arr)}
+            # 부호가 맞는 종목만 싣는다. 파는 종목이 셋이 안 되는 섹터에서 `순매도 상위` 에
+            # 순매수 종목이 끼면 "이 종목을 팔았다" 로 읽힌다.
+            out[sec] = {"buy": [t for t in arr[:3] if t["flow"] > 0],
+                        "sell": [t for t in arr[::-1][:3] if t["flow"] < 0],
+                        "n": len(arr)}
         self._lead_ck, self._lead_v = ck, out
         return out
 
@@ -518,7 +523,10 @@ class State:
             c = self.d.get("combined", {}).get(self.market)
             return f"구간 {'·'.join(str(w) for w in c['windows'])}일 등가중" if c else ""
         b = self.d["blocks"].get(f"{self.window}|{self.market}")
-        return f"{b['from']} ~ {b['to']} · k={b['k']} (t={b['t']})" if b else ""
+        if not b:
+            return ""
+        return (f"{b.get('from', '?')} ~ {b.get('to', '?')}"
+                f" · k={b.get('k', '?')} (t={b.get('t', '?')})")
 
 
     def selected(self) -> dict | None:
@@ -571,23 +579,30 @@ class State:
                         "ret": sr,
                         "rrel": (sr - sec_ret) if (sr is not None
                                                    and sec_ret is not None) else None})
+        # ⚠️ 관문·점수를 **정렬 전에** 매긴다. 뒤에서 매기면 `선정점수` 는 전 행이 결측이라
+        # 코드순으로 남고, `최근집중` 은 관문에 지워질 값으로 줄세워 `—` 가 맨 위에 온다.
+        self._gate_conc(out)
+        self._attach_pick(out)
         key = self.name_sort
         if key == "name":
             out.sort(key=lambda t: t["name"], reverse=self.nrev)
         elif key == "flow":
-            # **절댓값** 순. 부호순이면 판 종목이 목록 끝으로 밀려, 화면 앞쪽은
+            # 기본은 **절댓값** 순. 부호순이면 판 종목이 목록 끝으로 밀려, 화면 앞쪽은
             # 산 종목 몇 개 + 0 의 벌판이 된다(종목행의 51%가 +0 이다).
+            # 역순은 **부호 오름차순**(가장 많이 판 쪽 먼저)이다. 절댓값을 뒤집으면 위가 +0 벽이라
+            # 도움말이 말하는 "순매도 상위" 로 갈 길이 없다.
             # 결측은 어느 방향에서도 맨 뒤 — '값이 없는 것'은 작은 값이 아니다.
-            out.sort(key=lambda t: (t["flow"] is None,
-                                    abs(t["flow"]) * (1 if self.nrev else -1)
-                                    if t["flow"] is not None else 0))
+            if self.nrev:
+                out.sort(key=lambda t: (t["flow"] is None,
+                                        t["flow"] if t["flow"] is not None else 0))
+            else:
+                out.sort(key=lambda t: (t["flow"] is None,
+                                        -abs(t["flow"]) if t["flow"] is not None else 0))
         else:
             out.sort(key=lambda t: (t.get(key) is None,
                                     (t.get(key) * (1 if self.nrev else -1))
                                     if t.get(key) is not None else 0))
-        self._gate_conc(out)
         self._attach_cum(out)
-        self._attach_pick(out)
         return out
 
     #: 선정점수의 **모집단**은 `-` 마커(누적 :data:`CUM_CUT`)가 붙은 행**까지**다.
@@ -856,14 +871,14 @@ class State:
     def _attach_cum(self, rows: list[dict]) -> None:
         """누적 기여율 — |순매수| 의 화면 순서 누적 몫(%).
 
-        **순매수 정렬에서만** 채운다. 기여도는 |금액| 으로만 정의되는데, 시총·종목명
-        순서로 누적하면 아무 뜻 없는 톱니가 되고, 그런데도 숫자가 단조증가라서
+        **순매수 절댓값 정렬에서만** 채운다. 기여도는 |금액| 으로만 정의되는데, 시총·종목명·
+        부호(순매수 역순) 순서로 누적하면 아무 뜻 없는 톱니가 되고, 그런데도 숫자가 단조증가라서
         읽는 사람은 뜻이 있다고 믿는다. 뜻이 없는 칸은 비워 두는 편이 정직하다.
         """
         tot = sum(abs(t["flow"]) for t in rows if t.get("flow") is not None)
         run, cut_done = 0.0, False
         for t in rows:
-            if self.name_sort != "flow" or not tot:
+            if self.name_sort != "flow" or self.nrev or not tot:
                 t["cum"] = None
                 t["cut"] = False
                 continue
@@ -942,7 +957,8 @@ def banner_lines(st: State, width: int) -> list[str]:
     """
     d = st.d
     chip = status_chip(d)
-    lines = [pad(f" 오늘의 요약 · {d.get('asof', '')} {chip} — 아무 키나 눌러 표로", width),
+    title = f" 오늘의 요약 · {d.get('asof', '')} {chip} — 아무 키나 눌러 표로"
+    lines = [pad(_first_fitting(width, [title + " · q:종료", title]), width),
              pad("", width)]
 
     rows = st.rows()
@@ -956,7 +972,11 @@ def banner_lines(st: State, width: int) -> list[str]:
     lines.append(pad("", width))
 
     picks = st.all_picks()[:5]
-    lines.append(pad(" 곱순위(섹터선정×종목선정) 상위:", width))
+    win = st.window if st.window != "종합" else st.COMBINED_WIN
+    legend_at = len(lines)
+    # 줄마다 창이 다르다 — 순매수는 현재 창, 투신·연기금은 최근 5일이다. 안 적으면 표의 값과
+    # 어긋나 보인다(실측: 배너 `투신 +69` 는 5일, 표의 투신 +167 은 20일).
+    lines.append(pad(f" 곱순위(섹터선정×종목선정) 상위 — 순매수 {win}일:", width))
     if picks:
         heads = [f"   {i} {p.get('name', '—')}({p.get('sector', '—')})"
                  f"  곱 {p.get('both', 0):.2f}  순매수 {fmt_amt(p.get('flow'))}억"
@@ -978,6 +998,12 @@ def banner_lines(st: State, width: int) -> list[str]:
                     for h, t in zip(heads, trends)]
             if all(cell_len(c) <= width for c in cand):
                 break
+        seg_note = ("투신·연기금 직전15일->최근5일", "투신·연기금 최근5일")
+        if variant < len(seg_note):
+            lines[legend_at] = pad(_first_fitting(width, [
+                f" 곱순위(섹터선정×종목선정) 상위 — 순매수 {win}일 · {seg_note[variant]}:",
+                f" 곱순위 상위 — 순매수 {win}일 · {seg_note[variant]}:",
+                f" 곱순위 상위 — 순매수 {win}일:"]), width)
         lines.extend(pad(c, width) for c in cand)
     else:
         lines.append(pad("   없음(양쪽 관문을 다 통과한 종목이 없다)", width))
@@ -1027,6 +1053,20 @@ def report_warnings(report_dir: str, asof: str) -> list[str]:
     return out
 
 
+#: 기준일이 이만큼(달력일) 지나면 화면이 말한다. 금요일 리포트를 월요일 오전에 보는 3일은
+#: 정상이므로 그보다 위에서 끊는다.
+STALE_DAYS = 4
+
+
+def staleness_warning(asof: str, today: date | None = None) -> list[str]:
+    """리포트가 며칠 묵었나 — 받은 폴더나 멈춘 배치를 오늘 것으로 읽지 않게."""
+    try:
+        age = ((today or date.today()) - date.fromisoformat(str(asof))).days
+    except ValueError:
+        return []
+    return [f"{age}일 지난 리포트"] if age >= STALE_DAYS else []
+
+
 def missing_report_hint(report_dir: str) -> str:
     """리포트가 없는 폴더를 열었을 때 — 수집 미완 폴더면 그 사유를 말한다."""
     path = os.path.join(os.path.expanduser(report_dir), "INCOMPLETE.txt")
@@ -1055,9 +1095,18 @@ def header_lines(st: State, width: int) -> list[str]:
         sort_chip = " 정렬없음[G 순]"
     l2 = (f" 구간[{st.window}] 시장[{st.market}] 주체[{ACTORS[st.ai][1]}]"
           f"{sort_chip}{note}")
+    # 폭이 모자라면 **덩어리째** 뺀다. 그냥 자르면 `k=10.179` 가 `k=1` 로 남아 다른 숫자가 되고,
+    # `…풀림·G 는` 에서 끊기면 "기관 기준" 이 사라진다.
     if st.actor != "inst" and st.window != "종합":
-        l2 += "  ※ 미실현·포텐셜·dW/dt·풀림·G 는 기관 기준"
-    return [pad(l1, width), pad(l2 + "  " + st.block_meta(), width)]
+        notes = ("  ※ 미실현·포텐셜·dW/dt·풀림·G 는 기관 기준",
+                 "  ※ 미실현 등은 기관 기준", "  ※ 기관 기준")
+    else:
+        notes = ("", "", "")
+    meta = st.block_meta()
+    metas = (f"  {meta}" if meta else "", f"  {meta.split(' · ')[0]}" if meta else "", "")
+    order = ((0, 0), (0, 1), (1, 1), (0, 2), (1, 2), (2, 2))
+    l2 = _first_fitting(width, [l2 + notes[n] + metas[m] for n, m in order])
+    return [pad(l1, width), pad(l2, width)]
 
 
 #: 표의 한 열. **헤더·폭·정렬·값 추출을 한 자리에** 둔다.
@@ -1173,7 +1222,7 @@ _TABLE_COLS = (
     Col("포텐셜[½kx²]", 12, True,
         lambda r, st: f"{r['U']:.0f}" if r.get("U") is not None else "—"),
     Col("dW/dt[%p/일]", 12, True, _num("P", 3)),
-    Col("투신+연금[억]", 13, True,
+    Col("투신+연금5일[억]", 16, True,
         lambda r, st: fmt_amt(st.trusted_recent().get(r.get("sector")))),
     Col("종목[수]", 8, True, lambda r, st: str(r.get("n_all", "—"))),
 )
@@ -1201,8 +1250,9 @@ def table_cols(st: State, width: int) -> list[Col]:
     wins = (st.d.get("combined", {}).get(st.market) or {}).get("windows", [])
     for w in wins:
         cols.append(Col(f"{w}일[G]", 8, True, _per_win(w)))
+    # 분모는 섞은 창 수다. `seen` 은 "G 가 나온 창" 이라 언제나 pass_n 과 같아 1/1·2/2 만 나온다.
     cols.append(Col("통과[구간]", 10, True,
-                    lambda r, st_: f"{r.get('pass_n', 0)}/{r.get('seen', 0)}"))
+                    lambda r, st_: f"{r.get('pass_n', 0)}/{len(wins)}"))
     cols.append(_TABLE_COLS[-1])                      # 종목[수]
     return cols
 
@@ -1385,7 +1435,12 @@ def detail_title_span(st: State, width: int) -> tuple[int, int] | None:
     rows = st.rows()
     if not rows:
         return None
-    name = rows[min(st.row, len(rows) - 1)].get("sector") or "—"
+    if st.drill:
+        names = st.names()
+        name = names[min(st.drow, len(names) - 1)].get("name") if names else None
+    else:
+        name = rows[min(st.row, len(rows) - 1)].get("sector")
+    name = name or "—"
     start = cell_len(DETAIL_INDENT)
     w = min(cell_len(name), max(width - start, 0))
     return (start, w) if w > 0 else None
@@ -1461,7 +1516,7 @@ def detail_lines(st: State, width: int) -> list[str]:
     note = " · 20일 기준" if st.window == "종합" else ""
     return [pad(f"{DETAIL_INDENT}{r.get('sector','—')}"
                 f" · 종목 {n}개 · Enter 로 전체", width),
-            pad(_actors_line(r, width, note), width),
+            pad(_actors_line(r, width, note, ACTORS[st.ai][1]), width),
             pad(side("buy", "순매수 상위"), width),
             pad(side("sell", "순매도 상위"), width)]
 
@@ -1475,7 +1530,7 @@ _ACTORS_TIERS = (
 _ACTOR_KEY = dict((ko, k) for k, ko in ACTORS)
 
 
-def _actors_line(r: dict, width: int, note: str = "") -> str:
+def _actors_line(r: dict, width: int, note: str = "", actor: str | None = None) -> str:
     """선택 섹터의 **4주체 순매수 분해**를 한 줄에 — 표에 없는 나머지 셋까지.
 
     화면이 한 번에 한 주체만 보여주므로 "기관이 팔았다" 까지는 알아도
@@ -1493,6 +1548,9 @@ def _actors_line(r: dict, width: int, note: str = "") -> str:
     말하려면 설명이 붙어야 하고 그건 원장이 할 일이다.
     """
     for names in _ACTORS_TIERS:
+        # 고른 주체가 떨어지면 지금 보는 값이 이 줄에 없게 된다 — 맨 뒤 자리를 내준다.
+        if actor and actor not in names:
+            names = (*names[:-1], actor)
         parts = []
         for ko in names:
             v = r.get(_ACTOR_KEY[ko])
@@ -1649,6 +1707,7 @@ HELP = [
     ("s S", "정렬 열 바꾸기. 대문자는 역방향. 드릴다운에서는 종목 정렬."),
     ("r", "정렬 역순 토글. ▼ 내림차순(큰 것 먼저) · ▲ 오름차순 —"),
     ("", "        **순매도 상위**(가장 많이 판 쪽)는 이걸 켜야 위로 온다."),
+    ("", "        드릴다운 순매수는 기본이 절댓값 큰 순, 역순이 가장 많이 판 순이다."),
     ("t", "전 종목 화면 — 전 섹터를 곱 순으로 한 화면에. 섹터 표에서도"),
     ("", "        드릴다운에서도 열리고, t·h·←·Esc 로 섹터 표로 돌아온다."),
     ("? F1", "이 도움말. 안에서 ↑↓·PgUp/PgDn·Space·g·G·Home·End 로 훑고,"),
@@ -1659,7 +1718,7 @@ HELP = [
     ("", ""),
     ("", "── 섹터 표 ──"),
     ("섹터", "벤더 분류(stocks.sector) 27개. KRX 업종 분류와 다르다."),
-    ("투신+연금[억]", "그 섹터의 **최근 5일** 투신+연기금 순매수 합. 표의 `임펄스` 는"),
+    ("투신+연금5일[억]", "그 섹터의 **최근 5일** 투신+연기금 순매수 합. 표의 `임펄스` 는"),
     ("", "        현재 구간 누적이라 \"아직도 들어오는가\" 를 말하지 않는다 — 이 열이"),
     ("", "        그 답이다. 5일은 최단창이라 다른 구간과 겹치지 않는다."),
     ("", "        ⚠️ 최근 유출이 눌림목인지 추세전환인지는 **여기서 안 갈린다**"),
@@ -1720,6 +1779,7 @@ HELP = [
     ("", "        순매도상위는 화면이 더 넓어야 보인다. Enter 로 전 종목."),
     ("N일[G]", "종합 화면에서 그 구간의 G. 20일G·60일G·120일G 로 뜬다."),
     ("통과[구간]", "세 조건(a>0·x>0·ẍ>0)을 만족한 구간 수 / 전체 구간 수. 예 2/3."),
+    ("", "        종합 G 는 **통과한 구간만의 평균**이라 1/3 이 2/3 보다 위에 올 수 있다."),
     ("", ""),
     ("", "── 종목 목록 (Enter) ──"),
     ("순매수[억]", "그 구간 **선택된 주체**의 순매수 [억원]. 기본 정렬은 이것의 **절댓값**"),
@@ -1859,7 +1919,7 @@ HINT_DESC = {
     "선정": "관문 통과분의 순위 평균 [0~1]",
     "포텐셜[½kx²]": "½·k·x². k≤0 인 블록은 비운다",
     "dW/dt[%p/일]": "전·후반 W=가속×수익률 의 변화 [%p/일]",
-    "투신+연금[억]": "그 섹터 최근 5일 투신+연기금 합 — 지금도 들어오나",
+    "투신+연금5일[억]": "그 섹터 최근 5일 투신+연기금 합 — 지금도 들어오나",
     "종목[수]": "이 구간에 거래된 종목 수. ~ 는 10개 미만",
     # 종목 목록(드릴다운)
     "종목": "종목명 가나다순",
@@ -2014,6 +2074,15 @@ FOOTER_ALL_TIERS = (
     " w m a:바꾸기 h:뒤로 ?:키 q:종료",
     " ?:키 h:뒤로 q:종료",
 )
+#: 종합 화면의 푸터. 이 화면은 `s`·`r` 이 안 듣는다(:attr:`State.sortable`) — 적혔는데 안 듣는
+#: 키가 안 적힌 키보다 나쁘다.
+FOOTER_COMBINED_TIERS = (
+    " w:구간 m:시장 a:주체 ↑↓:섹터 g/G:처음/끝 PgUp/PgDn:쪽 Enter:종목 t:전종목 ?:도움말 q:종료",
+    " w:구간 m:시장 a:주체 ↑↓:섹터 Enter:종목 t:전종목 ?:도움말 q:종료",
+    " w m a:바꾸기 Enter:종목 t:전종목 ?:전체 키 q:종료",
+    " w m a:바꾸기 Enter t ?:키 q:종료",
+    " ?:키 q:종료",
+)
 #: 도움말 모달의 마지막 줄. 예전엔 :mod:`flow_app` 안에 **한 줄 고정 문자열**로
 #: 박혀 있었다 — 폭 50 에서 위치 표시 ``1-20 / 200`` 이 ``1-20 / 20`` 으로 잘렸다.
 #: 잘린 숫자는 다른 숫자다(전체 200줄이 20줄로 읽힌다). 원장은 이미 단계로
@@ -2030,7 +2099,8 @@ FOOTER = FOOTER_TIERS[1]
 FOOTER_DRILL = FOOTER_DRILL_TIERS[1]
 
 
-def footer_tiers(drill: bool = False, allv: bool = False) -> tuple[str, ...]:
+def footer_tiers(drill: bool = False, allv: bool = False,
+                 combined: bool = False) -> tuple[str, ...]:
     """이 화면이 쓰는 푸터 단계 — **어느 화면이 어느 푸터를 쓰는지의 유일한 판정**.
 
     앱이 `if` 로 고르면 화면이 하나 늘 때 그 `if` 를 빠뜨리고, 실제로 빠뜨렸다
@@ -2039,13 +2109,24 @@ def footer_tiers(drill: bool = False, allv: bool = False) -> tuple[str, ...]:
     """
     if allv and not drill:
         return FOOTER_ALL_TIERS
-    return FOOTER_DRILL_TIERS if drill else FOOTER_TIERS
+    if drill:
+        return FOOTER_DRILL_TIERS
+    return FOOTER_COMBINED_TIERS if combined else FOOTER_TIERS
 
 
-def footer_line(width: int, drill: bool = False, allv: bool = False) -> str:
+def scroll_mark(first: int, shown: int, total: int) -> str:
+    """목록이 화면보다 길 때 **어디를 보고 있나** — `1-14/27`. 다 보이면 빈 문자열.
+
+    이 표시가 없으면 80x24 에서 27개 중 14개만 보여도 그게 전부처럼 읽힌다.
+    """
+    return f" {first + 1}-{first + shown}/{total} " if 0 < shown < total else ""
+
+
+def footer_line(width: int, drill: bool = False, allv: bool = False,
+                combined: bool = False) -> str:
     """폭에 **온전히** 들어가는 가장 자세한 푸터.
 
     어느 단계에서도 ``?`` 는 남긴다 — 줄어든 푸터가 "여기가 전부" 로 읽히면
     안 되기 때문이다. 나머지 키는 ``?`` 뒤에 전부 적혀 있다.
     """
-    return tier_for(footer_tiers(drill, allv), width)
+    return tier_for(footer_tiers(drill, allv, combined), width)

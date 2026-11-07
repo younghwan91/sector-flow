@@ -55,8 +55,8 @@ id = "name-sort-reversed"
 why = "종목 정렬 방향을 뒤집는다 — 예전엔 뒤집어도 어떤 검사도 실패하지 않았다"
 guards = ["tests/test_tui_flow_view.py::test_stock_list_is_actually_sorted_by_the_chosen_key"]
 file = "src/sectorflow/tui/flow_view.py"
-find = """                                    abs(t["flow"]) * (1 if self.nrev else -1)"""
-replace = """                                    abs(t["flow"]) * (-1 if self.nrev else 1)"""
+find = """                                        -abs(t["flow"]) if t["flow"] is not None else 0))"""
+replace = """                                        abs(t["flow"]) if t["flow"] is not None else 0))"""
 
 [[mutation]]
 id = "sort-fallback-lies"
@@ -899,8 +899,10 @@ why = "오늘이 아닌 기준일의 미완을 75 로 끝내면 07:30 포기가 
 guards = ["tests/test_daily_report_flow.py::test_partial_day_that_is_no_longer_today_exits_1_and_keeps_latest",
           "tests/test_daily_report_flow.py::test_giving_up_on_a_past_day_alerts_as_error_through_cron_run"]
 file = "scripts/daily_report.sh"
-find = """if [[ "$ASOF" < "$(TZ=Asia/Seoul date +%F)" ]]; then"""
-replace = "if false; then"
+find = """if [[ "$ASOF" < "$TODAY" ]]; then
+    echo "[$(date '+%F %T')] ⚠️ $ASOF 는 오늘이 아닌데"""
+replace = """if false; then
+    echo "[$(date '+%F %T')] ⚠️ $ASOF 는 오늘이 아닌데"""
 
 [[mutation]]
 id = "report-skips-verify-failed-retry"
@@ -957,3 +959,398 @@ guards = ["tests/test_tui_flow_view.py::test_report_warnings_reads_verify_failed
 file = "src/sectorflow/tui/flow_view.py"
 find = """        out.append("검증 실패(VERIFY_FAILED.txt)")"""
 replace = "        pass"
+
+# --- 2026-11-03 사용자 관점 리뷰 ---
+
+[[mutation]]
+id = "drill-scores-after-sort"
+why = "정렬 뒤에 점수를 매기면 선정점수 정렬이 코드순으로 남고 최근집중은 `—` 가 맨 위에 온다"
+guards = ["tests/test_tui_user_facing.py::test_pick_sort_puts_the_highest_score_first"]
+[[mutation.edits]]
+file = "src/sectorflow/tui/flow_view.py"
+find = """        self._gate_conc(out)
+        self._attach_pick(out)
+        key = self.name_sort"""
+replace = "        key = self.name_sort"
+[[mutation.edits]]
+file = "src/sectorflow/tui/flow_view.py"
+find = """        self._attach_cum(out)
+        return out"""
+replace = """        self._gate_conc(out)
+        self._attach_cum(out)
+        self._attach_pick(out)
+        return out"""
+
+[[mutation]]
+id = "drill-gate-after-sort"
+why = "관문이 정렬 뒤에 지우면 `—` 벽이 맨 위에 온다"
+guards = ["tests/test_tui_user_facing.py::test_recent_concentration_sort_leaves_gated_rows_last"]
+[[mutation.edits]]
+file = "src/sectorflow/tui/flow_view.py"
+find = """        self._gate_conc(out)
+        self._attach_pick(out)
+        key = self.name_sort"""
+replace = """        self._attach_pick(out)
+        key = self.name_sort"""
+[[mutation.edits]]
+file = "src/sectorflow/tui/flow_view.py"
+find = """        self._attach_cum(out)
+        return out"""
+replace = """        self._gate_conc(out)
+        self._attach_cum(out)
+        return out"""
+
+[[mutation]]
+id = "drill-reverse-abs"
+why = "순매수 역순이 절댓값 뒤집기면 위가 +0 벽이라 순매도 상위로 못 간다"
+guards = ["tests/test_tui_user_facing.py::test_reverse_of_net_buy_brings_the_biggest_seller_to_the_top"]
+file = "src/sectorflow/tui/flow_view.py"
+find = """                                        t["flow"] if t["flow"] is not None else 0))"""
+replace = """                                        abs(t["flow"]) if t["flow"] is not None else 0))"""
+
+[[mutation]]
+id = "drill-panel-not-drawn"
+why = "자리만 잡고 안 그리면 그 종목의 돈이 언제 들어왔는지 볼 곳이 없다"
+guards = ["tests/test_tui_user_facing.py::test_stock_panel_is_drawn_in_the_drilldown"]
+file = "src/sectorflow/tui/flow_app.py"
+find = "            _draw_detail(scr, st, w, min(top + nhead + shown + gap, limit - dh), dh, col)"
+replace = "            pass"
+
+[[mutation]]
+id = "window-key-loses-sector"
+why = "구간을 바꿨는데 커서가 맨 위로 가면 다른 섹터의 값을 보게 된다"
+guards = ["tests/test_tui_user_facing.py::test_window_and_actor_keys_stay_on_the_same_sector"]
+file = "src/sectorflow/tui/flow_app.py"
+find = """새 순서의 1등을 보려는 키다.
+    elif k in (ord("w"), ord("W")):
+        _keep_selection(st, lambda: st.cycle("w", 1 if k == ord("w") else -1))"""
+replace = """새 순서의 1등을 보려는 키다.
+    elif k in (ord("w"), ord("W")):
+        st.cycle("w", 1 if k == ord("w") else -1)"""
+
+[[mutation]]
+id = "scroll-mark-gone"
+why = "위치 표시가 없으면 27개 중 14개만 보여도 그게 전부처럼 읽힌다"
+guards = ["tests/test_tui_user_facing.py::test_scroll_position_is_on_the_footer_when_rows_are_hidden"]
+file = "src/sectorflow/tui/flow_view.py"
+find = """    return f" {first + 1}-{first + shown}/{total} " if 0 < shown < total else "\""""
+replace = """    return "\""""
+
+[[mutation]]
+id = "header-cuts-numbers"
+why = "그냥 자르면 k=10.179 가 k=1 로 남아 다른 숫자가 된다"
+guards = ["tests/test_tui_user_facing.py::test_header_never_cuts_a_number_or_the_actor_note"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "    l2 = _first_fitting(width, [l2 + notes[n] + metas[m] for n, m in order])"
+replace = "    l2 = l2 + notes[0] + metas[0]"
+
+[[mutation]]
+id = "combined-footer-lies"
+why = "종합 화면에서 안 듣는 s·r 을 광고한다"
+guards = ["tests/test_tui_user_facing.py::test_combined_footer_does_not_advertise_dead_keys"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "    return FOOTER_COMBINED_TIERS if combined else FOOTER_TIERS"
+replace = "    return FOOTER_TIERS"
+
+[[mutation]]
+id = "pass-count-over-seen"
+why = "분모가 G 가 나온 창이면 언제나 1/1·2/2 라 아무 말도 안 한다"
+guards = ["tests/test_tui_user_facing.py::test_combined_pass_count_is_over_all_windows"]
+file = "src/sectorflow/tui/flow_view.py"
+find = """f"{r.get('pass_n', 0)}/{len(wins)}\""""
+replace = """f"{r.get('pass_n', 0)}/{r.get('seen', 0)}\""""
+
+[[mutation]]
+id = "sell-leaders-include-buyers"
+why = "`순매도 상위` 에 순매수 종목이 끼면 판 종목으로 읽힌다"
+guards = ["tests/test_tui_user_facing.py::test_sell_leaders_are_only_sellers"]
+file = "src/sectorflow/tui/flow_view.py"
+find = """"sell": [t for t in arr[::-1][:3] if t["flow"] < 0],"""
+replace = """"sell": arr[::-1][:3],"""
+
+[[mutation]]
+id = "actor-line-drops-selected"
+why = "좁은 화면에서 고른 주체가 빠지면 지금 보는 값이 그 줄에 없다"
+guards = ["tests/test_tui_user_facing.py::test_actor_line_keeps_the_selected_actor_when_narrow"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "        if actor and actor not in names:"
+replace = "        if False:"
+
+[[mutation]]
+id = "banner-swallows-q"
+why = "배너가 q 를 삼키면 두 번 눌러야 끝난다"
+guards = ["tests/test_tui_user_facing.py::test_banner_keys"]
+file = "src/sectorflow/tui/flow_app.py"
+find = """    if k in (-1, ord("q")):"""
+replace = "    if k == -1:"
+
+[[mutation]]
+id = "no-tty-check"
+why = "파이프로 띄우면 이스케이프를 쏟고 멈춘다"
+guards = ["tests/test_tui_user_facing.py::test_terminal_problem"]
+file = "src/sectorflow/tui/flow_app.py"
+find = "    if not (stdin_tty and stdout_tty):"
+replace = "    if False:"
+
+[[mutation]]
+id = "no-locale-check"
+why = "비 UTF-8 로케일에서 한글이 전부 빈칸인데 아무 말이 없다"
+guards = ["tests/test_tui_user_facing.py::test_terminal_problem"]
+file = "src/sectorflow/tui/flow_app.py"
+find = """    if "UTF" not in encoding.upper().replace("-", ""):"""
+replace = "    if False:"
+
+[[mutation]]
+id = "curses-error-traceback"
+why = "TERM 정의가 없는 SSH 에서 생 트레이스백이 나온다"
+guards = ["tests/test_tui_user_facing.py::test_curses_failure_is_a_message_not_a_traceback"]
+file = "src/sectorflow/tui/flow_app.py"
+find = "    except curses.error as e:\n        raise SystemExit(f\"터미널 화면을 다루지 못했다"
+replace = "    except ZeroDivisionError as e:\n        raise SystemExit(f\"터미널 화면을 다루지 못했다"
+
+[[mutation]]
+id = "stale-report-silent"
+why = "두 달 묵은 리포트를 열어도 아무 표시가 없다"
+guards = ["tests/test_tui_user_facing.py::test_staleness_warning_starts_after_a_normal_weekend"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "if age >= STALE_DAYS else []"
+replace = "if False else []"
+
+[[mutation]]
+id = "ledger-loses-sector"
+why = "시장을 바꿨는데 커서가 맨 위로 가면 다른 섹터의 회계를 보게 된다"
+guards = ["tests/test_tui_user_facing.py::test_ledger_keys_stay_on_the_same_sector"]
+file = "src/sectorflow/tui/ledger_app.py"
+find = """        _keep_row(mo, lambda: mo.cycle("m", 1 if ch == ord("m") else -1))"""
+replace = """        mo.cycle("m", 1 if ch == ord("m") else -1)"""
+
+[[mutation]]
+id = "ledger-beta-hidden"
+why = "d 는 숫자를 통째로 바꾸는데 켜졌는지 안 보이면 다른 해석을 읽는다"
+guards = ["tests/test_tui_user_facing.py::test_ledger_header_says_whether_beta_removal_is_on"]
+file = "src/sectorflow/tui/ledger_view.py"
+find = """        l2 += f" β제거[{'켬' if mo.detrend else '끔'}]\""""
+replace = "        pass"
+
+[[mutation]]
+id = "ledger-curs-set-crash"
+why = "vt100 에서 트레이스백으로 죽는다"
+guards = ["tests/test_tui_user_facing.py::test_ledger_survives_a_terminal_without_cursor_hiding"]
+file = "src/sectorflow/tui/ledger_app.py"
+find = """    try:
+        curses.curs_set(0)
+    except curses.error:
+        pass"""
+replace = "    curses.curs_set(0)"
+
+[[mutation]]
+id = "viewer-reads-missing-daily-array"
+why = "페이로드에 없는 일별 배열을 읽으면 뷰어가 TypeError 로 절반만 그려진다"
+guards = ["tests/test_report_pages.py::test_viewer_renders_stock_lists_from_the_payload_shape"]
+file = "scripts/templates/sector_flow.html"
+find = "    const v=x[k];"
+replace = "    const v=sum(r[k],i0,i1);"
+
+[[mutation]]
+id = "numbers-pass-over-seen"
+why = "수치표의 통과 창이 언제나 1/1·2/2 다"
+guards = ["tests/test_report_pages.py::test_numbers_pass_count_is_over_all_windows"]
+file = "scripts/templates/sector_numbers.html"
+find = "sn=C.windows.length;"
+replace = "sn=r.seen||0;"
+
+[[mutation]]
+id = "script-json-unescaped"
+why = "종목명에 </script> 가 있으면 페이지가 죽는다"
+guards = ["tests/test_report_pages.py::test_script_json_cannot_close_the_script_tag"]
+file = "scripts/sector_flow.py"
+find = """    return json.dumps(payload, ensure_ascii=False).replace("</", "<\\\\/")"""
+replace = "    return json.dumps(payload, ensure_ascii=False)"
+
+[[mutation]]
+id = "db-check-false-pass"
+why = "DB 없이 --db-check 가 전부 통과를 낸다"
+guards = ["tests/test_report_pages.py::test_db_check_without_a_db_is_a_failure_not_a_pass"]
+file = "scripts/verify_report.py"
+find = "    if a.db_check and not a.db:"
+replace = "    if False:"
+
+[[mutation]]
+id = "build-in-place"
+why = "제자리에 지으면 죽었을 때 numbers.html 만 남아 다음 재시도가 건너뛴다"
+guards = ["tests/test_daily_report_flow.py::test_crash_after_numbers_html_does_not_block_the_retry"]
+file = "scripts/daily_report.sh"
+find = """BUILD="$DEST.building.$$\""""
+replace = """BUILD="$DEST\""""
+
+[[mutation]]
+id = "db-failure-silent"
+why = "실패 사유 없이 죽으면 본문이 빈 알림이 간다"
+guards = ["tests/test_daily_report_flow.py::test_db_failure_explains_itself_and_hides_the_password"]
+file = "scripts/daily_report.sh"
+find = """)" || ASOF_RC=$?"""
+replace = """)\""""
+
+[[mutation]]
+id = "db-error-shows-password"
+why = "libpq 가 되읊은 접속 문자열의 비밀번호가 알림으로 나간다"
+guards = ["tests/test_daily_report_flow.py::test_db_failure_explains_itself_and_hides_the_password"]
+file = "scripts/daily_report.sh"
+find = """  tail -n 3 "$ASOF_ERR" | sed -E 's#://[^@ ]*@#://***@#g' >&2"""
+replace = """  echo "$KR_QUANT_DB" >&2"""
+
+[[mutation]]
+id = "incomplete-note-promises-retry"
+why = "포기한 뒤에도 다음 크론을 약속하면 아무도 안 움직인다"
+guards = ["tests/test_daily_report_flow.py::test_past_day_incomplete_note_tells_what_to_do_next"]
+file = "scripts/daily_report.sh"
+find = """      if [[ "$ASOF" < "$TODAY" ]]; then
+        echo "재시도 창이"""
+replace = """      if false; then
+        echo "재시도 창이"""
+
+[[mutation]]
+id = "html-hides-verify-failed"
+why = "브라우저로만 보는 사람은 검증 실패를 모른다"
+guards = ["tests/test_daily_report_flow.py::test_verify_failure_is_visible_in_the_html_and_the_log"]
+file = "scripts/daily_report.sh"
+find = "  for page in numbers.html viewer.html; do"
+replace = "  for page in; do"
+
+[[mutation]]
+id = "market-key-loses-sector"
+why = "시장을 바꿨는데 커서가 맨 위로 가면 다른 섹터의 값을 보게 된다"
+guards = ["tests/test_tui_user_facing.py::test_market_key_stays_on_the_same_sector"]
+file = "src/sectorflow/tui/flow_app.py"
+find = """st.cycle("w", 1 if k == ord("w") else -1))
+    elif k in (ord("m"), ord("M")):
+        _keep_selection(st, lambda: st.cycle("m", 1 if k == ord("m") else -1))"""
+replace = """st.cycle("w", 1 if k == ord("w") else -1))
+    elif k in (ord("m"), ord("M")):
+        st.cycle("m", 1 if k == ord("m") else -1)"""
+
+[[mutation]]
+id = "sort-key-keeps-row"
+why = "정렬은 새 순서의 1등을 보려는 키다 — 커서를 붙들면 1등이 화면 밖일 수 있다"
+guards = ["tests/test_tui_user_facing.py::test_sort_key_still_goes_to_the_new_top"]
+file = "src/sectorflow/tui/flow_app.py"
+find = """        st.cycle("s", 1 if k == ord("s") else -1)"""
+replace = """        _keep_selection(st, lambda: st.cycle("s", 1 if k == ord("s") else -1))"""
+
+[[mutation]]
+id = "trusted-col-hides-window"
+why = "구간과 무관한 5일값인데 열 이름에 5일이 없으면 현재 구간 값으로 읽힌다"
+guards = ["tests/test_tui_flow_view.py::test_sector_table_shows_recent_trusted_flow"]
+file = "src/sectorflow/tui/flow_view.py"
+find = """    Col("투신+연금5일[억]", 16, True,"""
+replace = """    Col("투신+연금[억]", 16, True,"""
+
+[[mutation]]
+id = "flow-load-decode-traceback"
+why = "UTF-8 이 아닌 파일이면 생 트레이스백이 나온다"
+guards = ["tests/test_tui_user_facing.py::test_load_says_so_when_the_report_is_not_utf8"]
+file = "src/sectorflow/tui/flow_app.py"
+find = "    except UnicodeDecodeError:"
+replace = "    except ZeroDivisionError:"
+
+[[mutation]]
+id = "ledger-load-accepts-non-object"
+why = "payload 가 [] 면 curses 밖에서 AttributeError 트레이스백이 나온다"
+guards = ["tests/test_tui_user_facing.py::test_ledger_load_rejects_a_payload_that_is_not_an_object"]
+file = "src/sectorflow/tui/ledger_view.py"
+find = "    if not isinstance(d, dict):"
+replace = "    if False:"
+
+[[mutation]]
+id = "viewer-claims-krx"
+why = "수익률은 자체 바구니인데 KRX 지수라고 적는다"
+guards = ["tests/test_report_pages.py::test_viewer_does_not_claim_krx_index_returns"]
+file = "scripts/templates/sector_flow.html"
+find = "실제 Δv (자체 바구니)"
+replace = "실제 Δv (KRX지수)"
+
+[[mutation]]
+id = "viewer-no-stale-chip"
+why = "두 달 묵은 리포트를 브라우저로 열어도 표시가 없다"
+guards = ["tests/test_report_pages.py::test_viewer_marks_a_stale_report"]
+file = "scripts/templates/sector_flow.html"
+find = "  if(age<4) return;"
+replace = "  return;"
+
+[[mutation]]
+id = "viewer-empty-list-unexplained"
+why = "1일·전체 기간에 종목이 비는 이유를 안 적으면 고장으로 읽힌다"
+guards = ["tests/test_report_pages.py::test_viewer_says_why_the_stock_list_is_empty_outside_presets"]
+file = "scripts/templates/sector_flow.html"
+find = """일 기간에만 있다 — 위 기간 단추로 고르면 보인다"""
+replace = """없다"""
+
+[[mutation]]
+id = "numbers-empty-combined-unexplained"
+why = "종합이 없는 시장에서 표가 설명 없이 비고 제목은 전 시장 그대로다"
+guards = ["tests/test_report_pages.py::test_numbers_explains_an_empty_combined_table_and_staleness"]
+file = "scripts/templates/sector_numbers.html"
+find = "이 시장은 G 가 나온 구간이 둘 미만이라 종합이 없다"
+replace = ""
+
+[[mutation]]
+id = "page-without-charset"
+why = "HTTP 로 서빙하면 한글이 windows-1252 로 깨진다"
+guards = ["tests/test_report_pages.py::test_pages_declare_encoding_and_do_not_block_on_font_servers"]
+file = "scripts/templates/sector_numbers.html"
+find = """<meta charset="utf-8">"""
+replace = ""
+
+[[mutation]]
+id = "empty-db-called-connection-failure"
+why = "접속은 됐는데 비었을 뿐인 DB 를 접속 실패라 부르면 엉뚱한 곳을 본다"
+guards = ["tests/test_daily_report_flow.py::test_empty_database_is_not_called_a_connection_failure"]
+file = "scripts/daily_report.sh"
+find = "접속은 됐는데 supply_demand 가 비었다."
+replace = "DB 접속 실패로 본다."
+
+[[mutation]]
+id = "missing-uv-silent"
+why = "uv 경로가 깨지면 메시지 없이 죽는다"
+guards = ["tests/test_daily_report_flow.py::test_missing_uv_says_what_to_do"]
+file = "scripts/daily_report.sh"
+find = """if ! command -v "$UV" >/dev/null 2>&1; then"""
+replace = "if false; then"
+
+[[mutation]]
+id = "no-env-silent"
+why = ".env 가 없으면 `No such file` 만 나온다"
+guards = ["tests/test_daily_report_flow.py::test_no_connection_info_says_what_to_do"]
+file = "scripts/daily_report.sh"
+find = """elif [ -z "${KR_QUANT_DB:-}" ]; then"""
+replace = "elif false; then"
+
+[[mutation]]
+id = "skip-hides-missing-collection"
+why = "수집이 안 된 평일에도 '휴장일이거나 재실행' 만 말한다"
+guards = ["tests/test_daily_report_flow.py::test_skip_on_a_later_day_mentions_the_collection"]
+file = "scripts/daily_report.sh"
+find = """  if [[ "$ASOF" < "$TODAY" ]]; then
+    echo "    최신 수급이"""
+replace = """  if false; then
+    echo "    최신 수급이"""
+
+[[mutation]]
+id = "todays-note-loses-retry"
+why = "오늘 미완이면 다음 크론이 다시 한다는 사실이 사라진다"
+guards = ["tests/test_daily_report_flow.py::test_todays_incomplete_note_still_promises_the_retry"]
+file = "scripts/daily_report.sh"
+find = """        echo "다음 크론이 다시 시도하고, 성공하면 이 폴더가 통째로 바뀐다.\""""
+replace = """        echo "수집 미완\""""
+
+[[mutation]]
+id = "numbers-cell-count-drifts"
+why = "종합표 함수 안에 셀을 하나 더 그리면 verify_report 가 매일 실패한다 — 리포트를 만들어 봐야 나왔다"
+guards = ["tests/test_report_pages.py::test_numbers_template_passes_the_static_checks_of_the_verifier"]
+file = "scripts/templates/sector_numbers.html"
+find = "  if(!C){ noCombined(t); return; }"
+replace = """  if(!C){
+    const x=el("tr");
+    x.append(el("td"));
+    return;
+  }"""

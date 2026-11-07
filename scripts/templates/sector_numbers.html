@@ -1,7 +1,11 @@
+<!DOCTYPE html>
+<html lang="ko">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>섹터 수치표</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" media="print" onload="this.media='all'">
 <style>
 :root{
   color-scheme: light;
@@ -129,6 +133,9 @@ const N0=n=>n==null?"—":Math.round(n).toLocaleString("ko-KR");
 document.getElementById("asof").textContent = D.dates[0]+" ~ "+D.dates[1];
 const chip=el("span","chip", D.finalized?"마감 · 잠정":"장중 · 미확정");
 document.getElementById("chip").append(chip);
+// 받은 폴더·멈춘 배치를 오늘 것으로 읽지 않게. 문턱은 화면(`STALE_DAYS`)과 같다.
+const age=Math.floor((Date.now()-Date.parse(D.asof+"T00:00:00+09:00"))/864e5);
+if(age>=4) document.getElementById("chip").append(el("span","chip","⚠ "+age+"일 지난 리포트"));
 
 function seg(id,opts,get,set){
   const box=document.getElementById(id);
@@ -160,11 +167,18 @@ const COLS=[
   ["drv","기관 순매수 상위 3 [억]","l"],
 ];
 
+// 표 본문 밖에 둔다 — verify_report 의 C 층이 renderCombined 안의 셀 수를 소스에서 센다.
+function noCombined(t){
+  const tb=el("tbody"), tr=el("tr");
+  tr.append(el("td","l","이 시장은 G 가 나온 구간이 둘 미만이라 종합이 없다"));
+  tb.append(tr); t.append(tb);
+}
+
 function renderCombined(){
   const C=D.combined&&D.combined[mkt];
   const t=document.getElementById("ctbl"); t.replaceChildren();
-  if(!C) return;
   document.getElementById("cttl").firstChild.textContent="종합 — "+mkt+" ";
+  if(!C){ noCombined(t); return; }
   const thead=el("thead"),tr=el("tr");
   ["섹터","종목","종합 G",...C.windows.map(w=>w+"일 G"),"통과 창"].forEach((h,i)=>
     tr.append(el("th",i===0?"l":null,h)));
@@ -176,7 +190,8 @@ function renderCombined(){
     x.append(el("td","num",r.n_all));
     x.append(el("td","num"+(r.G_pass?" pos":""), r.G==null?"—":r.G.toFixed(2)));
     C.windows.forEach(w=>x.append(el("td","num", r.per[w]==null?"—":r.per[w].toFixed(2))));
-    const pn=r.pass_n||0, sn=r.seen||0;
+    // 분모는 섞은 창 수다. `seen` 은 "G 가 나온 창" 이라 언제나 pass_n 과 같다.
+    const pn=r.pass_n||0, sn=C.windows.length;
     x.append(el("td","num"+(pn>0?" pos":""), sn?pn+"/"+sn:"—"));
     tb.append(x);
   });
