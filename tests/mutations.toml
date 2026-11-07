@@ -1504,3 +1504,110 @@ guards = ["tests/test_serve_reports.py::test_a_folder_swap_does_not_404"]
 file = "scripts/serve_reports.py"
 find = "SWAP_RETRY = (0.1, 0.3, 0.6)"
 replace = "SWAP_RETRY = ()"
+
+# ── 2026-11-08 지표 검증의 결함 ─────────────────────────────────────────────
+
+[[mutation]]
+id = "cap-uses-adjusted-price"
+why = "시총에 키움 수정주가를 곱하면 뒤에 병합이 있는 종목의 과거 시총이 배수로 커진다"
+guards = ["tests/test_validation_fixes.py::test_cap_uses_raw_price_and_recounts_shares_after_a_merge"]
+file = "src/sectorflow/storage.py"
+find = """    sd_px = _prices("SELECT code, date, close FROM supply_demand WHERE source='kiwoom' \""""
+replace = """    sd_px = _prices("SELECT code, date, close FROM daily_bars WHERE 1=1 \""""
+
+[[mutation]]
+id = "cap-ignores-share-events"
+why = "병합·분할 뒤 주식수 스냅샷이 늦게 오는 구간에서 시총이 10배가 된다(078130)"
+guards = ["tests/test_validation_fixes.py::test_cap_uses_raw_price_and_recounts_shares_after_a_merge"]
+file = "src/sectorflow/storage.py"
+find = "SHARE_EVENTS = 8 | 16 | 64"
+replace = "SHARE_EVENTS = 0"
+
+[[mutation]]
+id = "returns-not-from-adjusted-closes"
+why = "섹터 수익률의 원천이 조정 종가 비가 아니면 09-14 뒤 이어 곱할 수 없는 값이 된다"
+guards = ["tests/test_validation_fixes.py::test_returns_come_from_adjusted_closes_and_stay_missing_when_absent"]
+file = "scripts/sector_flow.py"
+find = """    adj["ret"] = adj.groupby("code")["close"].pct_change() * 100.0"""
+replace = """    adj["ret"] = adj.groupby("code")["close"].pct_change() * 1.0"""
+
+[[mutation]]
+id = "missing-return-becomes-zero"
+why = "조정 종가가 아직 없는 날을 0% 로 채우면 섹터 수익률이 0 쪽으로 끌린다"
+guards = ["tests/test_validation_fixes.py::test_returns_come_from_adjusted_closes_and_stay_missing_when_absent"]
+file = "scripts/sector_flow.py"
+find = """    return pd.Series(out, index=keys.index, dtype=float)"""
+replace = """    return pd.Series(out, index=keys.index, dtype=float).fillna(0.0)"""
+
+[[mutation]]
+id = "lone-passer-loses-its-mark"
+why = "세 관문을 다 통과한 섹터가 하나뿐이면 ● 가 사라지고 그날 종합 축이 빠진다"
+guards = ["tests/test_validation_fixes.py::test_a_lone_passer_keeps_its_mark",
+          "tests/test_validation_fixes.py::test_every_passer_has_a_score"]
+file = "scripts/sector_numbers.py"
+find = """                scored[0]["G"] = 0.5"""
+replace = """                pass"""
+
+[[mutation]]
+id = "thin-sectors-in-the-k-fit"
+why = "얇은 섹터 하나가 k 의 부호를 바꾼다"
+guards = ["tests/test_validation_fixes.py::test_thin_sectors_do_not_enter_the_k_fit"]
+file = "scripts/sector_numbers.py"
+find = """            use = [r for r in rows if r["ret"] is not None and r.get("cap_idx") and not r["thin"]]"""
+replace = """            use = [r for r in rows if r["ret"] is not None and r.get("cap_idx")]"""
+
+[[mutation]]
+id = "verifier-misses-unscored-passer"
+why = "관문 통과 섹터에 G 가 없어도 검증이 모른다"
+guards = ["tests/test_validation_fixes.py::test_verifier_flags_a_passer_without_a_score"]
+file = "scripts/verify_report.py"
+find = """        if passed != {r["sector"] for r in scored}:"""
+replace = """        if False:"""
+
+[[mutation]]
+id = "gate-ignores-adjusted-coverage"
+why = "조정 종가가 아직 없는 저녁에 리포트를 만든다"
+guards = ["tests/test_completeness_gate.py::test_missing_adjusted_closes_block_the_report"]
+file = "scripts/completeness_gate.py"
+find = """        if n_adj is not None and n and n_adj < n * MIN_COVERAGE:"""
+replace = """        if False:"""
+
+[[mutation]]
+id = "finalize-failure-counts-as-done"
+why = "확정 작업이 실패했는데 확정치로 다시 만들었다고 적는다"
+guards = ["tests/test_daily_report_flow.py::test_final_mode_keeps_the_provisional_report_when_finalize_is_not_confirmed"]
+file = "scripts/finalize_done.py"
+find = """            if OK_LINE not in f.read():"""
+replace = """            if False:"""
+
+[[mutation]]
+id = "finalize-before-the-report-day-counts"
+why = "기준일 전에 끝난 확정 작업을 그 기준일의 확정으로 본다"
+guards = ["tests/test_daily_report_flow.py::test_finalize_that_ran_before_the_report_day_does_not_count"]
+file = "scripts/finalize_done.py"
+find = """        if ended < after:"""
+replace = """        if False:"""
+
+[[mutation]]
+id = "final-rebuild-not-marked-final"
+why = "확정치로 다시 만들어도 제목이 잠정으로 남는다"
+guards = ["tests/test_daily_report_flow.py::test_final_mode_rebuilds_with_final_data_once_finalize_is_done"]
+file = "scripts/daily_report.sh"
+find = """  FINAL_ARGS=(--final)"""
+replace = """  FINAL_ARGS=()"""
+
+[[mutation]]
+id = "chip-never-says-final"
+why = "확정 리포트도 화면이 잠정이라 적는다"
+guards = ["tests/test_validation_fixes.py::test_status_chip_says_final_only_for_rebuilt_reports"]
+file = "src/sectorflow/tui/flow_view.py"
+find = """    base = "마감·확정" if d.get("final") else "마감·잠정" if d.get("finalized") else "장중·미확정\""""
+replace = """    base = "마감·잠정" if d.get("finalized") else "장중·미확정\""""
+
+[[mutation]]
+id = "numbers-drop-the-final-flag"
+why = "수치표·화면이 확정 여부를 못 받는다"
+guards = ["tests/test_validation_fixes.py::test_numbers_carry_the_final_flag"]
+file = "scripts/sector_numbers.py"
+find = """"final": bool(P.get("final")),"""
+replace = """"final": False,"""

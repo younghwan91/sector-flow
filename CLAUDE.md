@@ -17,16 +17,18 @@
 - 크론 정본 `deploy/crontab.simnode` — dotfiles `cron-install` 이 `~/git/*/deploy/crontab.<호스트>` 를 훑어 설치한다. `crontab -e` 금지.
   07:50 `pull-all --ci-gate` 가 ff 한 뒤 설치하니 main 푸시가 곧 다음날 배포다. 당장은 `git -C ~/git/sector-flow pull --ff-only`.
 - 산출물은 `$REPO/reports/<기준일>`(gitignore) + `latest` 링크. 폴더 이름은 실행일이 아니라 데이터 기준일이다.
-- 크론은 평일 18:10·19:10, 화~토 07:30 에 같은 `daily_report.sh` 를 부른다. 완전성 관문(`scripts/completeness_gate.py`)이 막으면
+- 크론은 평일 18:10·19:10, 화~토 08:20(확정 모드 `KR_QUANT_FINAL=1`)에 같은 `daily_report.sh` 를 부른다. 08:20 은 `daily_finalize` 성공을
+  Airflow 로그로 확인하고(`scripts/finalize_done.py`) 전날을 확정치로 다시 만든다(`FINAL.txt`). 완전성 관문(`scripts/completeness_gate.py`)이 막으면
   폴더에 `INCOMPLETE.txt` 만 남기고 75 로 끝나며(`latest` 유지) 다음 실행이 그 기준일을 다시 만든다. `KR_QUANT_FORCE` 도 관문은 못 끈다.
   이상 종료는 `scripts/cron_run.sh` 가 quant-airflow `alert.sh` 로 알린다.
 - 이 레포는 PRIVATE 다. 공개 전환은 사용자가 정한다.
 
 ## 데이터 함정 (kr_quant)
-- `supply_demand` 의 주체 열은 금액이 아니라 순매매 **수량**(× 종가는 근사). `flu_rt` 는 등락률 ×100. 네 주체 합 ≈ 0 이라 `etc_corp` 를 빼면 안 된다. 0 은 "0 또는 미보고", NULL 은 모름.
+- `supply_demand` 의 주체 열은 금액이 아니라 순매매 **수량**(× 종가는 근사). `flu_rt` 는 등락률 ×100 이고 09-14 부터 이어 곱할 수 없다 — 수익률은 `daily_bars_adjusted` 종가 비로. 네 주체 합 ≈ 0 이라 `etc_corp` 를 빼면 안 된다. 0 은 "0 또는 미보고", NULL 은 모름.
 - `daily_bars.trade_value` 단위는 **백만원**이다.
 - 2026-09-14 이후 `daily_bars` 의 고가·저가·종가·거래량은 애프터마켓 포함 통합값이다(시가만 정규장). 정의는 quant-airflow `CLAUDE.md` §3·`docs/schema.md`.
-- 시총 = `daily_bars` 종가 × 그 시점 상장주식수(as-of). `supply_demand.close` 와 다른 시계열이다(`storage.market_cap_asof_bulk`).
+- 시총 = **원 종가**(`supply_demand.close`, 없으면 `daily_bars_raw`) × 그 시점 상장주식수(as-of, 뒤 분할·병합·감자 반영). `daily_bars` 는 키움 수정주가라
+  시총에 쓰면 과거가 배수로 부푼다(`storage.market_cap_asof_bulk`, 2026-11-08 검증 `docs/validation/`). swing-it 사본도 같은지 볼 것.
 - `storage.py` 는 swing-it 에서 복사한 독립 사본이다. 공유 라이브러리로 묶지 않는다.
 
 ## 화면·리포트 규칙
