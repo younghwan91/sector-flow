@@ -1,7 +1,11 @@
+<!DOCTYPE html>
+<html lang="ko">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>섹터 자금 흐름 추적</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" media="print" onload="this.media='all'">
 <style>
 :root{
   color-scheme: light;
@@ -209,8 +213,8 @@ tbody tr:hover{background:var(--sunk)}
   <div class="notes">
     <p><b>순매수 금액은 종가 환산 근사다.</b> DB 가 주는 것은 순매매 <em>수량</em>이라 그날 종가를 곱해 금액을 복원했다. 참값은 VWAP 가중이다 — 방향과 상대 크기를 보는 용도다.</p>
     <p><b>비중 변화는 구간 누적 순매수 ÷ 구간말 시가총액이다.</b> 기관 지분율이 몇 %p 올랐나에 대한 근사이지 실제 보유잔고가 아니다. 시총이 작은 섹터는 분모가 작아 크게 튄다 — 종목 수와 거래대금을 같이 보라.</p>
-    <p><b>미반응은 횡단면 편차다.</b> 절대 수익이 아니라 <em>다른 섹터 대비</em> 돈은 더 받았는데 덜 갔는지를 잰다. 처음엔 원점 통과 회귀로 잡았는데, 절편이 없어 시장 전체 드리프트가 전부 잔차로 밀렸다 — 지수평균 +16.3% 구간에서 24개 중 23개가 음수, −11.2% 구간에서 22개가 양수였다. 부호가 섹터 정보가 아니라 장세를 따라가면 지표로 쓸 수 없다.</p>
-    <p><b>수익률은 KRX 업종지수 실측이다.</b> 종목 등락률을 직접 집계하면 가중치 선택이 그대로 오차가 된다 — 같은 날 거래대금 가중은 급등주에 가중치를 몰아 20거래일 +102% 를 만들었고, 전일 시총 가중으로 바꿔도 60일 구간에서 지수 대비 중앙값 17%p 벌어졌다. 업종지수가 없는 6개 섹터(보험·증권·부동산·전기가스·기타제조·출판)는 <b>미반응 랭킹에서 제외</b>한다 — 두 정의를 섞지 않는다.</p>
+    <p><b>미반응은 횡단면 편차다.</b> 절대 수익이 아니라 <em>다른 섹터 대비</em> 돈은 더 받았는데 덜 갔는지를 잰다. 처음엔 원점 통과 회귀로 잡았는데, 절편이 없어 시장 전체 드리프트가 전부 잔차로 밀렸다 — 지수평균 +16.3% 구간에서 24개 중 23개가 음수, −11.2% 구간에서 22개가 양수였다. 부호가 섹터 정보가 아니라 장세를 따라가면 지표로 쓸 수 없다. ⚠️ 수치표(<span class="num">numbers.html</span>)에서는 이 지표를 내렸다 — 사실상 "많이 빠진 순"의 재포장이라는 측정이 있었다. 신호로 읽지 마라.</p>
+    <p><b>수익률은 자체 바구니다.</b> 그 섹터 자금흐름과 같은 종목집합의 전일 시총 가중 일별 수익률을 기하누적한다. KRX 업종지수가 아니다 — 구성종목이 달라 분자와 분모가 다른 바구니가 된다(실측: 부동산 20일이 지수 +6.0% vs 자체 +74.9%).</p>
     <p><b>0 은 "관망"이 아니라 "0 또는 미보고"다.</b> 수집기가 파싱에 실패한 필드를 0 으로 채워 둘을 구분할 수 없다. 행 자체의 유무는 신뢰할 수 있다.</p>
     <p><b>빨강이 순매수, 파랑이 순매도다</b>(국내 관행 · 서구 차트와 반대). <b>국가(natn)</b>는 90일 내내 전부 0 이라 뺐다. 유니버스는 현재 상장 종목이며(<span class="num">source='kiwoom'</span>), 개인·기관세부가 폐지 종목에 없어 소스를 좁혔다 — 과거 구간 집계에 그대로 쓰면 생존편향이 된다.</p>
   </div>
@@ -344,16 +348,26 @@ function tipMove(e){const p=13,w=tip.offsetWidth,h=tip.offsetHeight;
   tip.style.left=x+"px"; tip.style.top=y+"px";}
 const tipHide=()=>tip.style.opacity=0;
 
+/** 종목 합계가 있는 구간의 키. 페이로드는 종목별 일별 배열을 안 싣고(≈4MB) 끝 날짜가 같은
+ *  프리셋 창의 합계(`win`)만 싣는다 — 그 밖의 구간(1일·전체·날짜 직접 지정)은 종목 값이 없다. */
+const NAME_WINS=new Set(Object.values(D.names).flatMap(r=>Object.keys(r.win||{})));
+function nameWin(){
+  const n=String(i1-i0+1);
+  return i1===NDATE-1&&NAME_WINS.has(n)?n:null;
+}
 /** 구간 내 그 섹터의 해당 주체 순매수 — **시총 대비**(종목 가속도)로 줄세운다.
  *  섹터를 a=J/m 으로 보면서 종목만 금액 절대값으로 줄세우면 같은 불일치가 한
  *  단계 아래에서 반복된다. 시총이 없는 종목은 금액 순위로 폴백한다. */
 function drivers(sec,k){
-  const rows=[];
+  const rows=[], w=nameWin();
+  if(w==null) return rows;
   for(const code in D.names){const r=D.names[code];
     if(r.sector!==sec) continue;
     if(market!=="전체"&&r.market!==market) continue;
-    const v=sum(r[k],i0,i1);
-    rows.push({code,name:r.name,v,cap:r.cap,
+    const x=r.win&&r.win[w];
+    if(!x||x[k]==null) continue;
+    const v=x[k];
+    rows.push({code,name:r.name,v,tv:x.tv,cap:r.cap,
                a:(r.cap&&r.cap>0)?v/r.cap*100:null});}
   const anyCap=rows.some(r=>r.a!=null);
   rows.sort((x,y)=> anyCap ? ((y.a??-1e9)-(x.a??-1e9)) : (y.v-x.v));
@@ -493,8 +507,8 @@ function render(){
       ["거래대금",amt(sum(flow(s,"tv"),i0,i1)).replace("+","")+"억"],
       ["시가총액",amt(capOf(s)).replace("+","")+"억"],
       ["가속도 J/m",pp(accelOf(s))+"%p",cls(accelOf(s))],
-      ...(hasIdx(s)?[["실제 Δv (KRX지수)",pp(retOf(s))+"%",cls(retOf(s))],
-                     ["미반응 잔차",pp(-RES.out[s])+"%p",cls(-RES.out[s])]]:[["수익률","업종지수 없음"]]),
+      ...(hasIdx(s)?[["실제 Δv (자체 바구니)",pp(retOf(s))+"%",cls(retOf(s))],
+                     ["미반응 잔차",pp(-RES.out[s])+"%p",cls(-RES.out[s])]]:[["수익률","값 없음"]]),
       ...drivers(s,actor).slice(0,3).map(x=>["↑ "+x.name,amt(x.v)+"억",cls(x.v)])]));
     b.addEventListener("mousemove",tipMove); b.addEventListener("mouseleave",tipHide);
     b.addEventListener("click",()=>{picked=s; render();});
@@ -521,7 +535,7 @@ function renderNames(){
   const label=ACTORS.find(a=>a[0]===actor)[1];
   document.getElementById("d-buy").firstChild.textContent=picked+" — "+label+"이 담은 종목";
   document.getElementById("d-sell").firstChild.textContent=picked+" — "+label+"이 던진 종목";
-  const all=drivers(picked,actor).map(x=>({...x,tv:sum(D.names[x.code].tv,i0,i1)}));
+  const all=drivers(picked,actor);
   // 후보가 적으면 상위 6 과 하위 6 이 겹친다 — 같은 종목이 "담은"·"던진" 양쪽에
   // 뜨는 것을 막기 위해 겹치지 않게 반씩 나눈다.
   const half=Math.min(6, Math.floor(all.length/2)) || (all.length?1:0);
@@ -530,7 +544,10 @@ function renderNames(){
   fill("lst-sell", all.slice(all.length-half).reverse().filter(r=>r.v<0));
   function fill(id,arr){
     const box=document.getElementById(id); box.replaceChildren();
-    if(!arr.length){const p=el("div","li"); p.append(el("div","nm","이 시장에 해당 섹터 대표종목이 없다"));
+    if(!arr.length){const p=el("div","li");
+      p.append(el("div","nm",nameWin()==null
+        ?"종목 값은 "+[...NAME_WINS].sort((a,b)=>a-b).join("·")+"일 기간에만 있다 — 위 기간 단추로 고르면 보인다"
+        :"이 시장·구간에 해당 종목이 없다"));
       box.append(p); return;}
     arr.forEach(t=>{const li=el("div","li");
       const nm=el("div","nm",t.name); nm.append(el("span",null,t.code)); li.append(nm);
@@ -572,10 +589,18 @@ function renderTable(order){
   t.append(tb);
 }
 
+/** 받은 폴더·멈춘 배치를 오늘 것으로 읽지 않게. 문턱은 화면(`STALE_DAYS`)과 같다. */
+function staleChip(asof,box){
+  const age=Math.floor((Date.now()-Date.parse(asof+"T00:00:00+09:00"))/864e5);
+  if(age<4) return;
+  const c=el("span","chip live"); c.append(el("span","dot"),document.createTextNode("⚠ "+age+"일 지난 리포트"));
+  box.append(c);
+}
 const chip=el("span",D.finalized?"chip":"chip live");
 chip.append(el("span","dot"),document.createTextNode(D.finalized?"마감 · 잠정":"장중 · 미확정"));
 chip.title=D.finalized?"수집 창(17시 KST) 뒤에 만든 리포트. 당일 값은 잠정이고 확정치는 다음날 새벽 DB 에 덮어쓴다 — 이 리포트는 안 바뀐다":"17시 KST 이전이라 부분 데이터일 수 있다";
 document.getElementById("hdr-chip").append(chip);
+staleChip(D.dates[NDATE-1],document.getElementById("hdr-chip"));
 
 render();
 </script>

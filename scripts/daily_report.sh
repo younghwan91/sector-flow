@@ -20,7 +20,12 @@ set -euo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT_ROOT="${KR_QUANT_REPORTS:-$REPO/reports}"
 DAYS="${KR_QUANT_REPORT_DAYS:-260}"
-UV="${KR_QUANT_UV:-/home/young/.local/bin/uv}"
+# 크론의 PATH 에는 ~/.local/bin 이 없다 — PATH 에 없으면 uv 기본 설치 자리를 본다.
+UV="${KR_QUANT_UV:-$(command -v uv || echo "$HOME/.local/bin/uv")}"
+if ! command -v "$UV" >/dev/null 2>&1; then
+  echo "[$(date '+%F %T')] uv 를 찾지 못했다($UV) — 설치하거나 KR_QUANT_UV 로 경로를 지정하라: https://docs.astral.sh/uv/" >&2
+  exit 127
+fi
 # ⚠️ extra 를 명시한다. `uv run` 은 기본 의존성만 맞추므로, 누가 `uv sync --extra dev`
 # 를 돌리면 psycopg2(pg extra)가 사라지고 이 배치가 조용히 죽는다 — 실제로 그렇게
 # 한 번 빠졌다. 여기서 못박아 두면 실행 시점에 항상 복원된다.
@@ -32,25 +37,43 @@ ENV_FILE="$REPO/.env"
 [ -f "$ENV_FILE" ] || ENV_FILE="$REPO/../quant-airflow/.env"
 # 워크트리(~/orca/workspaces/...)에는 옆자리 quant-airflow 가 없다.
 [ -f "$ENV_FILE" ] || ENV_FILE="$HOME/git/quant-airflow/.env"
-set -a; . "$ENV_FILE"; set +a
+if [ -f "$ENV_FILE" ]; then
+  set -a; . "$ENV_FILE"; set +a
+elif [ -z "${KR_QUANT_DB:-}" ]; then
+  echo "[$(date '+%F %T')] DB 접속정보가 없다 — .env 도 quant-airflow/.env 도 KR_QUANT_DB 도 없다." >&2
+  echo "    cp .env.example .env 뒤 KR_QUANT_DB 를 채워라. 리포트 폴더를 받아 화면만 볼 때는 이 배치가 필요 없다." >&2
+  exit 1
+fi
 
-ASOF="$("${UVR[@]}" python - <<'PY' 2>/dev/null
+# 실패 사유는 보여 준다 — 버리면 `set -e` 때문에 아래 안내까지 못 가고 빈 알림으로 끝난다.
+# libpq 가 접속 문자열을 되읊을 수 있어 비밀번호 자리는 가린다.
+ASOF_ERR="$(mktemp)"
+ASOF_RC=0
+ASOF="$("${UVR[@]}" python - <<'PY' 2>"$ASOF_ERR"
 import os
 from sectorflow.storage import connect, db_default
 con = connect(os.environ.get("KR_QUANT_DB") or db_default())
 cur = con.cursor(); cur.execute("SELECT max(date) FROM supply_demand")
 print(cur.fetchone()[0]); con.close()
 PY
-)"
+)" || ASOF_RC=$?
+if [ "$ASOF_RC" -ne 0 ]; then
+  echo "[$(date '+%F %T')] DB 에서 기준일을 못 읽었다(rc=$ASOF_RC) — 접속정보(KR_QUANT_DB)와 DB 서버를 확인하라. 중단." >&2
+  tail -n 3 "$ASOF_ERR" | sed -E 's#://[^@ ]*@#://***@#g' >&2
+  rm -f "$ASOF_ERR"
+  exit 1
+fi
+rm -f "$ASOF_ERR"
 
 # 빈 테이블이면 파이썬이 "None" 을 찍는다 — 그대로 두면 reports/None 폴더가 생긴다.
 case "$ASOF" in
   [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ;;
   *)
-    echo "[$(date '+%F %T')] 기준일을 못 읽었다(${ASOF:-빈 값}) — DB 접속 실패로 본다. 중단." >&2
+    echo "[$(date '+%F %T')] 기준일이 없다(${ASOF:-빈 값}) — 접속은 됐는데 supply_demand 가 비었다. KR_QUANT_DB 가 맞는 DB 인지 확인하라. 중단." >&2
     exit 1
     ;;
 esac
+TODAY="$(TZ=Asia/Seoul date +%F)"
 
 DEST="$OUT_ROOT/$ASOF"
 # 건너뛰기는 **데이터**가 그대로일 때를 위한 것이다(휴장일 재실행). 리포트에 실리는
@@ -63,6 +86,10 @@ DEST="$OUT_ROOT/$ASOF"
 # 다음 재시도가 그 기준일을 다시 만들 유일한 기회다. 기준일이 넘어가면 아무도 안 만든다.
 if [ -f "$DEST/numbers.html" ] && [ ! -f "$DEST/VERIFY_FAILED.txt" ] && [ -z "${KR_QUANT_FORCE:-}" ]; then
   echo "[$(date '+%F %T')] $ASOF 리포트가 이미 있다 — 건너뛴다(휴장일이거나 재실행)."
+  # 달력이 없어 휴장과 수집 실패를 못 가른다 — 갈라야 할 사람에게 사실을 준다.
+  if [[ "$ASOF" < "$TODAY" ]]; then
+    echo "    최신 수급이 오늘($TODAY)이 아니다. 오늘이 거래일이면 수집이 안 된 것이다 — quant-airflow 를 확인하라."
+  fi
   echo "    리포트 형식이 바뀌어 다시 만들려면: KR_QUANT_FORCE=1 $0"
   exit 0
 fi
@@ -78,15 +105,20 @@ if [ "$GATE_RC" -eq 75 ]; then
   if [ ! -f "$DEST/numbers.html" ]; then
     mkdir -p "$DEST"
     { echo "[$(date '+%F %T')] $ASOF 수집 미완 — 리포트를 만들지 않았다. latest 는 그대로다."
-      echo "다음 크론이 다시 시도하고, 성공하면 이 폴더가 통째로 바뀐다."
+      if [[ "$ASOF" < "$TODAY" ]]; then
+        echo "재시도 창이 끝나 간다. 수집을 메운 뒤 scripts/daily_report.sh 를 손으로 돌려라 —"
+        echo "다음 거래일 수집이 시작되면 기준일이 넘어가 이 날 리포트는 다시 못 만든다."
+      else
+        echo "다음 크론이 다시 시도하고, 성공하면 이 폴더가 통째로 바뀐다."
+      fi
       echo "$GATE_OUT"
     } > "$DEST/INCOMPLETE.txt"
   fi
   echo "[$(date '+%F %T')] ⚠️ $ASOF 수집 미완 — 게시하지 않는다(latest 유지): $DEST/INCOMPLETE.txt" >&2
   # 오늘 것이면 수집이 도는 중이라 75(경고)다. 지난 날이면 기다릴 수집이 없고 기준일이 넘어가면
   # 아무도 안 만든다 — 다음날 07:30 의 포기가 경고로 묻히지 않게 오류로 끝낸다.
-  if [[ "$ASOF" < "$(TZ=Asia/Seoul date +%F)" ]]; then
-    echo "[$(date '+%F %T')] ⚠️ $ASOF 는 오늘이 아닌데 수집 미완이다 — 기준일이 넘어가면 이 날은 안 만들어진다." >&2
+  if [[ "$ASOF" < "$TODAY" ]]; then
+    echo "[$(date '+%F %T')] ⚠️ $ASOF 는 오늘이 아닌데 수집 미완이다 — 수집을 메운 뒤 이 스크립트를 다시 돌려라. 기준일이 넘어가면 이 날은 안 만들어진다." >&2
     exit 1
   fi
   exit 75
@@ -95,52 +127,58 @@ elif [ "$GATE_RC" -ne 0 ]; then
   exit "$GATE_RC"
 fi
 
-# 강제 재생성은 **옆에 짓고 마지막에 바꿔 끼운다.** 제자리에 덮어쓰면 5분 남짓
-# 동안 폴더 안에 새 payload 와 옛 numbers.html 이 섞여 있고, 그 사이에 sw-flow 를
-# 띄운 사람은 어느 쪽도 아닌 화면을 본다. 실패하면 옛 리포트가 그대로 남는다.
-BUILD="$DEST"
-SWAP=""
+# **언제나 옆에 짓고 마지막에 옮긴다.** 제자리에 쓰면 5분 남짓 동안 폴더 안에 새 payload 와 옛
+# numbers.html 이 섞이고, 처음 만드는 날에 도중에 죽으면 numbers.html 만 남아 다음 재시도가
+# "이미 있다" 며 건너뛴다 — latest 는 어제에 머무는데 알림도 없다.
+BUILD="$DEST.building.$$"
+rm -rf "$BUILD"
+trap 'rm -rf "$BUILD"' EXIT
 if [ -d "$DEST" ]; then
-  BUILD="$DEST.building.$$"
-  SWAP="1"
-  rm -rf "$BUILD"
   echo "[$(date '+%F %T')] $ASOF 리포트를 **다시** 만든다 — 옆에 짓고 바꿔 낀다"
 fi
-DEST_FINAL="$DEST"
-DEST="$BUILD"
 
-mkdir -p "$DEST"
+mkdir -p "$BUILD"
 echo "[$(date '+%F %T')] 생성 시작 — 기준일 $ASOF, 구간 ${DAYS}거래일"
 # 페이로드를 **한 번만** 만들고 둘 다 그걸 쓴다. 월별 시총 계산이 수 분이라
 # 예전처럼 세 번 돌리면 배치가 15분을 넘고 그만큼 실패 창이 넓어진다.
-"${UVR[@]}" python scripts/sector_flow.py    --days "$DAYS" --json "$DEST/payload.json"
-"${UVR[@]}" python scripts/sector_flow.py    --from-json "$DEST/payload.json" --html "$DEST/viewer.html"
-"${UVR[@]}" python scripts/sector_numbers.py --payload "$DEST/payload.json" --html "$DEST/numbers.html"
+"${UVR[@]}" python scripts/sector_flow.py    --days "$DAYS" --json "$BUILD/payload.json"
+"${UVR[@]}" python scripts/sector_flow.py    --from-json "$BUILD/payload.json" --html "$BUILD/viewer.html"
+"${UVR[@]}" python scripts/sector_numbers.py --payload "$BUILD/payload.json" --html "$BUILD/numbers.html"
 
 # 저장한 것을 그 자리에서 검증한다 — 실패하면 폴더에 VERIFY_FAILED 를 남긴다.
 # 조용히 틀린 리포트가 쌓이는 것이 검증 없이 도는 것보다 나쁘다.
 VERIFY_RC=0
-if "${UVR[@]}" python scripts/verify_report.py --dir "$DEST" --db-check \
-     > "$DEST/VERIFY.txt" 2>&1; then
+if "${UVR[@]}" python scripts/verify_report.py --dir "$BUILD" --db-check \
+     > "$BUILD/VERIFY.txt" 2>&1; then
   echo "[$(date '+%F %T')] 검증 통과 — $DEST/VERIFY.txt"
 else
-  cp "$DEST/VERIFY.txt" "$DEST/VERIFY_FAILED.txt"
+  cp "$BUILD/VERIFY.txt" "$BUILD/VERIFY_FAILED.txt"
+  # 브라우저로만 보는 사람도 알아야 한다 — 화면 제목의 ⚠ 는 터미널에만 있다.
+  for page in numbers.html viewer.html; do
+    sed -i '0,/<header>/s//<div style="padding:10px 14px;margin:0 0 12px;background:#fff3cd;color:#664d03;border:1px solid #ffda6a;border-radius:6px;font-weight:600">⚠ 이 리포트는 자기 검증에 걸렸다 — 같은 폴더의 VERIFY_FAILED.txt 를 보라<\/div>\n&/' "$BUILD/$page"
+  done
   echo "[$(date '+%F %T')] ⚠️ 검증 실패 — $DEST/VERIFY_FAILED.txt 확인" >&2
-  tail -5 "$DEST/VERIFY.txt" >&2
+  tail -5 "$BUILD/VERIFY.txt" >&2
   VERIFY_RC=1
 fi
 
-if [ -n "$SWAP" ]; then
-  OLD="$DEST_FINAL.replaced.$$"
-  mv "$DEST_FINAL" "$OLD"
-  mv "$DEST" "$DEST_FINAL"
+if [ -d "$DEST" ]; then
+  OLD="$DEST.replaced.$$"
+  mv "$DEST" "$OLD"
+  mv "$BUILD" "$DEST"
   rm -rf "$OLD"
-  DEST="$DEST_FINAL"
   echo "[$(date '+%F %T')] 바꿔 끼웠다 — $DEST"
+else
+  mv "$BUILD" "$DEST"
 fi
+trap - EXIT
 
 ln -sfn "$DEST" "$OUT_ROOT/latest"
-echo "[$(date '+%F %T')] 완료 — $DEST"
+if [ "$VERIFY_RC" -eq 0 ]; then
+  echo "[$(date '+%F %T')] 완료 — $DEST 를 latest 로 게시했다"
+else
+  echo "[$(date '+%F %T')] ⚠️ 게시했지만 검증에 걸렸다 — $DEST (latest). 화면과 HTML 이 ⚠ 로 표시하고, 같은 기준일이면 다음 크론이 다시 만든다."
+fi
 ls -lh "$DEST" | tail -n +2 | awk '{print "   ", $9, $5}'
-# 검증에 걸린 리포트도 게시한다(화면이 ⚠ 로 말한다). 다만 크론에는 실패로 돌려 알림이 가게 한다.
+# 검증에 걸린 리포트도 게시한다(화면·HTML 이 ⚠ 로 말한다). 다만 크론에는 실패로 돌려 알림이 가게 한다.
 exit "$VERIFY_RC"

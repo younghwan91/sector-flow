@@ -61,6 +61,9 @@ def _finalized(date: str) -> bool:
 
 def load(con, days: int) -> tuple[pd.DataFrame, list[str]]:
     dates = recent_dates(con, days)
+    if not dates:
+        raise SystemExit("supply_demand 에 데이터가 없다 — 접속정보를 불러왔는지 확인하라.\n"
+                         "  set -a; . ~/git/quant-airflow/.env; set +a  (또는 --db)")
 
     sd = read_supply_demand(
         con,
@@ -333,6 +336,11 @@ def build_payload(df: pd.DataFrame, dates: list[str], caps: pd.DataFrame,
     }
 
 
+def script_json(payload: dict) -> str:
+    """``<script>`` 안에 넣을 JSON — 값에 ``</script>`` 가 있어도 태그가 안 닫힌다(``<\\/`` 는 같은 JSON)."""
+    return json.dumps(payload, ensure_ascii=False).replace("</", "<\\/")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--db", default=os.environ.get("KR_QUANT_DB") or db_default())
@@ -350,7 +358,7 @@ def main():
         with open(tpl, encoding="utf-8") as f:
             html = f.read()
         with open(a.html, "w", encoding="utf-8") as f:
-            f.write(html.replace("__DATA__", json.dumps(payload, ensure_ascii=False)))
+            f.write(html.replace("__DATA__", script_json(payload)))
         print(f"wrote {a.html}  (재사용: {a.from_json})")
         return
 
@@ -377,7 +385,7 @@ def main():
         with open(tpl, encoding="utf-8") as f:
             html = f.read()
         with open(a.html, "w", encoding="utf-8") as f:
-            f.write(html.replace("__DATA__", json.dumps(payload, ensure_ascii=False)))
+            f.write(html.replace("__DATA__", script_json(payload)))
         print(f"wrote {a.html}  ({dates[0]} ~ {dates[-1]}, {len(dates)}거래일, "
               f"{payload['n_names']}종목, 마감후={payload['finalized']})")
         return
