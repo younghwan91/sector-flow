@@ -112,13 +112,16 @@ def test_no_history_cannot_be_compared():
 
 # ── DB 경로: 리포트와 같은 유니버스(키움 수급 ∩ stocks)를 읽는가 ──────────────────
 
-def _db(path: Path, today_kosdaq: int, source: str = "kiwoom") -> str:
+def _db(path: Path, today_kosdaq: int, source: str = "kiwoom", adj_missing: bool = False) -> str:
     con = sqlite3.connect(path)
     con.executescript("""
       CREATE TABLE stocks(code TEXT PRIMARY KEY, name TEXT, market TEXT, sector TEXT);
       CREATE TABLE supply_demand(code TEXT, date TEXT, close REAL, institution REAL, source TEXT);
       CREATE TABLE daily_bars(code TEXT, date TEXT, close REAL);
       CREATE TABLE shares_outstanding_history(code TEXT, date TEXT, shares_outstanding INTEGER);
+      CREATE TABLE daily_bars_raw(code TEXT, date TEXT, close REAL);
+      CREATE TABLE daily_bars_adjusted(code TEXT, date TEXT, close REAL);
+      CREATE TABLE corporate_actions(code TEXT, date TEXT, upd_stkpc_tp TEXT, upd_rt REAL);
     """)
     for i in range(100):
         code = f"{i:06d}"
@@ -132,6 +135,9 @@ def _db(path: Path, today_kosdaq: int, source: str = "kiwoom") -> str:
             con.execute("INSERT INTO supply_demand VALUES(?,?,?,?,?)",
                         (code, d, 100.0, 1.0, source if d == DAYS[-1] else "kiwoom"))
             con.execute("INSERT INTO daily_bars VALUES(?,?,?)", (code, d, 100.0))
+            con.execute("INSERT INTO daily_bars_raw VALUES(?,?,?)", (code, d, 100.0))
+            if not (d == DAYS[-1] and adj_missing):
+                con.execute("INSERT INTO daily_bars_adjusted VALUES(?,?,?)", (code, d, 100.0))
     con.commit()
     con.close()
     return str(path)
@@ -202,3 +208,12 @@ def test_main_exit_codes(tmp_path, capsys):
     db2 = _db(tmp_path / "b.db", today_kosdaq=3)
     assert G.main(["--db", db2, "--asof", DAYS[-1]]) == G.EX_INCOMPLETE
     assert "FAIL" in capsys.readouterr().out
+
+
+def test_missing_adjusted_closes_block_the_report(tmp_path):
+    """섹터 수익률은 조정 종가에서 나온다. 조정 표가 아직 안 돈 저녁엔 그날 수익률이 비어
+    섹터 수익률이 남은 종목만으로 계산된다 — 만들지 말고 다음 크론을 기다린다."""
+    con = sqlite3.connect(_db(tmp_path / "a.db", today_kosdaq=50, adj_missing=True))
+    ok, lines = G.evaluate(G.read_counts(con, DAYS[-1]), DAYS[-1])
+    assert not ok
+    assert any("조정 종가" in x for x in lines)

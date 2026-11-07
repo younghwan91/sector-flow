@@ -9,7 +9,9 @@
 규칙 — **시장별로** 다음을 전부 만족해야 통과한다(리포트와 같은 유니버스: 키움 수급 ∩ ``stocks``).
 
 * 수급 종목수 ≥ 기준의 :data:`MIN_COVERAGE`
-* 시총이 잡히는 종목수(``daily_bars`` 종가 × 상장주식수) ≥ 기준의 :data:`MIN_COVERAGE`
+* 시총이 잡히는 종목수(원 종가 × 상장주식수, ``storage.market_cap_asof_bulk``) ≥ 기준의 :data:`MIN_COVERAGE`
+* 기준일 조정 종가(``daily_bars_adjusted``)가 있는 종목수 ≥ 그날 수급 종목수의 :data:`MIN_COVERAGE` —
+  섹터 수익률의 원천이다. ``daily_price_adjust``(수집 뒤 16:55~)가 안 끝난 저녁엔 그날 행이 없다
 * 시총 합 > 0 · 그날 행이 있음
 
 기준은 직전 :data:`BASELINE_DAYS` 거래일 **중앙값**이다. 전 거래일 하나만 보면 이틀 연속 부분
@@ -48,8 +50,8 @@ EX_INCOMPLETE = 75
 STATEMENT_TIMEOUT = "120s"
 
 
-def read_counts(con, asof: str) -> dict[str, dict[str, tuple[int, int, float]]]:
-    """시장 → 날짜 → (수급 종목수, 시총 있는 종목수, 시총 합). 기준일과 직전 거래일들.
+def read_counts(con, asof: str) -> dict[str, dict[str, tuple[int, int, float, int]]]:
+    """시장 → 날짜 → (수급 종목수, 시총 있는 종목수, 시총 합, 조정 종가 있는 종목수). 기준일과 직전 거래일들.
 
     날짜는 ``sector_flow.load`` 와 같은 :func:`recent_dates` 로 고른다. 키움 행이 없는 날도 "빈 날"로
     남아야 한다.
@@ -71,8 +73,15 @@ def read_counts(con, asof: str) -> dict[str, dict[str, tuple[int, int, float]]]:
     df["date"] = df["date"].astype(str)
     df["cap"] = market_cap_asof_bulk(con, df).to_numpy()
     df["has_cap"] = df["cap"].fillna(0) > 0
+    ph = "%s" if _is_pg(con) else "?"
+    adj = pd.read_sql_query(
+        f"SELECT code, date FROM daily_bars_adjusted WHERE date >= {ph} AND date <= {ph} AND close > 0",
+        con, params=[dates[0], dates[-1]])
+    adj_keys = set(zip(adj["code"], adj["date"].astype(str)))
+    df["has_adj"] = [(c, d) in adj_keys for c, d in zip(df["code"], df["date"])]
     for (market, date), g in df.groupby(["market", "date"]):
-        out[market][date] = (len(g), int(g["has_cap"].sum()), float(g["cap"].fillna(0).sum()))
+        out[market][date] = (len(g), int(g["has_cap"].sum()), float(g["cap"].fillna(0).sum()),
+                             int(g["has_adj"].sum()))
     return out
 
 
@@ -83,7 +92,8 @@ def evaluate(counts: dict, asof: str) -> tuple[bool, list[str]]:
         return False, [f"[FAIL] {asof} 시장 목록이 비었다 — 비교할 수 없다"]
     for market, by_date in sorted(counts.items()):
         prior = sorted(d for d in by_date if d < asof)[-BASELINE_DAYS:]
-        n, n_cap, cap_sum = by_date.get(asof, (0, 0, 0.0))
+        n, n_cap, cap_sum, *rest = by_date.get(asof, (0, 0, 0.0, 0))
+        n_adj = rest[0] if rest else None
         why = []
         if not prior:
             why.append("직전 거래일 행이 없어 비교할 수 없다")
@@ -97,6 +107,8 @@ def evaluate(counts: dict, asof: str) -> tuple[bool, list[str]]:
                 why.append(f"시총 종목수 {n_cap}/{base_cap:.0f} < {MIN_COVERAGE:.0%}")
         if cap_sum <= 0:
             why.append("시총 합이 0 이다")
+        if n_adj is not None and n and n_adj < n * MIN_COVERAGE:
+            why.append(f"조정 종가 {n_adj}/{n} < {MIN_COVERAGE:.0%}(daily_price_adjust 가 아직 안 돌았다)")
         if why:
             ok = False
             lines.append(f"[FAIL] {market}: " + " · ".join(why))

@@ -31,6 +31,7 @@ from datetime import datetime, timedelta, timezone
 import pandas as pd
 
 from sectorflow.storage import (
+    _is_pg,
     connect, db_default, market_cap_asof_bulk, read_supply_demand, recent_dates)
 
 EOK = 1e8                 # 원 → 억원
@@ -85,8 +86,37 @@ def load(con, days: int) -> tuple[pd.DataFrame, list[str]]:
     for raw, _ in INST_DETAIL:
         df[raw] = df[raw].astype(float) * df["close"] / EOK
     df["tv"] = df["acc_trde_qty"].astype(float) * df["close"] / EOK
-    df["ret"] = df["flu_rt"].astype(float) / 100.0   # flu_rt 는 등락률 × 100 (bp)
+    df["ret"] = adjusted_returns(con, df[["code", "date"]], dates)
     return df, dates
+
+
+def adjusted_returns(con, keys: pd.DataFrame, dates: list[str]) -> pd.Series:
+    """종목 일별 수익률[%] = ``daily_bars_adjusted`` 종가 ÷ 그 종목의 직전 거래일 종가 − 1.
+
+    예전엔 ``supply_demand.flu_rt`` 를 썼다. 2026-09-14 부터 그 값의 분자는 애프터마켓까지 포함한
+    통합 종가인데 기준가는 전일 **정규장** 종가라, 날마다 이어 곱하면 실제 종가 비와 어긋난다
+    (20일 섹터 수익률 중앙 1.9%p·최대 8.9%p, 2026-11-08 지표 검증). quant-airflow 스키마 문서도
+    "flu_rt 를 수익률로 쓰지 않는다 — 수익률은 daily_bars_adjusted 에서" 라고 적는다. 같은 표 안의
+    종가 비라 세션 정의가 양쪽에서 같고, 분할·병합은 백조정돼 있다.
+
+    그날 조정 종가가 없으면(조정 표가 아직 안 돈 저녁) ``NaN`` 이다 — 0 으로 채우지 않는다. 완전성
+    관문이 기준일의 조정 종가 커버리지를 본다.
+    """
+    codes = keys["code"].unique().tolist()
+    if not codes:
+        return pd.Series([], dtype=float, index=keys.index)
+    start = recent_dates(con, 2, asof=dates[0])[0]   # 첫날의 전일 종가가 있어야 첫날 수익률이 나온다
+    ph = "%s" if _is_pg(con) else "?"
+    adj = pd.read_sql_query(
+        f"SELECT code, date, close FROM daily_bars_adjusted WHERE date >= {ph} AND date <= {ph}",
+        con, params=[start, dates[-1]])
+    adj["date"] = adj["date"].astype(str)
+    adj = adj[adj["code"].isin(codes) & adj["close"].notna() & (adj["close"] > 0)]
+    adj = adj.sort_values(["code", "date"])
+    adj["ret"] = adj.groupby("code")["close"].pct_change() * 100.0
+    got = adj.set_index(["code", "date"])["ret"]
+    out = got.reindex(pd.MultiIndex.from_arrays([keys["code"], keys["date"]])).to_numpy()
+    return pd.Series(out, index=keys.index, dtype=float)
 
 
 def attach_daily_cap(con, df: pd.DataFrame) -> pd.DataFrame:
@@ -288,7 +318,7 @@ def build_payload(df: pd.DataFrame, dates: list[str], caps: pd.DataFrame,
         # 벌어진다(+10% 와 −10% 를 더하면 0 이지만 실제는 −1%). 결측일은 0 으로
         # 본다 — 그날 거래가 없었다는 뜻이고, 빼면 구간 길이가 종목마다 달라진다.
         #
-        # ⚠️ `df["ret"]` 은 **퍼센트**다(flu_rt 가 bp 라 100 으로 나눈 결과). 분수로
+        # ⚠️ `df["ret"]` 은 **퍼센트**다(조정 종가 비 × 100). 분수로
         # 착각해 1+ret 를 곱하면 하루 +2.5% 가 +250% 가 되어 20일 누적이 1e14 로
         # 튄다 — 실제로 한 번 그렇게 냈고 verify_report 의 −100% 하한이 잡았다.
         rr = (sub.assign(_r=1.0 + sub["ret"].fillna(0.0) / 100.0)
@@ -306,7 +336,8 @@ def build_payload(df: pd.DataFrame, dates: list[str], caps: pd.DataFrame,
     for (m, s, d), grp in df.groupby(["market", "sector", "date"], sort=False):
         if m not in ret:
             continue
-        g = grp.dropna(subset=["cap_lag"])
+        # 수익률이 없는 종목(그날 조정 종가 없음)은 가중치에서도 뺀다 — 남기면 평균이 0 쪽으로 끌린다.
+        g = grp.dropna(subset=["cap_lag", "ret"])
         w = float(g["cap_lag"].sum())
         ret[m][s][di[d]] = round(float((g["ret"] * g["cap_lag"]).sum() / w) if w else 0.0, 3)
         rw[m][s][di[d]] = round(w, 1)
@@ -348,6 +379,8 @@ def main():
     ap.add_argument("--json")
     ap.add_argument("--html")
     ap.add_argument("--from-json", help="이미 만든 페이로드를 읽어 HTML 만 낸다")
+    ap.add_argument("--final", action="store_true",
+                    help="daily_finalize 확인 뒤 확정치로 만든다(daily_report.sh 확정 모드가 붙인다)")
     a = ap.parse_args()
 
     if a.from_json:
@@ -374,6 +407,9 @@ def main():
     cap_monthly = sector_cap_monthly(con, df, dates)
     con.close()
     payload = build_payload(df, dates, caps, cap_monthly)
+    if a.final:
+        # 키를 확정일 때만 싣는다 — 잠정 리포트의 페이로드는 예전과 바이트가 같다.
+        payload["final"] = True
     covered = sum(1 for m in payload["markets"] for s in payload["sectors"]
                   if payload["iret"][m].get(s))
     print(f"업종지수 커버리지: {covered} / "
