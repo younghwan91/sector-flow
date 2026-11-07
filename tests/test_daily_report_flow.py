@@ -25,6 +25,8 @@ TODAY = DAYS[-1]
 FAKE_SECTOR_FLOW = """
 import pathlib, sys
 a = sys.argv
+if "--final" in a:
+    pathlib.Path(a[a.index("--json") + 1]).with_name("ARGS_FINAL").write_text("1")
 if "--json" in a:
     pathlib.Path(a[a.index("--json") + 1]).write_text("{}")
 if "--html" in a:
@@ -50,8 +52,11 @@ def _seed(db: Path, today_kosdaq: int) -> None:
       CREATE TABLE IF NOT EXISTS daily_bars(code TEXT, date TEXT, close REAL);
       CREATE TABLE IF NOT EXISTS shares_outstanding_history(code TEXT, date TEXT,
                                                             shares_outstanding INTEGER);
+      CREATE TABLE IF NOT EXISTS daily_bars_raw(code TEXT, date TEXT, close REAL);
+      CREATE TABLE IF NOT EXISTS daily_bars_adjusted(code TEXT, date TEXT, close REAL);
+      CREATE TABLE IF NOT EXISTS corporate_actions(code TEXT, date TEXT, upd_stkpc_tp TEXT, upd_rt REAL);
       DELETE FROM stocks; DELETE FROM supply_demand; DELETE FROM daily_bars;
-      DELETE FROM shares_outstanding_history;
+      DELETE FROM shares_outstanding_history; DELETE FROM daily_bars_raw; DELETE FROM daily_bars_adjusted;
     """)
     for i in range(100):
         code = f"{i:06d}"
@@ -65,6 +70,8 @@ def _seed(db: Path, today_kosdaq: int) -> None:
             con.execute("INSERT INTO supply_demand VALUES(?,?,?,?,?)",
                         (code, d, 100.0, 1.0, "kiwoom"))
             con.execute("INSERT INTO daily_bars VALUES(?,?,?)", (code, d, 100.0))
+            con.execute("INSERT INTO daily_bars_raw VALUES(?,?,?)", (code, d, 100.0))
+            con.execute("INSERT INTO daily_bars_adjusted VALUES(?,?,?)", (code, d, 100.0))
     con.commit()
     con.close()
 
@@ -73,7 +80,7 @@ def _seed(db: Path, today_kosdaq: int) -> None:
 def repo(tmp_path):
     r = tmp_path / "sector-flow"
     (r / "scripts").mkdir(parents=True)
-    for name in ("daily_report.sh", "cron_run.sh", "completeness_gate.py"):
+    for name in ("daily_report.sh", "cron_run.sh", "completeness_gate.py", "finalize_done.py"):
         shutil.copy(REPO / "scripts" / name, r / "scripts" / name)
     (r / "scripts" / "sector_flow.py").write_text(FAKE_SECTOR_FLOW)
     (r / "scripts" / "sector_numbers.py").write_text(FAKE_NUMBERS)
@@ -280,7 +287,7 @@ def test_cron_retries_after_the_longest_seen_collection_and_before_next_day():
     """18:47 까지 간 수집을 놓치지 않고, 기준일이 넘어가기 전(다음날 아침)에도 한 번 더 본다."""
     sched = [tuple(ln.split()[:5]) for ln in _cron_lines() if "daily_report.sh" in ln]
     assert ("10", "18,19", "*", "*", "1-5") in sched
-    assert ("30", "7", "*", "*", "2-6") in sched
+    assert ("20", "8", "*", "*", "2-6") in sched
 
 
 def test_past_day_incomplete_note_tells_what_to_do_next(repo):
@@ -374,3 +381,63 @@ def test_skip_on_a_later_day_mentions_the_collection(repo):
     p = _run(repo, today="2026-11-03")
     assert p.returncode == 0
     assert "quant-airflow 를 확인하라" in p.stdout
+
+
+# ── 확정 모드(08:20) — daily_finalize 를 확인하고 전날 리포트를 확정치로 다시 만든다 ──────────
+
+def _finalize_logs(root: Path, ok: bool = True, ended: str = "2026-11-03 07:20") -> Path:
+    import time
+    run = root / "dag_id=daily_finalize" / "run_id=scheduled__2026-11-01T21:30:00+00:00"
+    for task in ("finalize_both", "rebuild_adjusted"):
+        d = run / f"task_id={task}"
+        d.mkdir(parents=True, exist_ok=True)
+        f = d / "attempt=1.log"
+        f.write_text("... Task exited with return code 0\n" if ok else "... Task exited with return code 1\n")
+        t = time.mktime(time.strptime(ended, "%Y-%m-%d %H:%M"))
+        os.utime(f, (t, t))
+    return root
+
+
+def _published_today(repo: Path) -> Path:
+    dest = repo / "reports" / TODAY
+    dest.mkdir(parents=True)
+    (dest / "numbers.html").write_text("<provisional>")
+    return dest
+
+
+def test_final_mode_rebuilds_with_final_data_once_finalize_is_done(repo, tmp_path):
+    _seed(repo.parent / "db.sqlite", today_kosdaq=50)
+    dest = _published_today(repo)
+    logs = _finalize_logs(tmp_path / "airflow")
+    p = _run(repo, today="2026-11-03", KR_QUANT_FINAL="1", KR_QUANT_AIRFLOW_LOGS=str(logs))
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert (dest / "FINAL.txt").is_file()
+    assert (dest / "ARGS_FINAL").is_file(), "sector_flow 에 --final 을 안 넘겼다 — 제목이 잠정으로 남는다"
+    assert (dest / "numbers.html").read_text() != "<provisional>"
+    # 한 번 확정한 기준일은 다시 안 만든다.
+    p = _run(repo, today="2026-11-03", KR_QUANT_FINAL="1", KR_QUANT_AIRFLOW_LOGS=str(logs))
+    assert p.returncode == 0 and "이미 확정치로" in p.stdout
+
+
+@pytest.mark.parametrize("logs_ok", [False, None])
+def test_final_mode_keeps_the_provisional_report_when_finalize_is_not_confirmed(repo, tmp_path, logs_ok):
+    _seed(repo.parent / "db.sqlite", today_kosdaq=50)
+    dest = _published_today(repo)
+    logs = tmp_path / "airflow"
+    if logs_ok is not None:
+        _finalize_logs(logs, ok=logs_ok)
+    p = _run(repo, today="2026-11-03", KR_QUANT_FINAL="1", KR_QUANT_AIRFLOW_LOGS=str(logs))
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert (dest / "numbers.html").read_text() == "<provisional>"
+    assert not (dest / "FINAL.txt").exists()
+    assert "잠정 리포트를 그대로" in p.stdout
+
+
+def test_finalize_that_ran_before_the_report_day_does_not_count(repo, tmp_path):
+    """기준일 전에 끝난 확정 작업은 그 기준일을 덮지 않았다."""
+    _seed(repo.parent / "db.sqlite", today_kosdaq=50)
+    dest = _published_today(repo)
+    logs = _finalize_logs(tmp_path / "airflow", ended="2026-11-02 07:20")
+    p = _run(repo, today="2026-11-03", KR_QUANT_FINAL="1", KR_QUANT_AIRFLOW_LOGS=str(logs))
+    assert p.returncode == 0
+    assert not (dest / "FINAL.txt").exists()
