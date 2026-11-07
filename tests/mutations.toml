@@ -1354,3 +1354,153 @@ replace = """  if(!C){
     x.append(el("td"));
     return;
   }"""
+
+[[mutation]]
+id = "tui-absent-sector-is-a-row"
+why = "그 시장에 종목이 없는 섹터가 +0·1년 50 으로 찍혀 조용한 섹터로 읽힌다(웹은 뺀다)"
+guards = ["tests/test_tui_user_facing.py::test_a_sector_with_no_stocks_in_the_market_is_not_a_row"]
+file = "src/sectorflow/tui/flow_view.py"
+find = """        rows = [self._project(r) for r in b["rows"] if not absent_row(r)]"""
+replace = """        rows = [self._project(r) for r in b["rows"]]"""
+
+[[mutation]]
+id = "tui-combined-actors-from-another-window"
+why = "종합 화면의 4주체가 20일 화면과 다른 숫자를 말한다"
+guards = ["tests/test_tui_flow_view.py::test_combined_screen_shows_the_four_actors_and_says_which_window"]
+file = "src/sectorflow/tui/flow_view.py"
+find = """        b = self.d["blocks"].get(f"{self.COMBINED_WIN}|{self.market}") or {}"""
+replace = """        b = self.d["blocks"].get(f"5|{self.market}") or {}"""
+
+[[mutation]]
+id = "tui-empty-combined-says-nothing"
+why = "종합이 빈 시장에서 이유 없이 (데이터 없음) 만 뜬다"
+guards = ["tests/test_tui_user_facing.py::test_an_empty_combined_market_says_why"]
+file = "src/sectorflow/tui/flow_view.py"
+find = """            return "이 시장은 G 가 나온 구간이 둘 미만이라 종합이 없다 — w 로 다른 구간을 보라\""""
+replace = """            return "데이터 없음\""""
+
+[[mutation]]
+id = "numbers-absent-sector-is-a-row"
+why = "수치표가 종목 없는 섹터를 +0.00 행으로 그린다"
+guards = ["tests/test_report_pages.py::test_numbers_drops_a_sector_with_no_stocks_in_the_market"]
+file = "scripts/templates/sector_numbers.html"
+find = "function absentRow(r){ return r.n_all===0 && !r.cap; }"
+replace = "function absentRow(r){ return false; }"
+
+[[mutation]]
+id = "viewer-absent-sector-is-a-row"
+why = "뷰어가 종목 없는 섹터를 +0.00%p 행으로 그린다"
+guards = ["tests/test_report_pages.py::test_viewer_drops_a_sector_with_no_stocks_in_the_market"]
+file = "scripts/templates/sector_flow.html"
+find = "  return ms.some(m=>(nb[m][sec]||0)>0);"
+replace = "  return true;"
+
+[[mutation]]
+id = "web-serves-the-payload"
+why = "웹 서비스가 내보내는 파일 목록이 넓어지면 페이로드·로그가 밖으로 나간다"
+guards = ["tests/test_serve_reports.py::test_only_the_report_pages_are_served"]
+file = "scripts/serve_reports.py"
+find = """    "INCOMPLETE.txt": "text/plain; charset=utf-8",
+}"""
+replace = """    "INCOMPLETE.txt": "text/plain; charset=utf-8",
+    "payload.json": "application/json",
+}"""
+
+[[mutation]]
+id = "web-latest-is-not-latest"
+why = "/latest/ 즐겨찾기가 최신이 아닌 폴더를 연다"
+guards = ["tests/test_serve_reports.py::test_latest_redirects_to_the_dated_page"]
+file = "scripts/serve_reports.py"
+find = """            return self._redirect(f"/{d}/{rest[0]}")"""
+replace = """            return self._redirect(f"/{report_dates(self.root)[-1]}/{rest[0]}")"""
+
+[[mutation]]
+id = "web-sends-3mb-raw"
+why = "3MB 페이지를 압축 없이 보내 폰·느린 망에서 한참 걸린다"
+guards = ["tests/test_serve_reports.py::test_pages_are_utf8_revalidated_and_gzipped"]
+file = "scripts/serve_reports.py"
+find = """        gz = "gzip" in (self.headers.get("Accept-Encoding") or "")"""
+replace = """        gz = False"""
+
+[[mutation]]
+id = "web-index-hides-failed-verify"
+why = "목록이 검증 실패한 날을 표시하지 않는다"
+guards = ["tests/test_serve_reports.py::test_index_marks_latest_failed_and_incomplete"]
+file = "scripts/serve_reports.py"
+find = """        if has["VERIFY_FAILED.txt"]:"""
+replace = """        if False:"""
+
+[[mutation]]
+id = "web-tailscale-down-alerts"
+why = "부팅 직후 Tailscale 이 없을 때마다 실패 알림이 간다"
+guards = ["tests/test_serve_reports.py::test_serve_sh_does_nothing_without_a_tailscale_address"]
+file = "scripts/serve.sh"
+find = """  exec python3 "$REPO/scripts/serve_reports.py" --root "$REPO/reports" \\
+    --soft-fail"""
+replace = """  echo "Tailscale 주소가 없다"; exit 1
+  exec python3 "$REPO/scripts/serve_reports.py" --root "$REPO/reports" \\
+    --soft-fail"""
+
+[[mutation]]
+id = "web-cron-line-dropped"
+why = "크론이 웹 서비스를 안 살리면 재부팅·배포 뒤 아무도 안 띄운다"
+guards = ["tests/test_daily_report_flow.py::test_web_service_is_kept_alive_by_cron"]
+file = "deploy/crontab.simnode"
+find = "*/5 * * * * mkdir -p"
+replace = "# */5 * * * * mkdir -p"
+
+[[mutation]]
+id = "web-soft-failure-alerts-every-run"
+why = "포트 점유·Tailscale 미기동이 5분마다(하루 288건) 실패 알림이 된다"
+guards = ["tests/test_serve_reports.py::test_soft_failures_alert_once_an_hour_not_every_five_minutes"]
+file = "scripts/serve_reports.py"
+find = "    return 1 if n % SOFT_FAIL_ALERT_EVERY == 0 else 0"
+replace = "    return 1"
+
+[[mutation]]
+id = "web-taken-port-crashes"
+why = "포트가 막혀 있으면 트레이스백으로 죽어 매번 알린다"
+guards = ["tests/test_serve_reports.py::test_a_taken_port_is_a_soft_failure"]
+file = "scripts/serve_reports.py"
+find = "        if e.errno in (errno.EADDRINUSE, errno.EADDRNOTAVAIL):"
+replace = "        if False:"
+
+[[mutation]]
+id = "web-sigterm-is-a-failure"
+why = "재부팅·손으로 끄면 rc=143 으로 실패 알림이 간다"
+guards = ["tests/test_serve_reports.py::test_sigterm_is_a_clean_exit"]
+file = "scripts/serve_reports.py"
+find = "    signal.signal(signal.SIGTERM, lambda *_: threading.Thread(target=srv.shutdown, daemon=True).start())"
+replace = "    pass"
+
+[[mutation]]
+id = "web-idle-connections-hold-threads"
+why = "요청 없이 연결만 연 클라이언트가 스레드를 영원히 잡는다"
+guards = ["tests/test_serve_reports.py::test_idle_connections_do_not_hold_threads_forever"]
+file = "scripts/serve_reports.py"
+find = "    timeout = 30"
+replace = "    timeout = None"
+
+[[mutation]]
+id = "web-incomplete-day-dead-end"
+why = "수집 미완인 날을 열면 이유 없는 404 다"
+guards = ["tests/test_serve_reports.py::test_an_incomplete_day_leads_to_its_note_not_a_dead_end"]
+file = "scripts/serve_reports.py"
+find = """                return self._redirect(f"/{parts[0]}/INCOMPLETE.txt")"""
+replace = """                pass"""
+
+[[mutation]]
+id = "web-gzip-shares-etag"
+why = "압축본과 원본이 같은 ETag 라 중간 캐시가 섞어 줄 수 있다"
+guards = ["tests/test_serve_reports.py::test_gzip_and_raw_have_different_etags"]
+file = "scripts/serve_reports.py"
+find = """{"-gz" if gz else ""}"""
+replace = ""
+
+[[mutation]]
+id = "web-swap-404"
+why = "배치가 폴더를 바꿔 끼우는 순간 온 요청이 404 다"
+guards = ["tests/test_serve_reports.py::test_a_folder_swap_does_not_404"]
+file = "scripts/serve_reports.py"
+find = "SWAP_RETRY = (0.1, 0.3, 0.6)"
+replace = "SWAP_RETRY = ()"

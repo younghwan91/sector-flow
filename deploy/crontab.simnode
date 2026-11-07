@@ -16,3 +16,7 @@
 #
 10 18,19 * * 1-5 mkdir -p /home/young/git/sector-flow/reports && /home/young/git/sector-flow/scripts/cron_run.sh sector-flow-report -- /home/young/git/sector-flow/scripts/daily_report.sh >> /home/young/git/sector-flow/reports/cron.log 2>&1
 30 7 * * 2-6 mkdir -p /home/young/git/sector-flow/reports && /home/young/git/sector-flow/scripts/cron_run.sh sector-flow-report -- /home/young/git/sector-flow/scripts/daily_report.sh >> /home/young/git/sector-flow/reports/cron.log 2>&1
+
+# 리포트 웹 서비스 — 5분마다 "안 떠 있으면 띄운다"(scripts/serve.sh, 이미 떠 있으면 잠금을 못 잡고 바로 0).
+# 재부팅·서버 사망·배포(서버가 제 코드가 바뀌면 스스로 끝난다) 뒤 5분 안에 다시 뜬다. Tailscale 주소에만 연다.
+*/5 * * * * mkdir -p /home/young/git/sector-flow/reports && /home/young/git/sector-flow/scripts/cron_run.sh sector-flow-web -- /home/young/git/sector-flow/scripts/serve.sh >> /home/young/git/sector-flow/reports/serve.log 2>&1

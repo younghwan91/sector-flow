@@ -265,12 +265,20 @@ def test_every_report_cron_line_makes_the_log_dir_and_wraps():
     assert lines
     for ln in lines:
         assert re.search(r"mkdir -p \S+/reports && ", ln), ln
-        assert "scripts/cron_run.sh" in ln and "scripts/daily_report.sh" in ln, ln
+        assert "scripts/cron_run.sh" in ln, ln
+        assert "scripts/daily_report.sh" in ln or "scripts/serve.sh" in ln, ln
+
+
+def test_web_service_is_kept_alive_by_cron():
+    """웹 서비스는 크론이 5분마다 살린다 — 줄이 빠지면 재부팅·배포 뒤 아무도 안 띄운다."""
+    web = [ln for ln in _cron_lines() if "scripts/serve.sh" in ln]
+    assert len(web) == 1 and web[0].split()[:5] == ["*/5", "*", "*", "*", "*"], web
+    assert ">> /home/young/git/sector-flow/reports/serve.log" in web[0]
 
 
 def test_cron_retries_after_the_longest_seen_collection_and_before_next_day():
     """18:47 까지 간 수집을 놓치지 않고, 기준일이 넘어가기 전(다음날 아침)에도 한 번 더 본다."""
-    sched = [tuple(ln.split()[:5]) for ln in _cron_lines()]
+    sched = [tuple(ln.split()[:5]) for ln in _cron_lines() if "daily_report.sh" in ln]
     assert ("10", "18,19", "*", "*", "1-5") in sched
     assert ("30", "7", "*", "*", "2-6") in sched
 
