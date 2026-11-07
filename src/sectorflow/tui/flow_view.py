@@ -136,6 +136,17 @@ def trend_cell(segs: list[tuple[str, float | None]], names: tuple[str, ...]) -> 
 INST_ONLY = ("exp", "x", "U", "P", "xdot", "xddot", "G", "G_pass")
 
 ACTORS = (("inst", "기관"), ("forgn", "외국인"), ("indiv", "개인"), ("etc", "기타법인"))
+
+
+def absent_row(r: dict) -> bool:
+    """그 시장에 **종목이 하나도 없는** 섹터 행인가(예: 코스닥 보험).
+
+    리포트는 시장마다 전 섹터 행을 싣는다. 종목이 없으면 순매수·시총이 0 이라
+    표에 `+0`·1년 백분위 `50`·평평한 추이가 찍혀, 없는 섹터가 "조용한 섹터" 로
+    읽혔다. 웹(수치표·뷰어)도 같은 기준으로 뺀다 — 한쪽만 빼면 두 화면의 섹터
+    목록이 갈라진다. `n_all` 이 없는 옛 리포트는 빼지 않는다.
+    """
+    return r.get("n_all") == 0 and not r.get("cap")
 #: 화면 정렬. **기본은 가속** — 규모로 정규화된 유입이라 대형 섹터가 늘 이기지
 #: 않는다. 예전 기본은 G 였는데, G 는 세 순위의 평균인 **검증 안 된 탐색 점수**라
 #: 화면 순서를 지배할 근거가 없다(20일 기본 화면 1위가 임펄스 +14억짜리 섹터였고,
@@ -465,37 +476,27 @@ class State:
         """섹터 → 4주체 순매수 합 [억]. **종합 화면 전용**이다.
 
         종합 블록(`combined`)에는 주체별 값이 없다 — 5·20·60·120 을 G **순위**로
-        섞은 축이라 "그 구간의 순매수" 라는 것이 정의되지 않는다. 그래서 상세
-        패널의 4주체 줄이 종합에서만 `— — — —` 였다.
+        섞은 축이라 "그 구간의 순매수" 라는 것이 정의되지 않는다. 그래서 대표 창
+        (:attr:`COMBINED_WIN`) 블록의 섹터 합을 그대로 쓴다.
 
-        답을 페이로드에 새로 싣는 대신 **화면이 종목에서 더한다**. 이유가 셋이다.
-        (i) 이 화면의 견인주가 이미 그렇게 한다(`_leads`, 같은 `COMBINED_WIN`) —
-        같은 사실을 두 곳에서 다르게 구하면 갈라진다. (ii) 리포트 스키마를
-        안 건드리므로 **이미 만들어 둔 리포트가 그대로 고쳐진다.**
-        (iii) 실측으로 값이 맞는다 — 20일 블록의 주체값과 비교해 최대 차이가
-        1억 미만이고(종목별 반올림), 부호·자릿수는 전부 같다.
-
-        어느 창인지는 **화면에 적는다**(`_actors_line` 의 꼬리표). 안 적으면
-        "종합인데 왜 20일 값이냐" 를 물을 자리가 없다.
+        예전엔 종목 값을 더했다. 종목 값은 0.1억으로 반올림돼 있어 합이 1억 가까이
+        어긋났고, 같은 "20일 외국인" 이 20일 화면에서 -60, 종합 화면에서 -61 로
+        보였다(2026-11-08 웹·TUI 대조). 같은 숫자는 한 출처에서만 꺼낸다.
         """
         ck = (self.COMBINED_WIN, self.market)
         if getattr(self, "_asum_ck", None) == ck:
             return self._asum_v
-        mkts = [self.market] if self.market != "전체" else self.markets[1:]
-        out: dict = {}
-        for _code, nm in (self.d.get("names") or {}).items():
-            if nm.get("market") not in mkts:
-                continue
-            w = (nm.get("win") or {}).get(self.COMBINED_WIN)
-            if not w:
-                continue
-            a = out.setdefault(nm.get("sector"), {})
-            for key, _ko in ACTORS:
-                v = w.get(key)
-                if v is not None:
-                    a[key] = a.get(key, 0.0) + v
+        b = self.d["blocks"].get(f"{self.COMBINED_WIN}|{self.market}") or {}
+        out = {r.get("sector"): {k: r[k] for k, _ko in ACTORS if r.get(k) is not None}
+               for r in b.get("rows", [])}
         self._asum_ck, self._asum_v = ck, out
         return out
+
+    def empty_reason(self) -> str:
+        """표가 비었을 때 **왜** 비었는지. 웹 수치표와 같은 말을 쓴다."""
+        if self.window == "종합" and not self.d.get("combined", {}).get(self.market):
+            return "이 시장은 G 가 나온 구간이 둘 미만이라 종합이 없다 — w 로 다른 구간을 보라"
+        return "데이터 없음"
 
     def _rows_uncached(self) -> list[dict]:
         if self.window == "종합":
@@ -505,11 +506,12 @@ class State:
             leads = self._leads()
             sums = self._actor_sums()
             return [dict(r, top=leads.get(r.get("sector")),
-                         **sums.get(r.get("sector"), {})) for r in c["rows"]]
+                         **sums.get(r.get("sector"), {})) for r in c["rows"]
+                    if not absent_row(r)]
         b = self.d["blocks"].get(f"{self.window}|{self.market}")
         if not b:
             return []
-        rows = [self._project(r) for r in b["rows"]]
+        rows = [self._project(r) for r in b["rows"] if not absent_row(r)]
         key, _fell = self.effective_sort(rows)
         def val(r):
             v = r.get(key)
@@ -1486,7 +1488,7 @@ def _stock_detail_lines(st: State, width: int) -> list[str]:
 def detail_lines(st: State, width: int) -> list[str]:
     rows = st.rows()
     if not rows:
-        return [pad(" (데이터 없음)", width)]
+        return [pad(f" ({st.empty_reason()})", width)]
     if st.drill:
         return _stock_detail_lines(st, width)
     r = rows[min(st.row, len(rows) - 1)]

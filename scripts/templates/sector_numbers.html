@@ -58,6 +58,11 @@ h1{margin:0; font-size:clamp(22px,3vw,30px); font-weight:700; letter-spacing:-.0
 .panel h2 small{font-weight:400; color:var(--ink-3); font-size:11.5px}
 .tw{overflow-x:auto}
 table{border-collapse:collapse; width:100%; font-size:12px; min-width:900px}
+/* 종합표는 열이 6개라 폰 폭에 들어간다 — 900px 하한을 같이 받으면 정작 G 가 화면 밖으로 밀렸다.
+   넓은 섹터표는 가로로 밀어도 어느 섹터의 줄인지 보이게 첫 열을 붙잡는다. */
+#ctbl{min-width:0}
+td.l:first-child, th.l:first-child{position:sticky; left:0; background:var(--card); z-index:1}
+thead th.l:first-child{z-index:2}
 th,td{padding:6px 10px; text-align:right; white-space:nowrap; border-bottom:1px solid var(--line-2)}
 th:first-child,td:first-child,th.l,td.l{text-align:left}
 thead th{position:sticky; top:0; background:var(--card); color:var(--ink-2); font-weight:600;
@@ -174,6 +179,10 @@ function noCombined(t){
   tb.append(tr); t.append(tb);
 }
 
+/** 그 시장에 종목이 하나도 없는 섹터 행(예: 코스닥 보험). 순매수·시총이 0 이라
+ *  `+0.00` 이 찍혀 "조용한 섹터" 로 읽혔다. 화면(`absent_row`)과 같은 기준이다. */
+function absentRow(r){ return r.n_all===0 && !r.cap; }
+
 function renderCombined(){
   const C=D.combined&&D.combined[mkt];
   const t=document.getElementById("ctbl"); t.replaceChildren();
@@ -184,7 +193,7 @@ function renderCombined(){
     tr.append(el("th",i===0?"l":null,h)));
   thead.append(tr); t.append(thead);
   const tb=el("tbody");
-  C.rows.forEach(r=>{
+  C.rows.filter(r=>!absentRow(r)).forEach(r=>{
     const x=el("tr"); if(r.thin) x.className="thin";
     x.append(el("td","l",r.sector));
     x.append(el("td","num",r.n_all));
@@ -207,7 +216,7 @@ function render(){
   document.getElementById("rangeinfo").textContent = B.from+" ~ "+B.to+" · k="+B.k+" (t="+B.t+") · 절편 "+B.b+"%";
   document.getElementById("ttl").firstChild.textContent = "섹터별 — "+mkt+" · 최근 "+win+"거래일 ";
 
-  const rows=[...B.rows].sort((a,b)=>{
+  const rows=B.rows.filter(r=>!absentRow(r)).sort((a,b)=>{
     const x=a[sortKey], y=b[sortKey];
     if(x==null) return 1; if(y==null) return -1;
     if(typeof x==="string") return sortDir*x.localeCompare(y);
