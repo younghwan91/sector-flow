@@ -10,7 +10,8 @@ import pytest
 from sectorflow.tui import flow_app, ledger_app, ledger_view
 from sectorflow.tui.flow_app import _draw, handle_key, leave_banner, load, terminal_problem
 from sectorflow.tui.flow_view import (
-    State, _actors_line, footer_line, header_lines, scroll_mark, staleness_warning, table_lines)
+    WINDOWS, State, _actors_line, detail_lines, footer_line, header_lines, scroll_mark,
+    staleness_warning, table_lines)
 
 
 def _name(sector, flow, invtrt=10.0, pen=10.0, five=None, tv=5000.0, ret=1.0):
@@ -305,3 +306,34 @@ def test_ledger_survives_a_terminal_without_cursor_hiding(ledger, monkeypatch):
         def keypad(self, _on):
             pass
     ledger_app._loop(S(), ledger)
+
+
+# --- 웹과 같은 것을 말한다 (2026-11-08 웹·TUI 대조) -----------------------------------
+
+def _with_absent(d):
+    d = json.loads(json.dumps(d))
+    gone = {"sector": "없는섹터", "n_all": 0, "thin": True, "cap": 0.0, "inst": 0.0, "forgn": 0.0,
+            "indiv": 0.0, "etc": 0.0, "accel": 0.0, "G": None, "G_pass": False,
+            "pct1y": {"inst": 50}, "spark": {}}
+    for b in d["blocks"].values():
+        b["rows"].append(dict(gone))
+    d["combined"]["전체"]["rows"].append(dict(gone, per={}, pass_n=0, seen=0))
+    return d
+
+
+@pytest.mark.parametrize("win", ["20", "종합"])
+def test_a_sector_with_no_stocks_in_the_market_is_not_a_row(data, win):
+    """코스닥 보험처럼 그 시장에 종목이 없는 섹터가 `+0`·1년 `50` 으로 찍혀 조용한 섹터로 읽혔다."""
+    st = State(_with_absent(data))
+    st.wi = WINDOWS.index(win)
+    assert "없는섹터" not in {r["sector"] for r in st.rows()}
+    assert len(st.rows()) == len(SECTORS)
+
+
+def test_an_empty_combined_market_says_why(data):
+    """웹 수치표는 이유를 적는데 화면은 `(데이터 없음)` 만 띄웠다."""
+    st = State(data)
+    st.wi = WINDOWS.index("종합")
+    st.mi = st.markets.index("거래소")
+    assert not st.rows()
+    assert "종합이 없다" in detail_lines(st, 120)[0]

@@ -80,7 +80,7 @@ def _viewer_payload(asof: str = "2026-11-02") -> dict:
                         "win": {w: dict(win) for w in ("5", "20", "60", "120")}},
              "000002": {"name": "던진종목", "sector": "섹터A", "market": "거래소", "cap": 100.0,
                         "win": {w: dict(win, inst=-5.0) for w in ("5", "20", "60", "120")}}}
-    return {"dates": dates, "sectors": ["섹터A"], "n_by_sector": {"섹터A": 2},
+    return {"dates": dates, "sectors": ["섹터A"], "n_by_sector": {"거래소": {"섹터A": 2}, "코스닥": {}},
             "markets": ["거래소", "코스닥"], "flows": flows,
             "detail": {m: {"섹터A": {"invtrt": [1.0] * n}} for m in ("거래소", "코스닥")},
             "ret": {m: {"섹터A": [0.1] * n} for m in ("거래소", "코스닥")},
@@ -180,3 +180,30 @@ def test_db_check_without_a_db_is_a_failure_not_a_pass(tmp_path):
                        capture_output=True, text=True, env=env, timeout=120)
     assert p.returncode != 0
     assert "[FAIL] F · --db-check 인데 DB 접속정보가 있는가" in p.stdout
+
+
+@node
+def test_numbers_drops_a_sector_with_no_stocks_in_the_market(tmp_path):
+    """그 시장에 종목이 없는 섹터가 `+0.00` 으로 찍혀 조용한 섹터로 읽혔다(화면 `absent_row` 와 같은 기준)."""
+    d = _numbers_data()
+    live = {"sector": "있는섹터", "n_all": 5, "cap": 10.0, "thin": True, "G": None, "inst": 1.0, "accel": 0.1,
+            "top": {"buy": [], "sell": []}}
+    for b in d["blocks"].values():
+        b["rows"] = [live, {"sector": "없는섹터", "n_all": 0, "cap": 0.0, "thin": True, "G": None,
+                            "inst": 0.0, "accel": 0.0}]
+    d["combined"]["전체"]["rows"].append({"sector": "없는섹터", "n_all": 0, "G": None, "per": {}, "pass_n": 0})
+    texts = _page("sector_numbers.html", d, tmp_path)
+    assert "있는섹터" in texts, "픽스처가 행을 하나도 안 그린다 — 이 검사가 헛돈다"
+    assert "없는섹터" not in texts
+
+
+@node
+def test_viewer_drops_a_sector_with_no_stocks_in_the_market(tmp_path):
+    d = _viewer_payload()
+    n = len(d["dates"])
+    d["sectors"].append("없는섹터")
+    for m in d["markets"]:
+        d["flows"][m]["없는섹터"] = {a: [0.0] * n for a in ("inst", "forgn", "indiv", "etc", "tv")}
+    texts = _page("sector_flow.html", d, tmp_path)
+    assert "섹터A" in texts
+    assert "없는섹터" not in texts

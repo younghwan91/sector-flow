@@ -247,6 +247,14 @@ function flow(sec,act){ // 일별 배열 합(시장 합산)
  *  끝나는 구간의 유량을 오늘 시총으로 나누게 된다(실측: 구간말 2025-08 에서
  *  오늘/그때 비가 중앙값 1.33배, 27개 중 9개가 1.5배 이상 → 가속도가 그만큼
  *  작게 나왔다). 그 월의 값이 없으면 페이로드 구간말 시총으로 폴백한다. */
+/** 고른 시장에 종목이 있는 섹터인가. 없는 섹터(예: 코스닥 보험)는 순매수·시총이 0 이라
+ *  `+0.00%p` 로 찍혀 "조용한 섹터" 로 읽혔다. 화면·수치표와 같은 기준이다.
+ *  `n_by_sector` 가 없거나 시장별 모양이 아닌 페이로드에서는 빼지 않는다. */
+function present(sec){
+  const nb=D.n_by_sector, ms=mkts();
+  if(!nb||!ms.every(m=>nb[m]&&typeof nb[m]==="object")) return true;
+  return ms.some(m=>(nb[m][sec]||0)>0);
+}
 function capOf(sec){
   const ym=D.dates[i1].slice(0,7);
   let c=0;
@@ -468,12 +476,12 @@ function render(){
   document.getElementById("ln-title").firstChild.textContent=label+" 누적 추이";
 
   RES=residuals();
-  let order=[...D.sectors].sort((a,b)=>windowVal(b,actor)-windowVal(a,actor));
+  let order=D.sectors.filter(present).sort((a,b)=>windowVal(b,actor)-windowVal(a,actor));
   // 미반응 랭킹은 (a) 업종지수가 있고 (b) 실제로 **자금이 들어온**(가속>0) 섹터만 본다.
   // 잔차는 대칭이라 그냥 두면 "기관이 팔았는데 더 빠진" 섹터까지 미반응으로 올라오는데,
   // 그건 "돈은 들어왔는데 아직 안 간" 과 정반대 상황이다.
   if(metric==="resid") order=order.filter(s=>hasIdx(s)&&accelOf(s)>0);
-  if(!picked||!D.sectors.includes(picked)) picked=order[0];
+  if(!picked||!order.includes(picked)) picked=order[0];
 
   renderTiles();
   renderHeat(order);

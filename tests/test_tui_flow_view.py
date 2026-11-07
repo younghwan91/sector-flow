@@ -1473,14 +1473,24 @@ def test_combined_screen_shows_the_four_actors_and_says_which_window(data):
 
     원인은 렌더가 아니라 데이터다 — 종합 블록은 5·20·60·120 을 **G 순위**로
     섞은 축이라 `inst`·`forgn`·`indiv`·`etc` 가 아예 없다. 이 화면의 견인주는
-    같은 처지에서 이미 **종목에서 대표 창(20일)으로 더해** 답을 만들고 있었다
-    (`_leads`). 4주체도 같은 규칙으로 만든다 — 그리고 **어느 창인지 적는다.**
+    같은 처지에서 대표 창(20일)을 쓴다(`_leads`). 4주체도 대표 창의 **섹터 합**을
+    쓴다 — 그리고 **어느 창인지 적는다.**
 
     주입: `_rows_uncached` 의 종합 갈래에서 `_actor_sums` 를 빼면 대시가 돌아와
     실패하고, `_actors_line` 의 꼬리표를 지우면 마지막 단언이 실패한다.
     """
     from sectorflow.tui.flow_view import ACTORS, State, detail_lines, fmt_amt
 
+    import json
+
+    # 픽스처는 모든 창의 주체값이 같다 — 그대로면 "다른 창에서 꺼냈다" 를 못 가린다.
+    data = json.loads(json.dumps(data))
+    for k, b in data["blocks"].items():
+        if not k.startswith("20|"):
+            for r in b["rows"]:
+                for key, _ko in ACTORS:
+                    if r.get(key) is not None:
+                        r[key] = r[key] * 3 + 7
     st = State(data)
     st.wi = WINDOWS.index("종합")
     if not st.rows():
@@ -1489,21 +1499,14 @@ def test_combined_screen_shows_the_four_actors_and_says_which_window(data):
     assert "—" not in line, f"종합에서 4주체가 아직 대시다: {line.strip()!r}"
     for _key, ko in ACTORS:
         assert ko in line, f"{ko} 가 없다: {line.strip()!r}"
-    # 값은 **그 섹터 종목들의 20일 순매수 합**이어야 한다 — 화면이 스스로 지어낸
-    # 숫자면 안 된다. 기대값을 여기서 따로 더해 맞춰 본다.
+    # 값은 **20일 화면이 같은 섹터에 적는 값**과 같아야 한다 — 같은 "20일 외국인" 이
+    # 두 화면에서 -60·-61 로 갈렸다(종목 반올림 합 vs 섹터 합, 2026-11-08 웹 대조).
+    # 기대값은 20일 블록에서 따로 꺼낸다.
     sec = st.rows()[st.row]["sector"]
-    want = {}
-    for _code, nm in data["names"].items():
-        if nm.get("sector") != sec:
-            continue
-        w = (nm.get("win") or {}).get("20") or {}
-        for key, _ko in ACTORS:
-            if w.get(key) is not None:
-                want[key] = want.get(key, 0.0) + w[key]
-    assert want, "픽스처에 그 섹터 종목이 없다 — 이 검사가 헛돈다"
+    want = next(r for r in data["blocks"][f"20|{st.market}"]["rows"] if r["sector"] == sec)
     for key, ko in ACTORS:
         assert f"{ko} {fmt_amt(want.get(key))}" in line, (
-            f"{ko} 가 종목 합({want.get(key)})과 다르다: {line.strip()!r}")
+            f"{ko} 가 20일 섹터 합({want.get(key)})과 다르다: {line.strip()!r}")
     # 어느 창의 값인지가 화면에 있어야 한다 — 없으면 위 표(종합)와 이 줄(20일)이
     # 다른 것을 말하는데 화면은 같은 것처럼 보인다.
     assert "20일" in line, f"대표 창을 안 적었다: {line.strip()!r}"
