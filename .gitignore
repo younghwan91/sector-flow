@@ -27,3 +27,8 @@ dist/
 
 # 검증 연구 재현 산출물 (research/validation/*/out) — 수백 MB 피클·CSV, 소스가 아니다
 /research/validation/*/out/
+
+# 변경 줄 커버리지(CI) 산출물
+.coverage
+.coverage.*
+coverage.json

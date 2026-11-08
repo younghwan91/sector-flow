@@ -16,6 +16,8 @@ jobs:
         python-version: ["3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0          # 변경 줄 커버리지(merge-base)·연구 스크립트의 사전등록 판(git show)
       # setup-uv 는 v8 부터 떠다니는 major 태그(@v10)를 내지 않는다 — 버전을 박는다.
       - uses: astral-sh/setup-uv@v10.3.3
         with:
@@ -24,9 +26,25 @@ jobs:
       - name: Install
         run: uv sync --locked --extra dev
       - name: Lint
-        run: uv run --no-sync ruff check src/ tests/ scripts/
+        run: uv run --no-sync ruff check src/ tests/ scripts/ research/
+      # 연구 스크립트는 DB 에 붙어야 돌아서 평소엔 아무도 안 돌린다 — 문법만이라도 매번 본다.
+      # 리포트 코드 이름 참조는 tests/test_research_refs.py 가 본다.
+      - name: Research compiles
+        run: uv run --no-sync python -m compileall -q research
+      # 3.12+ 는 sys.monitoring 으로 커버리지를 같이 잰다(+15% 안팎). 3.11 은 그게 없어 검증기가 4배
+      # 느려지므로 재지 않는다 — 변경 줄 판정은 3.12·3.13 이 한다.
       - name: Test
-        run: uv run --no-sync pytest -q
+        run: |
+          if uv run --no-sync python -c 'import sys; sys.exit(sys.version_info < (3, 12))'; then
+            uv run --no-sync pytest -q --cov --cov-report=json:coverage.json
+          else
+            uv run --no-sync pytest -q
+          fi
+      - name: Diff coverage (src/ scripts/ 바뀐 줄 80%)
+        run: |
+          if [ -f coverage.json ]; then
+            uv run --no-sync python scripts/diff_coverage.py --base origin/main --json coverage.json --min 80
+          fi
 
   # 주입 검증 — tests/mutations.toml 의 변이를 소스에 실제로 넣어 선언한 가드가 빨개지는지 본다.
   # "테스트가 초록" 은 검사가 살아 있다는 뜻이 아니다. 이 단계가 CI 밖에 있는 동안
