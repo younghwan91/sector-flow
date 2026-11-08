@@ -69,3 +69,13 @@ D1~D6 각각을 서로 다른 리뷰 서브에이전트 2개가 A++ 로 매기�
 | D3 쓸모 | A− → A | 연속일수·누적·그 길이의 1년 %ile 없음, 무료 소스 비교 문서 없음, 첫 화면 섹터 수익률, 재구성 지문(월 18:10 전 재실행) | streaks-verify, vs-free-docs, history |
 | D2 정직 | B+ → A− | 종목 층 표지 범위가 K1/K2/K3 검정과 어긋남(금액·투신/연기금 개별), TUI≠뷰어; k 표지·문구 MINOR | names-badges |
 | D5 사용성 | B → B+ | 뷰어 반올림(RHU) 불일치·W 층이 뷰어 전체 표 미검사, README 스크린샷 7장 낡음(마지막에 재촬영), 용어·키 설명 MINOR | names-badges, (스크린샷은 마지막) |
+
+### 유료 품질 신뢰성 리뷰 (2026-11-09, 구독자 관점)
+1년 %ile 은 DB 재검산 48/48 일치(합격). 남은 격차(영향 순):
+1. 금액의 외부 참값 없음(전부 같은 DB 안) → krx-truth 갈래(KRX 투자자별 거래실적 일일 대조, 내부 검증용)
+2. 수정 폭 track record 가 "기록 없음" → 48개 교체 뒤 seed_revisions 실행(S)
+3. 실패·지연 이력이 폴더 교체·로그 회전으로 지워짐 → ops-ledger 갈래(events.jsonl 추가 전용 원장 + SLO + 정오표)
+4. SLA 정의·측정 없음 → ops-ledger 에 포함(docs/slo.md)
+5. 단일 장애점: 확정 판정이 Airflow 로그 형식 결합, 휴장이 scalp-it 틱 결합, 알림이 형제 체크아웃 결합 → quant-airflow 에 확정 완료 DB 행(레포 간, 백로그), KRX 휴장 달력
+6. 종목 층 수정 폭 없음 → stock-diff 갈래
+7. 정오표 없음 → ops-ledger --errata (+trust-page 머지 뒤 노출)
