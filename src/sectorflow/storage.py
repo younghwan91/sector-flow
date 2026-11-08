@@ -136,7 +136,7 @@ def connect(db_path: str | Path | None = None) -> Any:
     path (default: ``<repo>/data/sector_flow.db``, dirs created as needed).
     """
     if isinstance(db_path, str) and db_path.startswith(_PG_PREFIXES):
-        import psycopg2  # noqa: PLC0415 — optional dep, only needed for this path
+        import psycopg2  # optional dep, only needed for this path
 
         con = psycopg2.connect(db_path)
         # Schema (tables, hypertables, compression policy) is provisioned by
@@ -237,7 +237,7 @@ def read_supply_demand(con: Any, *, cols: "tuple[str, ...] | None" = None,
         params.extend(sources)
     clause = (" WHERE " + " AND ".join(where)) if where else ""
     sel = ", ".join(use)
-    df = pd.read_sql_query(  # noqa: S608 — 컬럼은 모듈 상수, 날짜는 파라미터 바인딩
+    df = pd.read_sql_query(  # 컬럼은 모듈 상수, 날짜는 파라미터 바인딩
         f"SELECT {sel} FROM {SUPPLY_TABLE}{clause}", con, params=tuple(params) or None)
     if require_delisted:
         _assert_supply_has_delisted(con, df, start=start, end=end)
@@ -255,7 +255,7 @@ def recent_dates(con: Any, n: int, asof: "str | None" = None) -> list[str]:
     if asof is not None:
         where, params = f"WHERE date <= {ph} ", [asof, n]
     cur = con.cursor()
-    cur.execute(f"SELECT DISTINCT date FROM {SUPPLY_TABLE} {where}"  # noqa: S608 — 모듈 상수
+    cur.execute(f"SELECT DISTINCT date FROM {SUPPLY_TABLE} {where}"  # 모듈 상수
                 f"ORDER BY date DESC LIMIT {ph}", tuple(params))
     return sorted(str(r[0]) for r in cur.fetchall())
 
@@ -270,7 +270,7 @@ def _assert_supply_has_delisted(con: Any, df, *, start, end) -> None:
     if end is not None:
         where.append(f"date <= {ph}")
         params.append(end)
-    sql = (f"SELECT DISTINCT code FROM {SUPPLY_TABLE} "  # noqa: S608 — 모듈 상수
+    sql = (f"SELECT DISTINCT code FROM {SUPPLY_TABLE} "  # 모듈 상수
            f"WHERE {' AND '.join(where)}")
     if _is_pg(con):
         with con.cursor() as cur:
@@ -311,8 +311,8 @@ def market_cap_asof_bulk(con: Any, df: Any) -> Any:
     Returns:
         ``df.index`` 에 맞춘 ``pandas.Series``. 가격이나 주식수가 없으면 ``NaN``.
     """
-    import numpy as np  # noqa: PLC0415
-    import pandas as pd  # noqa: PLC0415 — pandas is a strategy-layer dep, not storage's
+    import numpy as np
+    import pandas as pd  # pandas is a strategy-layer dep, not storage's
 
     if df.empty:
         return pd.Series([], dtype=float, index=df.index)

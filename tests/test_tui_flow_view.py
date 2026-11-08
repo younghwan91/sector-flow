@@ -18,8 +18,8 @@ from sectorflow.tui.flow_view import (
 )
 
 
-from sectorflow.tui.flow_view import TREND_ACTORS  # noqa: E402
-from sectorflow.tui.flow_view import (  # noqa: E402  대체안이 쓰는 이름
+from sectorflow.tui.flow_view import TREND_ACTORS
+from sectorflow.tui.flow_view import (  # 대체안이 쓰는 이름
     SORT_COL, _fit, cell_width, sort_span, table_cols,
 )
 
@@ -2757,21 +2757,21 @@ def test_sector_trusted_flow_is_cached_per_market(data):
 # 리포트의 당일 수급은 잠정값이다. 확정치는 다음날 새벽 daily_finalize 가 DB 에 덮어쓴다.
 
 def test_chip_does_not_claim_final_values():
-    from sectorflow.tui.flow_view import status_chip  # noqa: PLC0415
+    from sectorflow.tui.flow_view import status_chip
 
     assert status_chip({"finalized": True}) == "마감·잠정"
     assert status_chip({"finalized": False}) == "장중·미확정"
 
 
 def test_chip_carries_report_warnings():
-    from sectorflow.tui.flow_view import status_chip  # noqa: PLC0415
+    from sectorflow.tui.flow_view import status_chip
 
     chip = status_chip({"finalized": True, "report_warnings": ["검증 실패"]})
     assert chip == "마감·잠정 ⚠ 검증 실패"
 
 
 def test_report_warnings_reads_verify_failed_and_newer_incomplete(tmp_path):
-    from sectorflow.tui.flow_view import report_warnings  # noqa: PLC0415
+    from sectorflow.tui.flow_view import report_warnings
 
     old = tmp_path / "2026-10-30"
     new = tmp_path / "2026-11-02"
@@ -2789,7 +2789,7 @@ def test_report_warnings_reads_verify_failed_and_newer_incomplete(tmp_path):
 
 
 def test_report_warnings_follows_the_latest_symlink(tmp_path):
-    from sectorflow.tui.flow_view import report_warnings  # noqa: PLC0415
+    from sectorflow.tui.flow_view import report_warnings
 
     old = tmp_path / "2026-10-30"
     new = tmp_path / "2026-11-02"
@@ -2801,7 +2801,7 @@ def test_report_warnings_follows_the_latest_symlink(tmp_path):
 
 
 def test_missing_report_message_explains_incomplete_folder(tmp_path):
-    from sectorflow.tui.flow_app import load  # noqa: PLC0415
+    from sectorflow.tui.flow_app import load
 
     (tmp_path / "INCOMPLETE.txt").write_text("수집 미완 사유\n")
     with pytest.raises(SystemExit, match="수집 미완"):

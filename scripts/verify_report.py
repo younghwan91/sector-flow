@@ -409,14 +409,14 @@ def layer_b(payload: dict, db: str | None) -> None:
         print("       (--db-check 없음 — DB 대조는 건너뛴다)")
         return
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
-    from sectorflow.storage import connect  # noqa: PLC0415
+    from sectorflow.storage import connect
     con = connect(db)
     cur = con.cursor()
     cur.execute("SELECT max(date) FROM supply_demand")
     db_last = str(cur.fetchone()[0])
     chk("B", "페이로드 기준일 = DB 최신일", db_last == dates[-1], f"DB {db_last} / 리포트 {dates[-1]}")
     for tbl in ("supply_demand", "daily_bars_adjusted"):
-        cur.execute(f"SELECT count(*) FROM (SELECT code,date FROM {tbl} "  # noqa: S608
+        cur.execute(f"SELECT count(*) FROM (SELECT code,date FROM {tbl} "
                     f"GROUP BY code,date HAVING count(*)>1) q")
         chk("B", f"{tbl} (code,date) 중복", cur.fetchone()[0] == 0)
     cur.execute("SELECT count(*) FROM shares_outstanding_history WHERE shares_outstanding<=0")
@@ -589,7 +589,7 @@ def layer_e(D: dict) -> None:
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                     "..", "src"))
     try:
-        from sectorflow.tui import flow_view as FV  # noqa: PLC0415
+        from sectorflow.tui import flow_view as FV
     except ImportError as e:                      # pragma: no cover
         chk("E", "flow_view 를 읽을 수 있는가", False, str(e))
         return
@@ -787,8 +787,8 @@ def layer_g(P: dict, D: dict) -> None:
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                     "..", "src"))
     try:
-        from sectorflow.tui import flow_view as FV  # noqa: PLC0415
-        from sectorflow.tui import ledger_view as LV  # noqa: PLC0415
+        from sectorflow.tui import flow_view as FV
+        from sectorflow.tui import ledger_view as LV
     except ImportError as e:                      # pragma: no cover
         chk("G", "ledger_view 를 읽을 수 있는가", False, str(e))
         return
@@ -1153,7 +1153,7 @@ def layer_f(P: dict, db: str | None) -> None:
         return
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                     "..", "src"))
-    from sectorflow.storage import connect  # noqa: PLC0415
+    from sectorflow.storage import connect
     con = connect(db)
     pg = con.__class__.__module__.startswith("psycopg2")
     ph = "%s" if pg else "?"
@@ -1185,7 +1185,7 @@ def layer_f(P: dict, db: str | None) -> None:
            ("inst", "institution"), ("etc", "etc_corp"))
     sel = ", ".join([f"sum(s.{c} * 1.0 * abs(s.close))" for _k, c in ACT]
                     + ["sum(s.acc_trde_qty * 1.0 * abs(s.close))"])
-    cur.execute(f"SELECT st.market, {SEC}, s.date, {sel} "  # noqa: S608
+    cur.execute(f"SELECT st.market, {SEC}, s.date, {sel} "
                 f"FROM supply_demand s JOIN stocks st ON st.code=s.code "
                 f"WHERE {SRC} GROUP BY 1,2,3", args)
     keys = [k for k, _ in ACT] + ["tv"]
@@ -1208,7 +1208,7 @@ def layer_f(P: dict, db: str | None) -> None:
                   for k in P["detail"][m][s]})
     if det:
         sel = ", ".join(f"sum(s.{c} * 1.0 * abs(s.close))" for c in det)
-        cur.execute(f"SELECT st.market, {SEC}, s.date, {sel} "  # noqa: S608
+        cur.execute(f"SELECT st.market, {SEC}, s.date, {sel} "
                     f"FROM supply_demand s JOIN stocks st ON st.code=s.code "
                     f"WHERE {SRC} GROUP BY 1,2,3", args)
         got = {}
@@ -1231,13 +1231,13 @@ def layer_f(P: dict, db: str | None) -> None:
     #    주식수는 date 이하 최신 행, 그 뒤 분할(8)·병합(16)·감자(64)는 1/(1+upd_rt/100) 배로 다시 센다.
     #    수익률 = daily_bars_adjusted 종가 ÷ 그 종목 직전 행 종가 − 1. ⚠️ flu_rt 가 아니다
     #    (09-14 부터 분자는 통합 종가·기준가는 정규장 종가라 이어 곱할 수 없다).
-    import bisect  # noqa: PLC0415
-    cur.execute(f"SELECT s.code, s.date, abs(s.close) FROM supply_demand s "  # noqa: S608
+    import bisect
+    cur.execute(f"SELECT s.code, s.date, abs(s.close) FROM supply_demand s "
                 f"JOIN stocks st ON st.code=s.code WHERE {SRC}", args)
     sd_rows = sorted((c, str(dt), float(v) if v is not None else None) for c, dt, v in cur.fetchall())
     px = {(c, d): v for c, d, v in sd_rows}
     codes_win = sorted({c for c, _d, _v in sd_rows})
-    cur.execute(f"SELECT code, close FROM daily_bars_raw WHERE date={ph}", (d1,))  # noqa: S608
+    cur.execute(f"SELECT code, close FROM daily_bars_raw WHERE date={ph}", (d1,))
     raw_d1 = {c: float(v) for c, v in cur.fetchall() if v is not None}
     cur.execute("SELECT code, date, shares_outstanding FROM shares_outstanding_history")
     sh_hist: dict = {}
@@ -1271,7 +1271,7 @@ def layer_f(P: dict, db: str | None) -> None:
         return None if price is None or sh is None else price * sh
 
     meta = {}
-    cur.execute(f"SELECT code, market, {SEC.replace('st.', '')} FROM stocks")  # noqa: S608
+    cur.execute(f"SELECT code, market, {SEC.replace('st.', '')} FROM stocks")
     for c, m, sec in cur.fetchall():
         meta[c] = (m, sec)
 
@@ -1287,11 +1287,11 @@ def layer_f(P: dict, db: str | None) -> None:
     cmp_abs("섹터 시총 (구간말, 원 종가 × 주식수)", pairs, TOL_CAP)
 
     # ── ④ 섹터 일별 수익률 — **전일** 시총 가중, 조정 종가 비 ──
-    cur.execute(f"SELECT DISTINCT date FROM supply_demand WHERE date < {ph} "  # noqa: S608
+    cur.execute(f"SELECT DISTINCT date FROM supply_demand WHERE date < {ph} "
                 f"ORDER BY date DESC LIMIT 1", (d0,))
     prev = cur.fetchone()
     a0 = str(prev[0]) if prev else d0
-    cur.execute(f"SELECT code, date, close FROM daily_bars_adjusted "  # noqa: S608
+    cur.execute(f"SELECT code, date, close FROM daily_bars_adjusted "
                 f"WHERE date BETWEEN {ph} AND {ph} AND close > 0", (a0, d1))
     adj_rows: dict = {}
     for c, dt, v in cur.fetchall():
@@ -1333,7 +1333,7 @@ def layer_f(P: dict, db: str | None) -> None:
             continue
         start = dates[n - win]
         sel = ", ".join(f"sum(s.{c} * 1.0 * abs(s.close))" for _k, c in WK)
-        cur.execute(f"SELECT s.code, {sel} FROM supply_demand s "  # noqa: S608
+        cur.execute(f"SELECT s.code, {sel} FROM supply_demand s "
                     f"JOIN stocks st ON st.code=s.code WHERE {SRC} GROUP BY 1",
                     ("kiwoom", start, d1))
         got = {r[0]: [float(v) / 1e8 for v in r[1:]] for r in cur.fetchall()}
@@ -1373,7 +1373,7 @@ def layer_f(P: dict, db: str | None) -> None:
     # 이건 심사 성적이 아니라 **관측 화면의 한계**라 실패로 만들지 않는다 —
     # 다만 조용히 두지 않는다. `docs/GUARDRAILS.md` §4.1 이 다루는 생존편향의
     # 거울상이고, 폭이 갑자기 커지면 수집 쪽에 문제가 생겼다는 신호다.
-    cur.execute(f"SELECT count(DISTINCT s.code) FROM supply_demand s "  # noqa: S608
+    cur.execute(f"SELECT count(DISTINCT s.code) FROM supply_demand s "
                 f"WHERE s.date BETWEEN {ph} AND {ph} AND s.code NOT IN "
                 f"(SELECT code FROM stocks)", (d0, d1))
     outside = cur.fetchone()[0]
@@ -1391,14 +1391,14 @@ def layer_f(P: dict, db: str | None) -> None:
     # 시장 '전체' 도 화면과 같은 방식(두 시장의 합)으로 만들어 대조한다.
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                     "..", "src"))
-    from sectorflow.tui import ledger_view as LV  # noqa: PLC0415
+    from sectorflow.tui import ledger_view as LV
     mo = LV.Model(P)
     for W in LV.WINDOWS:
         if W > n:
             continue
         start = dates[n - W]
         sel = ", ".join(f"sum(s.{c} * 1.0 * abs(s.close))" for _k, c in ACT)
-        cur.execute(f"SELECT st.market, {SEC}, {sel} FROM supply_demand s "  # noqa: S608
+        cur.execute(f"SELECT st.market, {SEC}, {sel} FROM supply_demand s "
                     f"JOIN stocks st ON st.code=s.code "
                     f"WHERE s.source={ph} AND s.date BETWEEN {ph} AND {ph} "
                     f"GROUP BY 1,2", ("kiwoom", start, d1))
@@ -1432,7 +1432,7 @@ def layer_f(P: dict, db: str | None) -> None:
           AND s.code NOT IN (SELECT code FROM stocks) GROUP BY 1""", (d0, d1))
     out = {("거래소" if r[0] == "유가증권" else r[0]):
            (int(r[1]), float(r[2] or 0), float(r[3] or 0)) for r in cur.fetchall()}
-    cur.execute(f"SELECT st.market, sum(s.acc_trde_qty*1.0*abs(s.close)), "  # noqa: S608
+    cur.execute(f"SELECT st.market, sum(s.acc_trde_qty*1.0*abs(s.close)), "
                 f"sum(abs(s.institution*1.0*abs(s.close))) "
                 f"FROM supply_demand s JOIN stocks st ON st.code=s.code "
                 f"WHERE s.source={ph} AND s.date BETWEEN {ph} AND {ph} GROUP BY 1", args)
@@ -1503,7 +1503,7 @@ def _advertised(text: str) -> set:
 
 
 def _key_ints():
-    import curses  # noqa: PLC0415
+    import curses
     d = {c: ord(c) for c in
          "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ?"}
     d.update({"KEY_UP": curses.KEY_UP, "KEY_DOWN": curses.KEY_DOWN,
@@ -1644,14 +1644,14 @@ def layer_h(D: dict, P: dict) -> None:
     없는 것과 같다(이 저장소가 `r`·`G` 에서 이미 밟았다).
     """
     print("\nH. 화면·키 — 듣는 키와 적힌 키가 같은가")
-    import curses  # noqa: PLC0415
+    import curses
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                     "..", "src"))
     try:
-        from sectorflow.tui import flow_app as FA  # noqa: PLC0415
-        from sectorflow.tui import flow_view as FV  # noqa: PLC0415
-        from sectorflow.tui import ledger_app as LA  # noqa: PLC0415
-        from sectorflow.tui import ledger_view as LV  # noqa: PLC0415
+        from sectorflow.tui import flow_app as FA
+        from sectorflow.tui import flow_view as FV
+        from sectorflow.tui import ledger_app as LA
+        from sectorflow.tui import ledger_view as LV
     except ImportError as e:                      # pragma: no cover
         chk("H", "TUI 모듈을 읽을 수 있는가", False, str(e))
         return
@@ -2208,7 +2208,7 @@ def layer_h(D: dict, P: dict) -> None:
                             break
                     for k in "wmastrgGjkl":
                         FA.handle_key(FA.State(synth), ord(k))
-            except Exception as e:                     # noqa: BLE001
+            except Exception as e:
                 bad.append(f"{label}/{term} {type(e).__name__}: {e}")
     chk("H", "합성 페이로드(빈 블록·1섹터·관문 전멸·결측 열)에서 안 죽는가",
         not bad, f"{len(bad)}건  " + "; ".join(bad[:3]))
@@ -2221,7 +2221,7 @@ def run_layer(layer: str, fn, *args) -> None:
     """
     try:
         fn(*args)
-    except Exception as e:                             # noqa: BLE001
+    except Exception as e:
         traceback.print_exc(file=sys.stdout)
         chk(layer, "검사가 끝까지 돌았는가", False, f"{type(e).__name__}: {e}")
 
