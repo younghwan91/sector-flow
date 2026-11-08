@@ -162,7 +162,7 @@ def absent_row(r: dict) -> bool:
 #: 기관이 2.4조 판 전기/전자는 24위라 스크롤해야 보였다). G 는 보조로 남는다.
 #: 순서는 **열 순서와 같다** — 정렬을 돌릴 때 눈이 왼쪽에서 오른쪽으로 따라간다.
 #:
-#: 미실현·풀림가속·dW/dt 는 x 계열이다(x ≈ 섹터 20일 반전, 앞날 증거 없음, G 의 입력) — G 와 같이
+#: 미실현·풀림가속·dW/dt 는 x 계열이다(x ≈ 섹터 20일 반전·앞날 증거 없음, 나머지는 검정 안 한 [측정]; G 의 입력은 a·x·ẍ) — G 와 같이
 #: **탐색 모드**에서만 닿는다(2026-11-08 리뷰 M1). 포텐셜(½kx²)은 |미실현| 의 단조 변환이라 지웠다.
 SORTS = (("accel", "가속"), ("flow", "임펄스"), ("pct", "1년%"), ("ret", "수익률"),
          ("trust5", "투신+연기금5일"), ("trustw", "투신+연기금"),
@@ -240,8 +240,9 @@ CONC_CAP = 999.0
 #: +177%, 대명에너지 −8억에 투신 +111%, 계룡건설 −4억에 연기금 +102%. 정작 구성을
 #: 알고 싶은 애매한 종목에서 깨지고 큰 종목에서만 멀쩡했다. 절대값은 크기와 구성을
 #: 동시에 준다 — GS건설 +2,124 중 연기금 +1,047 이 그 자리에서 읽힌다.
-#: 헤더의 ``[음]`` = 증거 표지 [음의 순위 정보·쓸 수 없음] 의 짧은 꼴(종목 투신+연기금 20일 섹터 안 순위 IC 음).
-COL_INVTRT, COL_PENFND = "투신[억][음]", "연기금[억][음]"
+#: 헤더 이름(열의 정체) — 증거 표지는 붙이지 않는다. 드릴다운 헤더가 **창·주체마다** 계산해 덧붙인다
+#: (:func:`name_head`). 예전엔 ``[음]`` 을 박아 1·5·60일에도, 검정하지 않은 개별 열에도 달았다(2026-11-08 3차 리뷰 D2-M1).
+COL_INVTRT, COL_PENFND = "투신[억]", "연기금[억]"
 
 #: 누적 기여율의 가로줄을 그을 지점. 실측상 섹터 흐름의 80% 를 설명하는 종목이
 #: 평균 6.2개인데 종목행의 51% 가 +0(|순매수|<0.5억) 이다 — 어디까지가 "그 섹터를
@@ -692,8 +693,10 @@ class State:
         b = self.d["blocks"].get(f"{self.window}|{self.market}")
         if not b:
             return ""
-        return (f"{b.get('from', '?')} ~ {b.get('to', '?')}"
-                f" · k={b.get('k', '?')} (t={b.get('t', '?')})")
+        span = f"{b.get('from', '?')} ~ {b.get('to', '?')}"
+        # k·t 는 x 계열의 재료(동시기 횡단면 적합, |t|<2 인 날이 42~70% — 검정 Q3c)라 표지 없이 첫 화면에 두지 않는다.
+        # x 계열이 사는 **탐색 모드**에서만 적는다(2026-11-08 3차 리뷰). 웹 수치표의 절편도 같다.
+        return span + (f" · k={b.get('k', '?')} (t={b.get('t', '?')})" if self.explore else "")
 
 
     def selected(self) -> dict | None:
@@ -1543,11 +1546,15 @@ def _banner_today(st: State, width: int) -> list[str]:
     net = M.get("net") or {}
     parts = [f"{ko} {fmt_amt((net.get(k) or {}).get('v'))}{_pct_tag((net.get(k) or {}).get('pct'))}"
              for k, ko in ACTORS]
-    head = f" 오늘 {mk} 순매수[억(%ile)]: "
+    head = f" 오늘 {mk} 순매수[억(1년%ile)]: "
     if cell_len(head + " · ".join(parts)) <= width:
         lines.append(pad(head + " · ".join(parts), width))
-    else:                                   # 4주체는 합 ≈ 0 이라 하나라도 잘리면 그림이 틀린다 — 두 줄로
+    elif cell_len(head + " · ".join(parts[:2])) <= width:  # 4주체는 합 ≈ 0 이라 하나라도 잘리면 그림이 틀린다 — 두 줄로
         lines.append(_items_line(head, parts[:2], width))
+        lines.append(_items_line("   ", parts[2:], width))
+    else:                                   # 더 좁으면 머리말을 따로 한 줄에 둔다
+        lines.append(pad(head.rstrip(), width))
+        lines.append(_items_line("   ", parts[:2], width))
         lines.append(_items_line("   ", parts[2:], width))
     chips = _gap_chips(d, mkts if mk != "전체" else ["전체", *mkts])
     if chips:
@@ -1600,7 +1607,10 @@ def _banner_today(st: State, width: int) -> list[str]:
                 lines.append(_items_line(f"   {ko}: ", items, width, empty="변동 없음"))
     else:
         why = d.get("change_reason") or "비교 못 함"
+        # 이유를 지키고 머리말을 줄인다 — 120칸에서 이유가 통째로 잘려 "비교 없음" 만 남았다(3차 리뷰).
         lines.append(pad(_first_fitting(width, [f" 직전 리포트 대비: 비교 없음 — {why}",
+                                                f" 직전 대비 없음: {why}",
+                                                f" 직전 대비 없음: {why.split(' — ')[0]}",
                                                 " 직전 리포트 대비: 비교 없음"]), width))
     return lines
 
@@ -1625,10 +1635,16 @@ def _banner_20d(st: State, width: int) -> list[str]:
     return lines
 
 
+#: 부호 반전 목록 아래 줄 — 웹 수치표 '오늘' 패널의 주석과 같은 말(긴 것부터).
+FLIP_NOTE = ("   눌림인지 전환인지는 판정하지 않는다 — 리포트에는 구간 수익률뿐이다.",
+             "   눌림·전환은 판정하지 않는다.")
+
+
 #: 첫 화면의 마지막 줄 — **어느 높이에서도** 남는다(리뷰 M5: 80x24 에서 잘려 사라졌다).
 BANNER_DISCLAIMER = (
     " 사실 요약이다 — 순위·추천이 아니다. 섹터 수급의 앞날 관계는 검정함 — 증거 없음(docs/validation/).",
-    " 사실 요약 — 추천 아님. 앞날 관계는 검정함 — 증거 없음.",
+    " 사실 요약 — 추천 아님. 섹터 수급의 앞날 관계는 검정함 — 증거 없음.",
+    " 추천 아님. 섹터 수급 앞날 관계: 검정함 — 증거 없음.",
     " 사실 요약 — 추천 아님.")
 
 
@@ -1668,6 +1684,8 @@ def banner_lines(st: State, width: int) -> list[str]:
         f"{FLIP_MIN_SHARE * 100:.0f}%]:",
         f" {ko} 최근 5일 부호가 직전 15일과 반대[억, 직전15일{TREND_ARROW}최근5일]:"]), width))
     lines.append(_items_line("   ", flips, width))
+    # 웹 '오늘' 패널과 같은 말 — 목록만 두면 눌림·전환 판정으로 읽힌다(`reversal_flags` 는 판정 불가 라벨이다).
+    lines.append(pad(_first_fitting(width, list(FLIP_NOTE)), width))
     fdl = final_diff_line(d)
     if fdl:
         lines.append(pad(_first_fitting(width, [fdl, fdl.split(" — ")[0]]), width))
@@ -1802,7 +1820,8 @@ def header_lines(st: State, width: int) -> list[str]:
     meta = st.block_meta()
     metas = (f"  {meta}" if meta else "", f"  {meta.split(' · ')[0]}" if meta else "", "")
     order = ((0, 0), (0, 1), (1, 1), (0, 2), (1, 2), (2, 2))
-    l2 = _first_fitting(width, [l2 + notes[n] + metas[m] for n, m in order])
+    # 마지막 단계는 꼬리 없이 — 탐색 모드 좁은 폭에서 `※ 기관 기준` 이 `※ 기관 기` 로 잘려 남았다.
+    l2 = _first_fitting(width, [l2 + notes[n] + metas[m] for n, m in order] + [l2])
     return [pad(l1, width), pad(l2, width)]
 
 
@@ -2053,7 +2072,7 @@ _NAME_COLS = (
     # 정작 대부분의 터미널에서 없는 열이 된다(실측).
     Col("선정", 4, True,
         lambda t, st: "—" if t.get("pick") is None else f"{t['pick']:.2f}"),
-    Col("순매수[억]", 13, True, lambda t, st: fmt_amt(t.get("flow"))),
+    Col("순매수[억]", 14, True, lambda t, st: fmt_amt(t.get("flow"))),
     Col("누적[%]", 8, True,
         lambda t, st: "—" if t.get("cum") is None else f"{t['cum']:.0f}"),
     Col("", 1, False, lambda t, st: "-" if t.get("cut") else ""),
@@ -2074,7 +2093,7 @@ _NAME_COLS = (
     Col("참여율[%]", 9, True, lambda t, st: fmt_pct(t.get("part"), 1)),
     Col("거래대금[억]", 13, True,
         lambda t, st: fmt_amt(t.get("tv")).replace("+", "")),
-    Col("시총대비[%p]", 12, True,
+    Col("시총대비[%p]", 16, True,
         lambda t, st: fmt_pct(t["a"]) if t.get("a") is not None else "—"),
     Col("시총[억]", 13, True,
         lambda t, st: fmt_amt(t["cap"]).replace("+", "") if t.get("cap") else "—"),
@@ -2352,7 +2371,7 @@ def names_lines(st: State, width: int) -> tuple[list[str], int]:
         if cell_len(title + note) + 1 <= width:
             title += note
     cols = fit_names(width, st.explore)
-    head = pad(" ".join(pad(c.header, c.width, c.right) for c in cols), width)
+    head = pad(" ".join(pad(name_head(c.header, st), c.width, c.right) for c in cols), width)
     out = [pad(title, width), head]
     for t in names:
         out.append(_render(cols, t, st, width))
@@ -2461,17 +2480,75 @@ _EV_SECTOR = {
     "N일[G]": (B_G, ""),
     "통과[구간]": (B_G, ""),
 }
-#: 종목 목록·전 종목 절 — 종목 층의 열은 섹터 표와 다른 표지를 단다.
+#: 종목 층의 **검정 범위** — ``"주체|종류"`` → [검정한 창(거래일), 그 창의 표지 글자]. 창 목록이 비면 어느 창이든 그 글자다.
+#: 근거 docs/validation/2026-11-08-usefulness-results.md: 종목 검정은 셋 다 **20일 순매수 ÷ 종목 시총**의 섹터 안 순위 IC 다 —
+#: K1 투신+연기금(음으로 확인 → 쓸 수 없음), K2 기관(발견 통과, 확인 구간 미확인), K3 외국인(발견 탈락). 금액은 검정하지 않았고,
+#: 투신·연기금 **개별** 값도 검정하지 않았다(K1 은 둘의 합). 종류: ``share`` = ÷ 종목 시총(시총대비), ``amt`` = 금액.
+#: **뷰어(sector_flow.html `NAME_EV`)가 같은 표를 싣는다** — 검사가 글자째 대조하고(test_viewer_page), W 층이 창마다 그려 본다.
+NAME_EV = {
+    "invpen|share": [[20], B_NEG],
+    "inst|share": [[20], B_NONE + "(K2 미확인)"],
+    "forgn|share": [[20], B_NONE],
+    "inst|amt": [[], B_MEAS + " · ÷시총 기준으로만 검정(K1/K2/K3)"],
+    "forgn|amt": [[], B_MEAS + " · ÷시총 기준으로만 검정(K1/K2/K3)"],
+    "invtrt|amt": [[], B_MEAS + " · 투신+연기금 합 ÷시총만 검정(K1)"],
+    "penfnd|amt": [[], B_MEAS + " · 투신+연기금 합 ÷시총만 검정(K1)"],
+}
+
+
+def name_evidence(actor: str, kind: str, window) -> str:
+    """종목 층 표지 글자 — :data:`NAME_EV` 하나로 TUI 드릴다운 헤더·도움말·뷰어(`evName`)가 같은 말을 한다.
+
+    표에 없는 (주체, 종류)는 검정하지 않았으므로 ``[측정]``. 검정한 창 밖(1·5·60·120일)은 ``[측정] · 앞날 검정은 20일만``.
+    시장은 보지 않는다 — K1~K3 은 섹터 **안** 순위라 거래소·코스닥 부분집합에도 같은 검정이다(K1 은 둘 다 음).
+    """
+    e = NAME_EV.get(f"{actor}|{kind}")
+    if not e:
+        return B_MEAS
+    days, text = e
+    if not days or (str(window).isdigit() and int(window) in days):
+        return text
+    return f"{B_MEAS} · {scope_note(days)}"
+
+
+def name_badge(text: str) -> str:
+    """표지 글자의 앞 표지(``[앞날 증거 없음](K2 미확인)`` → ``[앞날 증거 없음]``)."""
+    return text[:text.index("]") + 1]
+
+
+#: 종목 목록 열 → (주체, 종류). 주체 ``None`` 은 고른 주체(`State.actor`)다. 드릴다운 헤더가 이 열들에 짧은 표지를 단다.
+NAME_EV_COLS = {"순매수[억]": (None, "amt"), COL_INVTRT: ("invtrt", "amt"), COL_PENFND: ("penfnd", "amt"),
+                "시총대비[%p]": (None, "share")}
+
+
+def names_window(st: "State") -> str:
+    """종목 목록이 보는 창 — 종합에서는 20일(:meth:`State.names`)."""
+    return "20" if st.window == "종합" else st.window
+
+
+def name_head(header: str, st: "State") -> str:
+    """드릴다운 헤더 글자 — :data:`NAME_EV_COLS` 의 열에는 **지금 창·주체의** 짧은 표지를 붙인다(``시총대비[%p][무]``).
+
+    열 폭은 헤더 + 짧은 표지(4칸)가 들어가게 잡았다(순매수 14 · 투신 12 · 연기금 14 · 시총대비 16) — 모자라면 `pad` 가 표지를 자른다.
+    """
+    spec = NAME_EV_COLS.get(header)
+    if not spec:
+        return header
+    actor, kind = spec
+    return header + B_SHORT[name_badge(name_evidence(actor or st.actor, kind, names_window(st)))]
+
+
+#: 종목 목록·전 종목 절 — 종목 층의 열은 섹터 표와 다른 표지를 단다. 범위가 창·주체로 갈리는 열은 :data:`NAME_EV` 의 말을 옮긴다.
 _EV_NAMES = {
-    "순매수[억]": (B_NONE, "종목 기관 20일 미확인 · 외국인 탈락"),
+    "순매수[억]": (B_MEAS, "÷시총 기준으로만 검정(K1/K2/K3)"),
     "누적[%]": (B_MEAS, ""),
     "선정": (B_NEG, "투신+연기금 축이 검정 부호와 반대"),
-    COL_INVTRT: (B_NEG, "20일 섹터 안 순위만 검정"),
-    COL_PENFND: (B_NEG, "20일 섹터 안 순위만 검정"),
+    COL_INVTRT: (B_MEAS, "투신+연기금 합 ÷시총만 검정(K1)"),
+    COL_PENFND: (B_MEAS, "투신+연기금 합 ÷시총만 검정(K1)"),
     "상대수익[%p]": (B_MEAS, ""),
     "최근집중[%]": (B_MEAS, ""),
     "참여율[%]": (B_MEAS, ""),
-    "시총대비[%p]": (B_MEAS, ""),
+    "시총대비[%p]": (B_NONE, "기관(K2 미확인)·외국인 20일만, 밖은 [측정]"),
     "시총[억]": (B_MEAS, ""),
     "거래대금[억]": (B_MEAS, ""),
     "곱": (B_G, "섹터 G × 종목 선정점수"),
@@ -2574,6 +2651,13 @@ def _with_evidence(entries: list[tuple[str, str]]) -> list[tuple[str, str]]:
     return out
 
 
+#: 한영(두벌식) 상태의 키 한계 — **흐름·원장 도움말과 README 가 같은 글자**로 적는다(tests 가 이어 붙여 대조한다).
+#: 근거 `flow_app.JAMO_TO_ASCII`: Shift 로 다른 자모가 나오는 자리는 q·w·e·r·t(ㅂㅈㄷㄱㅅ) 뿐이고, 그중 앱이 쓰는 대문자는 `W`(ㅉ) 하나다.
+#: 세 곳이 따로 적던 시절 셋이 다 달랐고(`w·r 만`·`W 만`·`W(구간)뿐`) 흐름 쪽은 틀렸다 — `R` 은 듣는 키가 아니다.
+IME_NOTE = ("한영 상태에서도 두벌식 같은 자리로 듣는다. Shift 로 다른 글자가 나오는 자리가 q·w·e·r·t 뿐이라 "
+            "한글에서 대문자 역방향은 W(구간)뿐이다 — 나머지 대문자(M·A·S, 원장의 V)는 소문자 동작으로 떨어진다.")
+
+
 #: 도움말 — 열의 뜻과 계산식. 화면에서 읽는 사람이 "이 숫자가 뭐냐" 를 물을 자리에
 #: 답을 둔다. 한계도 같이 적는다(추정치·상대지표·유동성 함정).
 HELP = [
@@ -2602,8 +2686,10 @@ HELP = [
     ("? F1", "이 도움말. 안에서 ↑↓·PgUp/PgDn·Space·g·G·Home·End 로 훑고,"),
     ("", "        q·Esc·?·Enter 로 닫는다."),
     ("q", "종료. 단 도움말 안에서는 **닫기만** 한다(한 번 더 눌러야 종료)."),
-    ("", "한영 상태에서도 위 키가 그대로 듣는다. 다만 자판이 Shift 를 구분하지"),
-    ("", "        않는 자리가 있어 **대문자 역방향은 w·r 만** 된다(끝으로는 End)."),
+    # IME_NOTE 를 그대로 나눠 적는다(검사가 이어 붙여 대조한다 — 원장 도움말·README 와 같은 글자).
+    ("", "한영 상태에서도 두벌식 같은 자리로 듣는다. Shift 로 다른 글자가 나오는"),
+    ("", "        자리가 q·w·e·r·t 뿐이라 한글에서 대문자 역방향은 W(구간)뿐이다 —"),
+    ("", "        나머지 대문자(M·A·S, 원장의 V)는 소문자 동작으로 떨어진다."),
     ("", ""),
     ("", "── 증거 수준 — 열마다 '증거' 줄이 붙는다 ──"),
     ("", "앞날 수익률(섹터·종목)과의 관계를 사전등록해 검정한 결과다(docs/validation/)."),
@@ -2615,13 +2701,19 @@ HELP = [
     ("", "        [측정] · 전체 시장만 검정."),
     ("", "        투신+연기금은 금액이라 [측정] · ÷시총 기준으로만 검정(S1)."),
     ("", "        1일 창에서 값이 없는 열(가속 등)에는 표지를 달지 않는다."),
+    ("", "종목 층(드릴다운 헤더의 짧은 꼴, 창·주체마다 다시 단다): 검정한 것은"),
+    ("", "        20일 순매수 ÷ 종목 시총의 섹터 안 순위뿐 — 투신+연기금 합(K1)"),
+    ("", "        [음], 기관(K2 미확인)·외국인(K3 탈락) [무]. 그 밖의 창의 시총대비는"),
+    ("", "        [측정] · 앞날 검정은 20일만, 금액은 [측정] · ÷시총 기준으로만"),
+    ("", "        검정, 투신·연기금 개별 열은 [측정] · 투신+연기금 합 ÷시총만 검정."),
     (B_MEAS, "지금·지난 구간을 잰 값. 앞날을 주장하지 않는다(앞날 검정 안 함)."),
     (B_NONE, "검정함 — 증거 없음. 2018~2026, 섹터 앞날 5·20일 순위 IC."),
     (B_G, "검정함 — 판정 불가. 관문 통과 섹터가 날마다 2~7개라 검정력이 없다."),
     (B_X, "x 는 사실상 섹터 20일 수익률 반전이다(ρ 0.82~0.93)."),
     ("", "        앞날 관계도 검정함 — 증거 없음(20일 지평은 경계)."),
-    (B_NEG, "종목 투신+연기금 20일의 섹터 안 순위: IC 가 음으로 확인됐다."),
+    (B_NEG, "종목 투신+연기금 합 20일÷시총의 섹터 안 순위 IC 가 음으로 확인됐다."),
     ("", "        그러나 매수 상위 회피는 확인 구간에서 역효과였다 — 쓸 수 없다."),
+    ("", "        드릴다운에 그 합의 열은 없다 — 탐색 모드 선정점수의 한 축이다."),
     ("", "        화면의 값은 앞날 예측이 아니라 누가 무엇을 사고파나의 관측이다."),
     ("", ""),
     ("", "── 오늘 — 첫 화면(오늘의 수급)과 1일 창 ──"),
@@ -2803,7 +2895,7 @@ HELP = [
     ("", "        **왜 곱인가**: 각 점수 **안에서는** 축 하나가 낮아도 나머지가"),
     ("", "        메우는 것이 맞다(그래서 평균이다). 층 **사이에서는** 아니다 —"),
     ("", "        평균이면 아무도 안 사는 섹터의 1등이 모두가 사는 섹터의 3등을"),
-    ("", "        이긴다. 곱은 둘 다 높을 때만 산다(0.2×0.9=0.18 < 0.6×0.7=0.42)."),
+    ("", "        이긴다. 곱은 둘 다 높을 때만 남는다(0.2×0.9=0.18 < 0.6×0.7=0.42)."),
     ("섹터G", "그 종목이 속한 섹터의 G. 27개 섹터 사이의 순위다."),
     ("종목선정", "그 섹터 **안에서** 그 종목의 선정점수."),
     ("", "        둘을 같이 보이는 이유: 곱만 보이면 '섹터가 좋아서인가 종목이"),
@@ -2811,8 +2903,9 @@ HELP = [
     ("", "        이 화면은 정렬이 없다 — 곱 내림차순 고정이다."),
     ("", ""),
     ("", "── 알아둘 것 ──"),
-    ("", "· k 는 추정치다. 구간마다·날마다 다르다 — 지금 블록의 값은 헤더 줄의"),
-    ("", "  k=…(t=…) 다. 도움말에 숫자로 적어 두면 다음 리포트에서 틀린 말이 된다."),
+    ("", "· k 는 추정치다. 구간마다·날마다 다르다 — 지금 블록의 값은 탐색 모드(e)"),
+    ("", "  헤더 줄의 k=…(t=…) 다. 도움말에 숫자로 적어 두면 다음 리포트에서 틀린"),
+    ("", "  말이 된다. 동시기 적합이라 [측정] 이고 |t|<2 인 날이 42~70% 다(Q3c)."),
     ("", "· 위 열들은 **동시기**(같은 구간 안)의 값이다. 앞날 수익률과의 관계는"),
     ("", "  검정함 — 섹터 지표는 증거 없음, G 는 판정 불가(docs/validation/)."),
     ("", "· 값 0 은 '관망' 이 아니라 '0 또는 미보고' 다 — 수집기가 파싱 실패를"),

@@ -151,7 +151,7 @@ table{border-collapse:collapse; width:100%; font-size:12px}
 th,td{padding:6px 11px; text-align:right; white-space:nowrap; border-bottom:1px solid var(--line-2)}
 th:first-child,td:first-child{text-align:left}
 thead th{position:sticky; top:0; background:var(--card); color:var(--ink-2); font-weight:600;
-  font-size:10.5px; letter-spacing:.04em; text-transform:uppercase; border-bottom:1px solid var(--line)}
+  font-size:10.5px; letter-spacing:.04em; border-bottom:1px solid var(--line)}
 tbody tr:hover{background:var(--sunk)}
 
 #tip{position:fixed; z-index:60; pointer-events:none; opacity:0; transition:opacity .1s;
@@ -239,8 +239,8 @@ tr.thin td{color:var(--ink-3)}
   </section>
 
   <div class="two">
-    <section class="panel"><h2 id="d-buy">순매수 상위<small>금액(억) 순<span class="ev" id="ev-buy-amt"></span> · 오른쪽은 시총 대비 %p · 이름 아래 투신·연기금(억)<span class="ev" id="ev-buy-trust"></span></small></h2><div class="lst" id="lst-buy"></div></section>
-    <section class="panel"><h2 id="d-sell">순매도 상위<small>금액(억) 순<span class="ev" id="ev-sell-amt"></span> · 오른쪽은 시총 대비 %p · 이름 아래 투신·연기금(억)<span class="ev" id="ev-sell-trust"></span></small></h2><div class="lst" id="lst-sell"></div></section>
+    <section class="panel"><h2 id="d-buy">순매수 상위<small>금액(억) 순<span class="ev" id="ev-buy-amt"></span> · 오른쪽은 시총 대비 %p<span class="ev" id="ev-buy-share"></span> · 이름 아래 투신·연기금(억)<span class="ev" id="ev-buy-trust"></span></small></h2><div class="lst" id="lst-buy"></div></section>
+    <section class="panel"><h2 id="d-sell">순매도 상위<small>금액(억) 순<span class="ev" id="ev-sell-amt"></span> · 오른쪽은 시총 대비 %p<span class="ev" id="ev-sell-share"></span> · 이름 아래 투신·연기금(억)<span class="ev" id="ev-sell-trust"></span></small></h2><div class="lst" id="lst-sell"></div></section>
   </div>
 
   <section class="panel"><h2 id="d-detail">기관 세부<small>구간 누적 · 억원</small></h2><div class="det-bars" id="detbars"></div></section>
@@ -251,11 +251,11 @@ tr.thin td{color:var(--ink-3)}
     <p><b>__BASIS__</b>. 키움 KRX 코드(접미사 없음) 응답이라 시장 전체 체결이 아니라 KRX 몫이다(근거 docs/formulas.md §1.0).</p>
     <p><b>순매수 금액은 종가 환산 근사다.</b> DB 가 주는 것은 순매매 <em>수량</em>이라 그날 종가를 곱해 금액을 복원했다. 참값은 VWAP 가중이다 — 방향과 상대 크기를 보는 용도다.</p>
     <p><b>가속 %p 는 구간 누적 순매수 ÷ 구간말 시가총액 × 100 이다</b>(TUI·수치표의 <b>가속</b>과 같은 정의). 기관 지분율이 몇 %p 올랐나에 대한 근사이지 실제 보유잔고가 아니다. 시총이 작은 섹터는 분모가 작아 크게 튄다 — 종목 수와 거래대금을 같이 보라.</p>
-    <p><b>"미반응"(돈은 들어왔는데 덜 간 섹터) 순위는 이 화면에서 내렸다.</b> 그 횡단면 잔차는 수치표·터미널의 <b>미실현 x</b> 와 같은 정의(횡단면 회귀 잔차)인데, x 는 섹터 20일 수익률 반전과 순위상관 ρ 0.82~0.93 이라 사실상 "많이 빠진 순" 이다. 앞날 관계도 검정함 — 증거 없음. 수치표·터미널은 x 와 거기서 나온 값(예상Δv·포텐셜·dW/dt·풀림)을 <b>[≈섹터 20일 반전: x]</b>·[측정] 표지와 함께 탐색 쪽에서만 보인다.</p>
+    <p><b>"미반응"(돈은 들어왔는데 덜 간 섹터) 순위는 이 화면에서 내렸다.</b> 그 횡단면 잔차는 수치표·터미널의 <b>미실현 x</b> 와 같은 정의(횡단면 회귀 잔차)인데, x 는 섹터 20일 수익률 반전과 순위상관 ρ 0.82~0.93 이라 사실상 "많이 빠진 순" 이다. 앞날 관계도 검정함 — 증거 없음. 수치표·터미널은 x 와 거기서 나온 값(예상Δv·dW/dt·풀림)을 <b>[≈섹터 20일 반전: x]</b>·[측정] 표지와 함께 탐색 쪽에서만 보인다.</p>
     <p><b>증거 표지</b> — 앞날 수익률과의 관계를 사전등록해 검정한 결과다(<a href="https://github.com/younghwan91/sector-flow/tree/main/docs/validation">docs/validation</a>, 2018~2026). 검정은 전부 <b>전체 시장</b>·10종목 미만 섹터 제외로 했다. 표지는 <b>검정한 (주체, 값, 창)</b>에만 붙는다 — 그 밖의 창(1·5·120일·직접 고른 구간)은 <b>[측정]</b> 으로 적고 "앞날 검정은 20일만" 처럼 범위를, 거래소·코스닥 화면은 "전체 시장만 검정" 이라 적는다.</p>
     <p class="evleg"><b>[측정]</b> 지금·지난 구간을 잰 값. 앞날을 주장하지 않는다(앞날 검정 안 함).<br>
-      <b>[앞날 증거 없음]</b> 검정함 — 증거 없음. 섹터 앞날 5·20일 순위 IC. 섹터: 기관 가속·임펄스 20일, 기관 가속 60일, 외국인 가속 20일(가속 = 순매수 ÷ 섹터 시총 — 외국인·60일은 금액을 검정하지 않았다), 투신+연기금 20일. 종목: 기관 20일(확인 구간에서 미확인)·외국인 20일(탈락) 순매수.<br>
-      <b>[음의 순위 정보·쓸 수 없음]</b> 종목 투신+연기금 20일의 섹터 안 순위: IC 가 음으로 확인됐다. 그러나 매수 상위 회피는 확인 구간에서 역효과였다 — 쓸 수 없다. 이 화면에서는 종목 이름 아래 투신·연기금(20일 창).<br>
+      <b>[앞날 증거 없음]</b> 검정함 — 증거 없음. 섹터 앞날 5·20일 순위 IC. 섹터: 기관 가속·임펄스 20일, 기관 가속 60일, 외국인 가속 20일(가속 = 순매수 ÷ 섹터 시총 — 외국인·60일은 금액을 검정하지 않았다), 투신+연기금 20일. 종목: 기관 20일 순매수 ÷ 종목 시총(확인 구간에서 미확인, K2)·외국인 20일 ÷ 종목 시총(탈락, K3) — 이 화면의 오른쪽 시총 대비 %p(20일 창). 종목 <b>금액</b>과 투신·연기금 <b>개별</b> 값은 검정하지 않았다([측정]).<br>
+      <b>[음의 순위 정보·쓸 수 없음]</b> 종목 투신+연기금 <b>합</b> 20일 ÷ 시총의 섹터 안 순위(K1): IC 가 음으로 확인됐다. 그러나 매수 상위 회피는 확인 구간에서 역효과였다 — 쓸 수 없다. 이 화면에는 그 합의 열이 없다 — 이름 아래 투신·연기금은 개별 금액이라 [측정] 이다.<br>
       <b>[판정 불가: G]</b> 관문 통과 섹터가 날마다 2~7개라 검정력이 없다. 이 화면에는 G 가 없다(수치표·터미널 탐색 모드).<br>
       <b>[≈섹터 20일 반전: x]</b> 미실현 x 는 사실상 섹터 20일 수익률 반전이다(ρ 0.82~0.93). 앞날 관계도 검정함 — 증거 없음. 이 화면에는 x 가 없다.</p>
     <p><b>1일 구간에는 가속(%p)이 없다.</b> 하루치는 사실(4주체 순매수·거래대금·수익률)만 적는다 — TUI 1일 창과 같다. 1일을 고르면 임펄스(금액) 순이다.</p>
@@ -290,9 +290,10 @@ const retLabel=short=>retClosed()?(short?RET_LABEL_SHORT:RET_LABEL):(short?RET_L
  *  거래소 화면에 [앞날 증거 없음] 을 달면 검정하지 않은 것을 검정했다고 말한다. */
 const EV_TESTED={"inst":{"share":[20,60],"amt":[20]},"forgn":{"share":[20]}};
 const EV_MARKET="전체";
-/** 종목 층의 표지 — 섹터와 다르다. 투신+연기금 20일 섹터 안 순위는 IC 가 **음**으로 확인됐고(K1) 쓸 수 없다,
- *  기관 20일은 확인 구간에서 미확인(K2), 외국인 20일은 탈락(K3). TUI `flow_view._EV_NAMES` 와 같은 말이다. */
-const EV_NAME={"trust":["[음의 순위 정보·쓸 수 없음]",[20]],"inst":["[앞날 증거 없음]",[20]],"forgn":["[앞날 증거 없음]",[20]]};
+/** 종목 층의 검정 범위 — `"주체|종류"` → [검정한 창, 그 창의 표지 글자](창 목록이 비면 어느 창이든 그 글자).
+ *  종목 검정은 셋 다 **20일 순매수 ÷ 종목 시총**의 섹터 안 순위다: K1 투신+연기금 합(음 → 쓸 수 없음), K2 기관(미확인),
+ *  K3 외국인(탈락). 금액·투신/연기금 개별 값은 검정하지 않았다. TUI `flow_view.NAME_EV` 와 **글자째 같은 표**다(검사가 대조한다). */
+const NAME_EV={"invpen|share":[[20],"[음의 순위 정보·쓸 수 없음]"],"inst|share":[[20],"[앞날 증거 없음](K2 미확인)"],"forgn|share":[[20],"[앞날 증거 없음]"],"inst|amt":[[],"[측정] · ÷시총 기준으로만 검정(K1/K2/K3)"],"forgn|amt":[[],"[측정] · ÷시총 기준으로만 검정(K1/K2/K3)"],"invtrt|amt":[[],"[측정] · 투신+연기금 합 ÷시총만 검정(K1)"],"penfnd|amt":[[],"[측정] · 투신+연기금 합 ÷시총만 검정(K1)"]};
 /** 얇은 섹터 문턱 — TUI `flow_view.THIN_MIN`·수치표 `MIN_NAMES` 와 같은 값(검사가 대조한다). */
 const THIN_MIN=10;
 const NDATE=D.dates.length;
@@ -303,8 +304,12 @@ let i0=Math.max(0,NDATE-20), i1=NDATE-1;
 const el=(t,c,x)=>{const e=document.createElement(t); if(c)e.className=c; if(x!=null)e.textContent=x; return e;};
 const cls=n=>n>=0?"pos":"neg";
 const sgn=n=>(n>=0?"+":"−");
-const amt=n=>sgn(n)+Math.abs(n).toLocaleString("ko-KR",{maximumFractionDigits:0});
-const pp =n=>sgn(n)+Math.abs(n).toFixed(2);
+/** 표시 반올림 — 0.5 는 0 에서 먼 쪽. 수치표 `RHU`·TUI `flow_view.rhu` 와 **같은 IEEE 연산**이다.
+ *  예전 `toLocaleString`·`toFixed` 는 반올림 규칙이 달라 금속 971.4999999999999 를 +971, 금융 외국인을 −14,810 으로 적어
+ *  수치표·TUI(+972·−14,811)와 갈렸다(2026-11-08 3차 리뷰 D5-M1). 금액·%p 는 전부 이 둘을 거친다. */
+const RHU=(v,nd=0)=>{const m=10**nd, q=Math.floor(Math.abs(v)*m+0.5+1e-9)/m; return v>=0?q:-q;};
+const amt=n=>sgn(n)+Math.abs(RHU(n)).toLocaleString("ko-KR",{maximumFractionDigits:0});
+const pp =n=>sgn(n)+Math.abs(RHU(n,2)).toFixed(2);
 const mkts=()=>market==="전체"?D.markets:[market];
 const nDays=()=>i1-i0+1;
 /** 실제로 쓰는 기준. **1일에는 가속이 없다** — 하루치는 사실(4주체 순매수·거래대금·수익률)만 있고 가속은
@@ -322,9 +327,10 @@ function evFor(k,act){ const b=EV[k]; if(!b||b==="[측정]") return b||"";
   const t=(EV_TESTED[act||k]||{})[kind]; if(!t) return "[측정]";
   if(!t.includes(nDays())) return scopeNote(t);
   return market===EV_MARKET?b:MARKET_NOTE; }
-/** 종목 열의 표지(`trust` = 투신·연기금, 그 밖은 주체 키). 검정 안 한 주체는 늘 [측정]. */
-function evName(k){ const e=EV_NAME[k]; if(!e) return "[측정]";
-  return e[1].includes(nDays())?e[0]:scopeNote(e[1]); }
+/** 종목 열의 표지 — TUI `flow_view.name_evidence` 와 같은 규칙. 표에 없는 (주체, 종류)는 검정 안 함 → [측정],
+ *  검정한 창 밖이면 [측정] + 범위. 시장은 보지 않는다(섹터 **안** 순위 검정이라 거래소·코스닥 부분집합도 같다). */
+function evName(act,kind){ const e=NAME_EV[act+"|"+kind]; if(!e) return "[측정]";
+  return (!e[0].length||e[0].includes(nDays()))?e[1]:scopeNote(e[0]); }
 
 function flow(sec,act){ // 일별 배열 합(시장 합산)
   const out=new Array(NDATE).fill(0);
@@ -646,10 +652,12 @@ function renderNames(){
   const pk=picked+(picked&&thin(picked)?"~":"");
   document.getElementById("d-buy").firstChild.textContent=pk+" — "+label+" 순매수 상위 ";
   document.getElementById("d-sell").firstChild.textContent=pk+" — "+label+" 순매도 상위 ";
-  // 표지 — 종목 층은 섹터와 다르다(`EV_NAME`). 투신·연기금 20일은 [음의 순위 정보·쓸 수 없음], 다른 창은 [측정]+범위.
+  // 표지 — 종목 층은 섹터와 다르다(`NAME_EV`). 금액·투신/연기금 개별은 [측정], 시총 대비는 고른 주체의 20일만 검정.
   ["buy","sell"].forEach(sd=>{
-    document.getElementById("ev-"+sd+"-amt").textContent=" "+evName(actor);
-    document.getElementById("ev-"+sd+"-trust").textContent=" "+evName("trust");});
+    document.getElementById("ev-"+sd+"-amt").textContent=" "+evName(actor,"amt");
+    document.getElementById("ev-"+sd+"-share").textContent=" "+evName(actor,"share");
+    const iv=evName("invtrt","amt"), pf=evName("penfnd","amt");
+    document.getElementById("ev-"+sd+"-trust").textContent=" "+(iv===pf?iv:"투신 "+iv+" · 연기금 "+pf);});
   const all=drivers(picked,actor);
   // 부호로 나누므로 같은 종목이 양쪽에 뜨지 않는다. 금액 순 — 화면의 순매수·순매도 상위와 같다.
   fill("lst-buy", all.filter(r=>r.v>0).slice(0,6));

@@ -2541,7 +2541,7 @@ def test_banner_states_facts_not_picks(data):
 def test_banner_market_net_is_the_payload_today_total(data):
     """시장 순매수 줄 = 페이로드 `today.market[시장].net` 의 값과 1년 백분위 그대로(4주체 다)."""
     text = "\n".join(banner_lines(State(data), 160))
-    assert "오늘 전체 순매수[억(%ile)]: 기관 +123(97) · 외국인 -33(3) · 개인 -80(40) · 기타법인 -10(55)" \
+    assert "오늘 전체 순매수[억(1년%ile)]: 기관 +123(97) · 외국인 -33(3) · 개인 -80(40) · 기타법인 -10(55)" \
         in text, text
     # 좁은 폭에서도 4주체가 다 남는다(합 ≈ 0 이라 하나라도 잘리면 그림이 틀린다) — 두 줄로 나눈다.
     narrow = "\n".join(banner_lines(State(data), 60))
@@ -3423,9 +3423,114 @@ def test_evidence_badges_follow_the_tested_window_and_actor(data):
     assert sort_evidence(st, "accel") is None, "1일 창의 빈 열(가속)에는 표지가 없다"
 
 
-def test_drilldown_trust_and_pension_headers_carry_the_negative_badge():
-    from sectorflow.tui.flow_view import COL_INVTRT, COL_PENFND
-    assert COL_INVTRT.endswith("[음]") and COL_PENFND.endswith("[음]")
+def test_drilldown_badges_follow_the_tested_scope_per_window_and_actor(data):
+    """드릴다운 헤더의 짧은 표지는 **창·주체마다** 검정 범위(K1~K3)를 따른다(3차 리뷰 D2-M1).
+
+    종목 검정은 20일 순매수 ÷ 종목 시총의 섹터 안 순위뿐이다 — 기관(K2 미확인)·외국인(K3 탈락)의 20일 시총대비만
+    [무], 금액과 투신·연기금 **개별** 열은 어느 창이든 [측](검정 안 함), 20일이 아닌 창의 시총대비도 [측].
+    회귀: 투신·연기금 헤더에 `[음]` 을 박아 1·5·60일에도, 검정하지 않은 개별 값에도 달았다.
+    주입: 창을 안 보거나(`name_evidence`) 헤더에 표지를 박으면 실패한다.
+    """
+    from sectorflow.tui.flow_view import (
+        B_MEAS, B_NEG, B_NONE, COL_INVTRT, COL_PENFND, name_evidence, name_head, names_lines)
+    st = State(data)
+    want = {("20", "inst"): ("[측]", "[무]"), ("20", "forgn"): ("[측]", "[무]"), ("20", "indiv"): ("[측]", "[측]"),
+            ("5", "inst"): ("[측]", "[측]"), ("1", "inst"): ("[측]", "[측]"), ("60", "forgn"): ("[측]", "[측]"),
+            ("종합", "inst"): ("[측]", "[무]")}
+    for (w, a), (amt, share) in want.items():
+        if w not in WINDOWS:
+            continue
+        st.wi, st.ai = WINDOWS.index(w), [k for k, _ in ACTORS].index(a)
+        assert name_head("순매수[억]", st) == "순매수[억]" + amt, (w, a)
+        assert name_head("시총대비[%p]", st) == "시총대비[%p]" + share, (w, a)
+        assert name_head(COL_INVTRT, st) == COL_INVTRT + "[측]" and name_head(COL_PENFND, st) == COL_PENFND + "[측]"
+        head = names_lines(st, 400)[0][1]
+        assert "순매수[억]" + amt in head and "시총대비[%p]" + share in head, head
+    # 표지가 붙어도 헤더가 열 폭 안에 든다(`pad` 가 자르면 `[무` 처럼 반쪽 표지가 남는다).
+    from sectorflow.tui.flow_view import NAME_EV_COLS, cell_len, names_cols
+    for c in names_cols(True):
+        if c.header in NAME_EV_COLS:
+            assert cell_len(c.header) + 4 <= c.width, c.header
+    # 글자 — 리뷰가 정한 말 그대로.
+    assert name_evidence("inst", "amt", "20") == f"{B_MEAS} · ÷시총 기준으로만 검정(K1/K2/K3)"
+    assert name_evidence("invtrt", "amt", "20") == f"{B_MEAS} · 투신+연기금 합 ÷시총만 검정(K1)"
+    assert name_evidence("invpen", "share", "20") == B_NEG
+    assert name_evidence("inst", "share", "20") == B_NONE + "(K2 미확인)"
+    assert name_evidence("forgn", "share", "20") == B_NONE
+    assert name_evidence("inst", "share", "5") == f"{B_MEAS} · 앞날 검정은 20일만"
+    assert name_evidence("indiv", "share", "20") == B_MEAS and name_evidence("etc", "amt", "1") == B_MEAS
+
+
+def test_block_meta_shows_k_only_in_explore_mode(data):
+    """k·t 는 x 계열의 재료(동시기 적합, |t|<2 가 42~70%)라 표지 없이 기본 화면 헤더에 두지 않는다.
+
+    주입: `block_meta` 가 탐색 모드와 무관하게 k 를 적으면 실패한다.
+    """
+    st = State(data)
+    assert "k=" not in st.block_meta() and "k=" not in header_lines(st, 200)[1]
+    st.explore = True
+    assert "k=" in st.block_meta()
+
+
+def test_first_screen_states_what_it_does_not_judge(data):
+    """첫 화면: 부호 반전 목록 아래 '판정하지 않는다' 줄(웹과 같은 말), 80칸 맺음말이 섹터 수급 검정 결과를 말한다,
+    120칸에서 직전 대비 비교 없음의 **이유**가 남는다.
+
+    주입: 판정 불가 줄을 빼거나, 80칸 맺음말에서 '섹터 수급' 을 빼거나, 이유 단계를 빼면 실패한다.
+    """
+    from sectorflow.tui.flow_view import banner_lines, view_width
+    st = State(data)
+    text = "\n".join(banner_lines(st, 160))
+    assert "눌림인지 전환인지는 판정하지 않는다" in text, text
+    narrow = banner_lines(st, view_width(80))
+    assert "섹터 수급의 앞날 관계는 검정함 — 증거 없음" in narrow[-1], narrow[-1]
+    assert any("판정하지 않는다" in ln for ln in narrow)
+    d = dict(data)
+    d.pop("change", None)
+    d["change_reason"] = "섹터 덮어쓰기가 달라졌다(지문 none→859e24f0433c) — 같은 섹터가 다른 종목 집합이라 견주지 않는다"
+    for w in (120, 100):
+        lines = banner_lines(State(d), view_width(w))
+        assert any("섹터 덮어쓰기가 달라졌다" in ln for ln in lines), (w, lines)
+
+
+def test_ime_reverse_key_note_is_one_sentence_in_both_helps_and_the_readme():
+    """한영 상태의 대문자 역방향 설명이 흐름 도움말·원장 도움말·README 에서 **같은 글자**이고 사실이다.
+
+    회귀: 세 곳이 `w·r 만`·`W 만`·`W(구간)뿐` 으로 달랐고 흐름 쪽은 틀렸다(`R` 은 듣는 키가 아니다).
+    주입: 한 도움말의 문장을 바꾸면 실패한다.
+    """
+    import re as _re
+    from pathlib import Path
+
+    from sectorflow.tui import flow_app as FA
+    from sectorflow.tui.flow_view import HELP, IME_NOTE
+    from sectorflow.tui.ledger_view import LEDGER_HELP
+
+    def joined(entries):
+        return " ".join(d.strip() for _n, d in entries)
+    for name, entries in (("flow", HELP), ("ledger", LEDGER_HELP)):
+        assert IME_NOTE in joined(entries), f"{name} 도움말이 IME_NOTE 와 다르다"
+    readme = _re.sub(r"\s+", " ", (Path(__file__).resolve().parent.parent / "README.md").read_text("utf-8"))
+    assert IME_NOTE in readme, "README 가 IME_NOTE 와 다르다"
+    # 사실 — 대문자로 정규화되는 자모는 W(ㅉ)·R(ㄲ) 뿐이고, 흐름에서 R 은 듣는 키가 아니다.
+    uppers = {v for v in FA.JAMO_TO_ASCII.values() if v.isupper()}
+    assert uppers == {"W", "R"}
+    assert 'ord("R")' not in Path(FA.__file__).read_text("utf-8"), "R 이 듣는 키가 됐다 — IME_NOTE 를 고칠 것"
+
+
+def test_amount_and_percentile_unit_is_written_one_way():
+    """`[억(1년%ile)]` 한 가지로 적는다 — TUI 첫 화면·웹 '오늘' 패널(`[억(%ile)]`·`[억 (1년%ile)]` 이 섞였다).
+
+    주입: 한쪽을 옛 꼴로 되돌리면 실패한다.
+    """
+    from pathlib import Path
+
+    import sectorflow.tui.flow_view as FV
+    repo = Path(__file__).resolve().parent.parent
+    for path in (Path(FV.__file__), repo / "scripts" / "templates" / "sector_numbers.html"):
+        txt = path.read_text("utf-8")
+        assert "억(%ile)" not in txt and "억 (1년%ile)" not in txt, path
+    assert "억(1년%ile)" in Path(FV.__file__).read_text("utf-8")
 
 
 def test_sign_flip_list_drops_sectors_too_small_to_have_a_sign():
