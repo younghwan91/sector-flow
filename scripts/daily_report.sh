@@ -94,7 +94,7 @@ FINAL_REBUILD=""
 FINAL_UNCONFIRMED=""
 if [ -f "$DEST/FINAL.txt" ]; then
   FINAL_OK=1
-  if [ -n "${KR_QUANT_FINAL:-}" ] && [ ! -f "$DEST/VERIFY_FAILED.txt" ] && [ -z "${KR_QUANT_FORCE:-}" ]; then
+  if [ -n "${KR_QUANT_FINAL:-}" ] && [ -z "${KR_QUANT_FORCE:-}" ] && [ ! -f "$DEST/VERIFY_FAILED.txt" ]; then
     echo "[$(date '+%F %T')] $ASOF 는 이미 확정치로 만들었다 — 건너뛴다."
     exit 0
   fi

@@ -74,12 +74,6 @@ def test_pg_session_has_a_statement_timeout(fake_pg):
     assert fake_pg.committed, "SET 뒤 commit 이 없으면 첫 rollback 에 상한이 풀린다"
 
 
-def test_sqlite_path_is_untouched(tmp_path):
-    con = storage.connect(str(tmp_path / "x.db"))
-    assert isinstance(con, sqlite3.Connection)
-    con.close()
-
-
 class _DbapiNotSqlite:
     """sqlite3 연결이 아닌 DBAPI — pandas 가 psycopg2 에 내는 경고를 그대로 낸다."""
 

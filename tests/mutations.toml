@@ -1913,7 +1913,7 @@ replace = """pass"""
 [[mutation]]
 id = "pandas-warning-filter-too-broad"
 why = "잡음을 끄려다 UserWarning 을 통째로 끄면 진짜 경고도 사라진다"
-guards = ["tests/test_ops_guards.py::test_pandas_dbapi_warning_is_silenced_in_report_scripts[sector_flow]"]
+guards = ["tests/test_ops_guards.py::test_pandas_dbapi_warning_is_silenced_in_report_scripts"]
 file = "scripts/sector_flow.py"
 find = """warnings.filterwarnings("ignore", message="pandas only supports SQLAlchemy", category=UserWarning)"""
 replace = """warnings.filterwarnings("ignore", category=UserWarning)"""
@@ -1985,3 +1985,27 @@ guards = ["tests/test_serve_reports.py::test_serve_sh_restarts_a_server_that_sto
 file = "scripts/serve_reports.py"
 find = "            f.write(str(os.getpid()))"
 replace = "            pass"
+
+[[mutation]]
+id = "fresh-reads-latest-wrong"
+why = "latest 링크를 못 읽으면 리포트가 걸린 날도 '안 걸렸다' 로 매일 오류를 낸다"
+guards = ["tests/test_freshness_check.py::test_todays_report_is_fine"]
+file = "scripts/freshness_check.py"
+find = "    latest = latest_date(root)"
+replace = "    latest = None"
+
+[[mutation]]
+id = "fresh-hides-the-incomplete-mark"
+why = "관문이 막은 날인지 말하지 않으면 오류를 받은 사람이 cron.log 부터 뒤진다"
+guards = ["tests/test_freshness_check.py::test_incomplete_mark_is_pointed_at"]
+file = "scripts/freshness_check.py"
+find = "            if (d / mark).is_file():"
+replace = "            if False:"
+
+[[mutation]]
+id = "webhook-set-still-warns"
+why = "웹훅을 넣은 뒤에도 매일 경고가 가면 경고를 안 읽게 된다"
+guards = ["tests/test_freshness_check.py::test_set_webhook_is_silent"]
+file = "scripts/freshness_check.py"
+find = """        return 0, []"""
+replace = """        return WARN, []"""
