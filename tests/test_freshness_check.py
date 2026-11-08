@@ -223,10 +223,15 @@ def test_previous_day_without_final_warns(tmp_path):
     assert fc.check_prev_final(root, "2026-11-05")[0] == 0
 
 
-def test_rebuilt_previous_day_counts_as_final(tmp_path):
+def test_rebuilt_previous_day_counts_as_final_only_with_final_txt(tmp_path):
+    """재구성은 확정치를 확인했을 때만 FINAL.txt 를 쓴다 — REBUILT.txt 만으로는 확정이 아니다(잠정·창 밖 재구성)."""
     root = _reports(tmp_path, TODAY)
     (root / "2026-11-05").mkdir()
-    (root / "2026-11-05" / "REBUILT.txt").write_text("x")
+    (root / "2026-11-05" / "numbers.html").write_text("<html>")
+    (root / "2026-11-05" / "REBUILT.txt").write_text("…\nfinalize: pending\n")
+    rc, lines = fc.check_prev_final(root, "2026-11-05")
+    assert rc == 75 and "재구성은 했지만" in lines[0], lines
+    (root / "2026-11-05" / "FINAL.txt").write_text("재구성 — daily_finalize 확인 뒤")
     assert fc.check_prev_final(root, "2026-11-05")[0] == 0
 
 

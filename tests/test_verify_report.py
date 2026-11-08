@@ -119,6 +119,40 @@ def test_end_key_check_accepts_the_true_last_row_of_a_short_list(n_names):
     assert not [f for f in fails if END_CHECK in f], fails
 
 
+@pytest.mark.parametrize("n_names", [2, 4])
+def test_advertised_keys_count_as_live_on_a_list_too_short_to_move_from_row_3(n_names):
+    """회귀 — 09-18 재구성: 전 종목이 4행이라 출발 커서 3 이 이미 끝이어서 ↓·PgDn·G 가 "안 듣는다" 고 했다.
+
+    키가 듣는지는 목록 길이에 맞춘, 앱이 닿을 수 있는 자리(처음·min(3, 끝-1)·끝)에서 본다. 한 행뿐이면
+    이동 키는 볼 수 없다 — 통과가 아니라 "못 본 화면" 으로 적혀야 한다.
+    주입: 출발점을 다시 행 3 하나로 두면 실패한다.
+    """
+    from sectorflow.tui import flow_app as FA
+    from sectorflow.tui.flow_view import State
+
+    vr = _load()
+    keys = vr._key_ints()
+
+    def screen(**kw):
+        def make():
+            st = State(_flow(n_names))
+            for k, v in kw.items():
+                setattr(st, k, v)
+            return st
+        return make
+
+    assert len(screen(allv=True, explore=True)().all_picks()) == n_names, "픽스처가 그 길이의 목록을 못 만든다"
+    unseen: list = []
+    live = vr._live(screen(allv=True, explore=True), FA.handle_key, ("arow", "allv", "wi", "mi"), keys,
+                    unseen, "전 종목")
+    for k in ("KEY_DOWN", "KEY_UP", "KEY_NPAGE", "KEY_PPAGE", "G", "g", "KEY_END", "KEY_HOME"):
+        assert k in live, f"{n_names}행 전 종목에서 {k} 를 '안 듣는다' 고 했다"
+    assert unseen == [], "두 행 이상인데 '못 봤다' 고 적었다"
+    # 이 픽스처의 섹터 표는 **한 행**이다 — 이동 키는 볼 수 없으니 통과로 세지 않고 못 봤다고 적는다.
+    vr._live(screen(), FA.handle_key, ("row", "wi", "mi"), keys, unseen, "섹터 표")
+    assert unseen == ["섹터 표"]
+
+
 def test_cursor_range_check_starts_from_a_state_the_app_can_reach():
     """회귀 — 2행 목록에 커서 3 을 박고 시작해 "arow=3 (행 2)" 라고 했다.
 

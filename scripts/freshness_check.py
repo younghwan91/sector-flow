@@ -96,13 +96,19 @@ def judge(root: Path, today: str, rows_today: int, *, market_open: bool | None =
 
 
 def check_prev_final(root: Path, prev: str | None) -> tuple[int, list[str]]:
-    """전 거래일이 확정치로 다시 만들어졌나(``FINAL.txt``·재구성 ``REBUILT.txt``)."""
+    """전 거래일이 확정치로 다시 만들어졌나(``FINAL.txt``).
+
+    재구성(``REBUILT.txt``)만으로는 확정이 아니다 — 확정치를 확인한 재구성만 ``FINAL.txt`` 를 쓴다. 확인 못 한
+    재구성(잠정·창 밖 ``finalize: unverified``)을 확정으로 세면 확정 작업이 깨진 날을 놓친다.
+    """
     if not prev:
         return 0, []
     d = root / prev
-    if (d / "FINAL.txt").is_file() or (d / "REBUILT.txt").is_file():
+    if (d / "FINAL.txt").is_file():
         return 0, [f"[확정] 전 거래일({prev}) 확정 리포트 있음"]
-    if (d / "numbers.html").is_file():
+    if (d / "REBUILT.txt").is_file():
+        state = "재구성은 했지만 확정치를 확인하지 못했다(REBUILT.txt 의 finalize 줄)"
+    elif (d / "numbers.html").is_file():
         state = "잠정 리포트만 있다"
     elif (d / "INCOMPLETE.txt").is_file():
         state = "리포트가 없다(INCOMPLETE.txt — 수집 미완으로 안 만들었다)"

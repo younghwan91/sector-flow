@@ -631,7 +631,7 @@ def check_market_presence(payload: dict) -> None:
             f"{tv[-1]:,.0f}억 / 직전 5일 중앙값 {base:,.0f}억")
 
 
-def layer_b(payload: dict, db: str | None) -> None:
+def layer_b(payload: dict, db: str | None, asof: "str | None" = None) -> None:
     print("\nB. 데이터 — DB 에서 들어온 것이 온전한가")
     dates = payload["dates"]
     chk("B", "거래일 수", len(dates) >= 60, f"{len(dates)}일")
@@ -706,18 +706,30 @@ def layer_b(payload: dict, db: str | None) -> None:
     from sectorflow.storage import connect
     con = connect(db)
     cur = con.cursor()
-    cur.execute("SELECT max(date) FROM supply_demand")
-    db_last = str(cur.fetchone()[0])
-    chk("B", "페이로드 기준일 = DB 최신일", db_last == dates[-1], f"DB {db_last} / 리포트 {dates[-1]}")
+    ph = "?" if con.__class__.__module__.startswith("sqlite3") else "%s"
+    if asof:
+        # 재구성(--asof): 기준일은 DB 최신일이 아니라 지정한 날이다. 그날이 거래일이고 페이로드가 거기서 끝나야 한다.
+        cur.execute(f"SELECT max(date) FROM supply_demand WHERE date <= {ph}", (asof,))
+        db_last = str(cur.fetchone()[0])
+        chk("B", "페이로드 기준일 = 재구성 기준일 = 그 이하 DB 마지막 거래일",
+            db_last == dates[-1] == asof, f"지정 {asof} / DB {db_last} / 리포트 {dates[-1]}")
+    else:
+        cur.execute("SELECT max(date) FROM supply_demand")
+        db_last = str(cur.fetchone()[0])
+        chk("B", "페이로드 기준일 = DB 최신일", db_last == dates[-1], f"DB {db_last} / 리포트 {dates[-1]}")
+    # 재구성(--asof)이면 표 전체 검사도 기준일 이하만 본다 — 리포트가 읽지 않은 그 뒤 행의 결함으로
+    # 지난 기준일 리포트를 빨갛게 만들지 않고, "모든 읽기는 기준일 이하" 라는 REBUILT.txt 의 말을 지킨다.
+    upto, upto_args = (f" AND date <= {ph}", (asof,)) if asof else ("", ())
     for tbl in ("supply_demand", "daily_bars_adjusted"):
-        cur.execute(f"SELECT count(*) FROM (SELECT code,date FROM {tbl} "
-                    f"GROUP BY code,date HAVING count(*)>1) q")
+        cur.execute(f"SELECT count(*) FROM (SELECT code,date FROM {tbl} WHERE 1=1{upto} "
+                    f"GROUP BY code,date HAVING count(*)>1) q", upto_args)
         chk("B", f"{tbl} (code,date) 중복", cur.fetchone()[0] == 0)
-    cur.execute("SELECT count(*) FROM shares_outstanding_history WHERE shares_outstanding<=0")
+    cur.execute(f"SELECT count(*) FROM shares_outstanding_history WHERE shares_outstanding<=0{upto}", upto_args)
     chk("B", "주식수 ≤ 0 행", cur.fetchone()[0] == 0)
-    cur.execute("SELECT count(*) FROM daily_bars_adjusted WHERE close<=0 OR low>close OR high<close")
+    cur.execute(f"SELECT count(*) FROM daily_bars_adjusted WHERE (close<=0 OR low>close OR high<close){upto}",
+                upto_args)
     chk("B", "OHLC 불변식 위반", cur.fetchone()[0] == 0)
-    check_trade_value_units(cur)
+    check_trade_value_units(cur, dates[-1], ph)
     con.close()
 
 
@@ -725,7 +737,7 @@ def layer_b(payload: dict, db: str | None) -> None:
 TV_UNIT_BAND = (0.8, 1.25)
 
 
-def check_trade_value_units(cur) -> None:
+def check_trade_value_units(cur, day: "str | None" = None, ph: str = "%s") -> None:
     """단위 sanity — 페이로드의 거래대금(`acc_trde_qty × close`)이 보고된 거래대금과 **같은 단위**인가.
 
     예전엔 종목마다 ``|수량×종가 ÷ 거래대금 − 1| < 5%`` 인 비율이 90% 를 넘는지 봤다. 그건 **정의가
@@ -739,11 +751,13 @@ def check_trade_value_units(cur) -> None:
     비를 본다 — Σ(수량×종가)/1e6 ÷ Σ거래대금(백만원). 같은 실측에서 266일 전부 0.940~1.040
     (09-14 뒤 36일 0.969~1.032)이고, 단위 착오는 10³ 배다.
     """
-    cur.execute("""SELECT sum(s.acc_trde_qty * 1.0 * abs(s.close)) / 1e6, sum(b.trade_value * 1.0),
+    # ``day`` 는 페이로드 기준일 — 재구성(--asof)에선 DB 최신일이 아니다. 없으면 DB 최신일.
+    on = f"s.date={ph}" if day else "s.date=(SELECT max(date) FROM supply_demand)"
+    cur.execute(f"""SELECT sum(s.acc_trde_qty * 1.0 * abs(s.close)) / 1e6, sum(b.trade_value * 1.0),
                           count(*)
         FROM supply_demand s JOIN daily_bars b ON b.code=s.code AND b.date=s.date
-        WHERE s.source='kiwoom' AND s.date=(SELECT max(date) FROM supply_demand)
-          AND b.trade_value>0""")
+        WHERE s.source='kiwoom' AND {on}
+          AND b.trade_value>0""", (day,) if day else ())
     qc, tv, total = cur.fetchone()
     ratio = float(qc) / float(tv) if total and qc is not None and tv else None
     lo, hi = TV_UNIT_BAND
@@ -1876,8 +1890,8 @@ def _f_today_context(P: dict, cur, ph: str, meta: dict, px: dict, cap_at) -> Non
     chk("F", "금액 근사 오차(시장·섹터 최대) = DB 재계산", not bad and n_cmp > 0, "; ".join(bad[:2]))
 
     # ── 외부 참값: 전 거래일 자체 바구니(정규장 종가) ≈ KRX 지수 ──
-    if not P.get("final"):
-        print("       (잠정 리포트 — 정규장 종가 대조는 확정 모드에서만)")
+    if not (P.get("final") or P.get("finalize_unverified")):
+        print("       (잠정 리포트 — 정규장 종가 대조는 마감 값(확정·창 밖 재구성)에서만)")
         return
     if len(dates) < 3:
         print("       SKIP 정규장 종가 대조 — 거래일이 셋 미만")
@@ -1895,6 +1909,14 @@ def _f_today_context(P: dict, cur, ph: str, meta: dict, px: dict, cap_at) -> Non
     if not total or ready < 0.9 * total:
         # 준비 안 됨은 실패가 아니다 — 다음날 수급이 들어와야 채워지는 뷰다. 사유를 남긴다.
         print(f"       SKIP 정규장 종가 대조 — {t1} regular_close 준비 안 됨({srcs})")
+        return
+    # 재구성은 유니버스가 **지금의** stocks 마스터다. 그 뒤 폐지된 종목은 지수에는 있고 바구니에는 없어 같은 것을
+    # 맞대는 대조가 아니다 — 2026-09-15 재구성: 09-14 에 폐지 예정 코스닥 종목이 −14~−34% 떨어져 바구니가 지수보다
+    # 0.115%p 높았다. 그런 날은 실패가 아니라 사유를 남기고 건너뛴다. 평소 리포트(마스터가 그날 것)는 그대로 본다.
+    gone = sorted({c for (c, d) in rc if d == t1} - set(meta))
+    if P.get("rebuilt") and gone:
+        print(f"       SKIP 정규장 종가 대조 — 재구성: {t1} 에 지금 stocks 마스터에 없는(그 뒤 폐지) 종목 "
+              f"{len(gone)}개가 있어 바구니와 지수의 종목이 다르다({', '.join(gone[:5])})")
         return
     num: dict = {}
     den: dict = {}
@@ -2507,7 +2529,8 @@ def layer_w(D: dict, P: dict, folder: str) -> None:
                 hi, lo = FV.today_extremes(D, m, ln["actor"])
                 if ln["items"] != (hi if ln["side"] == "hi" else lo):
                     bad_tt.append(f"{m}/{ln['actor']}/{ln['side']} 웹 {ln['items'][:2]} vs TUI {(hi if ln['side'] == 'hi' else lo)[:2]}")
-            if not D.get("final") and "(잠정)" not in ((cards.get("t-ext") or {}).get("title") or ""):
+            # 마감 값(확정·창 밖 재구성 finalize_unverified)이 아닐 때만 (잠정) 이다 — 페이지의 CLOSED 와 같은 판단.
+            if not (D.get("final") or D.get("finalize_unverified")) and "(잠정)" not in ((cards.get("t-ext") or {}).get("title") or ""):
                 bad_t.append(f"{m} 잠정 리포트인데 극단 목록에 (잠정) 표지가 없다")
             for ln in (cards.get("t-ret") or {}).get("lines", []):
                 mm = ln.get("market")
@@ -2548,9 +2571,13 @@ def layer_w(D: dict, P: dict, folder: str) -> None:
                 n_v += len(want)
                 if [g["amt"] for g in got] != [_w_A(v) + "억" for _n, v, _i, _p in want]:
                     bad_v.append(f"{s}/{side} {[g['amt'] for g in got][:2]} vs {[_w_A(v) + '억' for _n, v, _i, _p in want][:2]}")
-                for g, (n, _v, iv, pf) in zip(got, want):
-                    if not (g.get("name") or "").startswith(n or "") or \
-                            f"투신 {'—' if iv is None else _w_A(iv)} · 연기금 {'—' if pf is None else _w_A(pf)}억" != g.get("sub"):
+                # 같은 금액(표시 0.1억 단위)끼리는 순서를 묻지 않는다 — 뷰어(JS)와 여기(파이썬)의 동률 정렬이 다르다
+                # (2026-09-15 금융: LG·JB금융지주 둘 다 +37.9억). 금액 순서는 위에서 이미 봤다.
+                def _sub(iv, pf):
+                    return f"투신 {'—' if iv is None else _w_A(iv)} · 연기금 {'—' if pf is None else _w_A(pf)}억"
+                for g, (_n, v, _i, _p) in zip(got, want):
+                    peers = [(n, _sub(iv, pf)) for n, v2, iv, pf in want if round(v2, 1) == round(v, 1)]
+                    if not any((g.get("name") or "").startswith(n or "") and sub == g.get("sub") for n, sub in peers):
                         bad_v.append(f"{s}/{side} {g.get('name')} {g.get('sub')}")
                         break
         chk("W", "뷰어 1일 종목 목록 = names.win['1'](금액·투신·연기금)", not bad_v and n_v > 0,
@@ -2619,22 +2646,54 @@ def _key_ints():
     return d
 
 
-def _live(make, apply, fields, keys) -> set:
+def _live(make, apply, fields, keys, unseen: "list | None" = None, label: str = "") -> set:
     """실제로 **듣는** 키 — `handle_key` 를 태워 상태가 달라지는가로 판정한다.
 
     소스를 파싱하지 않는다. "위 공통 분기가 처리한다" 같은 주석은 거짓일 수 있고,
     실제로 거짓이었다. 상태를 직접 보는 쪽만 그걸 못 속인다.
+
+    출발 커서는 **목록 길이에 맞춘 앱이 닿을 수 있는 자리**다: 끝(End 로 간 자리)이 L 이면 0·``min(3, L-1)``·L.
+    키는 그중 한 곳에서라도 상태를 바꾸면 듣는다. 예전엔 3 고정이라 4행 목록(09-18 재구성의 전 종목)에서 3 이 곧
+    끝이어서 ↓·PgDn·G 를 "안 듣는다" 고 했고, 2행 목록엔 앱이 만들 수 없는 커서 3 을 박았다. 2행이면 ↑ 는 끝에서만,
+    ↓ 는 처음에서만 움직이므로 출발점 하나로는 안 된다. 한 행뿐이면 이동 키는 볼 수 없다 — 통과로 세지 않고
+    ``unseen`` 에 적는다.
     """
     def snap(o):
         return tuple(getattr(o, f, None) for f in fields)
+
+    def at(row: int):
+        o = make()
+        for f in _CURSOR_FIELDS:
+            if isinstance(getattr(o, f, None), int):
+                setattr(o, f, row)
+        return o
+
+    probe = at(0)
+    apply(probe, keys["KEY_END"])
+    last = max((getattr(probe, f) for f in _CURSOR_FIELDS if isinstance(getattr(probe, f, None), int)),
+               default=0)
+    starts = sorted({0, max(0, min(3, last - 1)), last})
     out = set()
     for name, k in keys.items():
-        o = make()
-        before = snap(o)
-        cont = apply(o, k)
-        if not cont or snap(o) != before:
-            out.add(name)
+        for row in starts:
+            o = at(row)
+            before = snap(o)
+            cont = apply(o, k)
+            if not cont or snap(o) != before:
+                out.add(name)
+                break
+    one_row = last == 0 and "KEY_DOWN" not in out
+    if one_row:
+        out |= _MOVE_KEYS & set(keys)
+        if unseen is not None:
+            unseen.append(label)
     return out
+
+
+#: 화면 상태의 커서 필드(flow ``State``·ledger ``Model``). ``_live`` 가 출발 커서를 둘 때 쓴다.
+_CURSOR_FIELDS = ("row", "drow", "arow", "hrow", "crow", "help_row")
+#: 한 행뿐인 목록에서는 듣는지 볼 수 없는 이동 키.
+_MOVE_KEYS = {"KEY_UP", "KEY_DOWN", "KEY_PPAGE", "KEY_NPAGE", "KEY_HOME", "KEY_END", "g", "G", "j", "k"}
 
 
 def _help_key_text(entries) -> str:
@@ -2808,7 +2867,9 @@ def layer_h(D: dict, P: dict) -> None:
         ("ledger", "한계", lmo("limits"), lapply, LF, LV.FOOTER_TIERS),
         ("ledger", "도움말", lmo("ledger", True), lapply, LF, LV.HELP_FOOT_TIERS),
     ]
-    live = {(app, name): _live(mk, ap, f, KEYS) for app, name, mk, ap, f, _t in SCREENS}
+    live_unseen: list = []
+    live = {(app, name): _live(mk, ap, f, KEYS, live_unseen, f"{app}/{name}")
+            for app, name, mk, ap, f, _t in SCREENS}
 
     # --- 푸터 단계는 **단조**인가 ------------------------------------------
     # 오늘 밟은 자리다 — 새 화면의 `t` 를 다섯 단계 중 하나에만 적어서, 가장
@@ -2848,7 +2909,8 @@ def layer_h(D: dict, P: dict) -> None:
             for k in sorted(_advertised(t) - got):
                 bad.append(f"{app}/{name} 단계{i} 가 적은 {k!r} 이 안 듣는다")
     chk("H", "푸터·도움말푸터가 적은 키가 그 화면에서 실제로 듣는가",
-        not bad, f"{len(bad)}건  " + "; ".join(bad[:4]))
+        not bad, f"{len(bad)}건  " + "; ".join(bad[:4])
+        + (f"  (한 행뿐이라 이동 키를 못 본 화면: {', '.join(live_unseen)})" if live_unseen else ""))
 
     # 그 예외는 화면이 적는가 — 헤더가 "정렬이 없다" 를 말해야 한다.
     bad = []
@@ -3383,6 +3445,7 @@ def main() -> int:
     ap.add_argument("--layers", default="",
                     help="쉼표로 고른 층만 돈다(예: A,A3,F). 테스트가 빠르게 돌려고 쓴다 — 배치는 늘 전 층이다. "
                          "고르면 출력 첫 줄에 '부분 검증' 이라고 적는다")
+    ap.add_argument("--asof", help="재구성 리포트의 기준일 — B 층이 DB 최신일 대신 이 날을 기준일로 본다")
     a = ap.parse_args()
     want = {x.strip() for x in a.layers.split(",") if x.strip()}
     unknown = want - set(LAYERS)
@@ -3412,7 +3475,7 @@ def main() -> int:
             "KR_QUANT_DB 나 --db 가 없다 — set -a; . ~/git/quant-airflow/.env; set +a")
     go("A", layer_a, D)
     go("A3", layer_a3, D, payload)
-    go("B", layer_b, payload, a.db if a.db_check else None)
+    go("B", layer_b, payload, a.db if a.db_check else None, a.asof)
     go("C", layer_c, D, html)
     go("D", layer_d, D, payload, html)
     go("E", layer_e, D)

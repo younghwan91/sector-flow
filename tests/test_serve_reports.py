@@ -222,6 +222,32 @@ def test_each_row_says_final_or_provisional_and_links_both_pages(root):
         assert f'href="/{d}/numbers.html"' in row and f'href="/{d}/viewer.html"' in row
 
 
+def test_rebuilt_day_says_rebuilt_alongside_final(root, get):
+    """지난 기준일을 지금 코드·확정 데이터로 다시 만든 날은 그날 저녁 게시본이 아니다 — 목록이 말하고 근거를 연다."""
+    d = root / "2026-11-05"
+    (d / "FINAL.txt").write_text("재구성", "utf-8")
+    (d / "REBUILT.txt").write_text("2026-11-08 10:00 현재 코드·확정 데이터로 다시 만듦", "utf-8")
+    page = srv.index_html(str(root), today=date(2026, 11, 7))
+    row, other = _row(page, "2026-11-05"), _row(page, "2026-11-06")
+    assert ">확정<" in row and ">재구성<" in row and 'href="/2026-11-05/REBUILT.txt"' in row
+    assert "재구성" not in other, "재구성 표시가 없는 날에 붙었다"
+    status, h, body = get("/2026-11-05/REBUILT.txt")
+    assert status == 200 and h["Content-Type"].startswith("text/plain") and "다시 만듦" in body.decode()
+
+
+def test_rebuilt_day_outside_the_finalize_window_is_neither_final_nor_provisional(root):
+    """REBUILT.txt 의 finalize: unverified — 창 밖이라 확정 기록이 없다. '잠정'(값이 바뀔 수 있다)도 '확정' 도 아니다."""
+    d = root / "2026-11-05"
+    (d / "REBUILT.txt").write_text("… 다시 만듦; 원본은 x\ncommit: " + "f" * 40 + "\nfinalize: unverified\n", "utf-8")
+    row = _row(srv.index_html(str(root), today=date(2026, 11, 7)), "2026-11-05")
+    assert ">확정 기록 없음<" in row and ">재구성<" in row
+    assert ">잠정<" not in row and ">확정<" not in row
+    (d / "REBUILT.txt").write_text("…\nfinalize: pending\n", "utf-8")              # 창 안 — 아직 잠정
+    assert ">잠정<" in _row(srv.index_html(str(root), today=date(2026, 11, 7)), "2026-11-05")
+    assert srv.rebuilt_field(str(d / "REBUILT.txt"), "commit") is None             # 없는 줄
+    assert srv.rebuilt_field(str(d / "없는 파일.txt"), "finalize") is None          # 못 읽는 파일
+
+
 def test_the_newest_row_and_its_status_stand_out(root):
     page = srv.index_html(str(root), today=date(2026, 11, 7))
     assert _row(page, "2026-11-06").startswith('<li class="latest">')

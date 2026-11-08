@@ -915,8 +915,8 @@ id = "report-skips-verify-failed-retry"
 why = "검증 실패 폴더를 건너뛰면 재시도가 그 기준일을 안 고친다"
 guards = ["tests/test_daily_report_flow.py::test_verify_failure_publishes_alerts_and_is_retried"]
 file = "scripts/daily_report.sh"
-find = """[ ! -f "$DEST/VERIFY_FAILED.txt" ] && """
-replace = ""
+find = """if [ -f "$DEST/numbers.html" ] && [ ! -f "$DEST/VERIFY_FAILED.txt" ] && """
+replace = """if [ -f "$DEST/numbers.html" ] && """
 
 [[mutation]]
 id = "cron-log-dir-missing"
@@ -1210,9 +1210,9 @@ id = "incomplete-note-promises-retry"
 why = "포기한 뒤에도 다음 크론을 약속하면 아무도 안 움직인다"
 guards = ["tests/test_daily_report_flow.py::test_past_day_incomplete_note_tells_what_to_do_next"]
 file = "scripts/daily_report.sh"
-find = """      if [[ "$ASOF" < "$TODAY" ]]; then
+find = """      elif [[ "$ASOF" < "$TODAY" ]]; then
         echo "재시도 창이"""
-replace = """      if false; then
+replace = """      elif false; then
         echo "재시도 창이"""
 
 [[mutation]]
@@ -1406,9 +1406,9 @@ id = "web-serves-the-payload"
 why = "웹 서비스가 내보내는 파일 목록이 넓어지면 페이로드·로그가 밖으로 나간다"
 guards = ["tests/test_serve_reports.py::test_only_the_report_pages_are_served"]
 file = "scripts/serve_reports.py"
-find = """    "FINAL.txt": "text/plain; charset=utf-8",
+find = """    "REBUILT.txt": "text/plain; charset=utf-8",
 }"""
-replace = """    "FINAL.txt": "text/plain; charset=utf-8",
+replace = """    "REBUILT.txt": "text/plain; charset=utf-8",
     "payload.json": "application/json",
 }"""
 
@@ -1607,8 +1607,8 @@ id = "chip-never-says-final"
 why = "확정 리포트도 화면이 잠정이라 적는다"
 guards = ["tests/test_validation_fixes.py::test_status_chip_says_final_only_for_rebuilt_reports"]
 file = "src/sectorflow/tui/flow_view.py"
-find = """    base = "마감·확정" if d.get("final") else "마감·잠정" if d.get("finalized") else "장중·미확정\""""
-replace = """    base = "마감·잠정" if d.get("finalized") else "장중·미확정\""""
+find = """    base = ("마감·확정" if d.get("final") else "마감·확정기록없음""""
+replace = """    base = ("마감·잠정" if d.get("finalized") else "마감·확정기록없음\""""
 
 [[mutation]]
 id = "numbers-drop-the-final-flag"
@@ -1799,8 +1799,10 @@ id = "final-unconfirmed-first-build-quiet"
 why = "확정 모드가 처음 만드는 날 확정을 확인 못 했는데 잠정으로 만들고 0 으로 끝난다"
 guards = ["tests/test_daily_report_flow.py::test_final_mode_without_a_report_builds_provisional_and_still_warns"]
 file = "scripts/daily_report.sh"
-find = "    VERIFY_RC=75"
-replace = "    true"
+find = """KR_QUANT_FINAL=1 $0" >&2
+    VERIFY_RC=75"""
+replace = """KR_QUANT_FINAL=1 $0" >&2
+    true"""
 
 [[mutation]]
 id = "finalize-ignores-sector-index"
@@ -2100,7 +2102,8 @@ id = "numbers-drop-today"
 why = "화면이 읽는 numbers.html 에 오늘 블록이 안 간다"
 guards = ["tests/test_payload_today.py::test_numbers_page_carries_today_for_the_terminal"]
 file = "scripts/sector_numbers.py"
-find = """    for k in ("today", "change", "change_reason", "final_diff", "final_diff_reason", "revision_stats"):"""
+find = """    for k in ("today", "change", "change_reason", "final_diff", "final_diff_reason", "revision_stats", "rebuilt",
+              "finalize_unverified"):"""
 replace = """    for k in ():"""
 
 [[mutation]]
@@ -2928,8 +2931,8 @@ id = "prev-day-provisional-counts-as-final"
 why = "잠정 리포트만 있는 전 거래일을 확정으로 본다"
 guards = ["tests/test_freshness_check.py::test_previous_day_without_final_warns"]
 file = "scripts/freshness_check.py"
-find = """    if (d / "FINAL.txt").is_file() or (d / "REBUILT.txt").is_file():"""
-replace = """    if (d / "numbers.html").is_file() or (d / "REBUILT.txt").is_file():"""
+find = """    if (d / "FINAL.txt").is_file():"""
+replace = """    if (d / "numbers.html").is_file():"""
 
 [[mutation]]
 id = "holiday-not-recognized"
@@ -3066,12 +3069,13 @@ find = """            json.loads(body.decode("utf-8", "replace"))"""
 replace = """            pass"""
 
 [[mutation]]
-id = "prev-day-rebuilt-not-counted"
-why = "재구성(REBUILT.txt)한 전 거래일을 미확정이라 매일 경고한다"
-guards = ["tests/test_freshness_check.py::test_rebuilt_previous_day_counts_as_final"]
+id = "prev-day-rebuilt-only-counts-as-final"
+why = """확정치를 확인 못 한 재구성(REBUILT.txt 만, FINAL.txt 없음)을 확정으로 센다 — 확정 작업이 깨진 날을 놓치고,
+창 밖 재구성(finalize: unverified)을 확정으로 읽게 한다."""
+guards = ["tests/test_freshness_check.py::test_rebuilt_previous_day_counts_as_final_only_with_final_txt"]
 file = "scripts/freshness_check.py"
-find = """    if (d / "FINAL.txt").is_file() or (d / "REBUILT.txt").is_file():"""
-replace = """    if (d / "FINAL.txt").is_file():"""
+find = """    if (d / "FINAL.txt").is_file():"""
+replace = """    if (d / "FINAL.txt").is_file() or (d / "REBUILT.txt").is_file():"""
 
 [[mutation]]
 id = "web-restart-alerts-every-five-minutes"
@@ -3800,7 +3804,7 @@ id = "viewer-provisional-says-20h"
 why = """잠정 리포트(18:10)의 수익률을 "전일 20:00→당일 20:00" 이라 적는다 — 마지막 날은 수집 시각 스냅숏이고 애프터마켓이 아직 돈다."""
 guards = ["tests/test_viewer_page.py::test_return_label_follows_report_status_and_this_reports_numbers"]
 file = "scripts/templates/sector_flow.html"
-find = "const retLabel=short=>D.final?(short?RET_LABEL_SHORT:RET_LABEL):(short?RET_LABEL_PROV_SHORT:RET_LABEL_PROV);"
+find = "const retLabel=short=>retClosed()?(short?RET_LABEL_SHORT:RET_LABEL):(short?RET_LABEL_PROV_SHORT:RET_LABEL_PROV);"
 replace = "const retLabel=short=>short?RET_LABEL_SHORT:RET_LABEL;"
 
 [[mutation]]
@@ -3861,7 +3865,7 @@ id = "provisional-return-labelled-as-20h"
 why = "잠정 리포트(수집 시각 스냅숏)의 수익률이 전일 20:00→당일 20:00 이라고 적힌다"
 guards = ["tests/test_tui_flow_view.py::test_provisional_report_labels_its_return_and_its_extremes_and_shows_revision_size"]
 file = "src/sectorflow/tui/flow_view.py"
-find = """    if d.get("final"):
+find = """    if d.get("final") or d.get("finalize_unverified"):
         return RET_LABEL_SHORT if short else RET_LABEL"""
 replace = """    if True:
         return RET_LABEL_SHORT if short else RET_LABEL"""
@@ -4064,7 +4068,7 @@ id = "web-provisional-return-labelled-as-20h"
 why = "웹 잠정 리포트의 수익률이 20:00 종가라고 적힌다"
 guards = ["tests/test_report_pages.py::test_numbers_today_panel_says_what_the_terminal_banner_says"]
 file = "scripts/templates/sector_numbers.html"
-find = "const RET_LABEL = D.final ? \"전일 20:00→당일 20:00 (애프터마켓 포함 통합 종가)\" : \"전일 20:00→당일 수집 시각 (애프터마켓 진행 중)\";"
+find = "const RET_LABEL = CLOSED ? \"전일 20:00→당일 20:00 (애프터마켓 포함 통합 종가)\" : \"전일 20:00→당일 수집 시각 (애프터마켓 진행 중)\";"
 replace = "const RET_LABEL = \"전일 20:00→당일 20:00 (애프터마켓 포함 통합 종가)\";"
 
 [[mutation]]
@@ -4497,3 +4501,414 @@ guards = ["tests/test_runbook.py::test_documented_lint_commands_match_ci"]
 file = "CLAUDE.md"
 find = "ruff check src/ tests/ scripts/ research/` 와"
 replace = "ruff check src/ tests/ scripts/` 와"
+
+# ── 재구성(KR_QUANT_ASOF·--asof·rebuild_history) ─────────────────────────────
+
+[[mutation]]
+id = "rebuild-reads-past-asof"
+why = """재구성이 기준일을 무시하고 DB 최신일까지 읽는다 — 지난 기준일 폴더에 그 뒤 데이터가 든다.
+거래일 목록이 모든 읽기의 끝을 정하므로 여기가 새는 길이다."""
+guards = ["tests/test_rebuild_asof.py::test_no_row_after_asof_leaks_into_a_rebuilt_payload"]
+file = "scripts/sector_flow.py"
+find = "    dates = recent_dates(con, days, asof=asof)"
+replace = "    dates = recent_dates(con, days)"
+
+[[mutation]]
+id = "rebuild-holiday-uses-day-before"
+why = "휴장일을 주면 직전 거래일로 조용히 만들어 엉뚱한 날짜 폴더에 같은 리포트가 둘 생긴다"
+guards = ["tests/test_rebuild_asof.py::test_asof_on_a_holiday_refuses_instead_of_using_the_day_before"]
+file = "scripts/sector_flow.py"
+find = "    if asof is not None and dates[-1] != asof:"
+replace = "    if False:"
+
+[[mutation]]
+id = "rebuild-verify-against-db-latest"
+why = "재구성 리포트를 DB 최신일과 맞춰 보면 지난 기준일은 전부 검증 실패가 된다(또는 엉뚱한 날을 통과시킨다)"
+guards = ["tests/test_rebuild_asof.py::test_verify_takes_the_rebuilt_asof_as_the_reference_day"]
+file = "scripts/verify_report.py"
+find = "            db_last == dates[-1] == asof, f\"지정 {asof} / DB {db_last} / 리포트 {dates[-1]}\")"
+replace = "            db_last == dates[-1], f\"지정 {asof} / DB {db_last} / 리포트 {dates[-1]}\")"
+
+[[mutation]]
+id = "rebuild-index-without-tag"
+why = "웹 목록이 재구성한 날을 그날 저녁 게시본처럼 보여 준다"
+guards = ["tests/test_serve_reports.py::test_rebuilt_day_says_rebuilt_alongside_final"]
+file = "scripts/serve_reports.py"
+find = "        tags.append(f'<a class=\"tag rebuilt\" href=\"/{d}/REBUILT.txt\">재구성</a>')"
+replace = "        pass"
+
+[[mutation]]
+id = "rebuild-note-not-served"
+why = "재구성 표시가 여는 REBUILT.txt 가 404 — 원본이 어디 있는지 웹에서 못 본다"
+guards = ["tests/test_serve_reports.py::test_rebuilt_day_says_rebuilt_alongside_final"]
+file = "scripts/serve_reports.py"
+find = "    \"REBUILT.txt\": \"text/plain; charset=utf-8\","
+replace = ""
+
+[[mutation]]
+id = "rebuild-chip-silent"
+why = "화면 칩이 재구성 리포트를 그냥 '마감·확정' 이라 말한다"
+guards = ["tests/test_validation_fixes.py::test_status_chip_says_rebuilt_for_reconstructed_reports"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "        base += \"·재구성\""
+replace = "        base += \"\""
+
+[[mutation]]
+id = "rebuild-numbers-drop-flag"
+why = "수치표 페이지가 rebuilt 를 안 건네 TUI 칩이 모른다(sw-flow 는 numbers.html 만 읽는다)"
+guards = ["tests/test_validation_fixes.py::test_status_chip_says_rebuilt_for_reconstructed_reports"]
+file = "scripts/sector_numbers.py"
+find = "\"revision_stats\", \"rebuilt\",\n"
+replace = "\"revision_stats\",\n"
+
+[[mutation]]
+id = "rebuild-moves-latest-backward"
+why = "지난 날을 재구성할 때마다 latest 가 그날로 돌아가 화면·웹이 옛 리포트를 최신으로 연다"
+guards = ["tests/test_daily_report_flow.py::test_rebuild_builds_the_past_day_as_final_and_marks_it"]
+file = "scripts/daily_report.sh"
+find = "[[ ! \"$ASOF\" < \"$CUR_LATEST\" ]]; then"
+replace = "true; then"
+
+[[mutation]]
+id = "rebuild-deletes-original"
+why = "재구성이 바꿔 낀 원본을 지운다 — 옛 게시본과 비교할 길이 없어진다"
+guards = ["tests/test_daily_report_flow.py::test_rebuild_builds_the_past_day_as_final_and_marks_it"]
+file = "scripts/daily_report.sh"
+find = "    mv \"$OLD\" \"$ARCHIVED\""
+replace = "    rm -rf \"$OLD\""
+
+[[mutation]]
+id = "rebuild-gate-on-latest-day"
+why = "재구성 기준일 대신 DB 최신일을 기준일로 잡는다 — 관문이 엉뚱한 날을 보고 폴더 이름도 틀린다"
+guards = ["tests/test_daily_report_flow.py::test_rebuild_gate_judges_the_asof_day_not_the_latest"]
+file = "scripts/daily_report.sh"
+find = "if upto:"
+replace = "if False:"
+
+[[mutation]]
+id = "rebuild-history-newest-first"
+why = "새 날부터 만들면 직전 대비(change)가 같은 루트의 직전 거래일 폴더를 못 찾는다"
+guards = ["tests/test_rebuild_asof.py::test_rebuild_history_runs_oldest_first_and_summarises"]
+file = "scripts/rebuild_history.py"
+find = "        days = weekdays(a.start, a.end)"
+replace = "        days = weekdays(a.start, a.end)[::-1]"
+
+[[mutation]]
+id = "rebuild-flag-not-in-payload"
+why = "재구성 페이로드에 rebuilt 가 안 실려 웹 밖의 모든 화면(수치표·TUI)이 그날 게시본처럼 보인다"
+guards = ["tests/test_rebuild_asof.py::test_rebuilt_flag_marks_payload_and_skips_the_provisional_comparison"]
+file = "scripts/sector_flow.py"
+find = """    if a.rebuilt:
+        # 키를 재구성일 때만 싣는다 — 화면이 "재구성" 을 붙인다.
+        payload["rebuilt"] = True"""
+replace = """    if a.rebuilt:
+        pass"""
+
+[[mutation]]
+id = "rebuild-compares-old-definitions-as-final-diff"
+why = """재구성이 같은 자리의 옛 리포트(옛 코드·옛 정의)와 잠정→확정 비교를 낸다 — 정의 변경을 확정치 변화로
+잘못 읽게 된다(운영 루트에서 제자리 재구성하면 옛 폴더가 있다)."""
+guards = ["tests/test_rebuild_asof.py::test_rebuilt_flag_marks_payload_and_skips_the_provisional_comparison"]
+file = "scripts/sector_flow.py"
+find = """        if a.rebuilt:
+            # 같은 자리의 옛 리포트는"""
+replace = """        if False:
+            # 같은 자리의 옛 리포트는"""
+
+[[mutation]]
+id = "rebuild-jobs-skips-relinking-chunk-starts"
+why = "나란히 지은 덩어리의 첫날을 다시 안 지으면 그날 change 가 비고(직전 폴더가 다른 루트에 있었다) 아무도 모른다"
+guards = ["tests/test_rebuild_asof.py::test_rebuild_history_parallel_chunks_still_link_each_day_to_the_previous"]
+file = "scripts/rebuild_history.py"
+find = "        for k in range(len(chunks)):"
+replace = "        for k in range(0):"
+
+[[mutation]]
+id = "rebuild-jobs-chunk0-not-relinked"
+why = "루트에 구간 앞 리포트가 이미 있는데 0번 덩어리 첫날을 안 이으면 그날 change 가 빈다"
+guards = ["tests/test_rebuild_asof.py::test_rebuild_history_parallel_chunks_still_link_each_day_to_the_previous"]
+file = "scripts/rebuild_history.py"
+find = "        for k in range(len(chunks)):"
+replace = "        for k in range(1, len(chunks)):"
+
+[[mutation]]
+id = "verify-live-keys-from-row-3-only"
+why = """키가 듣는지를 행 3 출발점 하나로만 본다 — 4행 이하 목록(관문 통과가 적은 날의 전 종목)에서 행 3 이
+이미 끝이라 ↓·PgDn·G 를 "안 듣는다" 고 해 멀쩡한 리포트가 검증 실패가 된다(2026-09-18 재구성)."""
+guards = ["tests/test_verify_report.py::test_advertised_keys_count_as_live_on_a_list_too_short_to_move_from_row_3"]
+file = "scripts/verify_report.py"
+find = "    starts = sorted({0, max(0, min(3, last - 1)), last})"
+replace = "    starts = [3]"
+
+[[mutation]]
+id = "verify-one-row-list-passes-silently"
+why = "한 행뿐인 목록에서 이동 키를 볼 수 없는데 '못 본 화면' 으로 안 적고 조용히 통과로 센다"
+guards = ["tests/test_verify_report.py::test_advertised_keys_count_as_live_on_a_list_too_short_to_move_from_row_3"]
+file = "scripts/verify_report.py"
+find = "        if unseen is not None:\n            unseen.append(label)"
+replace = "        pass"
+
+[[mutation]]
+id = "rebuild-claims-final-without-finalize"
+why = """확정치를 확인하지 않고 재구성을 확정이라 적는다 — 어제 것을 재구성하면 FINAL.txt 가 생겨 08:20 확정 모드가
+그날을 영영 건너뛰고, 잠정치가 '확정' 으로 남는다(리뷰 MAJOR)."""
+guards = ["tests/test_daily_report_flow.py::test_rebuild_without_confirmed_finalize_stays_provisional"]
+file = "scripts/daily_report.sh"
+find = "  if [ \"$REBUILD_FINAL_RC\" -eq 0 ]; then"
+replace = "  if true; then"
+
+[[mutation]]
+id = "rebuild-gap-called-holiday"
+why = "수급만 빈 평일을 휴장(3)으로 넘긴다 — 수집 공백이 재구성 요약에서 '휴장' 으로 사라진다"
+guards = ["tests/test_daily_report_flow.py::test_rebuild_of_a_weekday_with_other_tables_but_no_flows_is_a_gap_not_a_holiday"]
+file = "scripts/daily_report.sh"
+find = "  if [ \"${OTHER_ROWS:-0}\" != \"0\" ]; then"
+replace = "  if false; then"
+
+[[mutation]]
+id = "rebuild-numbers-page-chip-silent"
+why = "수치표 페이지 칩이 재구성 리포트를 '다음날 아침 확정치를 확인한 뒤 다시 만든 리포트' 로만 말한다"
+guards = ["tests/test_report_pages.py::test_rebuilt_report_says_so_in_the_page_chip"]
+file = "scripts/templates/sector_numbers.html"
+find = "+(D.rebuilt?\" · 재구성\":\"\"));"
+replace = ");"
+
+[[mutation]]
+id = "rebuild-viewer-page-note-silent"
+why = "흐름 페이지의 칩 설명이 재구성 리포트를 그날 게시본처럼 말한다"
+guards = ["tests/test_report_pages.py::test_rebuilt_report_says_so_in_the_page_chip"]
+file = "scripts/templates/sector_flow.html"
+find = "const CHIPNOTE=(D.rebuilt?"
+replace = "const CHIPNOTE=(false?"
+
+[[mutation]]
+id = "rebuild-verify-whole-tables-unbounded"
+why = "재구성 검증이 기준일 뒤 행의 결함(주식수 0·OHLC)으로 지난 리포트를 빨갛게 만든다 — REBUILT.txt 의 '모든 읽기는 기준일 이하' 도 거짓이 된다"
+guards = ["tests/test_rebuild_asof.py::test_verify_whole_table_checks_stay_inside_the_rebuilt_asof"]
+file = "scripts/verify_report.py"
+find = "    upto, upto_args = (f\" AND date <= {ph}\", (asof,)) if asof else (\"\", ())"
+replace = "    upto, upto_args = (\"\", ())"
+
+[[mutation]]
+id = "rebuild-history-gate-block-called-error"
+why = "원본이 있는 날 관문에 막힌 것을 '오류' 로 적는다 — 수집을 메워야 할 날을 코드 결함처럼 보이게 한다"
+guards = ["tests/test_rebuild_asof.py::test_rebuild_history_runs_oldest_first_and_summarises"]
+file = "scripts/rebuild_history.py"
+find = "        elif rc != 0 and (\"수집 미완\" in said or (folder / \"INCOMPLETE.txt\").is_file()):"
+replace = "        elif (folder / \"INCOMPLETE.txt\").is_file() and not (folder / \"numbers.html\").is_file():"
+
+# ── rebuild_history 운전기(tests/test_rebuild_history.py) ─────────────────────
+
+[[mutation]]
+id = "rebuild-history-calls-weekends"
+why = "주말까지 daily_report.sh 를 부르면 휴장 줄이 요약을 덮고 실행이 길어진다"
+guards = ["tests/test_rebuild_history.py::test_weekdays_skip_weekends_and_keep_order",
+          "tests/test_rebuild_history.py::test_real_daily_report_rebuilds_in_order_skips_holidays_and_names_gate_blocks"]
+file = "scripts/rebuild_history.py"
+find = "        if d.weekday() < 5:"
+replace = "        if True:"
+
+[[mutation]]
+id = "rebuild-history-holiday-called-error"
+why = "휴장(rc 3)을 오류로 적어 문제 건수가 부풀고 종료코드가 실패가 된다"
+guards = ["tests/test_rebuild_history.py::test_states_force_and_claims_reach_the_summary"]
+file = "scripts/rebuild_history.py"
+find = "        if rc == EX_HOLIDAY:"
+replace = "        if False:"
+
+[[mutation]]
+id = "rebuild-history-claims-dropped"
+why = "문서 주장 어긋남(CLAIMS) 건수가 요약에서 빠져 '실패 0' 만 보인다"
+guards = ["tests/test_rebuild_history.py::test_verify_summary_counts_failures_and_claims_separately",
+          "tests/test_rebuild_history.py::test_states_force_and_claims_reach_the_summary"]
+file = "scripts/rebuild_history.py"
+find = "    if c and int(c.group(1)):"
+replace = "    if False:"
+
+[[mutation]]
+id = "rebuild-history-gap-called-error"
+why = "수급 수집 공백을 '오류' 로 적어 메워야 할 날이 코드 결함처럼 보인다"
+guards = ["tests/test_rebuild_history.py::test_states_force_and_claims_reach_the_summary"]
+file = "scripts/rebuild_history.py"
+find = "        elif rc != 0 and \"수집 공백\" in said:"
+replace = "        elif False:"
+
+[[mutation]]
+id = "rebuild-history-force-not-passed"
+why = "--force 를 KR_QUANT_FORCE 로 안 넘기면 이미 재구성한 날을 조용히 건너뛴다"
+guards = ["tests/test_rebuild_history.py::test_states_force_and_claims_reach_the_summary"]
+file = "scripts/rebuild_history.py"
+find = "            env[\"KR_QUANT_FORCE\"] = \"1\""
+replace = "            pass"
+
+[[mutation]]
+id = "rebuild-history-jobs-builds-over-existing"
+why = "--jobs 가 이미 있는 날을 거절하지 않으면 덩어리 루트에서 모은 폴더가 기존 폴더와 부딪힌다"
+guards = ["tests/test_rebuild_history.py::test_jobs_refuse_a_root_that_already_has_those_days"]
+file = "scripts/rebuild_history.py"
+find = "        if busy:"
+replace = "        if False:"
+
+[[mutation]]
+id = "rebuild-history-first-pass-overwritten"
+why = "같은 초에 다시 돌리면 덩어리 첫날의 첫 판 이름이 부딪혀 rename 이 실패하거나 덮는다"
+guards = ["tests/test_rebuild_history.py::test_jobs_rerun_in_the_same_root_keeps_every_first_pass"]
+file = "scripts/rebuild_history.py"
+find = "                while dst.exists():                    # 같은 초에 다시 돌린 경우 — 첫 판을 덮지 않는다"
+replace = "                while False:"
+
+# ── 재구성의 확정 표시는 사실만(창 밖 = 확정 기록 없음 · 코드는 origin/main 의 전체 sha) ─────────────
+
+[[mutation]]
+id = "rebuild-window-passed-left-provisional"
+why = "창 밖의 지난 날을 잠정(75)으로 남긴다 — 아무 확정 실행도 다시 안 덮으니 매번 경고만 나고 라벨은 '애프터마켓 진행 중' 이 된다"
+guards = ["tests/test_daily_report_flow.py::test_rebuild_outside_the_finalize_window_is_final_data_without_a_final_claim"]
+file = "scripts/daily_report.sh"
+find = "  elif [ \"$WINDOW_PASSED\" = \"1\" ]; then"
+replace = "  elif false; then"
+
+[[mutation]]
+id = "rebuild-unverified-not-in-payload-args"
+why = "창 밖 재구성을 sector_flow 에 안 알리면 페이로드에 finalize_unverified 가 없어 화면이 잠정이라 말한다"
+guards = ["tests/test_daily_report_flow.py::test_rebuild_outside_the_finalize_window_is_final_data_without_a_final_claim"]
+file = "scripts/daily_report.sh"
+find = "  [ \"$FINALIZE_STATE\" != \"unverified\" ] || FINAL_ARGS+=(--finalize-unverified)"
+replace = "  true"
+
+[[mutation]]
+id = "rebuild-unverified-rebuilt-every-run"
+why = "창 밖 날은 다시 봐도 달라질 게 없는데 rebuild_history 재실행마다 다시 짓는다"
+guards = ["tests/test_daily_report_flow.py::test_rebuild_outside_the_finalize_window_is_final_data_without_a_final_claim"]
+file = "scripts/daily_report.sh"
+find = "     && { [ -f \"$DEST/FINAL.txt\" ] || grep -qx \"finalize: unverified\" \"$DEST/REBUILT.txt\"; } \\"
+replace = "     && [ -f \"$DEST/FINAL.txt\" ] \\"
+
+[[mutation]]
+id = "rebuild-history-short-sha"
+why = "REBUILT.txt 의 코드가 짧은 sha 면 나중에 모호해진다"
+guards = ["tests/test_rebuild_history.py::test_code_rev_is_the_full_sha_of_a_clean_origin_main_commit"]
+file = "scripts/rebuild_history.py"
+find = "    return sha + (\"-dirty\" if dirty else \"\") + (\"\" if merged else \"-unmerged\")"
+replace = "    return sha[:7] + (\"-dirty\" if dirty else \"\") + (\"\" if merged else \"-unmerged\")"
+
+[[mutation]]
+id = "rebuild-history-unmerged-code-allowed"
+why = "어느 브랜치에도 없는·더러운 코드로 운영 재구성을 돌린다(2026-11-08 48일이 그랬다) — 그 코드를 다시 볼 수 없다"
+guards = ["tests/test_rebuild_history.py::test_code_rev_refuses_unmerged_dirty_or_non_git_code_unless_allowed"]
+file = "scripts/rebuild_history.py"
+find = "    if not allow_unmerged and (dirty or not merged):"
+replace = "    if False:"
+
+[[mutation]]
+id = "payload-drops-finalize-unverified"
+why = "페이로드에 finalize_unverified 가 없으면 창 밖 재구성이 화면에서 잠정으로 보인다"
+guards = ["tests/test_rebuild_asof.py::test_rebuilt_flag_marks_payload_and_skips_the_provisional_comparison"]
+file = "scripts/sector_flow.py"
+find = "            payload[\"finalize_unverified\"] = True"
+replace = "            pass"
+
+[[mutation]]
+id = "numbers-drops-finalize-unverified"
+why = "수치표 페이지(TUI 가 읽는 것)에 finalize_unverified 가 안 건너가 칩·라벨이 모른다"
+guards = ["tests/test_validation_fixes.py::test_rebuilt_day_outside_the_finalize_window_is_marked_and_keeps_the_final_return_label"]
+file = "scripts/sector_numbers.py"
+find = "              \"finalize_unverified\"):"
+replace = "              ):"
+
+[[mutation]]
+id = "tui-chip-unverified-called-provisional"
+why = "TUI 칩이 창 밖 재구성을 '마감·잠정' 이라 말한다"
+guards = ["tests/test_validation_fixes.py::test_rebuilt_day_outside_the_finalize_window_is_marked_and_keeps_the_final_return_label"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "    base = (\"마감·확정\" if d.get(\"final\") else \"마감·확정기록없음\" if d.get(\"finalize_unverified\")"
+replace = "    base = (\"마감·확정\" if d.get(\"final\") else \"마감·잠정\" if d.get(\"finalize_unverified\")"
+
+[[mutation]]
+id = "tui-ret-label-keys-off-final-only"
+why = "두 달 지난 창 밖 재구성의 수익률 라벨이 '애프터마켓 진행 중' 이 된다"
+guards = ["tests/test_validation_fixes.py::test_rebuilt_day_outside_the_finalize_window_is_marked_and_keeps_the_final_return_label"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "    if d.get(\"final\") or d.get(\"finalize_unverified\"):"
+replace = "    if d.get(\"final\"):"
+
+[[mutation]]
+id = "viewer-ret-label-keys-off-final-only"
+why = "웹 흐름 페이지가 창 밖 재구성의 수익률을 '수집 시각(애프터마켓 진행 중)' 이라 적는다"
+guards = ["tests/test_viewer_page.py::test_return_label_is_final_style_for_a_rebuilt_day_outside_the_finalize_window"]
+file = "scripts/templates/sector_flow.html"
+find = "const retClosed=()=>Boolean(D.final||D.finalize_unverified);"
+replace = "const retClosed=()=>Boolean(D.final);"
+
+[[mutation]]
+id = "numbers-chip-unverified-called-provisional"
+why = "수치표 칩이 창 밖 재구성을 '마감 · 잠정' 이라 말한다"
+guards = ["tests/test_report_pages.py::test_rebuilt_day_outside_the_finalize_window_says_no_final_record"]
+file = "scripts/templates/sector_numbers.html"
+find = "D.finalize_unverified?\"마감 · 확정 기록 없음\":"
+replace = ""
+
+[[mutation]]
+id = "viewer-chip-unverified-called-provisional"
+why = "흐름 페이지 칩이 창 밖 재구성을 '마감 · 잠정' 이라 말한다"
+guards = ["tests/test_report_pages.py::test_rebuilt_day_outside_the_finalize_window_says_no_final_record"]
+file = "scripts/templates/sector_flow.html"
+find = "D.finalize_unverified?\"마감 · 확정 기록 없음\":"
+replace = ""
+
+[[mutation]]
+id = "index-unverified-called-provisional"
+why = "웹 목록이 창 밖 재구성을 '잠정' 이라 적는다 — 값이 바뀔 것처럼 읽힌다"
+guards = ["tests/test_serve_reports.py::test_rebuilt_day_outside_the_finalize_window_is_neither_final_nor_provisional"]
+file = "scripts/serve_reports.py"
+find = "    elif has[\"REBUILT.txt\"] and rebuilt_field(os.path.join(p, \"REBUILT.txt\"), \"finalize\") == \"unverified\":"
+replace = "    elif False:"
+
+[[mutation]]
+id = "numbers-ret-label-keys-off-final-only"
+why = "수치표가 창 밖 재구성(두 달 지난 마감 값)의 수익률을 '수집 시각(애프터마켓 진행 중)' 이라 적는다"
+guards = ["tests/test_report_pages.py::test_numbers_page_return_label_is_final_style_for_a_rebuilt_day_outside_the_finalize_window"]
+file = "scripts/templates/sector_numbers.html"
+find = "const CLOSED = Boolean(D.final || D.finalize_unverified);"
+replace = "const CLOSED = Boolean(D.final);"
+
+[[mutation]]
+id = "rebuild-note-loses-finalize-state"
+why = "REBUILT.txt 에 finalize 상태가 안 남으면 웹 목록이 창 밖 날을 '확정 기록 없음' 으로 못 가른다"
+guards = ["tests/test_daily_report_flow.py::test_rebuild_records_verified_finalize_and_the_full_commit",
+          "tests/test_daily_report_flow.py::test_rebuild_outside_the_finalize_window_is_final_data_without_a_final_claim"]
+file = "scripts/daily_report.sh"
+find = "    echo \"finalize: $FINALIZE_STATE\""
+replace = "    echo \"finalize: ?\""
+
+[[mutation]]
+id = "rebuild-history-runs-without-dates"
+why = "날짜 없이 부르면 아무 날도 안 짓고 빈 루트·빈 요약만 만들어 '문제 0건' 으로 끝난다"
+guards = ["tests/test_rebuild_history.py::test_needs_a_date_range"]
+file = "scripts/rebuild_history.py"
+find = "        ap.error(\"--from 과 --to, 또는 --dates 가 필요하다\")"
+replace = "        days = []"
+
+[[mutation]]
+id = "verify-unverified-rebuild-needs-provisional-mark"
+why = "검증기가 창 밖 재구성(마감 값)에도 '(잠정)' 표지를 요구해 그 리포트를 모두 검증 실패로 만든다(2026-09-15 재구성)"
+guards = ["tests/test_web_render.py::test_web_layer_is_green_on_a_rebuilt_day_outside_the_finalize_window"]
+file = "scripts/verify_report.py"
+find = "            if not (D.get(\"final\") or D.get(\"finalize_unverified\")) and \"(잠정)\" not in"
+replace = "            if not D.get(\"final\") and \"(잠정)\" not in"
+
+[[mutation]]
+id = "verify-one-day-list-tie-order"
+why = "같은 금액의 두 종목 순서를 뷰어와 맞대 검증 실패를 낸다 — JS 는 0 으로 시작하지 않는 코드를 숫자 순으로 앞에 돈다"
+guards = ["tests/test_web_render.py::test_web_layer_one_day_list_does_not_care_how_ties_are_ordered"]
+file = "scripts/verify_report.py"
+find = "                    peers = [(n, _sub(iv, pf)) for n, v2, iv, pf in want if round(v2, 1) == round(v, 1)]"
+replace = "                    peers = [(_n, _sub(_i, _p))]"
+
+[[mutation]]
+id = "verify-external-truth-ignores-universe-drift"
+why = """재구성 리포트의 정규장 종가 대조가 그 뒤 폐지된 종목(지수에는 있고 지금 마스터에는 없다)을 무시하고 맞대
+검증 실패를 낸다 — 코드 결함이 아니라 유니버스가 다른 비교다(2026-09-15 재구성)."""
+guards = ["tests/test_web_render.py::test_external_truth_skips_a_rebuilt_day_whose_universe_has_since_lost_names"]
+file = "scripts/verify_report.py"
+find = "    if P.get(\"rebuilt\") and gone:"
+replace = "    if False:"

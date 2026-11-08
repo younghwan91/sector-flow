@@ -165,9 +165,56 @@ def test_external_truth_skips_with_a_reason_when_regular_close_is_not_ready(caps
     assert "SKIP 정규장 종가 대조" in capsys.readouterr().out
 
 
+def test_external_truth_skips_a_rebuilt_day_whose_universe_has_since_lost_names(capsys):
+    """재구성은 지금의 stocks 마스터로 바구니를 만든다 — 그 뒤 폐지된 종목이 그날 지수에 있으면 같은 것을 맞대는
+    대조가 아니다(2026-09-15 재구성의 09-14: 폐지 예정 코스닥 종목 −14~−34%, 바구니가 지수보다 0.115%p 높았다)."""
+    def run(rebuilt: bool):
+        con, P, meta, px = _ctx_db(idx_t1=100.5)                     # 바구니 +1.0% vs 지수 +0.5% — 갈린다
+        con.executemany("INSERT INTO regular_close VALUES (?,?,?,?)",
+                        [("Z", "2026-11-04", 100.0, "identity"), ("Z", "2026-11-05", 60.0, "identity")])
+        P["rebuilt"] = rebuilt
+        VR.FAILS.clear()
+        VR._f_today_context(P, con.cursor(), "?", meta, px, lambda c, d, p: None if p is None else p * 100.0)
+        return [f for f in VR.FAILS if "외부 참값" in f]
+    assert run(rebuilt=True) == []
+    assert "그 뒤 폐지" in capsys.readouterr().out
+    assert run(rebuilt=False), "평소 리포트에서는 마스터 밖 종목이 있어도 갈림을 실패로 본다"
+
+
 def test_krx_index_return_is_recomputed_from_the_db():
     con, P, meta, px = _ctx_db()
     P["today"]["krx_index"]["거래소"]["ret"]["1"] += 0.5
     VR.FAILS.clear()
     VR._f_today_context(P, con.cursor(), "?", meta, px, lambda c, d, p: None if p is None else p * 100.0)
     assert any("KRX 지수" in f for f in VR.FAILS), VR.FAILS
+
+
+@node
+def test_web_layer_is_green_on_a_rebuilt_day_outside_the_finalize_window(PD, tmp_path):
+    """창 밖 재구성(finalize_unverified)은 마감 값이다 — '(잠정) 표지가 없다' 로 빨개지면 안 된다(2026-09-15 재구성)."""
+    P, D = PD
+    P2 = dict(P, rebuilt=True, finalize_unverified=True)
+    D2 = dict(D, rebuilt=True, finalize_unverified=True)
+    assert _w_fails(P2, D2, _write(tmp_path, P2, D2)) == []
+
+
+@node
+def test_web_layer_one_day_list_does_not_care_how_ties_are_ordered(PD, tmp_path):
+    """같은 1일 금액의 두 종목은 뷰어(JS)와 검증기(파이썬)가 다른 순서로 놓는다 — 그걸 불일치로 보면 안 된다.
+
+    JS 객체는 0 으로 시작하지 않는 숫자 꼴 키(175330)를 **맨 앞에 숫자 순**으로 돌고, 파이썬 dict 는 넣은 순서로 돈다.
+    동률이면 정렬이 그 순서를 남겨 둘이 갈린다(2026-09-15 금융: LG 003550·JB금융지주 175330 둘 다 +37.9억).
+    """
+    P, D = PD
+    P2 = json.loads(json.dumps(P))
+    sec = max(P2["today"]["sectors"]["전체"], key=lambda s: abs((P2["today"]["sectors"]["전체"][s].get("inst") or {}).get("v") or 0))
+    mine = sorted(c for c, n in P2["names"].items() if n.get("sector") == sec and (n.get("win") or {}).get("1"))
+    assert len(mine) >= 2, "픽스처가 동률을 만들 종목이 없다"
+    lo, hi = mine[0], mine[1]
+    for i, c in enumerate((lo, hi)):
+        P2["names"][c]["win"]["1"].update(inst=37.9, invtrt=2.2 + i, penfnd_etc=11.9 + i)   # 같은 금액, 다른 세부
+    # hi 를 0 으로 시작하지 않는 코드로 바꿔 **뒤에** 넣는다 — 파이썬은 lo·175330, JS 는 175330·lo 순으로 돈다.
+    moved = P2["names"].pop(hi)
+    P2["names"]["175330"] = moved
+    D2 = SN.build(P2)
+    assert not [f for f in _w_fails(P2, D2, _write(tmp_path, P2, D2)) if "1일 종목 목록" in f]
