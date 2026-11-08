@@ -7331,3 +7331,54 @@ guards = ["tests/test_collect_dart.py::test_rights_issue_the_seed_cannot_see_rea
 file = "src/sectorflow/collect/dart.py"
 find = "                (code, OK)).fetchall():"
 replace = "                (code, \"none\")).fetchall():"
+
+# ── BYO 실전송 경로(루프백 서버) ──
+[[mutation]]
+id = "kiwoom-transport-headers-not-lowered"
+why = "실서버 응답 헤더 Cont-Yn 을 못 읽어 1쪽만 받고 오류 없이 끝난다"
+guards = ["tests/test_collect_transport.py::test_kiwoom_real_transport_pages_on_mixed_case_response_headers"]
+file = "src/sectorflow/collect/kiwoom.py"
+find = "return status, {k.lower(): v for k, v in hdrs.items()}, parsed"
+replace = "return status, dict(hdrs), parsed"
+
+[[mutation]]
+id = "kiwoom-transport-uses-get"
+why = "키움 REST 는 POST 다 — GET 으로 보내면 모든 호출이 실패한다"
+guards = ["tests/test_collect_transport.py::test_kiwoom_real_transport_pages_on_mixed_case_response_headers"]
+file = "src/sectorflow/collect/kiwoom.py"
+find = """req = urllib.request.Request(url, data=data, headers=headers, method="POST")"""
+replace = """req = urllib.request.Request(url, data=data, headers=headers, method="GET")"""
+
+[[mutation]]
+id = "kiwoom-transport-http-error-escapes"
+why = "429 가 예외로 새면 재시도(백오프)가 돌지 않고 수집이 죽는다"
+guards = ["tests/test_collect_transport.py::test_kiwoom_real_transport_hands_http_errors_back_as_values"]
+file = "src/sectorflow/collect/kiwoom.py"
+find = """        raw, status, hdrs = e.read() or b"", e.code, dict(e.headers.items()) if e.headers else {}"""
+replace = """        raise"""
+
+[[mutation]]
+id = "kiwoom-transport-html-body-kills-parser"
+why = "게이트웨이 오류 페이지(HTML)에서 JSON 파서 예외로 죽어 상태를 못 말한다"
+guards = ["tests/test_collect_transport.py::test_kiwoom_real_transport_survives_a_body_that_is_not_json"]
+file = "src/sectorflow/collect/kiwoom.py"
+find = """    except (UnicodeDecodeError, json.JSONDecodeError):
+        parsed = {"_raw": raw[:200].decode("utf-8", "replace")}"""
+replace = """    except (UnicodeDecodeError, KeyError):
+        parsed = {"_raw": raw[:200].decode("utf-8", "replace")}"""
+
+[[mutation]]
+id = "dart-transport-http-error-escapes"
+why = "DART 4xx 가 통신 오류로 뭉뚱그려져 재시도하고 상태를 잃는다"
+guards = ["tests/test_collect_transport.py::test_dart_real_transport_reports_http_errors_without_the_key"]
+file = "src/sectorflow/collect/dart.py"
+find = """        return e.code, e.read() or b"\""""
+replace = "        raise"
+
+[[mutation]]
+id = "dart-transport-uses-post"
+why = "OpenDART 는 GET 이다"
+guards = ["tests/test_collect_transport.py::test_dart_real_transport_gets_and_retries_server_errors"]
+file = "src/sectorflow/collect/dart.py"
+find = """headers={"User-Agent": "sector-flow-collect"}, method="GET")"""
+replace = """headers={"User-Agent": "sector-flow-collect"}, method="POST")"""
