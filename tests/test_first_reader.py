@@ -135,8 +135,9 @@ KIWOOM = (INQ / "kiwoom_api_terms.md").read_text("utf-8")
 
 def test_inquiries_state_what_the_screen_really_shows():
     """'종목 없음·점수 없음' 은 사실이 아니다 — 첫 화면 종목명, 드릴다운 전 종목, 탐색 모드 점수를 적고 묻는다."""
+    facts = _section(FSC, "## 1. 사실관계", "## 2. 질의 사항")    # 질문 칸이 아니라 사실관계 칸에 적혀야 한다
     for must in ("종목명", "전 종목", "탐색 모드", "질문 12"):
-        assert must in FSC, must
+        assert must in facts, must
     assert "점수·등급·판정" not in FSC
     assert "탐색 모드" in KRX and "전 종목" in KRX
     assert "탐색 모드" in KIWOOM
@@ -153,8 +154,10 @@ def test_inquiries_state_the_publication_schedule_and_window():
 def test_krx_inquiry_states_the_real_sources():
     """정보데이터시스템에서 '받지 않는다' 는 틀렸다 — 상장폐지 목록·업종 분류·DART 주식수를 적는다."""
     assert "정보데이터시스템에서는 받지 않습니다" not in KRX
-    for must in ("상장폐지", "OpenDART", "KRX 체결만", "400 LOGOUT"):
-        assert must in KRX, must
+    sources = _section(KRX, "## 2. 원천 데이터", "## 3. 질문")    # 질문 칸이 아니라 원천 설명에 적혀야 한다
+    for must in ("상장폐지", "OpenDART", "KRX 체결만"):
+        assert must in sources, must
+    assert "400 LOGOUT" in KRX
 
 
 def test_fsc_inquiry_does_not_claim_a_notice_the_screen_lacks():
