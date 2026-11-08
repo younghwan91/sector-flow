@@ -275,7 +275,7 @@ def build(P: dict) -> dict:
     N = len(P["dates"])
     # 종목도 함께 싣는다 — TUI 가 이 파일 하나만 읽으므로, 안 실으면 Enter 를 눌러도
     # 종목이 0개다(실제로 그렇게 비었다). 표와 TUI 가 **같은 파일**을 보게 한다.
-    out = {"asof": P["dates"][-1], "finalized": P["finalized"],
+    out = {"asof": P["dates"][-1], "finalized": P["finalized"], "final": bool(P.get("final")),
            "dates": [P["dates"][0], P["dates"][-1]], "blocks": {}, "combined": {},
            "names": P.get("names", {}),
            "n_by_sector": P.get("n_by_sector", {})}
@@ -333,8 +333,11 @@ def build(P: dict) -> dict:
             else:
                 abar = rbar = sxy = sxx = 0.0
             slope = sxy / sxx if sxx else 0.0
-            # 강성 k 와 절편 b, 그리고 t
-            use = [r for r in rows if r["ret"] is not None and r.get("cap_idx")]
+            # 강성 k 와 절편 b, 그리고 t. **얇은 섹터(10종목 미만)는 적합에서 뺀다** — 한두 종목의
+            # 등락이 섹터 수익률이 되는 점이 큰 지렛대를 가져, 그것 하나로 k 의 부호가 바뀐 날이
+            # 있었다(2026-10-15 20|전체: 포함 −0.59 · 제외 +14.42, 2026-11-08 지표 검증). x·예상Δv 는
+            # 적합한 직선으로 얇은 섹터에도 계속 낸다(표에서는 회색·G 제외 그대로).
+            use = [r for r in rows if r["ret"] is not None and r.get("cap_idx") and not r["thin"]]
             n = len(use)
             if n > 2:
                 xs = [r["inst"] / r["cap_idx"] * 100 for r in use]
@@ -413,7 +416,13 @@ def build(P: dict) -> dict:
                       if r.get("xddot") is not None and r.get("a_idx") is not None
                       and not r["thin"]
                       and r["a_idx"] > 0 and r["x"] > 0 and r["xddot"] > 0]
-            if len(scored) > 1:
+            if len(scored) == 1:
+                # 통과 섹터가 하나뿐이면 순위를 매길 상대가 없다 — 중간값 0.5 를 준다. 예전엔
+                # G 를 아예 안 줘서 세 관문을 다 통과한 섹터가 ● 없이 사라졌고(2026-10-15 60|전체
+                # 의료/정밀기기), 그날 종합 축이 통째로 빠졌다. 통과 수가 1→2 로 바뀔 때 G 통과가
+                # 0→2 로 뛰던 불연속도 이것이다.
+                scored[0]["G"] = 0.5
+            elif len(scored) > 1:
                 def _rank(key):
                     """[0,1] 정규화 순위. **동률은 중간순위** — `1년[%ile]` 과 같다.
 

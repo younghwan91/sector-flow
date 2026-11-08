@@ -136,7 +136,7 @@ const P=n=>n==null?"—":sg(n)+Math.abs(n).toFixed(2);
 const N0=n=>n==null?"—":Math.round(n).toLocaleString("ko-KR");
 
 document.getElementById("asof").textContent = D.dates[0]+" ~ "+D.dates[1];
-const chip=el("span","chip", D.finalized?"마감 · 잠정":"장중 · 미확정");
+const chip=el("span","chip", D.final?"마감 · 확정":D.finalized?"마감 · 잠정":"장중 · 미확정");
 document.getElementById("chip").append(chip);
 // 받은 폴더·멈춘 배치를 오늘 것으로 읽지 않게. 문턱은 화면(`STALE_DAYS`)과 같다.
 const age=Math.floor((Date.now()-Date.parse(D.asof+"T00:00:00+09:00"))/864e5);

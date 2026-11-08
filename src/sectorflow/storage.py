@@ -108,6 +108,18 @@ CREATE TABLE IF NOT EXISTS shares_outstanding_history (
     PRIMARY KEY (code, date)     -- Postgres side (init_timescale.sql) must use BIGINT, not INTEGER(32bit) — 삼성전자(58억주) overflows it
 );
 CREATE INDEX IF NOT EXISTS idx_sh_date ON shares_outstanding_history(date);
+-- 무수정 일봉(quant-airflow 026). 시총의 가격 — daily_bars 는 수정주가라 과거 시총이 부푼다.
+CREATE TABLE IF NOT EXISTS daily_bars_raw (
+    code TEXT NOT NULL, date TEXT NOT NULL, close INTEGER, PRIMARY KEY (code, date)
+);
+-- 분할 백조정 일봉 — 섹터 수익률의 원천(같은 표 안의 종가 비라 세션 정의가 맞는다).
+CREATE TABLE IF NOT EXISTS daily_bars_adjusted (
+    code TEXT NOT NULL, date TEXT NOT NULL, close REAL, PRIMARY KEY (code, date)
+);
+-- 키움 수정주가 이벤트(027). 8 분할 · 16 병합 · 64 감자만 주식수를 다시 센다.
+CREATE TABLE IF NOT EXISTS corporate_actions (
+    code TEXT NOT NULL, date TEXT NOT NULL, upd_stkpc_tp TEXT, upd_rt REAL
+);
 """
 
 
@@ -279,92 +291,101 @@ def _assert_supply_has_delisted(con: Any, df, *, start, end) -> None:
         )
 
 
+#: 주식수를 다시 세는 수정주가 이벤트 — 분할(8)·병합(16)·감자(64). 가격이 (1+upd_rt/100) 배로 바뀐
+#: 만큼 주식수는 그 역수로 바뀐다(078130 10:1 병합 upd_rt 900 → 주식수 ÷10). 권리락(256)은 유상·무상이
+#: 섞여 있어 순수 배율이 아니므로 넣지 않는다 — 키움 주간 스냅샷이 1주 안에 따라잡는다.
+SHARE_EVENTS = 8 | 16 | 64
+
+
 def market_cap_asof_bulk(con: Any, df: Any) -> Any:
-    """Vectorized :func:`market_cap_asof` for many ``(code, date)`` rows at once.
+    """그날 시총(원) = 그날 **원 종가** × 그날의 상장주식수. ``(code, date)`` 여럿을 한 번에.
 
-    Byte-identical semantics to the per-row function — close comes from
-    ``daily_bars`` on the exact date (NOT any close column the caller's
-    frame may already carry, e.g. ``supply_demand.close``: that is a
-    different, not-necessarily-equal price series in this DB — verified by
-    spot-checking real rows, e.g. code 118000 on 2026-03-25 has
-    ``daily_bars.close=2410`` vs ``supply_demand.close=241``). Shares
-    outstanding is the most recent row with ``date <= date`` (lookahead-safe,
-    same rule as the per-row SQL ``date<=? ORDER BY date DESC LIMIT 1``).
+    가격은 ``supply_demand.close``(키움, 원 종가 — 기준일 저녁에도 있다), 없으면 ``daily_bars_raw``.
+    **``daily_bars`` 를 쓰면 안 된다** — 키움 수정주가라 뒤에 병합이 있으면 과거 가격이 배수로 커진다
+    (118000 2026-03-25: daily_bars 2,410 · 원 종가 241). 예전엔 이 함수가 바로 그 값을 썼다.
 
-    This issues 2 bulk queries total instead of 2 queries per row —
-    ``market_cap_asof`` called in a per-row Python loop over a multi-year
-    dataset means millions of round trips to Postgres.
-
-    Args:
-        df: Must have ``code`` and ``date`` columns.
+    주식수는 ``date`` 이하 최신 행(앞을 보지 않는다). 그 행 **뒤에** 분할·병합·감자가 있었으면 그만큼
+    다시 센다 — 스냅샷이 늦게 오는 구간(078130: 2026-05-20 10:1 병합, 다음 주식수 행은 07-09)에서
+    병합 전 주식수 × 병합 후 가격이 시총을 10배로 만들었다(2026-11-08 지표 검증).
 
     Returns:
-        A ``pandas.Series`` aligned with ``df.index``: ``market_cap`` per
-        row, ``NaN`` where close or shares-outstanding is unavailable
-        (mirrors ``market_cap_asof`` returning ``None``).
+        ``df.index`` 에 맞춘 ``pandas.Series``. 가격이나 주식수가 없으면 ``NaN``.
     """
+    import numpy as np  # noqa: PLC0415
     import pandas as pd  # noqa: PLC0415 — pandas is a strategy-layer dep, not storage's
 
     if df.empty:
         return pd.Series([], dtype=float, index=df.index)
+    if isinstance(df["date"].dtype, pd.DatetimeTZDtype):
+        raise TypeError("market_cap_asof_bulk: tz-aware date column is not supported")
 
     codes = df["code"].unique().tolist()
     ph = "%s" if _is_pg(con) else "?"
     placeholders = ",".join([ph] * len(codes))
-    # 종가는 아래에서 (code, 'YYYY-MM-DD') **정확 일치**로만 붙는다 — 요청 날짜 밖의 행은 읽어도
-    # 버려진다. 예전엔 호출마다 daily_bars 전체 이력(580만 행)을 읽어 sector_flow 한 번에 16회,
-    # 166초를 썼다. 정확 일치할 수 있는 날짜(형식이 맞는 문자열)만 쿼리에 넣는다 — 형식이 다른
-    # 문자열은 예전에도 어떤 행과도 일치하지 않았으므로 결과가 같다.
-    if isinstance(df["date"].dtype, pd.DatetimeTZDtype):
-        # 예전엔 merge_asof 가 tz-naive 주식수 날짜와 섞이며 MergeError 로 멈췄다 — 조용한 NaN 대신 계속 멈춘다.
-        raise TypeError("market_cap_asof_bulk: tz-aware date column is not supported")
     date_strs = df["date"].astype(str)
-    # 아래 merge 에서 하는 파싱을 쿼리 앞으로 당긴다 — 날짜가 아닌 문자열은 바로 예외.
-    # (예전엔 bars·shares 가 비면 파싱 전에 NaN 을 돌려줬다. 그 경우만 예외가 앞당겨진다.)
-    pd.to_datetime(date_strs)
+    pd.to_datetime(date_strs)  # 날짜가 아닌 문자열은 바로 예외
     wanted = sorted({s for s in date_strs.unique() if isinstance(s, str) and _ISO_DAY.fullmatch(s)})
     if not wanted:
         return pd.Series([float("nan")] * len(df), index=df.index)
     date_ph = ",".join([ph] * len(wanted))
-    bars = pd.read_sql_query(
-        f"SELECT code, date, close FROM daily_bars WHERE code IN ({placeholders}) "
-        f"AND date IN ({date_ph})",
-        con,
-        params=[*codes, *wanted],
-    )
-    bars["date"] = bars["date"].astype(str)
 
+    def _prices(sql: str) -> Any:
+        p = pd.read_sql_query(sql.format(c=placeholders, d=date_ph), con, params=[*codes, *wanted])
+        p["date"] = p["date"].astype(str)
+        p["close"] = p["close"].astype(float).abs()
+        return p.drop_duplicates(["code", "date"]).set_index(["code", "date"])["close"]
+
+    sd_px = _prices("SELECT code, date, close FROM supply_demand WHERE source='kiwoom' "
+                    "AND code IN ({c}) AND date IN ({d})")
+    raw_px = _prices("SELECT code, date, close FROM daily_bars_raw WHERE code IN ({c}) AND date IN ({d})")
     shares = pd.read_sql_query(
         f"SELECT code, date, shares_outstanding FROM shares_outstanding_history "
-        f"WHERE code IN ({placeholders})",
-        con,
-        params=codes,
-    )
-    if bars.empty or shares.empty:
+        f"WHERE code IN ({placeholders})", con, params=codes)
+    events = pd.read_sql_query(
+        f"SELECT code, date, upd_stkpc_tp, upd_rt FROM corporate_actions WHERE code IN ({placeholders})",
+        con, params=codes)
+    if shares.empty:
         return pd.Series([float("nan")] * len(df), index=df.index)
 
-    shares["date"] = pd.to_datetime(shares["date"].astype(str))
-    # merge_asof with `by=` still requires the `on` column sorted globally
-    # (not just within each `by` group) — sort by date first, code second.
-    shares = shares.sort_values(["date", "code"])
-
-    d = df[["code"]].reset_index(drop=True).copy()
-    d["date_str"] = df["date"].astype(str).to_numpy()
-    d["_row"] = d.index
-    d = d.merge(bars, left_on=["code", "date_str"], right_on=["code", "date"], how="left")
+    d = pd.DataFrame({"code": df["code"].to_numpy(), "date_str": date_strs.to_numpy()})
+    d["_row"] = np.arange(len(d))
+    key = pd.MultiIndex.from_arrays([d["code"], d["date_str"]])
+    px = sd_px.reindex(key).to_numpy()
+    px = np.where(np.isnan(px) | (px <= 0), raw_px.reindex(key).to_numpy(), px)
+    d["close"] = px
     d["date"] = pd.to_datetime(d["date_str"])
-    d_sorted = d.sort_values(["date", "code"])
 
-    merged = pd.merge_asof(
-        d_sorted,
-        shares[["code", "date", "shares_outstanding"]],
-        on="date",
-        by="code",
-        direction="backward",
-    )
+    shares["date"] = pd.to_datetime(shares["date"].astype(str))
+    shares = shares.rename(columns={"date": "s_date"}).sort_values(["s_date", "code"])
+    merged = pd.merge_asof(d.sort_values(["date", "code"]), shares, left_on="date",
+                           right_on="s_date", by="code", direction="backward")
+
+    # 스냅샷 뒤 이벤트의 배율. C(x) = Σ_{이벤트일 ≤ x} −ln(1+upd_rt/100) 로 두면
+    # 주식수(t) = 주식수(s) × exp(C(t) − C(s)).
+    ev = events.copy()
+    ev["tp"] = pd.to_numeric(ev["upd_stkpc_tp"], errors="coerce").fillna(0).astype(int)
+    ev["upd_rt"] = pd.to_numeric(ev["upd_rt"], errors="coerce")
+    ev = ev[((ev["tp"] & SHARE_EVENTS) != 0) & ev["upd_rt"].notna() & (ev["upd_rt"] != 0)
+            & (ev["upd_rt"] > -100)]
+    if ev.empty:
+        merged["factor"] = 1.0
+    else:
+        ev["e_date"] = pd.to_datetime(ev["date"].astype(str))
+        ev = ev.sort_values(["code", "e_date"])
+        ev["C"] = ev.groupby("code")["upd_rt"].transform(lambda r: (-np.log1p(r / 100.0)).cumsum())
+        ev = ev[["code", "e_date", "C"]].sort_values(["e_date", "code"])
+
+        def _c_at(col: str) -> Any:
+            m = merged[["_row", "code", col]].dropna(subset=[col]).sort_values([col, "code"])
+            m = pd.merge_asof(m, ev, left_on=col, right_on="e_date", by="code", direction="backward")
+            return m.set_index("_row")["C"].fillna(0.0)
+
+        c_t, c_s = _c_at("date"), _c_at("s_date")
+        merged["factor"] = np.exp(merged["_row"].map(c_t).fillna(0.0)
+                                  - merged["_row"].map(c_s).fillna(0.0))
+
     merged = merged.sort_values("_row")
-    # per-row 와 동일 semantics: 주식수가 0 이하면 결측으로 떨어뜨린다(더 오래된 유효
-    # 행으로 대체하지 않는다 — 그러면 두 함수의 결과가 갈린다).
-    merged.loc[merged["shares_outstanding"] <= 0, "shares_outstanding"] = float("nan")
-    market_cap = (merged["close"] * merged["shares_outstanding"]).to_numpy()
+    sh = merged["shares_outstanding"].astype(float)
+    sh[sh <= 0] = float("nan")
+    market_cap = (merged["close"] * sh * merged["factor"]).to_numpy()
     return pd.Series(market_cap, index=df.index)

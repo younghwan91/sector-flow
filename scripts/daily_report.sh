@@ -84,7 +84,26 @@ DEST="$OUT_ROOT/$ASOF"
 #
 # 수집 미완(INCOMPLETE.txt 만 있는 폴더)과 검증 실패(VERIFY_FAILED.txt)는 건너뛰지 않는다 —
 # 다음 재시도가 그 기준일을 다시 만들 유일한 기회다. 기준일이 넘어가면 아무도 안 만든다.
-if [ -f "$DEST/numbers.html" ] && [ ! -f "$DEST/VERIFY_FAILED.txt" ] && [ -z "${KR_QUANT_FORCE:-}" ]; then
+#
+# **확정 모드(KR_QUANT_FINAL=1, 화~토 08:20 크론).** 18:10 리포트는 그날 잠정치로 만든다. 다음날
+# 새벽 daily_finalize 가 확정치를 덮은 것이 확인되면(scripts/finalize_done.py) 그 기준일을 확정치로
+# 다시 만들고 FINAL.txt 를 남긴다. 확인이 안 되면 잠정 리포트를 그대로 둔다. 게시본의 G 가
+# 잠정치에 흔들렸다(2026-11-08 지표 검증, 합격선 90% 에 62.5%).
+FINAL_OK=""
+if [ -n "${KR_QUANT_FINAL:-}" ]; then
+  if [ -f "$DEST/FINAL.txt" ] && [ ! -f "$DEST/VERIFY_FAILED.txt" ]; then
+    echo "[$(date '+%F %T')] $ASOF 는 이미 확정치로 만들었다 — 건너뛴다."
+    exit 0
+  fi
+  if "${UVR[@]}" python scripts/finalize_done.py --asof "$ASOF"; then
+    FINAL_OK=1
+  elif [ -f "$DEST/numbers.html" ]; then
+    echo "[$(date '+%F %T')] 확정치를 확인하지 못했다 — $ASOF 잠정 리포트를 그대로 둔다."
+    exit 0
+  fi
+fi
+if [ -f "$DEST/numbers.html" ] && [ ! -f "$DEST/VERIFY_FAILED.txt" ] && [ -z "${KR_QUANT_FORCE:-}" ] \
+   && [ -z "$FINAL_OK" ]; then
   echo "[$(date '+%F %T')] $ASOF 리포트가 이미 있다 — 건너뛴다(휴장일이거나 재실행)."
   # 달력이 없어 휴장과 수집 실패를 못 가른다 — 갈라야 할 사람에게 사실을 준다.
   if [[ "$ASOF" < "$TODAY" ]]; then
@@ -141,7 +160,12 @@ mkdir -p "$BUILD"
 echo "[$(date '+%F %T')] 생성 시작 — 기준일 $ASOF, 구간 ${DAYS}거래일"
 # 페이로드를 **한 번만** 만들고 둘 다 그걸 쓴다. 월별 시총 계산이 수 분이라
 # 예전처럼 세 번 돌리면 배치가 15분을 넘고 그만큼 실패 창이 넓어진다.
-"${UVR[@]}" python scripts/sector_flow.py    --days "$DAYS" --json "$BUILD/payload.json"
+FINAL_ARGS=()
+if [ -n "$FINAL_OK" ]; then
+  FINAL_ARGS=(--final)
+  echo "[$(date '+%F %T')] 확정치로 다시 만든다 — 제목이 '마감·확정' 이 된다"
+fi
+"${UVR[@]}" python scripts/sector_flow.py    --days "$DAYS" --json "$BUILD/payload.json" "${FINAL_ARGS[@]}"
 "${UVR[@]}" python scripts/sector_flow.py    --from-json "$BUILD/payload.json" --html "$BUILD/viewer.html"
 "${UVR[@]}" python scripts/sector_numbers.py --payload "$BUILD/payload.json" --html "$BUILD/numbers.html"
 
@@ -162,6 +186,9 @@ else
   VERIFY_RC=1
 fi
 
+if [ -n "$FINAL_OK" ]; then
+  echo "[$(date '+%F %T')] daily_finalize 확인 뒤 확정치로 만들었다." > "$BUILD/FINAL.txt"
+fi
 if [ -d "$DEST" ]; then
   OLD="$DEST.replaced.$$"
   mv "$DEST" "$OLD"

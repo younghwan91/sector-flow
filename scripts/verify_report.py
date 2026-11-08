@@ -88,8 +88,12 @@ def layer_a(D: dict) -> None:
         if len(rows) < 8:
             continue
         blocks += 1
-        xs = [r["a_idx"] for r in rows]
-        ys = [r["ret"] for r in rows]
+        # 적합은 얇은 섹터를 뺀 표본으로 한다(`sector_numbers` 와 같은 규칙). 항등식은 전 행에서 본다.
+        fit = [r for r in rows if not r.get("thin")]
+        if len(fit) < 3:
+            continue
+        xs = [r["a_idx"] for r in fit]
+        ys = [r["ret"] for r in fit]
         k, b, _t, _r2 = ols(xs, ys)                 # 전정밀도 재적합
 
         upd("a = 임펄스/시총×100", max(r["a_idx"] - r["inst"] / r["cap_idx"] * 100 for r in rows))
@@ -201,17 +205,18 @@ def layer_a2(D: dict) -> None:
     chk("A", "포텐셜: U 가 있는 블록은 |미실현| 과 Spearman +1",
         not bad_rho, "; ".join(bad_rho[:3]))
 
-    # ② Σ미실현 = 0 — OLS 잔차의 부호 반전이므로 블록마다 정확히 0 이어야 한다.
+    # ② Σ미실현 = 0 — OLS 잔차의 부호 반전이므로 **적합에 들어간 행**(얇은 섹터 제외)에서
+    #    블록마다 정확히 0 이어야 한다. 얇은 섹터는 직선으로 x 를 받지만 적합에는 안 들어간다.
     bad = []
     for key, B in D["blocks"].items():
-        xs = [r["x"] for r in B["rows"] if r.get("x") is not None]
+        xs = [r["x"] for r in B["rows"] if r.get("x") is not None and not r.get("thin")]
         if not xs:
             continue
         scale = max(abs(v) for v in xs) * len(xs)
         upd("Σ미실현 = 0", sum(xs) / max(scale, 1e-12))
         if abs(sum(xs)) > 1e-9 * max(scale, 1.0):
             bad.append(f"{key} Σx={sum(xs):.3e}")
-    chk("A", "Σ미실현 = 0 (전 블록)", not bad, "; ".join(bad[:3]))
+    chk("A", "Σ미실현 = 0 (전 블록, 적합 표본)", not bad, "; ".join(bad[:3]))
 
     # ③ 1년 백분위 — 정의역 [0,100] 이고 **주체마다 다른 값**이어야 한다.
     #    (한 행에 두 주체의 숫자가 섞이는 사고를 이 저장소가 이미 냈다.)
@@ -248,9 +253,20 @@ def layer_a2(D: dict) -> None:
 
     # ⑤ G — 세 순위의 평균이고, 각 순위는 pos/(N−1) 이다. 값이 [0,1] 인지만
     #    보던 것을 **순위 자체를 다시 매겨** 대조한다.
-    bad = []
+    bad, gate_bad = [], []
     for key, B in D["blocks"].items():
         scored = [r for r in B["rows"] if r.get("G") is not None]
+        # 관문을 다 통과한 섹터 = G 가 있는 섹터. 통과가 하나뿐이면 G 를 안 줘서 ● 가 사라지던
+        # 부류를 잡는다(2026-10-15 60|전체 의료/정밀기기).
+        passed = {r["sector"] for r in B["rows"]
+                  if not r.get("thin") and r.get("xddot") is not None and r.get("a_idx") is not None
+                  and r["a_idx"] > 0 and (r.get("x") or 0) > 0 and r["xddot"] > 0}
+        if passed != {r["sector"] for r in scored}:
+            gate_bad.append(f"{key} 통과 {sorted(passed)} vs G {sorted(r['sector'] for r in scored)}")
+        if len(scored) == 1:
+            if abs(scored[0]["G"] - 0.5) > TOL_FIT:
+                bad.append(f"{key}/{scored[0]['sector']} 단독 통과 G={scored[0]['G']} (0.5 여야)")
+            continue
         if len(scored) < 2:
             continue
         def _rank(k2):
@@ -267,6 +283,7 @@ def layer_a2(D: dict) -> None:
             if d > TOL_FIT:
                 bad.append(f"{key}/{r['sector']} G={r['G']} vs {(A+X+Dd)/3:.6f}")
     chk("A", "G = rank(a)·rank(x)·rank(ẍ) 의 평균", not bad, "; ".join(bad[:3]))
+    chk("A", "세 관문을 다 통과한 섹터 = G 가 있는 섹터", not gate_bad, "; ".join(gate_bad[:3]))
 
     # ⑥ 종합 G = 창별 G 의 **산술평균**, 통과[구간] = pass_n/seen.
     bad = []
@@ -1126,9 +1143,9 @@ def layer_f(P: dict, db: str | None) -> None:
     그래서 여기서는 **`scripts/` 의 함수를 하나도 부르지 않고** SQL 로 다시
     집계해 대조한다. 같은 버그를 두 번 통과시키지 않으려면 경로가 달라야 한다.
 
-    ⚠️ 두 함정을 재현 쪽에서도 명시한다.
+    ⚠️ 함정을 재현 쪽에서도 명시한다.
       · `supply_demand` 의 순매매는 **수량**이다 — 금액은 그날 종가를 곱해 만든다.
-      · `flu_rt` 는 **bp**(등락률×100)다 — 100 으로 나눠야 퍼센트다.
+      · 수익률은 `flu_rt` 가 아니라 조정 종가 비다. 시총은 수정주가가 아니라 원 종가 × 주식수다.
     """
     print("\nF. 독립 재계산 — DB 원자료에서 다시 만든 값과 같은가")
     if not db:
@@ -1207,55 +1224,103 @@ def layer_f(P: dict, db: str | None) -> None:
                                       got.get((m, s, dates[i], k), 0.0)))
         cmp_abs("기관 세부 일별", pairs, TOL_FLOW)
 
-    # ── ③ 섹터 시총(구간말) — daily_bars.close × 상장주식수(asof) ──
-    #    ⚠️ `supply_demand.close` 가 아니다. 이 DB 에서 둘은 같은 계열이 아니다
-    #    (storage.market_cap_asof_bulk 가 실측으로 확인한 함정).
-    CAP = ("b.close * 1.0 * (SELECT h.shares_outstanding "
-           "FROM shares_outstanding_history h "
-           "WHERE h.code=q.code AND h.date<=b.date ORDER BY h.date DESC LIMIT 1)")
-    cur.execute(f"SELECT st.market, {SEC}, sum({CAP}) "   # noqa: S608
-                f"FROM (SELECT DISTINCT s.code FROM supply_demand s "
-                f"      JOIN stocks st2 ON st2.code=s.code WHERE {SRC}) q "
-                f"JOIN stocks st ON st.code=q.code "
-                f"JOIN daily_bars b ON b.code=q.code AND b.date={ph} "
-                f"GROUP BY 1,2", (*args, d1))
-    got = {(r[0], r[1]): float(r[2]) / 1e8 for r in cur.fetchall()}
+    # ── ③·④ 시총과 수익률의 재료 — 리포트 코드(`storage.market_cap_asof_bulk`·`adjusted_returns`)를
+    #    부르지 않고 원자료에서 따로 만든다.
+    #    시총 = 그날 **원 종가**(supply_demand.close, 없으면 daily_bars_raw) × 그날 주식수.
+    #    ⚠️ daily_bars 가 아니다 — 키움 수정주가라 뒤에 병합이 있으면 과거 시총이 배수로 커진다.
+    #    주식수는 date 이하 최신 행, 그 뒤 분할(8)·병합(16)·감자(64)는 1/(1+upd_rt/100) 배로 다시 센다.
+    #    수익률 = daily_bars_adjusted 종가 ÷ 그 종목 직전 행 종가 − 1. ⚠️ flu_rt 가 아니다
+    #    (09-14 부터 분자는 통합 종가·기준가는 정규장 종가라 이어 곱할 수 없다).
+    import bisect  # noqa: PLC0415
+    cur.execute(f"SELECT s.code, s.date, abs(s.close) FROM supply_demand s "  # noqa: S608
+                f"JOIN stocks st ON st.code=s.code WHERE {SRC}", args)
+    sd_rows = sorted((c, str(dt), float(v) if v is not None else None) for c, dt, v in cur.fetchall())
+    px = {(c, d): v for c, d, v in sd_rows}
+    codes_win = sorted({c for c, _d, _v in sd_rows})
+    cur.execute(f"SELECT code, close FROM daily_bars_raw WHERE date={ph}", (d1,))  # noqa: S608
+    raw_d1 = {c: float(v) for c, v in cur.fetchall() if v is not None}
+    cur.execute("SELECT code, date, shares_outstanding FROM shares_outstanding_history")
+    sh_hist: dict = {}
+    for c, dt, v in cur.fetchall():
+        sh_hist.setdefault(c, []).append((str(dt), v))
+    for v in sh_hist.values():
+        v.sort()
+    cur.execute("SELECT code, date, upd_stkpc_tp, upd_rt FROM corporate_actions")
+    evs: dict = {}
+    for c, dt, tp, rt in cur.fetchall():
+        try:
+            tpi, r = int(tp), float(rt)
+        except (TypeError, ValueError):
+            continue
+        if tpi & (8 | 16 | 64) and r != 0 and r > -100:
+            evs.setdefault(c, []).append((str(dt), r))
+
+    def shares_at(c: str, d: str):
+        hist = sh_hist.get(c) or []
+        k = bisect.bisect_right(hist, (d, float("inf"))) - 1
+        if k < 0 or not hist[k][1] or hist[k][1] <= 0:
+            return None
+        s_date, v = hist[k][0], float(hist[k][1])
+        for e_date, r in evs.get(c, []):
+            if s_date < e_date <= d:
+                v /= 1.0 + r / 100.0
+        return v
+
+    def cap_at(c: str, d: str, price):
+        sh = shares_at(c, d)
+        return None if price is None or sh is None else price * sh
+
+    meta = {}
+    cur.execute(f"SELECT code, market, {SEC.replace('st.', '')} FROM stocks")  # noqa: S608
+    for c, m, sec in cur.fetchall():
+        meta[c] = (m, sec)
+
+    # ── ③ 섹터 시총(구간말) ──
+    got: dict = {}
+    for c in codes_win:
+        v = cap_at(c, d1, px.get((c, d1)) or raw_d1.get(c))
+        if v is not None and c in meta:
+            got[meta[c]] = got.get(meta[c], 0.0) + v / 1e8
     pairs = [(f"{m}/{s}", P["cap"].get(m, {}).get(s), got.get((m, s)))
              for m in P["markets"] for s in P["sectors"]
              if P["cap"].get(m, {}).get(s) is not None or (m, s) in got]
-    cmp_abs("섹터 시총 (구간말)", pairs, TOL_CAP)
+    cmp_abs("섹터 시총 (구간말, 원 종가 × 주식수)", pairs, TOL_CAP)
 
-    # ── ④ 섹터 일별 수익률 — **전일** 시총 가중. flu_rt 는 bp 다. ──
-    lag = ("lag(cap) OVER (PARTITION BY code ORDER BY date)" if pg
-           else "lag(cap) OVER (PARTITION BY code ORDER BY date)")
-    cur.execute(f"""
-      WITH cd AS (
-        SELECT s.code, s.date, s.flu_rt,
-               b.close * (SELECT h.shares_outstanding
-                          FROM shares_outstanding_history h
-                          WHERE h.code=s.code AND h.date<=s.date
-                          ORDER BY h.date DESC LIMIT 1) AS cap
-        FROM supply_demand s
-        JOIN stocks st ON st.code=s.code
-        LEFT JOIN daily_bars b ON b.code=s.code AND b.date=s.date
-        WHERE {SRC}),
-           w AS (SELECT code, date, flu_rt, {lag} AS cap_lag FROM cd)
-      SELECT st.market, {SEC}, w.date,
-             sum(w.flu_rt/100.0 * w.cap_lag/1e8), sum(w.cap_lag/1e8)
-      FROM w JOIN stocks st ON st.code=w.code
-      WHERE w.cap_lag IS NOT NULL
-      GROUP BY 1,2,3""", args)  # noqa: S608
-    gr, gw = {}, {}
-    for m, s, dt, num, den in cur.fetchall():
-        gr[(m, s, str(dt))] = float(num) / float(den) if den else 0.0
-        gw[(m, s, str(dt))] = float(den)
+    # ── ④ 섹터 일별 수익률 — **전일** 시총 가중, 조정 종가 비 ──
+    cur.execute(f"SELECT DISTINCT date FROM supply_demand WHERE date < {ph} "  # noqa: S608
+                f"ORDER BY date DESC LIMIT 1", (d0,))
+    prev = cur.fetchone()
+    a0 = str(prev[0]) if prev else d0
+    cur.execute(f"SELECT code, date, close FROM daily_bars_adjusted "  # noqa: S608
+                f"WHERE date BETWEEN {ph} AND {ph} AND close > 0", (a0, d1))
+    adj_rows: dict = {}
+    for c, dt, v in cur.fetchall():
+        adj_rows.setdefault(c, []).append((str(dt), float(v)))
+    aret: dict = {}
+    for c, rows_c in adj_rows.items():
+        rows_c.sort()
+        for (_d_prev, p0), (d_cur, p1) in zip(rows_c, rows_c[1:]):
+            aret[(c, d_cur)] = (p1 / p0 - 1.0) * 100.0
+    num: dict = {}
+    den: dict = {}
+    last_cap: dict = {}
+    for c, d, price in sd_rows:                     # 코드·날짜 순 — 직전 행이 곧 전일
+        cap_lag = last_cap.get(c)
+        last_cap[c] = cap_at(c, d, price)
+        r = aret.get((c, d))
+        if cap_lag is None or r is None or c not in meta:
+            continue
+        key = (*meta[c], d)
+        num[key] = num.get(key, 0.0) + r * cap_lag / 1e8
+        den[key] = den.get(key, 0.0) + cap_lag / 1e8
     pairs_r, pairs_w = [], []
     for m in P["markets"]:
         for s in P["sectors"]:
             for i, d in enumerate(dates):
-                pairs_r.append((f"{m}/{s}/{d}", P["ret"][m][s][i], gr.get((m, s, d), 0.0)))
-                pairs_w.append((f"{m}/{s}/{d}", P["retw"][m][s][i], gw.get((m, s, d), 0.0)))
-    cmp_abs("섹터 일별 수익률 (전일 시총 가중)", pairs_r, TOL_RET)
+                w = den.get((m, s, d), 0.0)
+                pairs_r.append((f"{m}/{s}/{d}", P["ret"][m][s][i], num.get((m, s, d), 0.0) / w if w else 0.0))
+                pairs_w.append((f"{m}/{s}/{d}", P["retw"][m][s][i], w))
+    cmp_abs("섹터 일별 수익률 (전일 시총 가중, 조정 종가 비)", pairs_r, TOL_RET)
     cmp_abs("섹터 일별 가중합", pairs_w, TOL_CAP)
 
     # ── ⑤ 종목 창별 집계 ──
@@ -1283,12 +1348,8 @@ def layer_f(P: dict, db: str | None) -> None:
                               None if g is None else g[j]))
         cmp_abs(f"종목 {win}일 집계", pairs, TOL_CAP)
 
-    # 종목 구간 수익률 — 일별 등락률의 **기하** 누적(결측일은 0).
-    cur.execute(f"SELECT s.code, s.date, s.flu_rt FROM supply_demand s "  # noqa: S608
-                f"JOIN stocks st ON st.code=s.code WHERE {SRC}", args)
-    fr = {}
-    for c, dt, v in cur.fetchall():
-        fr[(c, str(dt))] = float(v) / 100.0
+    # 종목 구간 수익률 — 일별 조정 종가 수익률의 **기하** 누적(결측일은 0, 수급 행이 있는 날만).
+    fr = {(c, d): aret[(c, d)] for c, d, _v in sd_rows if (c, d) in aret}
     pairs = []
     for win in wins:
         if win > n:
