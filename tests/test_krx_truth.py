@@ -380,13 +380,17 @@ def test_attach_refreshes_an_evening_cache_once_for_the_next_morning_build(tmp_p
 
 
 def test_attach_keeps_the_cache_when_it_was_fetched_after_the_base_date(tmp_path):
+    """다음날 받은 캐시는 다시 받지 않는다 — _no_fetch 를 타면 attach 가 '내부 오류' skip 으로 삼켜 status 가 갈린다."""
     root, build = _cached_tree(tmp_path, "2026-11-07T08:20:00+09:00")
-    kt.attach(_payload(), str(build), str(root), env=KRX_ENV, fetch=_no_fetch, pause=0, now="2026-11-07T10:20:00+09:00")
+    got = kt.attach(_payload(), str(build), str(root), env=KRX_ENV, fetch=_no_fetch, pause=0, now="2026-11-07T10:20:00+09:00")
+    assert got["status"] == "ok"
 
 
 def test_attach_keeps_the_same_evening_cache_on_the_same_day(tmp_path):
+    """같은 날 저녁 재빌드는 다시 받지 않는다."""
     root, build = _cached_tree(tmp_path, f"{DATE}T18:10:00+09:00")
-    kt.attach(_payload(), str(build), str(root), env=KRX_ENV, fetch=_no_fetch, pause=0, now=f"{DATE}T19:10:00+09:00")
+    got = kt.attach(_payload(), str(build), str(root), env=KRX_ENV, fetch=_no_fetch, pause=0, now=f"{DATE}T19:10:00+09:00")
+    assert got["status"] == "ok"
 
 
 def test_attach_falls_back_to_the_cache_when_the_refresh_fails(tmp_path):
