@@ -235,6 +235,34 @@ def test_rebuilt_previous_day_counts_as_final_only_with_final_txt(tmp_path):
     assert fc.check_prev_final(root, "2026-11-05")[0] == 0
 
 
+def test_previous_day_external_truth_skip_streak_warns_and_a_single_skip_is_a_note(tmp_path):
+    """전 거래일 확정 검증이 외부 참값 대조를 3번째 연달아 건너뛰었으면([WARN]) 75, 한 번 건너뛴 것은 한 줄(0).
+
+    주입: [WARN] 줄을 못 보거나 한 번 SKIP 에도 경고하면 실패한다.
+    """
+    root = _reports(tmp_path, TODAY)
+    d = root / "2026-11-05"
+    d.mkdir()
+    assert fc.check_external_truth(root, "2026-11-05") == (0, [])          # VERIFY.txt 없음 — 할 말 없다
+    assert fc.check_external_truth(root, None) == (0, [])
+    (d / "VERIFY.txt").write_text("       SKIP 정규장 종가 대조 — 2026-11-04 regular_close 준비 안 됨\n"
+                                  "       외부 참값 연속 SKIP 1회(이 리포트 포함, 확정 리포트만 센다)\n", "utf-8")
+    rc, lines = fc.check_external_truth(root, "2026-11-05")
+    assert rc == 0 and "건너뛰었다(SKIP)" in lines[0], lines
+    (d / "VERIFY.txt").write_text("       SKIP 정규장 종가 대조 — x\n  [WARN] F · 외부 참값 연속 SKIP 3회(이 리포트 포함)"
+                                  "   정규장 종가(regular_close)가 며칠째 준비 안 됐다\n", "utf-8")
+    rc, lines = fc.check_external_truth(root, "2026-11-05")
+    assert rc == 75 and "외부 참값 연속 SKIP 3회" in lines[0] and "2026-11-05" in lines[0], lines
+
+
+def test_freshness_looks_for_the_same_marks_verify_report_writes():
+    """두 스크립트가 같은 글을 쓰고 찾는다 — verify_report 쪽 문구만 바꾸면 경고가 조용히 안 뜬다."""
+    spec = importlib.util.spec_from_file_location("verify_report", REPO / "scripts" / "verify_report.py")
+    vr = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(vr)
+    assert (fc.SKIP_MARK, fc.SKIP_STREAK_MARK) == (vr.VF_SKIP_MARK, vr.VF_SKIP_STREAK_MARK)
+
+
 def test_error_outranks_warning():
     assert fc.worse(1, 75) == 1 and fc.worse(75, 1) == 1 and fc.worse(0, 75) == 75
 
@@ -390,6 +418,18 @@ def test_cron_path_previous_day_not_final_warns(repo, hook):
     p = _run(repo)
     assert p.returncode == 75, p.stdout + p.stderr
     assert "2026-11-05" in p.stdout and "확정되지 않았다" in p.stdout
+
+
+def test_cron_path_flags_a_previous_day_external_truth_skip_streak(repo, hook):
+    _reports(repo, TODAY)
+    prev = repo / "reports" / "2026-11-05"
+    prev.mkdir()
+    (prev / "FINAL.txt").write_text("x")
+    (prev / "VERIFY.txt").write_text("  [WARN] F · 외부 참값 연속 SKIP 4회(이 리포트 포함)\n", "utf-8")
+    _qa_env(repo, f"ALERT_WEBHOOK_URL={hook(200, b'{}')[0]}\n")
+    p = _run(repo)
+    assert p.returncode == 75, p.stdout + p.stderr
+    assert "[외부 참값]" in p.stdout and "연속 SKIP 4회" in p.stdout, p.stdout
 
 
 def test_cron_path_holiday_without_ticks_is_quiet(repo, hook):

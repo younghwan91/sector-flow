@@ -45,3 +45,22 @@ def test_weekly_selftest_can_never_leave_a_red_check():
     selftest = next(st for st in steps if "--self-test" in st)
     step_timeout = int(re.search(r"timeout-minutes: (\d+)", selftest).group(1))
     assert step_timeout < job_timeout - 10, (step_timeout, job_timeout)
+
+
+def test_weekly_selftest_runs_the_browser_smoke_strictly_without_blocking():
+    """주간 잡이 진짜 Chromium 웹 스모크를 돈다 — 건너뛰지 않게(REQUIRED), 실패는 이슈로, 종료코드는 tee 가 안 삼키게.
+
+    PR CI 에는 브라우저가 없어 브라우저 검사가 늘 건너뛴다. 이 스텝이 빠지거나 REQUIRED 가 빠지면 아무도 브라우저로
+    페이지를 열어 보지 않는데 모든 체크가 초록이다. 스텝이 잡을 빨갛게 만들 수 없는 것은 위 검사가 본다.
+    """
+    steps = re.split(r"^      - ", SELFTEST, flags=re.M)[1:]
+    smoke = next((st for st in steps if "pytest -q tests/test_web_smoke.py" in st), None)
+    assert smoke, "주간 잡에 웹 스모크 스텝이 없다"
+    assert "playwright install --with-deps chromium" in smoke
+    assert 'SF_WEB_SMOKE_REQUIRED: "1"' in smoke, "REQUIRED 없이는 Playwright 가 안 깔려도 건너뛰고 초록이다"
+    assert "set -o pipefail" in smoke, "| tee 가 pytest 의 실패 종료코드를 삼킨다"
+    issue = next(st for st in steps if "gh issue create" in st)
+    assert "steps.smoke.outcome == 'failure'" in issue, "스모크 실패가 이슈로 안 간다"
+    total = sum(int(x) for x in re.findall(r"^        timeout-minutes: (\d+)", SELFTEST, re.M))
+    job_timeout = int(re.search(r"^    timeout-minutes: (\d+)", SELFTEST, re.M).group(1))
+    assert total < job_timeout - 10, (total, job_timeout)   # 스텝 상한의 합이 잡 상한에 닿으면 잡이 시간 초과로 빨개진다

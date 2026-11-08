@@ -40,3 +40,44 @@ def test_web_templates_carry_the_basis_slot(tpl):
     html = (TEMPLATES / tpl).read_text("utf-8")
     assert html.count(BASIS_SLOT) == 1, f"{tpl} 에 자료 범위 자리표시가 한 번 있어야 한다"
     assert DATA_BASIS not in html, f"{tpl} 이 표지 글을 직접 적었다 — DATA_BASIS 한 곳에서 끼운다"
+
+
+def _tui_states():
+    """첫 화면 두 꼴 — '오늘' 블록이 있는 리포트와 없는 옛 리포트."""
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from test_tui_flow_view import _today_block
+
+    from sectorflow.tui.flow_view import State
+
+    base = {"asof": "2026-11-06", "sectors": ["전기/전자"], "markets": ["전체", "거래소", "코스닥"],
+            "blocks": {f"{w}|{m}": {"rows": []} for w in ("5", "20") for m in ("전체", "거래소", "코스닥")}}
+    return [State(dict(base, today=_today_block(["전기/전자", "건설"]))), State(base)]
+
+
+@pytest.mark.parametrize("width", [80, 60])
+def test_first_screen_states_the_data_basis_right_under_the_title(width):
+    """도움말 끝까지 안 내려가도 첫 화면 둘째 줄에 자료 범위가 보인다(리뷰 3차 D1-m5) — 옛 리포트에서도, 폭 60 에서도.
+
+    주입: 첫 화면에서 자료 범위 줄을 빼면 실패한다.
+    """
+    from sectorflow.basis import DATA_BASIS_SHORT
+    from sectorflow.tui.flow_view import banner_lines, banner_view
+
+    for st in _tui_states():
+        assert DATA_BASIS_SHORT in banner_lines(st, width)[1], banner_lines(st, width)[:3]
+        assert DATA_BASIS_SHORT in banner_view(st, width, 24)[1]          # 80x24 에서 스크롤 없이 보인다
+
+
+def test_numbers_today_panel_header_carries_the_short_basis_chip():
+    """웹 '오늘' 패널 머리(제목·시장 단추 줄)에 짧은 자료 범위 칩 — 자리표시로, 글을 직접 적지 않고.
+
+    주입: 칩을 빼거나 패널 밖(notes)으로 옮기면 실패한다.
+    """
+    from sectorflow.basis import BASIS_SHORT_SLOT, DATA_BASIS_SHORT
+
+    html = (TEMPLATES / "sector_numbers.html").read_text("utf-8")
+    assert html.count(BASIS_SHORT_SLOT) == 1 and DATA_BASIS_SHORT not in html
+    head = html[html.index('<section class="panel today"'):html.index('<div class="tgrid"')]
+    assert 'class="thead"' in head and BASIS_SHORT_SLOT in head, "칩이 '오늘' 패널 머리에 없다"

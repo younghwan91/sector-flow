@@ -111,6 +111,44 @@ def test_web_layer_catches_an_evidence_badge_outside_the_tested_scope(PD, tmp_pa
     assert "W/본표 증거 표지 = TUI 의 표지(창·주체 범위)" in fails, fails
 
 
+@node
+def test_today_sector_items_carry_the_same_day_return_on_web_and_terminal(PD, tmp_path):
+    """'오늘' 상위·하위 섹터 옆 그날 수익률(리뷰 3차 D3-m1) — 웹 패널과 TUI 첫 화면이 **같은 글자**인가.
+
+    반올림이 갈리는 값(1.005 — 이진수로 1.00499…, 그냥 toFixed(2) 면 1.00)을 섞는다. 종목 꼬리표를 뗀 항목을
+    시장·주체·상위/하위마다 맞춘다. 주입: 한쪽만 반올림을 바꾸거나 수익률을 빼면 실패한다.
+    """
+    import copy
+    import re
+
+    from sectorflow.tui import flow_view as FV
+    P, D = copy.deepcopy(PD[0]), copy.deepcopy(PD[1])
+    sec = max(D["today"]["sectors"]["거래소"], key=lambda s: (D["today"]["sectors"]["거래소"][s]["inst"] or {}).get("v") or 0)
+    for T in (D["today"], P["today"]):
+        T["sectors"]["거래소"][sec]["ret"] = 1.005
+    out = VR._w_run(VR._w_node(), str(_write(tmp_path, P, D) / "numbers.html"), VR._W_PROBE_NUMBERS)
+    strip = re.compile(r"\[[^\]]*\]")
+    n = 0
+    for m, cards in out["today"].items():
+        rank = next(c for c in cards if c["id"] == "t-rank")
+        st = FV.State(D)
+        st.mi = st.markets.index(m)
+        tui = FV.banner_lines(st, 400)
+        for (a, ko), side in ((x, sd) for x in FV.banner_actors(D, m) for sd in ("top", "bottom")):
+            web = [strip.sub("", i) for ln in rank["lines"] if ln.get("actor") == a and ln.get("side") == side
+                   for i in ln["items"]]
+            pre = f"   {ko} {'상위' if side == 'top' else '하위'}: "
+            line = next(ln for ln in tui if ln.startswith(pre))
+            term = [t.replace("-", "−") for t in strip.sub("", line[len(pre):]).rstrip().split(" · ")]
+            assert web == term, (m, a, side, web, term)
+            assert all(re.search(r" (?:[+−]\d+\.\d{2}%|—)$", t) for t in web), web
+            n += len(web)
+    assert n > 0
+    assert any(f"{sec} " in t and t.endswith(" +1.01%") for t in
+               (strip.sub("", i) for c in out["today"]["거래소"] if c["id"] == "t-rank" for ln in c["lines"]
+                for i in ln["items"])), "1.005 가 +1.01% 로 올라가지 않았다"
+
+
 def test_without_node_the_layer_fails_rather_than_passing(PD, tmp_path, monkeypatch):
     """node 가 없으면 **실패**다 — 그려 보지 않고 초록을 내면 웹을 본 것처럼 읽힌다."""
     P, D = PD
@@ -218,3 +256,56 @@ def test_web_layer_one_day_list_does_not_care_how_ties_are_ordered(PD, tmp_path)
     P2["names"]["175330"] = moved
     D2 = SN.build(P2)
     assert not [f for f in _w_fails(P2, D2, _write(tmp_path, P2, D2)) if "1일 종목 목록" in f]
+
+# ── 외부 참값 연속 SKIP — 옆 기준일 폴더의 VERIFY.txt 를 거슬러 세고 3번째부터 WARN(실패 아님) ──────────
+
+_SKIP_TXT = "  [OK  ] F · KRX 지수\n       SKIP 정규장 종가 대조 — 2026-11-0x regular_close 준비 안 됨({'pending': 9})\n"
+_RAN_TXT = "  [OK  ] F · 외부 참값: 2026-11-0x 자체 바구니(정규장 종가) ≈ KRX 지수 ±0.1%p   거래소 바구니 +1.000%\n"
+_PROV_TXT = "       (잠정 리포트 — 정규장 종가 대조는 확정 모드에서만)\n"
+
+
+def _skip_root(tmp_path, past: dict) -> str:
+    """기준일 → VERIFY.txt 내용(None 이면 폴더만). 검증 중인 폴더(``2026-11-06.building.1``) 경로를 돌려준다."""
+    for day, text in past.items():
+        (tmp_path / day).mkdir()
+        if text is not None:
+            (tmp_path / day / "VERIFY.txt").write_text(text, "utf-8")
+    (tmp_path / "2026-11-06.building.1").mkdir()
+    (tmp_path / "2026-11-09").mkdir()                       # 뒤 기준일은 세지 않는다
+    (tmp_path / "2026-11-09" / "VERIFY.txt").write_text(_SKIP_TXT, "utf-8")
+    return str(tmp_path / "2026-11-06.building.1")
+
+
+def _skip_run(monkeypatch, folder):
+    monkeypatch.setattr(VR, "REPORT_DIR", folder)
+    VR.WARNS.clear()
+    return _ctx_fails(rc_src="pending")
+
+
+def test_external_truth_skip_streak_counts_back_through_sibling_reports(tmp_path):
+    """연속 SKIP 수 — 잠정·리포트 없는 날은 건너뛰고(세지도 끊지도 않는다), 대조를 한 날에서 멈춘다.
+
+    주입: 대조한 날에서 멈추지 않거나, 뒤 기준일까지 세면 실패한다.
+    """
+    folder = _skip_root(tmp_path, {"2026-10-30": _SKIP_TXT, "2026-11-02": _RAN_TXT, "2026-11-03": _SKIP_TXT,
+                                   "2026-11-04": _PROV_TXT, "2026-11-05": _SKIP_TXT, "2026-10-29": None})
+    assert VR.external_skip_streak(folder, "2026-11-06") == 2
+    assert VR.external_skip_streak(None, "2026-11-06") == 0
+    assert VR.external_skip_streak(str(tmp_path / "nope" / "2026-11-06"), "2026-11-06") == 0
+
+
+def test_third_consecutive_external_truth_skip_warns_but_does_not_fail(tmp_path, monkeypatch, capsys):
+    """확정 리포트가 외부 참값 대조를 3번 연달아 건너뛰면 [WARN] — VERIFY_FAILED 는 아니다(리뷰 3차 D1-m3).
+
+    주입: 경고를 안 내거나, 경고를 실패(FAILS)로 올리거나, 두 번째에서 내면 실패한다.
+    """
+    (tmp_path / "a").mkdir()
+    two = _skip_root(tmp_path / "a", {"2026-11-05": _SKIP_TXT, "2026-11-04": _RAN_TXT})
+    assert _skip_run(monkeypatch, two) == [] and VR.WARNS == []
+    out = capsys.readouterr().out
+    assert "외부 참값 연속 SKIP 2회" in out and "[WARN]" not in out, out
+    (tmp_path / "b").mkdir()
+    three = _skip_root(tmp_path / "b", {"2026-11-05": _SKIP_TXT, "2026-11-04": _PROV_TXT, "2026-11-03": _SKIP_TXT})
+    assert _skip_run(monkeypatch, three) == [], "연속 SKIP 은 실패가 아니다"
+    out = capsys.readouterr().out
+    assert VR.WARNS and "[WARN] F · 외부 참값 연속 SKIP 3회" in out, out

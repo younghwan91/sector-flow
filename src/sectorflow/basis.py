@@ -13,6 +13,12 @@ DATA_BASIS = "자료 범위: KRX 단독(수급·거래량·종가) — 넥스트
 #: 웹 템플릿의 자리표시 — ``sector_flow.py``·``sector_numbers.py`` 가 ``__DATA__`` 와 같이 갈아 끼운다.
 BASIS_SLOT = "__BASIS__"
 
+#: 첫 화면(TUI '오늘의 수급')과 웹 '오늘' 패널 머리에 붙는 짧은 표지 — 도움말·notes 까지 안 내려가도 보이게
+#: (2026-11-08 리뷰 3차 D1-m5). 뜻은 :data:`DATA_BASIS` 와 같다.
+DATA_BASIS_SHORT = "자료 범위: KRX 단독·NXT 제외"
+#: 수치표 템플릿의 짧은 표지 자리표시 — ``sector_numbers.py`` 가 갈아 끼운다.
+BASIS_SHORT_SLOT = "__BASIS_SHORT__"
+
 #: TUI 도움말 끝에 붙는 절(``sw-flow``·``sw-ledger`` 공통). 폭 80 에서 안 잘리게 짧게 끊는다.
 BASIS_HELP = [
     ("", ""),

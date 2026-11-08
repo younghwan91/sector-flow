@@ -15,7 +15,7 @@ import unicodedata
 from collections import namedtuple
 from datetime import date
 
-from sectorflow.basis import BASIS_HELP
+from sectorflow.basis import BASIS_HELP, DATA_BASIS_SHORT
 
 #: East Asian Width 가 'A'(Ambiguous) 인 글자를 **두 칸으로 센다**.
 #:
@@ -1394,10 +1394,21 @@ def _stock_tag(stocks: list, side: str, k: int) -> str:
     return "[" + "·".join(f"{clip(n, 10)} {fmt_amt(v)}" for n, v in pick) + "]" if pick else ""
 
 
-def _ranked_line(prefix: str, ranked: list, stocks: dict, side: str, width: int) -> str:
-    """섹터 3개 + 그 주체의 종목 — 폭이 모자라면 종목 수를 2 → 1 → 0 으로 줄인다(섹터는 안 버린다)."""
+def sector_day_ret(d: dict, market: str) -> dict:
+    """섹터 → 그날 수익률[%] (페이로드 ``today.sectors[시장][섹터].ret`` — 1일 창 수익률 열과 같은 값)."""
+    secs = (((d.get("today") or {}).get("sectors") or {}).get(market)) or {}
+    return {s: v.get("ret") for s, v in secs.items()}
+
+
+def _ranked_line(prefix: str, ranked: list, stocks: dict, side: str, width: int, rets: "dict | None" = None) -> str:
+    """섹터 3개(금액·%ile·그날 수익률) + 그 주체의 종목 — 폭이 모자라면 종목 수를 2 → 1 → 0 으로 줄인다.
+
+    수익률은 섹터 이름 옆 금액이 "얼마나 움직인 날"의 것인지 같이 읽으라고 단다(리뷰 3차 D3-m1) —
+    웹 '오늘' 패널과 같은 반올림(:func:`fmt_pct`, 소수 2자리, 0.5 는 0 에서 먼 쪽)이다.
+    """
+    rets = rets or {}
     for k in range(BANNER_STOCKS, -1, -1):
-        items = [f"{s} {fmt_amt(v)}{_pct_tag(p)}{_stock_tag(stocks.get(s) or [], side, k)}"
+        items = [f"{s} {fmt_amt(v)}{_pct_tag(p)} {_fmt_ret(rets.get(s))}{_stock_tag(stocks.get(s) or [], side, k)}"
                  for s, v, p in ranked]
         line = prefix + " · ".join(items)
         if cell_len(line) <= width or k == 0:
@@ -1491,18 +1502,19 @@ def _banner_today(st: State, width: int) -> list[str]:
     lines.append(pad("", width))
     actors = banner_actors(d, mk)
     ranked_lines = []
+    rets = sector_day_ret(d, mk)
     for a, ko in actors:
         ranked = _today_rank(d, mk, a)
         stocks = day_stocks(d, mkts, a)
-        ranked_lines.append(_ranked_line(f"   {ko} 상위: ", ranked[:3], stocks, "buy", width))
-        ranked_lines.append(_ranked_line(f"   {ko} 하위: ", ranked[::-1][:3], stocks, "sell", width))
+        ranked_lines.append(_ranked_line(f"   {ko} 상위: ", ranked[:3], stocks, "buy", width, rets))
+        ranked_lines.append(_ranked_line(f"   {ko} 하위: ", ranked[::-1][:3], stocks, "sell", width, rets))
     # 종목 꼬리표가 하나도 안 들어간 폭이면 제목에서도 `[ ]` 설명을 뺀다 — 없는 것을 설명하지 않는다.
     tags = any("[" in ln for ln in ranked_lines)
     lines.append(pad(_first_fitting(width, ([
-        f" 오늘 섹터 순매수[억(1년%ile)] — {mk} · 금액 순 · [ ] = 그 주체의 그날 종목(1 키로 1일 창)",
-        f" 오늘 섹터 순매수[억(1년%ile)] — {mk} · 금액 순 · [ ]=종목"] if tags else [
-        f" 오늘 섹터 순매수[억(1년%ile)] — {mk} · 금액 순 · 1 키로 1일 창(그날 종목)"]) + [
-        f" 오늘 섹터 순매수[억(1년%ile)] — {mk}"]), width))
+        f" 오늘 섹터 순매수[억(1년%ile)] 1일 수익률[%] — {mk} · 금액 순 · [ ] = 그 주체의 그날 종목(1 키로 1일 창)",
+        f" 오늘 섹터 순매수[억(1년%ile)] 수익률[%] — {mk} · 금액 순 · [ ]=종목"] if tags else [
+        f" 오늘 섹터 순매수[억(1년%ile)] 1일 수익률[%] — {mk} · 금액 순 · 1 키로 1일 창(그날 종목)"]) + [
+        f" 오늘 섹터 순매수[억(1년%ile)] 수익률[%] — {mk}"]), width))
     lines += ranked_lines
     tag = "(잠정) " if prov else ""
     for a, ko in actors:
@@ -1565,6 +1577,11 @@ def _banner_title(d: dict, width: int, mark: str = "") -> str:
                                       f" 오늘의 수급 {chip}{mark}"]), width)
 
 
+def basis_line(width: int) -> str:
+    """첫 화면 둘째 줄 — 자료 범위(KRX 단독·NXT 제외). 도움말 끝 절까지 안 내려가도 보이게(리뷰 3차 D1-m5)."""
+    return pad(_first_fitting(width, [f" {DATA_BASIS_SHORT} — 근거는 ? 도움말 끝", f" {DATA_BASIS_SHORT}"]), width)
+
+
 def banner_lines(st: State, width: int) -> list[str]:
     """시작 배너 — 표를 그리기 전에 뜨는 **사실 요약**("오늘의 수급"). `o` 로 다시 연다.
 
@@ -1577,7 +1594,7 @@ def banner_lines(st: State, width: int) -> list[str]:
     마지막 줄은 언제나 :data:`BANNER_DISCLAIMER` 다(:func:`banner_view` 가 높이와 무관하게 남긴다).
     """
     d = st.d
-    lines = [_banner_title(d, width)]
+    lines = [_banner_title(d, width), basis_line(width)]
     lines += _banner_today(st, width) if st.has_today else _banner_20d(st, width)
     lines.append(pad("", width))
     ko = ACTORS[st.ai][1]
