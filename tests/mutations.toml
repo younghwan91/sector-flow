@@ -5466,6 +5466,9 @@ replace = "  font-size:10.5px; letter-spacing:.04em; text-transform:uppercase; b
 id = "viewer-amt-loses-rhu"
 why = "뷰어 금액이 `toLocaleString` 반올림으로 돌아가 수치표·TUI 와 갈린다(금속 +971 vs +972)"
 guards = ["tests/test_web_render.py::test_web_layer_reads_the_whole_viewer_and_is_green_when_rounding_is_one_rule"]
+file = "scripts/templates/sector_flow.html"
+find = "const amt=n=>sgn(n)+Math.abs(RHU(n)).toLocaleString(\"ko-KR\",{maximumFractionDigits:0});"
+replace = "const amt=n=>sgn(n)+Math.abs(n).toLocaleString(\"ko-KR\",{maximumFractionDigits:0});"
 
 [[mutation]]
 id = "verify-minus-swaps-name-hyphens"
@@ -5582,3 +5585,11 @@ guards = ["tests/test_web_render.py::test_viewer_rounds_like_the_tui"]
 file = "scripts/templates/sector_flow.html"
 find = "const pp =n=>sgn(n)+Math.abs(RHU(n,2)).toFixed(2);"
 replace = "const pp =n=>sgn(n)+Math.abs(n).toFixed(2);"
+
+[[mutation]]
+id = "render-smoke-g-expects-binary-rounding"
+why = "렌더 스모크가 G 를 .2f 로 기대해 TUI 가 rhu 로 맞게 그린 0.60(0.595)을 어긋남으로 REJECT 한다(2026-10-21 재구성)"
+guards = ["tests/test_verify_merge.py::test_render_smoke_expects_the_g_column_rounded_like_the_tui"]
+file = "scripts/verify_merge.py"
+find = "    \"G\": (\"G\", \"rhu2\"), \"선정\": (\"pick\", \"f2\"),"
+replace = "    \"G\": (\"G\", \"f2\"), \"선정\": (\"pick\", \"f2\"),"
