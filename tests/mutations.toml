@@ -1400,9 +1400,9 @@ id = "web-serves-the-payload"
 why = "웹 서비스가 내보내는 파일 목록이 넓어지면 페이로드·로그가 밖으로 나간다"
 guards = ["tests/test_serve_reports.py::test_only_the_report_pages_are_served"]
 file = "scripts/serve_reports.py"
-find = """    "INCOMPLETE.txt": "text/plain; charset=utf-8",
+find = """    "FINAL.txt": "text/plain; charset=utf-8",
 }"""
-replace = """    "INCOMPLETE.txt": "text/plain; charset=utf-8",
+replace = """    "FINAL.txt": "text/plain; charset=utf-8",
     "payload.json": "application/json",
 }"""
 
@@ -1427,8 +1427,8 @@ id = "web-index-hides-failed-verify"
 why = "목록이 검증 실패한 날을 표시하지 않는다"
 guards = ["tests/test_serve_reports.py::test_index_marks_latest_failed_and_incomplete"]
 file = "scripts/serve_reports.py"
-find = """        if has["VERIFY_FAILED.txt"]:"""
-replace = """        if False:"""
+find = """    if has["VERIFY_FAILED.txt"]:"""
+replace = """    if False:"""
 
 [[mutation]]
 id = "web-tailscale-down-alerts"
