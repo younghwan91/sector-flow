@@ -1910,6 +1910,14 @@ def _f_today_context(P: dict, cur, ph: str, meta: dict, px: dict, cap_at) -> Non
         # 준비 안 됨은 실패가 아니다 — 다음날 수급이 들어와야 채워지는 뷰다. 사유를 남긴다.
         print(f"       SKIP 정규장 종가 대조 — {t1} regular_close 준비 안 됨({srcs})")
         return
+    # 재구성은 유니버스가 **지금의** stocks 마스터다. 그 뒤 폐지된 종목은 지수에는 있고 바구니에는 없어 같은 것을
+    # 맞대는 대조가 아니다 — 2026-09-15 재구성: 09-14 에 폐지 예정 코스닥 종목이 −14~−34% 떨어져 바구니가 지수보다
+    # 0.115%p 높았다. 그런 날은 실패가 아니라 사유를 남기고 건너뛴다. 평소 리포트(마스터가 그날 것)는 그대로 본다.
+    gone = sorted({c for (c, d) in rc if d == t1} - set(meta))
+    if P.get("rebuilt") and gone:
+        print(f"       SKIP 정규장 종가 대조 — 재구성: {t1} 에 지금 stocks 마스터에 없는(그 뒤 폐지) 종목 "
+              f"{len(gone)}개가 있어 바구니와 지수의 종목이 다르다({', '.join(gone[:5])})")
+        return
     num: dict = {}
     den: dict = {}
     for c, (m, _sec) in meta.items():

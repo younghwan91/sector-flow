@@ -165,6 +165,22 @@ def test_external_truth_skips_with_a_reason_when_regular_close_is_not_ready(caps
     assert "SKIP 정규장 종가 대조" in capsys.readouterr().out
 
 
+def test_external_truth_skips_a_rebuilt_day_whose_universe_has_since_lost_names(capsys):
+    """재구성은 지금의 stocks 마스터로 바구니를 만든다 — 그 뒤 폐지된 종목이 그날 지수에 있으면 같은 것을 맞대는
+    대조가 아니다(2026-09-15 재구성의 09-14: 폐지 예정 코스닥 종목 −14~−34%, 바구니가 지수보다 0.115%p 높았다)."""
+    def run(rebuilt: bool):
+        con, P, meta, px = _ctx_db(idx_t1=100.5)                     # 바구니 +1.0% vs 지수 +0.5% — 갈린다
+        con.executemany("INSERT INTO regular_close VALUES (?,?,?,?)",
+                        [("Z", "2026-11-04", 100.0, "identity"), ("Z", "2026-11-05", 60.0, "identity")])
+        P["rebuilt"] = rebuilt
+        VR.FAILS.clear()
+        VR._f_today_context(P, con.cursor(), "?", meta, px, lambda c, d, p: None if p is None else p * 100.0)
+        return [f for f in VR.FAILS if "외부 참값" in f]
+    assert run(rebuilt=True) == []
+    assert "그 뒤 폐지" in capsys.readouterr().out
+    assert run(rebuilt=False), "평소 리포트에서는 마스터 밖 종목이 있어도 갈림을 실패로 본다"
+
+
 def test_krx_index_return_is_recomputed_from_the_db():
     con, P, meta, px = _ctx_db()
     P["today"]["krx_index"]["거래소"]["ret"]["1"] += 0.5

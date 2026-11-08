@@ -4903,3 +4903,12 @@ guards = ["tests/test_web_render.py::test_web_layer_one_day_list_does_not_care_h
 file = "scripts/verify_report.py"
 find = "                    peers = [(n, _sub(iv, pf)) for n, v2, iv, pf in want if round(v2, 1) == round(v, 1)]"
 replace = "                    peers = [(_n, _sub(_i, _p))]"
+
+[[mutation]]
+id = "verify-external-truth-ignores-universe-drift"
+why = """재구성 리포트의 정규장 종가 대조가 그 뒤 폐지된 종목(지수에는 있고 지금 마스터에는 없다)을 무시하고 맞대
+검증 실패를 낸다 — 코드 결함이 아니라 유니버스가 다른 비교다(2026-09-15 재구성)."""
+guards = ["tests/test_web_render.py::test_external_truth_skips_a_rebuilt_day_whose_universe_has_since_lost_names"]
+file = "scripts/verify_report.py"
+find = "    if P.get(\"rebuilt\") and gone:"
+replace = "    if False:"
