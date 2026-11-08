@@ -26,7 +26,7 @@
   Airflow 로그로 확인하고(`scripts/finalize_done.py`) 전날을 확정치로 다시 만든다(`FINAL.txt`). 확인 못 하면 75, 이미 확정이면 0 으로 건너뛴다. 완전성 관문(`scripts/completeness_gate.py`)이 막으면
   폴더에 `INCOMPLETE.txt` 만 남기고 75 로 끝나며(`latest` 유지) 다음 실행이 그 기준일을 다시 만든다. `KR_QUANT_FORCE` 도 관문은 못 끈다.
   이상 종료는 `scripts/cron_run.sh` 가 quant-airflow `alert.sh` 로 알리고, 크론 로그가 5MB 를 넘으면 `.1` 로 돌린다. 평일 20:30 `scripts/freshness_check.sh` 가 결과(`latest`·알림 웹훅)를 본다.
-  상한: 크론 `timeout 40m`, `reports/.report.lock`(겹치면 75), DB 접속 10초·문장 10분(`storage.connect`). 알림별 대응은 README §3.1.
+  상한: 크론 `timeout 40m`, `reports/.report.lock`(겹치면 75), DB 접속 10초·문장 10분(`storage.connect`). 알림별 대응은 `docs/runbook.md`.
 - 이 레포는 PRIVATE 다. 공개 전환은 사용자가 정한다.
 
 ## 데이터 함정 (kr_quant)

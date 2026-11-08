@@ -191,7 +191,7 @@ def _skip(reason: str) -> dict:
 
 
 def _say(block: dict) -> None:
-    """빌드 로그 한 줄 — 운영자 문구는 README §3.1 런북과 짝이다(tests/test_runbook.py)."""
+    """빌드 로그 한 줄 — 운영자 문구는 docs/runbook.md과 짝이다(tests/test_runbook.py)."""
     if block.get("status") != "ok":
         print(f"⚠️ [KRX 공식 대조] SKIP — {block.get('reason')}. 리포트는 그대로 만든다", file=sys.stderr)
         return

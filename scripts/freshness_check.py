@@ -122,7 +122,7 @@ def check_prev_final(root: Path, prev: str | None) -> tuple[int, list[str]]:
     return WARN, [f"⚠️ [확정] 전 거래일({prev})이 확정되지 않았다 — {state}(FINAL.txt 없음). 08:20 확정 모드가 "
                   "안 돌았거나 daily_finalize 를 확인하지 못했다.",
                   f"    reports/cron.log 의 08:20 줄과 `uv run python scripts/finalize_done.py --asof {prev}` 를 본다. "
-                  "다음 거래일 수집이 들어와 08:20 은 이 날을 다시 안 본다 — 지난 기준일 재구성으로 다시 만든다(README §3.1)."]
+                  "다음 거래일 수집이 들어와 08:20 은 이 날을 다시 안 본다 — 지난 기준일 재구성으로 다시 만든다(docs/runbook.md)."]
 
 
 def check_slo(root: Path, prev: str | None) -> tuple[int, list[str]]:
@@ -279,7 +279,7 @@ def check_webhook(webhook: str | None, *, probe_fn=probe) -> tuple[int, list[str
 def heartbeat(url: str, ok: bool, *, probe_fn=probe, why: str = "점검이 깨끗하지 않다") -> list[str]:
     """죽은 사람 스위치 — ``ok`` 인 날에만 핑(``why`` 는 안 보낸 이유). 종료코드는 바꾸지 않는다."""
     if not url:
-        return ["[하트비트] HEARTBEAT_URL 없음 — 외부 감시가 꺼져 있다(주소만 넣으면 동작한다, README §3.1)"]
+        return ["[하트비트] HEARTBEAT_URL 없음 — 외부 감시가 꺼져 있다(주소만 넣으면 동작한다, docs/runbook.md)"]
     if not ok:
         return [f"[하트비트] 안 보낸다 — {why}(외부 감시가 핑이 빈 것을 알린다)"]
     status, _, why = probe_fn(url)

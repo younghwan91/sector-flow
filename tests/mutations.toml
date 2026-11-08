@@ -4433,7 +4433,7 @@ replace = """    dead_hook = False"""
 id = "runbook-row-missing"
 why = "알림 문구에 할 일 줄이 없으면 새벽에 코드를 읽어야 한다"
 guards = ["tests/test_runbook.py::test_every_operator_message_has_a_runbook_row"]
-file = "README.md"
+file = "docs/runbook.md"
 find = "| `report 실패 (rc=1)`, 본문 `기준일이 없다` |"
 replace = "| `report 실패 (rc=1)`, 본문 `기준일 없음` |"
 
@@ -5793,7 +5793,7 @@ why = "원장 기록 실패(디스크·권한)가 예외로 올라가면 freshne
 guards = ["tests/test_ops_ledger.py::test_append_failure_is_a_stderr_note_not_a_crash"]
 file = "scripts/ops_ledger.py"
 find = """        print(f"⚠️ [원장] 운영 사건을 기록하지 못했다({type(e).__name__}) — 리포트·점검은 계속한다. "
-              "reports/events.jsonl 의 디스크·권한을 보라(README §3.1).", file=sys.stderr)
+              "reports/events.jsonl 의 디스크·권한을 보라(docs/runbook.md).", file=sys.stderr)
         return False"""
 replace = """        raise"""
 
@@ -5980,7 +5980,7 @@ why = "기록 실패가 종료코드로 새 나가면 원장이 리포트·크�
 guards = ["tests/test_ops_ledger.py::test_ledger_sh_rotation_matches_python_and_failure_is_quiet"]
 file = "scripts/_ledger.sh"
 find = '''  if ! { printf '%s\n' "$line" >> "$f"; } 2>/dev/null; then
-    echo "[$(date '+%F %T')] [원장] 운영 사건을 기록하지 못했다($f) — 리포트·점검은 계속한다. 디스크·권한을 보라(README §3.1)." >&2
+    echo "[$(date '+%F %T')] [원장] 운영 사건을 기록하지 못했다($f) — 리포트·점검은 계속한다. 디스크·권한을 보라(docs/runbook.md)." >&2
   fi
   return 0'''
 replace = '''  printf '%s\n' "$line" >> "$f"'''
@@ -7419,3 +7419,11 @@ guards = ["tests/test_demo.py::test_batch_without_db_points_back_to_the_demo"]
 file = "scripts/_env.sh"
 find = "합성 데이터는 uv run sw-flow --demo, 받은 폴더는 --dir <폴더>(README §4.3)."
 replace = "받은 폴더를 쓴다."
+
+[[mutation]]
+id = "alert-points-at-the-old-runbook-place"
+why = "운영 알림 문구가 런북의 옛 자리(README §3.1)를 가리킨다 — 장애 중에 없는 절을 찾는다"
+guards = ["tests/test_runbook.py::test_runbook_stays_out_of_the_readme_and_pointers_follow_it"]
+file = "scripts/_ledger.sh"
+find = "디스크·권한을 보라(docs/runbook.md)."
+replace = "디스크·권한을 보라(README §3.1)."
