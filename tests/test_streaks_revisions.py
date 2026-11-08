@@ -295,6 +295,210 @@ def test_after_the_swap_the_provisional_recount_is_skipped_not_failed(tmp_path, 
     assert "바꿔 끼운 뒤다" in capsys.readouterr().out
 
 
+# ── 문턱 경계 — 생산자와 검증기가 같은 규칙인가 ─────────────────────────────
+
+def test_a_change_of_exactly_the_tolerance_is_rounding_for_producer_and_verifier(tmp_path):
+    """7.86 − 7.81 = 0.05000000000000071. 날값으로 재면 0.05 칸이 실리고 반올림한 ``diff`` 를 보는 검증기가 거부했다."""
+    assert abs(7.86 - 7.81) > sf.FINAL_DIFF_TOL and round(7.86 - 7.81, 2) == sf.FINAL_DIFF_TOL
+    _prev, new = PT._prev_and_cur()
+    asof = new["dates"][-1]
+    old = json.loads(json.dumps(new))
+    moved, kept, raw_over, raw_under = set(), set(), 0, 0
+    steps = (0.05, -0.05, 0.06, -0.06, 0.04, 0.0)
+    i = 0
+    for m in old["markets"]:
+        for s in old["sectors"]:
+            if not sf._present(old, [m], s):
+                continue
+            for src, a in (("flows", "inst"), ("flows", "forgn"), ("detail", "invtrt")):
+                d = steps[i % len(steps)]
+                i += 1
+                ser = old[src][m][s][a]
+                ser[-1] = round(new[src][m][s][a][-1] - d, 2)
+                raw = abs(new[src][m][s][a][-1] - ser[-1])
+                if round(raw, 2) == 0.05:
+                    raw_over += raw > 0.05
+                    raw_under += raw <= 0.05
+                (moved if abs(d) > 0.05 else kept).add((m, s, a))
+    assert raw_over and raw_under, "이 입력은 부동소수 경계의 양쪽을 다 건드려야 한다"
+    PT._write(tmp_path, asof, old)
+    fd, why = sf.final_diff_block(new, str(tmp_path))
+    assert why is None
+    assert {(r["market"], r["sector"], r["actor"]) for r in fd["changed"]} == moved
+    assert all(abs(r["diff"]) > sf.FINAL_DIFF_TOL for r in fd["changed"])
+    assert not kept & moved
+    new.update(final=True, final_diff=fd, final_diff_reason=why)
+    assert _fails(new, tmp_path / f"{asof}.building.3") == []
+
+
+# ── 확정 위에 다시 만들 때 — 첫 확정의 잠정 대비를 잇는다 ────────────────────
+
+def _published_first_final(tmp_path: Path, stamp: str = "08:21"):
+    """첫 확정을 게시한 뒤의 루트 — 잠정 폴더가 확정으로 바뀌어 있다. (첫 확정 P, 재시도 페이로드 Q, 빌드 폴더)."""
+    P, build = _final_build(tmp_path)
+    asof = P["dates"][-1]
+    dest = tmp_path / asof
+    _kst_mtime(dest / "payload.json", f"{asof} 18:12")
+    P["final_diff"], _ = sf.final_diff_block(P, str(tmp_path))
+    assert P["final_diff"]["base_built"] == f"{asof} 18:12"
+    (dest / "payload.json").write_text(json.dumps(P, ensure_ascii=False), "utf-8")
+    (dest / "FINAL.txt").write_text("확정\n", "utf-8")
+    _kst_mtime(dest / "payload.json", f"{asof} {stamp}")
+    Q = json.loads(json.dumps(P))
+    for k in ("final", "final_diff", "final_diff_reason"):
+        Q.pop(k, None)
+    return P, Q, build
+
+
+def _rebuild(Q: dict, root: Path, build: Path) -> dict:
+    Q["final"] = True
+    Q["final_diff"], Q["final_diff_reason"] = sf.final_diff_block(Q, str(root))
+    fj = build / "final_diff.json"
+    fj.unlink(missing_ok=True)
+    if Q["final_diff"] is not None:
+        fj.write_text(json.dumps(Q["final_diff"], ensure_ascii=False), "utf-8")
+    return Q
+
+
+def test_retry_over_a_final_report_inherits_the_first_finals_record(tmp_path):
+    """10:20 재시도(검증 실패)·강제 재생성 — 확정끼리 견줘 '0칸' 이라 적지 않고 첫 확정의 기록을 잇는다."""
+    P, Q, build = _published_first_final(tmp_path)
+    asof = P["dates"][-1]
+    first = P["final_diff"]
+    assert first["n_changed"] >= 2
+    _rebuild(Q, tmp_path, build)
+    F = Q["final_diff"]
+    assert Q["final_diff_reason"] is None and F["base_final"] is False
+    assert F["n_changed"] == first["n_changed"] and F["changed"] == first["changed"]
+    assert F["base_built"] == f"{asof} 18:12" and F["inherited_from"] == f"{asof} 08:21"
+    assert F["cells_1d"] == first["cells_1d"]
+    assert _fails(Q, build) == []
+    # 수정 폭은 그날을 잠정 대비 그대로 센다 — 건너뛰지 않는다.
+    R = sf.revision_stats(Q, str(tmp_path))
+    assert asof in R["dates"] and asof not in R["skipped"]
+    # 사람이 읽는 줄이 이어받았다고 적는다.
+    assert f"첫 확정({asof} 08:21 KST)의 기록을 이어받았다" in sf.final_diff_text(Q)
+    # 한 번 더 — 첫 확정 시각이 그대로 남는다.
+    dest = tmp_path / asof
+    (dest / "payload.json").write_text(json.dumps(Q, ensure_ascii=False), "utf-8")
+    _kst_mtime(dest / "payload.json", f"{asof} 10:21")
+    Q2 = _rebuild(json.loads(json.dumps(Q)), tmp_path, build)
+    assert Q2["final_diff"] == F
+    assert _fails(Q2, build) == []
+
+
+def test_retry_says_no_comparison_when_the_first_final_left_no_record(tmp_path):
+    P, Q, build = _published_first_final(tmp_path)
+    asof = P["dates"][-1]
+    dest = tmp_path / asof
+    P["final_diff"], P["final_diff_reason"] = None, "재구성 리포트다"
+    (dest / "payload.json").write_text(json.dumps(P, ensure_ascii=False), "utf-8")
+    _rebuild(Q, tmp_path, build)
+    assert Q["final_diff"] is None
+    assert Q["final_diff_reason"].startswith(sf.REFINAL_WHY) and "첫 확정: 재구성 리포트다" in Q["final_diff_reason"]
+    assert "비교 없음" in sf.final_diff_text(Q) and "0칸" not in sf.final_diff_text(Q)
+    assert _fails(Q, build) == []
+    assert not (build / "final_diff.json").exists()
+    # 재시도가 거듭돼도 이유가 겹겹이 붙지 않는다.
+    (dest / "payload.json").write_text(json.dumps(Q, ensure_ascii=False), "utf-8")
+    why = Q["final_diff_reason"]
+    Q2 = _rebuild(json.loads(json.dumps(Q)), tmp_path, build)
+    assert Q2["final_diff_reason"] == why
+
+
+def test_retry_does_not_inherit_a_final_to_final_record(tmp_path):
+    """옛 코드가 확정끼리 견준 기록(``base_final`` 참)은 잠정 대비가 아니다 — 이으면 '0칸' 이 되살아난다."""
+    P, Q, build = _published_first_final(tmp_path)
+    dest = tmp_path / P["dates"][-1]
+    P["final_diff"].update(base_final=True, changed=[], n_changed=0)
+    (dest / "payload.json").write_text(json.dumps(P, ensure_ascii=False), "utf-8")
+    _rebuild(Q, tmp_path, build)
+    assert Q["final_diff"] is None and Q["final_diff_reason"].startswith(sf.REFINAL_WHY)
+    assert _fails(Q, build) == []
+
+
+def test_retry_says_no_comparison_when_values_moved_after_the_first_final(tmp_path):
+    """첫 확정 뒤 값이 또 바뀌면 그 기록의 확정값이 이 리포트와 다르다 — 잇지 않고 이유를 적는다."""
+    P, Q, build = _published_first_final(tmp_path)
+    Q["flows"]["코스닥"]["금융"]["inst"][-1] = round(Q["flows"]["코스닥"]["금융"]["inst"][-1] + 0.01, 2)
+    _rebuild(Q, tmp_path, build)
+    assert Q["final_diff"] is None and "값이 또 바뀌어" in Q["final_diff_reason"]
+    assert vr._vt_nothing_to_inherit(Q, P)
+    # 극단 목록만 움직인 경우도 같다 — 머리 칸(1·5일)이 같아도 그 기록의 들고 남이 낡는다.
+    (tmp_path / "x").mkdir()
+    P2, Q2, build2 = _published_first_final(tmp_path / "x")
+    ser = Q2["flows"]["거래소"]["반도체"]["inst"]
+    ser[:-5] = [max(ser) + 100.0 + i for i in range(len(ser) - 5)]    # 5일 창 밖 — 오늘 값의 1년 순위만 바뀐다
+    assert sf._head_cells(Q2) == sf._head_cells(P2) and sf.extremes_change(Q2, P2)
+    _rebuild(Q2, tmp_path / "x", build2)
+    assert Q2["final_diff"] is None and "값이 또 바뀌어" in Q2["final_diff_reason"]
+    assert vr._vt_nothing_to_inherit(Q2, P2)
+
+
+def test_retry_drops_boundary_rows_left_by_the_old_rule(tmp_path):
+    """고치기 전 코드가 쓴 첫 확정(문턱과 같은 칸 포함) 위의 재시도가 영영 검증에 걸리면 안 된다."""
+    P, Q, build = _published_first_final(tmp_path)
+    dest = tmp_path / P["dates"][-1]
+    want = P["final_diff"]["n_changed"]
+    ser = P["flows"]["거래소"]["화학"]["inst"]
+    P["final_diff"]["changed"].append({"market": "거래소", "sector": "화학", "actor": "inst", "win": 1,
+                                       "old": round(ser[-1] - 0.05, 2), "new": ser[-1], "diff": 0.05})
+    P["final_diff"]["n_changed"] += 1
+    (dest / "payload.json").write_text(json.dumps(P, ensure_ascii=False), "utf-8")
+    _rebuild(Q, tmp_path, build)
+    assert Q["final_diff"]["n_changed"] == want
+    assert _fails(Q, build) == []
+
+
+def _rr_zero(Q, b):
+    """고치기 전 동작 — 확정끼리 견줘 0칸."""
+    Q["final_diff"].update(base_final=True, changed=[], n_changed=0)
+    Q["final_diff"].pop("inherited_from")
+
+
+def _rr_cells(Q, b):
+    Q["final_diff"]["cells_1d"][0][3] = (Q["final_diff"]["cells_1d"][0][3] or 0.0) + 5.0
+
+
+def _rr_count(Q, b):
+    Q["final_diff"]["changed"].pop()
+    Q["final_diff"]["n_changed"] -= 1
+
+
+def _rr_first_time(Q, b):
+    Q["final_diff"]["inherited_from"] = "2026-01-01 00:00"
+
+
+def _rr_values(Q, b):
+    Q["flows"]["코스닥"]["금융"]["inst"][-1] = round(Q["flows"]["코스닥"]["금융"]["inst"][-1] + 0.01, 2)
+
+
+def _rr_json(Q, b):
+    (b / "final_diff.json").write_text(json.dumps({"cells_1d": []}), "utf-8")
+
+
+def _rr_none(Q, b):
+    Q["final_diff"], Q["final_diff_reason"] = None, "어쩌다"
+    (b / "final_diff.json").unlink()
+
+
+@pytest.mark.parametrize("corrupt, want", [
+    (_rr_zero, "T/확정 재시도 — 잠정 대비가 첫 확정의 기록 그대로인가(확정끼리 견주지 않았는가)"),
+    (_rr_cells, "T/확정 재시도 — 잠정 대비가 첫 확정의 기록 그대로인가(확정끼리 견주지 않았는가)"),
+    (_rr_count, "T/확정 재시도 — 잠정 대비가 첫 확정의 기록 그대로인가(확정끼리 견주지 않았는가)"),
+    (_rr_first_time, "T/확정 재시도 — 첫 확정 시각이 옆 폴더의 것인가"),
+    (_rr_values, "T/확정 재시도 — 이어받은 칸의 값이 첫 확정과 같은가"),
+    (_rr_json, "T/final_diff.json(다음 리포트들의 수정 폭 원천) = 페이로드의 final_diff"),
+    (_rr_none, "T/잠정 → 확정 — 바꿔 끼울 잠정 리포트가 옆에 있는데 비교가 비지 않았는가(덮어쓰기 지문이 같을 때)"),
+])
+def test_the_verifier_checks_a_retry_against_the_first_final_next_door(tmp_path, corrupt, want):
+    _P, Q, build = _published_first_final(tmp_path)
+    _rebuild(Q, tmp_path, build)
+    assert _fails(Q, build) == []
+    corrupt(Q, build)
+    assert want in _fails(Q, build)
+
+
 # ── 시드 스크립트 ───────────────────────────────────────────────────────────
 
 def _kst_mtime(path: Path, stamp: str) -> None:

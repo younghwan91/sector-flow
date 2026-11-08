@@ -428,7 +428,7 @@ function renderToday(){
     c7.id="t-final";
     if(!F){ c7.append(el("div","tline","비교 없음: "+(D.final_diff_reason||"이유 없음"))); }
     else{
-      c7.append(el("div","tline","잠정→확정 변경: "+F.n_changed+"칸 / "+F.n_cells+"칸 (±"+F.tol+"억 초과, 1·5일 순매수)"));
+      c7.append(el("div","tline","잠정→확정 변경: "+F.n_changed+"칸 / "+F.n_cells+"칸 ("+(F.inherited_from?"첫 확정 "+F.inherited_from.slice(5)+" 기록, ":"")+"±"+F.tol+"억 초과, 1·5일 순매수)"));
       const top=(F.changed||[]).filter(r=>r.win===1&&r.diff!=null).slice(0,3)
         .map(r=>r.market+"/"+r.sector+" "+(KO[r.actor]||r.actor)+" "+A(r.old)+"→"+A(r.new));
       c7.append(tline("큰 변경(1일):",top));

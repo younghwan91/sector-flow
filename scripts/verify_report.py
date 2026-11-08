@@ -2318,7 +2318,7 @@ def _vt_final_diff(P: dict, prov: dict) -> dict:
                     n_cells += 1
                     tn[w] += vn
                     to[w] = None if to[w] is None or vo is None else to[w] + vo
-                    if vo is None or abs(vn - vo) > VT_FD_TOL:
+                    if vo is None or abs(round(vn - vo, 2)) > VT_FD_TOL:
                         changed[(m, s, a, w)] = (vo, vn)
             for w in VT_FD_WINS:
                 totals[(m, a, w)] = (to[w], tn[w])
@@ -2337,6 +2337,62 @@ def _vt_final_diff(P: dict, prov: dict) -> dict:
 
 def _vt_close(a, b, tol: float) -> bool:
     return (a is None) == (b is None) and (a is None or abs(a - b) <= tol)
+
+
+def _vt_heads(Q: dict) -> dict:
+    """(시장, 섹터, 주체, 창) → 순매수 — 잠정 대비가 보는 칸 전부."""
+    out = {}
+    for m in Q.get("markets") or []:
+        for s in Q["sectors"]:
+            if not (Q.get("n_by_sector") or {}).get(m, {}).get(s):
+                continue
+            for a in VT_FD_ACTORS:
+                ser = _vt_series(Q, [m], s, a)
+                for w in VT_FD_WINS if ser is not None else ():
+                    out[(m, s, a, w)] = round(sum(ser[-w:]), 2)
+    return out
+
+
+def _vt_same_as_first_final(P: dict, prov: dict) -> bool:
+    return _vt_heads(P) == _vt_heads(prov) and not _vt_final_diff(P, prov)["ext"]
+
+
+def _vt_nothing_to_inherit(P: dict, prov: dict) -> bool:
+    """옆 폴더가 이미 확정인데 이을 잠정 대비가 없거나 값이 또 바뀌었다 — 비교가 비는 것이 맞다."""
+    S = prov.get("final_diff")
+    return bool(prov.get("final")) and (not isinstance(S, dict) or bool(S.get("base_final"))
+                                        or not _vt_same_as_first_final(P, prov))
+
+
+def _vt_kst_mtime(path: str) -> str:
+    from datetime import datetime, timezone  # noqa: PLC0415
+    return datetime.fromtimestamp(os.path.getmtime(path) + VT_KST, timezone.utc).strftime("%Y-%m-%d %H:%M")
+
+
+def _vt_inherited(P: dict, F: dict, prov: dict, spath: str) -> None:
+    """옆 폴더가 이미 확정이다 — 확정끼리 견주지 않고 첫 확정의 기록을 그대로 이었는가."""
+    S = prov.get("final_diff")
+    S = S if isinstance(S, dict) else {}
+    skip = ("changed", "n_changed", "inherited_from")
+    want = [r for r in S.get("changed") or [] if r.get("diff") is None or abs(r["diff"]) > VT_FD_TOL]
+    chk("T", "확정 재시도 — 잠정 대비가 첫 확정의 기록 그대로인가(확정끼리 견주지 않았는가)",
+        bool(S) and not S.get("base_final") and F.get("changed") == want and F.get("n_changed") == len(want)
+        and {k: v for k, v in F.items() if k not in skip} == {k: v for k, v in S.items() if k not in skip},
+        f"칸 {F.get('n_changed')} vs {len(want)} · 견준 리포트 {F.get('base_built')} vs {S.get('base_built')}")
+    chk("T", "확정 재시도 — 이어받은 칸의 값이 첫 확정과 같은가", _vt_same_as_first_final(P, prov), spath)
+    first = S.get("inherited_from") or _vt_kst_mtime(spath)
+    chk("T", "확정 재시도 — 첫 확정 시각이 옆 폴더의 것인가", F.get("inherited_from") == first,
+        f"{F.get('inherited_from')} vs {first}")
+
+
+def _vt_final_json(F: dict, folder: str) -> None:
+    fj = os.path.join(folder, "final_diff.json")
+    if os.path.isfile(fj):
+        try:
+            same = json.load(open(fj, encoding="utf-8")) == F
+        except ValueError:
+            same = False
+        chk("T", "final_diff.json(다음 리포트들의 수정 폭 원천) = 페이로드의 final_diff", same, fj)
 
 
 def _vt_final_vs_provisional(P: dict, folder: "str | None") -> None:
@@ -2359,11 +2415,16 @@ def _vt_final_vs_provisional(P: dict, folder: "str | None") -> None:
             prov = None
     if not isinstance(F, dict):
         chk("T", "잠정 → 확정 — 바꿔 끼울 잠정 리포트가 옆에 있는데 비교가 비지 않았는가(덮어쓰기 지문이 같을 때)",
-            prov is None or _vt_fp(prov) != _vt_fp(P), f"{sib} 있음 · 지문 {_vt_fp(prov)}→{_vt_fp(P)}" if prov else "")
+            prov is None or _vt_fp(prov) != _vt_fp(P) or _vt_nothing_to_inherit(P, prov),
+            f"{sib} 있음 · 지문 {_vt_fp(prov)}→{_vt_fp(P)}" if prov else "")
         return
     chk("T", "잠정 → 확정 — 견준 잠정 리포트가 옆 폴더에 있고 지문이 같은가",
         prov is not None and _vt_fp(prov) == _vt_fp(P), spath if prov is None else f"지문 {_vt_fp(prov)}→{_vt_fp(P)}")
     if prov is None or _vt_fp(prov) != _vt_fp(P):
+        return
+    if prov.get("final"):
+        _vt_inherited(P, F, prov, spath)
+        _vt_final_json(F, folder)
         return
     W = _vt_final_diff(P, prov)
     bad = []
@@ -2397,18 +2458,11 @@ def _vt_final_vs_provisional(P: dict, folder: "str | None") -> None:
         f"{len(bad)}건  " + "; ".join(bad[:3]))
     chk("T", "잠정 → 확정 — %ile 극단 목록의 들고 남 재계산", (F.get("extremes_change") or {}) == W["ext"],
         f"{F.get('extremes_change')} vs {W['ext']}"[:300])
-    from datetime import datetime, timezone  # noqa: PLC0415
-    built = datetime.fromtimestamp(os.path.getmtime(spath) + VT_KST, timezone.utc).strftime("%Y-%m-%d %H:%M")
+    built = _vt_kst_mtime(spath)
     chk("T", "잠정 → 확정 — 견준 리포트의 지위·생성 시각 = 옆 폴더의 것",
         F.get("base_final") == bool(prov.get("final")) and F.get("base_built") == built,
         f"{F.get('base_final')}/{F.get('base_built')} vs {bool(prov.get('final'))}/{built}")
-    fj = os.path.join(folder, "final_diff.json")
-    if os.path.isfile(fj):
-        try:
-            same = json.load(open(fj, encoding="utf-8")) == F
-        except ValueError:
-            same = False
-        chk("T", "final_diff.json(다음 리포트들의 수정 폭 원천) = 페이로드의 final_diff", same, fj)
+    _vt_final_json(F, folder)
 
 
 # ─────────────────────────────────────────────── T. 수정 폭 — 옆 폴더들의 확정 기록·시드에서 다시 센다

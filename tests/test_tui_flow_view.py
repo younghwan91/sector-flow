@@ -2641,6 +2641,14 @@ def test_final_diff_line_and_help_list(data):
     assert not over, over
     d = dict(data, final=True, final_diff=None, final_diff_reason="같은 기준일의 잠정 리포트가 없었다")
     assert "비교 없음: 같은 기준일의 잠정 리포트가 없었다" in final_diff_line(d)
+    # 확정 위에 다시 만든 리포트 — 첫 확정의 기록임을 말하고, 폭 80 에서도 칸 수와 그 말이 남는다.
+    d = dict(data, final=True, final_diff=dict(fd, n_changed=415, n_cells=564, inherited_from="2026-11-10 08:21"))
+    assert "첫 확정 11-10 08:21 기록" in final_diff_line(d)
+    assert "415칸 / 564칸" in "\n".join(banner_lines(State(d), 80))
+    assert "첫 확정 11-10 08:21 기록" in "\n".join(banner_lines(State(d), 80))
+    extra = [desc for _n, desc in help_entries(State(d))[len(HELP):]]
+    assert "첫 확정(2026-11-10 08:21 KST)의 기록을 이어받았다" in extra
+    assert not [t for t in extra if _w(t) + 3 > 80]
 
 
 def test_banner_without_today_falls_back_to_the_20_day_block():

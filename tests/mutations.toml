@@ -2088,7 +2088,7 @@ id = "final-diff-ignores-rounding"
 why = "반올림 차까지 '바뀜' 으로 적으면 FINAL.txt 가 수백 줄 소음이 된다"
 guards = ["tests/test_payload_today.py::test_final_diff_lists_only_changes_beyond_rounding"]
 file = "scripts/sector_flow.py"
-find = """                    if vo is None or abs(vn - vo) > FINAL_DIFF_TOL:"""
+find = """                    if diff is None or abs(diff) > FINAL_DIFF_TOL:"""
 replace = """                    if True:"""
 
 [[mutation]]
@@ -5272,8 +5272,8 @@ id = "verify-final-missing-diff-blind"
 why = "바꿔 끼울 잠정 리포트가 옆에 있는데 확정 리포트가 비교를 비워도 검증이 모른다"
 guards = ["tests/test_streaks_revisions.py::test_the_verifier_recounts_final_diff_from_the_provisional_report_before_the_swap"]
 file = "scripts/verify_report.py"
-find = '''            prov is None or _vt_fp(prov) != _vt_fp(P), f"{sib} 있음 · 지문 {_vt_fp(prov)}→{_vt_fp(P)}" if prov else "")'''
-replace = '''            True, f"{sib} 있음 · 지문 {_vt_fp(prov)}→{_vt_fp(P)}" if prov else "")'''
+find = '''            prov is None or _vt_fp(prov) != _vt_fp(P) or _vt_nothing_to_inherit(P, prov),'''
+replace = '''            True,'''
 
 [[mutation]]
 id = "verify-final-sibling-blind"
@@ -6016,3 +6016,156 @@ guards = ["tests/test_verify_merge.py::test_unsharded_budget_scales_by_the_ci_sh
 file = "scripts/verify_merge.py"
 find = "def ci_shard_count(wt: Path, fallback: int = 4) -> int:"
 replace = "def ci_shard_count(wt: Path, fallback: int = 1) -> int:"
+
+[[mutation]]
+id = "final-diff-tol-on-raw-float"
+why = "날값으로 문턱을 재면 7.86−7.81=0.05000000000000071 칸이 실리고 검증기가 거부한다 — 무인 확정이 거짓 실패로 멈춘다"
+guards = ["tests/test_streaks_revisions.py::test_a_change_of_exactly_the_tolerance_is_rounding_for_producer_and_verifier"]
+file = "scripts/sector_flow.py"
+find = '''                    if diff is None or abs(diff) > FINAL_DIFF_TOL:'''
+replace = '''                    if diff is None or abs(vn - vo) > FINAL_DIFF_TOL:'''
+
+[[mutation]]
+id = "final-diff-tol-inclusive"
+why = "문턱과 같은 칸(반올림 차)까지 '바뀜' 으로 싣는다"
+guards = ["tests/test_streaks_revisions.py::test_a_change_of_exactly_the_tolerance_is_rounding_for_producer_and_verifier"]
+file = "scripts/sector_flow.py"
+find = '''                    if diff is None or abs(diff) > FINAL_DIFF_TOL:'''
+replace = '''                    if diff is None or abs(diff) >= FINAL_DIFF_TOL:'''
+
+[[mutation]]
+id = "verify-final-diff-tol-on-raw-float"
+why = "검증기의 재계산이 날값으로 문턱을 재면 생산자와 바뀐 칸 집합이 갈려 거짓 실패한다"
+guards = ["tests/test_streaks_revisions.py::test_a_change_of_exactly_the_tolerance_is_rounding_for_producer_and_verifier"]
+file = "scripts/verify_report.py"
+find = '''                    if vo is None or abs(round(vn - vo, 2)) > VT_FD_TOL:'''
+replace = '''                    if vo is None or abs(vn - vo) > VT_FD_TOL:'''
+
+[[mutation]]
+id = "verify-final-diff-accepts-within-tol"
+why = "문턱 안쪽 칸을 '바뀜' 으로 실어도 검증이 모른다"
+guards = ["tests/test_payload_today.py::test_final_diff_row_within_the_rounding_tolerance_fails_the_verifier"]
+file = "scripts/verify_report.py"
+find = '''                                           or abs(r["diff"]) <= F["tol"]):'''
+replace = '''                                           or False):'''
+
+[[mutation]]
+id = "final-diff-compares-final-with-final"
+why = "확정 위 재시도가 확정끼리 견줘 '잠정→확정 변경 0칸' 이라 적고 첫 확정의 기록과 수정 폭의 그날이 사라진다"
+guards = ["tests/test_streaks_revisions.py::test_retry_over_a_final_report_inherits_the_first_finals_record"]
+file = "scripts/sector_flow.py"
+find = '''    if old.get("final"):
+        return _inherit_final_diff(P, old, built)'''
+replace = '''    if False:
+        return _inherit_final_diff(P, old, built)'''
+
+[[mutation]]
+id = "inherit-loses-first-final-time"
+why = "이어받은 기록인지 화면이 말하지 못한다 — 재시도 시각의 비교로 읽힌다"
+guards = ["tests/test_streaks_revisions.py::test_retry_over_a_final_report_inherits_the_first_finals_record"]
+file = "scripts/sector_flow.py"
+find = '''            "inherited_from": fd.get("inherited_from") or built}, None'''
+replace = '''            "inherited_from": built}, None'''
+
+[[mutation]]
+id = "inherit-text-silent"
+why = "FINAL.txt 가 이어받은 기록이라고 적지 않는다"
+guards = ["tests/test_streaks_revisions.py::test_retry_over_a_final_report_inherits_the_first_finals_record"]
+file = "scripts/sector_flow.py"
+find = '''    if fd.get("inherited_from"):
+        lines.append(f"첫 확정({fd['inherited_from']} KST)의 기록을 이어받았다")'''
+replace = '''    if False:
+        lines.append(f"첫 확정({fd['inherited_from']} KST)의 기록을 이어받았다")'''
+
+[[mutation]]
+id = "inherit-reason-nests"
+why = "재시도마다 비교 없음 이유가 겹겹이 길어진다"
+guards = ["tests/test_streaks_revisions.py::test_retry_says_no_comparison_when_the_first_final_left_no_record"]
+file = "scripts/sector_flow.py"
+find = '''        if first_why and first_why.startswith(REFINAL_WHY):'''
+replace = '''        if False:'''
+
+[[mutation]]
+id = "inherit-accepts-final-to-final-record"
+why = "옛 코드의 확정끼리 비교 기록을 이으면 '0칸' 이 되살아난다"
+guards = ["tests/test_streaks_revisions.py::test_retry_does_not_inherit_a_final_to_final_record"]
+file = "scripts/sector_flow.py"
+find = '''    if not isinstance(fd, dict) or fd.get("base_final"):
+        if first_why'''
+replace = '''    if not isinstance(fd, dict):
+        if first_why'''
+
+[[mutation]]
+id = "inherit-ignores-moved-values"
+why = "첫 확정 뒤 값이 또 바뀌었는데 옛 기록을 이어 확정값이 이 리포트와 어긋난다"
+guards = ["tests/test_streaks_revisions.py::test_retry_says_no_comparison_when_values_moved_after_the_first_final"]
+file = "scripts/sector_flow.py"
+find = '''    if _head_cells(P) != _head_cells(old) or extremes_change(P, old):'''
+replace = '''    if False:'''
+
+[[mutation]]
+id = "inherit-keeps-old-rule-rows"
+why = "고치기 전 코드가 쓴 경계 칸을 그대로 이어 재시도가 영영 검증에 걸린다"
+guards = ["tests/test_streaks_revisions.py::test_retry_drops_boundary_rows_left_by_the_old_rule"]
+file = "scripts/sector_flow.py"
+find = '''    changed = [r for r in fd.get("changed") or [] if r["diff"] is None or abs(r["diff"]) > FINAL_DIFF_TOL]'''
+replace = '''    changed = list(fd.get("changed") or [])'''
+
+[[mutation]]
+id = "verify-retry-record-blind"
+why = "재시도가 첫 확정의 기록과 다른 것을 적어도(확정끼리 0칸 포함) 검증이 모른다"
+guards = ["tests/test_streaks_revisions.py::test_the_verifier_checks_a_retry_against_the_first_final_next_door"]
+file = "scripts/verify_report.py"
+find = '''        bool(S) and not S.get("base_final") and F.get("changed") == want and F.get("n_changed") == len(want)
+        and {k: v for k, v in F.items() if k not in skip} == {k: v for k, v in S.items() if k not in skip},'''
+replace = '''        True,'''
+
+[[mutation]]
+id = "verify-retry-values-blind"
+why = "이어받은 기록의 값이 이 리포트와 달라도 검증이 모른다"
+guards = ["tests/test_streaks_revisions.py::test_the_verifier_checks_a_retry_against_the_first_final_next_door"]
+file = "scripts/verify_report.py"
+find = '''    chk("T", "확정 재시도 — 이어받은 칸의 값이 첫 확정과 같은가", _vt_same_as_first_final(P, prov), spath)'''
+replace = '''    chk("T", "확정 재시도 — 이어받은 칸의 값이 첫 확정과 같은가", True, spath)'''
+
+[[mutation]]
+id = "verify-retry-first-time-blind"
+why = "첫 확정 시각을 틀리게 적어도 검증이 모른다"
+guards = ["tests/test_streaks_revisions.py::test_the_verifier_checks_a_retry_against_the_first_final_next_door"]
+file = "scripts/verify_report.py"
+find = '''    chk("T", "확정 재시도 — 첫 확정 시각이 옆 폴더의 것인가", F.get("inherited_from") == first,'''
+replace = '''    chk("T", "확정 재시도 — 첫 확정 시각이 옆 폴더의 것인가", True,'''
+
+[[mutation]]
+id = "verify-retry-no-inherit-rejected"
+why = "이을 것이 없어 비교 없음으로 적은 재시도를 거짓 실패시킨다"
+guards = ["tests/test_streaks_revisions.py::test_retry_says_no_comparison_when_the_first_final_left_no_record"]
+file = "scripts/verify_report.py"
+find = '''            prov is None or _vt_fp(prov) != _vt_fp(P) or _vt_nothing_to_inherit(P, prov),'''
+replace = '''            prov is None or _vt_fp(prov) != _vt_fp(P),'''
+
+[[mutation]]
+id = "verify-retry-skips-inherit-branch"
+why = "옆이 확정인데 잠정처럼 다시 세면 이어받은 기록을 거짓 실패시킨다"
+guards = ["tests/test_streaks_revisions.py::test_retry_over_a_final_report_inherits_the_first_finals_record"]
+file = "scripts/verify_report.py"
+find = '''    if prov.get("final"):
+        _vt_inherited(P, F, prov, spath)'''
+replace = '''    if False:
+        _vt_inherited(P, F, prov, spath)'''
+
+[[mutation]]
+id = "tui-inherited-silent"
+why = "터미널 첫 화면이 이어받은 기록인지 말하지 않는다"
+guards = ["tests/test_tui_flow_view.py::test_final_diff_line_and_help_list"]
+file = "src/sectorflow/tui/flow_view.py"
+find = '''    first = f"첫 확정 {fd['inherited_from'][5:]} 기록, " if fd.get("inherited_from") else ""'''
+replace = '''    first = ""'''
+
+[[mutation]]
+id = "web-inherited-silent"
+why = "웹 패널이 이어받은 기록인지 말하지 않는다"
+guards = ["tests/test_report_pages.py::test_numbers_today_panel_says_a_retry_shows_the_first_finals_record"]
+file = "scripts/templates/sector_numbers.html"
+find = '''(F.inherited_from?"첫 확정 "+F.inherited_from.slice(5)+" 기록, ":"")'''
+replace = '''""'''
