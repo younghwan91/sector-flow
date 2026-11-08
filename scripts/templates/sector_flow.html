@@ -731,8 +731,8 @@ function staleChip(asof,box){
   box.append(c);
 }
 const chip=el("span",D.finalized?"chip":"chip live");
-chip.append(el("span","dot"),document.createTextNode(D.final?"마감 · 확정":D.finalized?"마감 · 잠정":"장중 · 미확정"));
-const CHIPNOTE=D.final?"확정: 다음날 아침 확정치(daily_finalize)를 확인한 뒤 다시 만든 리포트다.":D.finalized?"잠정: 수집 창(17시) 뒤 그날 잠정값으로 만든 리포트다. 다음날 아침 확정치로 다시 만든다.":"미확정: 17시 이전이라 부분 데이터일 수 있다.";
+chip.append(el("span","dot"),document.createTextNode((D.final?"마감 · 확정":D.finalized?"마감 · 잠정":"장중 · 미확정")+(D.rebuilt?" · 재구성":"")));
+const CHIPNOTE=(D.rebuilt?"재구성: 지난 기준일을 나중 코드로 다시 만든 리포트다 — 그날 저녁 게시본이 아니다(REBUILT.txt). ":"")+(D.final?"확정: 다음날 아침 확정치(daily_finalize)를 확인한 뒤 다시 만든 리포트다.":D.finalized?"잠정: 수집 창(17시) 뒤 그날 잠정값으로 만든 리포트다. 다음날 아침 확정치로 다시 만든다.":"미확정: 17시 이전이라 부분 데이터일 수 있다.");
 document.getElementById("hdr-chipnote").textContent=CHIPNOTE;
 chip.title=D.final?"다음날 아침 확정치(daily_finalize)를 확인한 뒤 다시 만든 리포트":D.finalized?"수집 창(17시 KST) 뒤에 만든 리포트. 당일 값은 잠정이고 다음날 아침 확정치로 다시 만든다":"17시 KST 이전이라 부분 데이터일 수 있다";
 document.getElementById("hdr-chip").append(chip);

@@ -115,6 +115,9 @@ FAKE_DAILY = r"""#!/bin/sh
 echo "$KR_QUANT_ASOF|${KR_QUANT_REBUILD_ORIGIN:-}|${KR_QUANT_FORCE:-}" >> "$CALLS"
 case "$KR_QUANT_ASOF" in *-09) exit 3 ;; esac
 d="$KR_QUANT_REPORTS/$KR_QUANT_ASOF"; mkdir -p "$d"
+if [ "$KR_QUANT_ASOF" = "2026-10-12" ]; then              # 원본이 있는 폴더에서 관문에 막힘 — INCOMPLETE.txt 없음
+  : > "$d/numbers.html"; echo "[..] ⚠️ 2026-10-12 수집 미완 — 게시하지 않는다" >&2; exit 1
+fi
 : > "$d/numbers.html"; echo "원본은 x" > "$d/REBUILT.txt"
 if [ "$KR_QUANT_ASOF" = "2026-10-08" ]; then
   printf '검사 10건 · 실패 1건\n실패 목록: T:직전 대비\n' > "$d/VERIFY.txt"; cp "$d/VERIFY.txt" "$d/VERIFY_FAILED.txt"; exit 1
@@ -149,6 +152,7 @@ def test_rebuild_history_runs_oldest_first_and_summarises(tmp_path):
     assert by["2026-10-07"][2] == "재구성" and "실패 0" in by["2026-10-07"][3]
     assert by["2026-10-08"][2] == "검증 실패" and "직전 대비" in by["2026-10-08"][4]
     assert by["2026-10-09"][2] == "휴장"
+    assert by["2026-10-12"][2] == "수집 미완", "원본이 있는 날의 관문 막힘을 '오류' 로 적었다"
     assert (root / ".rebuild" / "2026-10-12.log").is_file()
 
 
@@ -189,7 +193,7 @@ case "$KR_QUANT_ASOF" in *-09) exit 3 ;; esac
 d="$KR_QUANT_REPORTS/$KR_QUANT_ASOF"; mkdir -p "$d"
 prev=$(ls "$KR_QUANT_REPORTS" | grep -E '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' | awk -v a="$KR_QUANT_ASOF" '$0 < a' | tail -n 1)
 echo "${prev:-none}" > "$d/prev.txt"
-: > "$d/numbers.html"; echo "원본은 x" > "$d/REBUILT.txt"
+: > "$d/numbers.html"; : > "$d/payload.json"; echo "원본은 x" > "$d/REBUILT.txt"
 printf '검사 10건 · 실패 0건\n전부 통과\n' > "$d/VERIFY.txt"
 """
 
@@ -203,16 +207,47 @@ def test_rebuild_history_parallel_chunks_still_link_each_day_to_the_previous(tmp
     fake.write_text(FAKE_DAILY_PREV)
     fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
     root = tmp_path / "root"
+    (root / "2026-10-02").mkdir(parents=True)                  # 구간 앞의 리포트가 이미 있다 — 0번 덩어리 첫날도 잇는다
+    (root / "2026-10-02" / "payload.json").write_text("{}")
     p = subprocess.run([sys.executable, str(repo / "scripts" / "rebuild_history.py"), "--root", str(root),
                         "--from", "2026-10-05", "--to", "2026-10-16", "--jobs", "2"],
                        capture_output=True, text=True, timeout=60)
     assert p.returncode == 0, p.stdout + p.stderr
     built = sorted(x.name for x in root.iterdir() if x.name[:4] == "2026")
-    assert built == ["2026-10-05", "2026-10-06", "2026-10-07", "2026-10-08",
+    assert built == ["2026-10-02", "2026-10-05", "2026-10-06", "2026-10-07", "2026-10-08",
                      "2026-10-12", "2026-10-13", "2026-10-14", "2026-10-15", "2026-10-16"]
     for prev, d in zip(built, built[1:]):
         assert (root / d / "prev.txt").read_text().strip() == prev, f"{d} 가 직전 거래일 {prev} 없이 만들어졌다"
     assert (root / "latest").resolve() == (root / "2026-10-16").resolve()
-    assert (root / ".rebuild" / "first-pass" / "2026-10-12").is_dir(), "첫 판을 지웠다"
+    kept = sorted(x.name.split(".")[0] for x in (root / ".rebuild" / "first-pass").iterdir())
+    assert kept == ["2026-10-05", "2026-10-12"], f"첫 판을 지웠거나 덩어리 첫날을 안 이었다: {kept}"
     rows = (root / ".rebuild" / "summary.tsv").read_text("utf-8").splitlines()[1:]
     assert [r.split("\t")[0] for r in rows] == [f"2026-10-{x:02d}" for x in (5, 6, 7, 8, 9, 12, 13, 14, 15, 16)]
+
+
+def test_verify_whole_table_checks_stay_inside_the_rebuilt_asof(tmp_path):
+    """기준일 **뒤** 행의 결함(주식수 0·OHLC 위반·중복)으로 지난 기준일 재구성을 빨갛게 만들지 않는다 — 기준일 이하만 본다."""
+    import importlib.util
+    import sqlite3
+    spec = importlib.util.spec_from_file_location("verify_report", REPO / "scripts" / "verify_report.py")
+    VR = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(VR)
+    db = _db(tmp_path / "now.db", upto=DAYS[-1])
+    con = sqlite3.connect(db)
+    con.executescript("ALTER TABLE daily_bars_adjusted ADD COLUMN high REAL;"
+                      "ALTER TABLE daily_bars_adjusted ADD COLUMN low REAL;"
+                      "UPDATE daily_bars_adjusted SET high=close, low=close;")
+    late = DAYS[-1]
+    con.execute("INSERT INTO shares_outstanding_history VALUES ('000001', ?, 0)", (late,))
+    con.execute("UPDATE daily_bars_adjusted SET low = close + 1 WHERE date = ?", (late,))
+    con.commit()
+    con.close()
+    P = _payload(tmp_path, db, "r", "--asof", ASOF)
+
+    def table_fails(asof):
+        VR.FAILS.clear()
+        VR.layer_b(P, db, asof)
+        return [f for f in VR.FAILS if "주식수" in f or "OHLC" in f]
+
+    assert table_fails(ASOF) == [], "기준일 뒤 행의 결함이 재구성 검증에 섞였다"
+    assert len(table_fails(DAYS[-1])) == 2, "대조군: 그 날을 보면 둘 다 걸려야 한다"

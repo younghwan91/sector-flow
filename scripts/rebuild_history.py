@@ -108,14 +108,22 @@ def main(argv: list[str] | None = None) -> int:
         if a.origin_root and (Path(a.origin_root).expanduser() / d).is_dir():
             env["KR_QUANT_REBUILD_ORIGIN"] = f"{label.rstrip('/')}/{d}"
         t0 = time.monotonic()
-        with open(logs / f"{d}.log", "a", encoding="utf-8") as log:
+        log_path = logs / f"{d}.log"
+        start = log_path.stat().st_size if log_path.exists() else 0
+        with open(log_path, "a", encoding="utf-8") as log:
             rc = subprocess.run([str(REPO / "scripts" / "daily_report.sh")], env=env,
                                 stdout=log, stderr=subprocess.STDOUT).returncode
         secs = time.monotonic() - t0
+        with open(log_path, encoding="utf-8", errors="replace") as f:
+            f.seek(start)
+            said = f.read()
         folder = where / d
         if rc == EX_HOLIDAY:
             state = "휴장"
-        elif (folder / "INCOMPLETE.txt").is_file() and not (folder / "numbers.html").is_file():
+        elif rc != 0 and "수집 공백" in said:
+            state = "수집 공백"
+        elif rc != 0 and ("수집 미완" in said or (folder / "INCOMPLETE.txt").is_file()):
+            # 원본이 있는 폴더에는 INCOMPLETE.txt 를 안 남기므로 그날 출력으로도 가른다.
             state = "수집 미완"
         elif not (folder / "REBUILT.txt").is_file():
             state = "오류"
@@ -136,7 +144,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         # 덩어리마다 따로 둔 루트에 차례로 짓는다(daily_report.sh 는 루트마다 잠금 하나라 한 루트에 나란히 못 짓는다).
         # 다 모은 뒤 덩어리 첫날만 — 그때는 직전 거래일 폴더가 옆에 있다 — 다시 지어 change 를 잇는다.
-        # 첫 판은 지우지 않고 .rebuild/first-pass/ 로 비켜 둔다.
+        # 첫 판은 지우지 않고 .rebuild/first-pass/<날>.<시각> 으로 비켜 둔다.
         busy = [d for d in days if (root / d).exists()]
         if busy:
             ap.error(f"--jobs 는 빈 루트에서만 쓴다 — 이미 있는 날: {' '.join(busy[:3])}")
@@ -156,13 +164,17 @@ def main(argv: list[str] | None = None) -> int:
                 (part / d).rename(root / d)
         first_pass = logs / "first-pass"
         first_pass.mkdir(exist_ok=True)
-        for k in range(1, len(chunks)):
-            # 덩어리 첫날이 휴장이면 다음 날이 첫 거래일이다.
+        stamp = time.strftime("%Y%m%d%H%M%S")
+        for k in range(len(chunks)):
+            # 덩어리 첫날이 휴장이면 다음 날이 첫 거래일이다. 0번 덩어리도 루트에 더 이른 리포트가 이미 있으면 잇는다.
             d = next((r[0] for r in got[k] if r[2] != "휴장"), None)
             if d is None:
                 continue
+            if not any(p.name < d and (p / "payload.json").is_file()
+                       for p in root.iterdir() if _DAY.fullmatch(p.name)):
+                continue
             if (root / d).exists():
-                (root / d).rename(first_pass / d)
+                (root / d).rename(first_pass / f"{d}.{stamp}")
             rows = [build(d, root, False) if r[0] == d else r for r in rows]
         last = max((p.name for p in root.iterdir() if _DAY.fullmatch(p.name) and (p / "numbers.html").is_file()),
                    default=None)

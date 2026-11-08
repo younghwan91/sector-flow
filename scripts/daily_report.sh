@@ -13,6 +13,7 @@
 #
 # 종료코드: 0 = 게시했거나 건너뜀 · 75 = 오늘 기준일이 수집 미완이라 안 만듦(재실행하면 된다) ·
 # 그 밖 = 오류·검증 실패·**지난** 기준일이 아직 수집 미완(1 — 재시도 창이 끝나 간다) · 3 = 재구성 기준일이 휴장일(KR_QUANT_ASOF).
+# 재구성인데 그날 확정치(daily_finalize)를 확인하지 못하면 잠정으로 만들고(FINAL.txt 없음) 75 로 끝난다.
 # 몇 번을 돌려도 안전하다 — 크론이 재시도로 같은 명령을 다시 부른다.
 #
 # 리포트는 생성물이지 소스가 아니다 — git 추적 대상은 아니지만(.gitignore 의
@@ -92,6 +93,24 @@ case "$ASOF" in
 esac
 TODAY="$(TZ=Asia/Seoul date +%F)"
 if [ -n "$REBUILD" ] && [ "$ASOF" != "$REBUILD" ]; then
+  # 수급이 없다고 휴장은 아니다 — 같은 날 업종지수·일봉이 있으면 수급 수집이 빠진 것이다(오류로 알린다).
+  OTHER_ROWS="$(KR_QUANT_ASOF="$REBUILD" "${UVR[@]}" python - <<'PY'
+import os
+from sectorflow.storage import _is_pg, connect, db_default
+con = connect(os.environ.get("KR_QUANT_DB") or db_default())
+cur = con.cursor()
+ph = "%s" if _is_pg(con) else "?"
+n = 0
+for t in ("sector_index", "daily_bars"):
+    cur.execute(f"SELECT count(*) FROM {t} WHERE date = {ph}", (os.environ["KR_QUANT_ASOF"],))
+    n += cur.fetchone()[0]
+print(n); con.close()
+PY
+)"
+  if [ "${OTHER_ROWS:-0}" != "0" ]; then
+    echo "[$(date '+%F %T')] 재구성 $REBUILD 에 수급이 없는데 업종지수·일봉은 ${OTHER_ROWS}행 있다 — 휴장이 아니라 수급 수집 공백이다. 메운 뒤 다시 돌려라." >&2
+    exit 1
+  fi
   echo "[$(date '+%F %T')] 재구성 $REBUILD 는 거래일이 아니다(그 이하 마지막 수급일 $ASOF) — 휴장일이다(종료코드 3). 만들지 않는다." >&2
   exit 3
 fi
@@ -122,15 +141,24 @@ FINAL_OK=""
 FINAL_REBUILD=""
 FINAL_UNCONFIRMED=""
 if [ -n "$REBUILD" ]; then
-  # 지난 기준일의 값은 그 뒤 daily_finalize 가 이미 덮었다 — 확정 모드 의미로 만든다.
-  # 이미 재구성한 날은 다시 안 만든다(rebuild_history 재실행이 이어서 돈다). 원본(REBUILT.txt 없음)은 바꿔 낀다.
-  if [ -f "$DEST/REBUILT.txt" ] && [ -f "$DEST/numbers.html" ] && [ ! -f "$DEST/VERIFY_FAILED.txt" ] \
-     && [ -z "${KR_QUANT_FORCE:-}" ]; then
+  # 이미 확정치로 재구성한 날은 다시 안 만든다(rebuild_history 재실행이 이어서 돈다). 원본(REBUILT.txt 없음)과
+  # 잠정으로 재구성한 날(FINAL.txt 없음)은 다시 만든다.
+  if [ -f "$DEST/REBUILT.txt" ] && [ -f "$DEST/FINAL.txt" ] && [ -f "$DEST/numbers.html" ] \
+     && [ ! -f "$DEST/VERIFY_FAILED.txt" ] && [ -z "${KR_QUANT_FORCE:-}" ]; then
     echo "[$(date '+%F %T')] $ASOF 는 이미 재구성했다 — 건너뛴다(다시 만들려면 KR_QUANT_FORCE=1)."
     exit 0
   fi
-  FINAL_OK=1
   FINAL_REBUILD=1
+  # 확정 의미는 **확인한 뒤에만** 붙인다 — 아직 daily_finalize 가 안 덮은 날(어제 것)을 확정이라 적으면
+  # 08:20 확정 모드가 FINAL.txt 를 보고 그날을 영영 건너뛴다.
+  REBUILD_FINAL_RC=0
+  "${UVR[@]}" python scripts/finalize_done.py --asof "$ASOF" || REBUILD_FINAL_RC=$?
+  if [ "$REBUILD_FINAL_RC" -eq 0 ]; then
+    FINAL_OK=1
+  else
+    echo "[$(date '+%F %T')] ⚠️ $ASOF 확정치를 확인하지 못했다 — 잠정으로 재구성한다(FINAL.txt 없음, 위 [확정치] 줄이 이유)." >&2
+    FINAL_UNCONFIRMED=1
+  fi
 elif [ -f "$DEST/FINAL.txt" ]; then
   FINAL_OK=1
   if [ -n "${KR_QUANT_FINAL:-}" ] && [ -z "${KR_QUANT_FORCE:-}" ] && [ ! -f "$DEST/VERIFY_FAILED.txt" ]; then
@@ -173,7 +201,9 @@ if [ "$GATE_RC" -eq 75 ]; then
   if [ ! -f "$DEST/numbers.html" ]; then
     mkdir -p "$DEST"
     { echo "[$(date '+%F %T')] $ASOF 수집 미완 — 리포트를 만들지 않았다. latest 는 그대로다."
-      if [[ "$ASOF" < "$TODAY" ]]; then
+      if [ -n "$REBUILD" ]; then
+        echo "재구성(KR_QUANT_ASOF): 지금 DB 에서도 이 날 수집이 관문 기준에 못 미친다 — 메운 뒤 다시 재구성하라."
+      elif [[ "$ASOF" < "$TODAY" ]]; then
         echo "재시도 창이 끝나 간다. 수집을 메운 뒤 scripts/daily_report.sh 를 손으로 돌려라 —"
         echo "다음 거래일 수집이 시작되면 기준일이 넘어가 이 날 리포트는 다시 못 만든다."
       else
@@ -185,6 +215,10 @@ if [ "$GATE_RC" -eq 75 ]; then
   echo "[$(date '+%F %T')] ⚠️ $ASOF 수집 미완 — 게시하지 않는다(latest 유지): $DEST/INCOMPLETE.txt" >&2
   # 오늘 것이면 수집이 도는 중이라 75(경고)다. 지난 날이면 기다릴 수집이 없고 기준일이 넘어가면
   # 아무도 안 만든다 — 다음날 08:20(확정 모드)의 포기가 경고로 묻히지 않게 오류로 끝낸다.
+  if [ -n "$REBUILD" ]; then
+    echo "[$(date '+%F %T')] ⚠️ 재구성 $ASOF — 지금 DB 에서도 수집 미완이다. 메운 뒤 KR_QUANT_ASOF=$ASOF $0" >&2
+    exit 1
+  fi
   if [[ "$ASOF" < "$TODAY" ]]; then
     echo "[$(date '+%F %T')] ⚠️ $ASOF 는 오늘이 아닌데 수집 미완이다 — 수집을 메운 뒤 이 스크립트를 다시 돌려라. 기준일이 넘어가면 이 날은 안 만들어진다." >&2
     exit 1
@@ -241,11 +275,11 @@ else
   VERIFY_RC=1
 fi
 
-if [ -n "$REBUILD" ]; then
-  echo "[$(date '+%F %T')] 재구성 — 기준일 뒤에 확정된 DB 값으로 만들었다(REBUILT.txt)." > "$BUILD/FINAL.txt"
+if [ -n "$REBUILD" ] && [ -n "$FINAL_OK" ]; then
+  echo "[$(date '+%F %T')] 재구성 — daily_finalize 확인 뒤 확정된 DB 값으로 만들었다(REBUILT.txt)." > "$BUILD/FINAL.txt"
   # 잠정 대비는 없다 — sector_flow.py --rebuilt 가 그 이유 한 줄을 남긴다.
   if [ -s "$BUILD/final_diff.txt" ]; then cat "$BUILD/final_diff.txt" >> "$BUILD/FINAL.txt"; fi
-elif [ -n "$FINAL_OK" ]; then
+elif [ -z "$REBUILD" ] && [ -n "$FINAL_OK" ]; then
   echo "[$(date '+%F %T')] daily_finalize 확인 뒤 확정치로 만들었다." > "$BUILD/FINAL.txt"
   # 잠정 → 확정에서 바뀐 머리 숫자(sector_flow.py --final 이 남긴다).
   if [ -f "$BUILD/final_diff.txt" ]; then cat "$BUILD/final_diff.txt" >> "$BUILD/FINAL.txt"; fi
@@ -263,7 +297,9 @@ if [ -n "$REBUILD" ]; then
     [ -n "$ORIGIN" ] || ORIGIN="$ARCHIVED"
   fi
   REV="${KR_QUANT_CODE_REV:-$(git -C "$REPO" describe --always --dirty 2>/dev/null || echo '?')}"
-  { echo "$(TZ=Asia/Seoul date '+%F %H:%M') 현재 코드($REV)·확정 데이터로 다시 만듦; 원본은 ${ORIGIN:-없음(이 루트에서 처음 만들었다)}"
+  KIND="확정 데이터"
+  [ -n "$FINAL_OK" ] || KIND="잠정 데이터(확정치 미확인)"
+  { echo "$(TZ=Asia/Seoul date '+%F %H:%M') 현재 코드($REV)·${KIND}로 다시 만듦; 원본은 ${ORIGIN:-없음(이 루트에서 처음 만들었다)}"
     echo "모든 DB 읽기는 $ASOF 이하로 묶었다(수급·조정 종가·업종지수·주식수·수정주가 이벤트)."
     echo "묶지 못한 것: 섹터·시장 분류와 유니버스는 지금의 stocks 마스터다(이력이 없다)."
     echo "그날 저녁 게시본은 그때의 잠정치·그때의 정의로 만든 것이라 이 숫자와 다를 수 있다."
@@ -293,7 +329,10 @@ if [ -z "$REBUILD" ] || [ ! -d "$OUT_ROOT/$CUR_LATEST" ] || [[ ! "$ASOF" < "$CUR
 fi
 if [ "$VERIFY_RC" -eq 0 ]; then
   echo "[$(date '+%F %T')] 완료 — $DEST 를 latest 로 게시했다"
-  if [ -n "$FINAL_UNCONFIRMED" ]; then
+  if [ -n "$FINAL_UNCONFIRMED" ] && [ -n "$REBUILD" ]; then
+    echo "[$(date '+%F %T')] ⚠️ 확정치를 확인하지 못해 잠정으로 재구성했다 — daily_finalize 가 끝났으면: KR_QUANT_ASOF=$ASOF $0" >&2
+    VERIFY_RC=75
+  elif [ -n "$FINAL_UNCONFIRMED" ]; then
     echo "[$(date '+%F %T')] ⚠️ 확정치를 확인하지 못해 잠정치로 만들었다 — daily_finalize 를 확인하고 끝났으면: KR_QUANT_FINAL=1 $0" >&2
     VERIFY_RC=75
   fi

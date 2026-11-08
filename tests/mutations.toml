@@ -915,8 +915,8 @@ id = "report-skips-verify-failed-retry"
 why = "검증 실패 폴더를 건너뛰면 재시도가 그 기준일을 안 고친다"
 guards = ["tests/test_daily_report_flow.py::test_verify_failure_publishes_alerts_and_is_retried"]
 file = "scripts/daily_report.sh"
-find = """[ ! -f "$DEST/VERIFY_FAILED.txt" ] && """
-replace = ""
+find = """if [ -f "$DEST/numbers.html" ] && [ ! -f "$DEST/VERIFY_FAILED.txt" ] && """
+replace = """if [ -f "$DEST/numbers.html" ] && """
 
 [[mutation]]
 id = "cron-log-dir-missing"
@@ -1210,9 +1210,9 @@ id = "incomplete-note-promises-retry"
 why = "포기한 뒤에도 다음 크론을 약속하면 아무도 안 움직인다"
 guards = ["tests/test_daily_report_flow.py::test_past_day_incomplete_note_tells_what_to_do_next"]
 file = "scripts/daily_report.sh"
-find = """      if [[ "$ASOF" < "$TODAY" ]]; then
+find = """      elif [[ "$ASOF" < "$TODAY" ]]; then
         echo "재시도 창이"""
-replace = """      if false; then
+replace = """      elif false; then
         echo "재시도 창이"""
 
 [[mutation]]
@@ -1799,8 +1799,10 @@ id = "final-unconfirmed-first-build-quiet"
 why = "확정 모드가 처음 만드는 날 확정을 확인 못 했는데 잠정으로 만들고 0 으로 끝난다"
 guards = ["tests/test_daily_report_flow.py::test_final_mode_without_a_report_builds_provisional_and_still_warns"]
 file = "scripts/daily_report.sh"
-find = "    VERIFY_RC=75"
-replace = "    true"
+find = """KR_QUANT_FINAL=1 $0" >&2
+    VERIFY_RC=75"""
+replace = """KR_QUANT_FINAL=1 $0" >&2
+    true"""
 
 [[mutation]]
 id = "finalize-ignores-sector-index"
@@ -4616,8 +4618,16 @@ id = "rebuild-jobs-skips-relinking-chunk-starts"
 why = "나란히 지은 덩어리의 첫날을 다시 안 지으면 그날 change 가 비고(직전 폴더가 다른 루트에 있었다) 아무도 모른다"
 guards = ["tests/test_rebuild_asof.py::test_rebuild_history_parallel_chunks_still_link_each_day_to_the_previous"]
 file = "scripts/rebuild_history.py"
-find = "        for k in range(1, len(chunks)):"
-replace = "        for k in range(len(chunks), len(chunks)):"
+find = "        for k in range(len(chunks)):"
+replace = "        for k in range(0):"
+
+[[mutation]]
+id = "rebuild-jobs-chunk0-not-relinked"
+why = "루트에 구간 앞 리포트가 이미 있는데 0번 덩어리 첫날을 안 이으면 그날 change 가 빈다"
+guards = ["tests/test_rebuild_asof.py::test_rebuild_history_parallel_chunks_still_link_each_day_to_the_previous"]
+file = "scripts/rebuild_history.py"
+find = "        for k in range(len(chunks)):"
+replace = "        for k in range(1, len(chunks)):"
 
 [[mutation]]
 id = "verify-live-keys-from-row-3-only"
@@ -4635,3 +4645,52 @@ guards = ["tests/test_verify_report.py::test_advertised_keys_count_as_live_on_a_
 file = "scripts/verify_report.py"
 find = "        if unseen is not None:\n            unseen.append(label)"
 replace = "        pass"
+
+[[mutation]]
+id = "rebuild-claims-final-without-finalize"
+why = """확정치를 확인하지 않고 재구성을 확정이라 적는다 — 어제 것을 재구성하면 FINAL.txt 가 생겨 08:20 확정 모드가
+그날을 영영 건너뛰고, 잠정치가 '확정' 으로 남는다(리뷰 MAJOR)."""
+guards = ["tests/test_daily_report_flow.py::test_rebuild_without_confirmed_finalize_stays_provisional"]
+file = "scripts/daily_report.sh"
+find = "  if [ \"$REBUILD_FINAL_RC\" -eq 0 ]; then"
+replace = "  if true; then"
+
+[[mutation]]
+id = "rebuild-gap-called-holiday"
+why = "수급만 빈 평일을 휴장(3)으로 넘긴다 — 수집 공백이 재구성 요약에서 '휴장' 으로 사라진다"
+guards = ["tests/test_daily_report_flow.py::test_rebuild_of_a_weekday_with_other_tables_but_no_flows_is_a_gap_not_a_holiday"]
+file = "scripts/daily_report.sh"
+find = "  if [ \"${OTHER_ROWS:-0}\" != \"0\" ]; then"
+replace = "  if false; then"
+
+[[mutation]]
+id = "rebuild-numbers-page-chip-silent"
+why = "수치표 페이지 칩이 재구성 리포트를 '다음날 아침 확정치를 확인한 뒤 다시 만든 리포트' 로만 말한다"
+guards = ["tests/test_report_pages.py::test_rebuilt_report_says_so_in_the_page_chip"]
+file = "scripts/templates/sector_numbers.html"
+find = "+(D.rebuilt?\" · 재구성\":\"\"));"
+replace = ");"
+
+[[mutation]]
+id = "rebuild-viewer-page-note-silent"
+why = "흐름 페이지의 칩 설명이 재구성 리포트를 그날 게시본처럼 말한다"
+guards = ["tests/test_report_pages.py::test_rebuilt_report_says_so_in_the_page_chip"]
+file = "scripts/templates/sector_flow.html"
+find = "const CHIPNOTE=(D.rebuilt?"
+replace = "const CHIPNOTE=(false?"
+
+[[mutation]]
+id = "rebuild-verify-whole-tables-unbounded"
+why = "재구성 검증이 기준일 뒤 행의 결함(주식수 0·OHLC)으로 지난 리포트를 빨갛게 만든다 — REBUILT.txt 의 '모든 읽기는 기준일 이하' 도 거짓이 된다"
+guards = ["tests/test_rebuild_asof.py::test_verify_whole_table_checks_stay_inside_the_rebuilt_asof"]
+file = "scripts/verify_report.py"
+find = "    upto, upto_args = (f\" AND date <= {ph}\", (asof,)) if asof else (\"\", ())"
+replace = "    upto, upto_args = (\"\", ())"
+
+[[mutation]]
+id = "rebuild-history-gate-block-called-error"
+why = "원본이 있는 날 관문에 막힌 것을 '오류' 로 적는다 — 수집을 메워야 할 날을 코드 결함처럼 보이게 한다"
+guards = ["tests/test_rebuild_asof.py::test_rebuild_history_runs_oldest_first_and_summarises"]
+file = "scripts/rebuild_history.py"
+find = "        elif rc != 0 and (\"수집 미완\" in said or (folder / \"INCOMPLETE.txt\").is_file()):"
+replace = "        elif (folder / \"INCOMPLETE.txt\").is_file() and not (folder / \"numbers.html\").is_file():"

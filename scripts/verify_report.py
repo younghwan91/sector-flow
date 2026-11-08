@@ -717,13 +717,17 @@ def layer_b(payload: dict, db: str | None, asof: "str | None" = None) -> None:
         cur.execute("SELECT max(date) FROM supply_demand")
         db_last = str(cur.fetchone()[0])
         chk("B", "페이로드 기준일 = DB 최신일", db_last == dates[-1], f"DB {db_last} / 리포트 {dates[-1]}")
+    # 재구성(--asof)이면 표 전체 검사도 기준일 이하만 본다 — 리포트가 읽지 않은 그 뒤 행의 결함으로
+    # 지난 기준일 리포트를 빨갛게 만들지 않고, "모든 읽기는 기준일 이하" 라는 REBUILT.txt 의 말을 지킨다.
+    upto, upto_args = (f" AND date <= {ph}", (asof,)) if asof else ("", ())
     for tbl in ("supply_demand", "daily_bars_adjusted"):
-        cur.execute(f"SELECT count(*) FROM (SELECT code,date FROM {tbl} "
-                    f"GROUP BY code,date HAVING count(*)>1) q")
+        cur.execute(f"SELECT count(*) FROM (SELECT code,date FROM {tbl} WHERE 1=1{upto} "
+                    f"GROUP BY code,date HAVING count(*)>1) q", upto_args)
         chk("B", f"{tbl} (code,date) 중복", cur.fetchone()[0] == 0)
-    cur.execute("SELECT count(*) FROM shares_outstanding_history WHERE shares_outstanding<=0")
+    cur.execute(f"SELECT count(*) FROM shares_outstanding_history WHERE shares_outstanding<=0{upto}", upto_args)
     chk("B", "주식수 ≤ 0 행", cur.fetchone()[0] == 0)
-    cur.execute("SELECT count(*) FROM daily_bars_adjusted WHERE close<=0 OR low>close OR high<close")
+    cur.execute(f"SELECT count(*) FROM daily_bars_adjusted WHERE (close<=0 OR low>close OR high<close){upto}",
+                upto_args)
     chk("B", "OHLC 불변식 위반", cur.fetchone()[0] == 0)
     check_trade_value_units(cur, dates[-1], ph)
     con.close()

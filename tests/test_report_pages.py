@@ -460,3 +460,13 @@ def test_numbers_today_panel_counts_the_unclassified_members(tmp_path):
     assert any("(미분류) 5종목" in t for t in _page("sector_numbers.html", D, tmp_path))
     D["n_by_sector"] = {"거래소": {"금융": 9}}
     assert not any("(미분류)" in t and "종목" in t for t in _page("sector_numbers.html", D, tmp_path))
+
+@pytest.mark.parametrize("tpl", ["sector_flow.html", "sector_numbers.html"])
+def test_rebuilt_report_says_so_in_the_page_chip(tpl, tmp_path):
+    """재구성 리포트(KR_QUANT_ASOF)를 페이지가 '다음날 아침 확정치를 확인한 뒤 다시 만든 리포트' 로만 말하면 안 된다."""
+    make = _viewer_payload if tpl == "sector_flow.html" else _numbers_data
+    plain = _page(tpl, dict(make(), final=True), tmp_path)
+    rebuilt = _page(tpl, dict(make(), final=True, rebuilt=True), tmp_path)
+    assert any("재구성" in t for t in rebuilt), "재구성 리포트의 칩이 재구성을 안 말한다"
+    assert any("그날 저녁 게시본이 아니다" in t for t in rebuilt)
+    assert not any("재구성" in t for t in plain)

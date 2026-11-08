@@ -231,13 +231,13 @@ const F3=v=>v==null?"—":sg(v)+Math.abs(RHU(v,3)).toFixed(3);
 // 맨 앞은 **기준일**이다. 페이로드 전체 범위(1년)를 먼저 적으면 그게 이 숫자들의 날짜로 읽힌다.
 document.getElementById("asof").textContent = "기준일 "+D.asof;
 document.getElementById("range").textContent = "· 1년 백분위 표본 "+D.dates[0]+" ~ "+D.dates[1];
-const chip=el("span","chip", D.final?"마감 · 확정":D.finalized?"마감 · 잠정":"장중 · 미확정");
+const chip=el("span","chip", (D.final?"마감 · 확정":D.finalized?"마감 · 잠정":"장중 · 미확정")+(D.rebuilt?" · 재구성":""));
 document.getElementById("chip").append(chip);
 // 칩의 뜻은 **글로** 적는다 — title 에만 두면 폰에서는 볼 길이 없다.
-document.getElementById("chipnote").textContent = D.final
+document.getElementById("chipnote").textContent = (D.rebuilt?"재구성: 지난 기준일을 나중 코드로 다시 만든 리포트다 — 그날 저녁 게시본이 아니다(REBUILT.txt). ":"") + (D.final
   ? "확정: 다음날 아침 확정치(daily_finalize)를 확인한 뒤 다시 만든 리포트다."
   : D.finalized ? "잠정: 수집 창(17시) 뒤 그날 잠정값(수집 시각 스냅숏 — 애프터마켓은 20시까지 돈다)으로 만든 리포트다. 다음날 아침 확정치로 다시 만든다."
-  : "미확정: 17시 이전이라 부분 데이터일 수 있다.";
+  : "미확정: 17시 이전이라 부분 데이터일 수 있다.");
 // 받은 폴더·멈춘 배치를 오늘 것으로 읽지 않게. 문턱은 화면(`STALE_DAYS`)과 같다.
 const age=Math.floor((Date.now()-Date.parse(D.asof+"T00:00:00+09:00"))/864e5);
 if(age>=4) document.getElementById("chip").append(el("span","chip","⚠ "+age+"일 지난 리포트"));
