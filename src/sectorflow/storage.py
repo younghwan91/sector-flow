@@ -306,9 +306,67 @@ def _assert_supply_has_delisted(con: Any, df, *, start, end) -> None:
 
 
 #: 주식수를 다시 세는 수정주가 이벤트 — 분할(8)·병합(16)·감자(64). 가격이 (1+upd_rt/100) 배로 바뀐
-#: 만큼 주식수는 그 역수로 바뀐다(078130 10:1 병합 upd_rt 900 → 주식수 ÷10). 권리락(256)은 유상·무상이
-#: 섞여 있어 순수 배율이 아니므로 넣지 않는다 — 키움 주간 스냅샷이 1주 안에 따라잡는다.
+#: 만큼 주식수는 그 역수로 바뀐다(078130 10:1 병합 upd_rt 900 → 주식수 ÷10). 권리락(256)은 넣지 않는다:
+#:
+#: * 가격은 권리락일에 바뀌지만 **신주는 그 뒤 신주상장일에야 상장주식수가 된다**. 2026-07-15 뒤 −20% 이하 권리락에서 주식수가
+#:   따라온 12건의 지연은 중앙 26일(11~63일)이고 7일 안은 0건이다 — 스냅샷 주기(1주) 문제가 아니라 상장 시차다. 그동안 네이버도
+#:   옛 주식수로 잰다(11-09 조회: MH에탄올·알파칩스·코나아이·이렘의 시총 ÷ 종가 = 옛 주식수).
+#: * ``upd_rt`` 는 유상·무상이 섞인 가격 배율이라 주식수 배율이 아니다. 그 12건 중 4건이 10% 넘게 어긋났다(SK디앤디 1.47배 예측에
+#:   실제 3.4배, 뉴로메카 1.5 vs 1.26). 엘앤씨바이오 ×1.99 는 약 1.29조인데 네이버(11-09 조회)는 7,345억이다.
+#:
+#: 그래서 값은 "원 종가 × 그 시점 상장주식수" 그대로 두고 :func:`rights_pending` 로 표지를 단다.
 SHARE_EVENTS = 8 | 16 | 64
+#: 권리락 표지 — 가격이 이만큼[%] 이상 내려간 권리락만. 그 아래는 시총대비가 11% 안쪽으로만 흔들려 표지가 소음이 된다.
+RIGHTS_PENDING_RT = -10.0
+#: 권리락 표지 — 이 달력일이 지나면 안 따라와도 끈다. 2026-05 뒤 실측 최장 77일(유상, 엔젠바이오) + 여유. 취소·자료 오류가 영구 표지가 되지 않게.
+RIGHTS_PENDING_DAYS = 100
+#: 권리락 표지 — 권리락 직전 주식수의 이 배 이상이 되면 신주가 들어온 것으로 본다.
+RIGHTS_CAUGHT_UP = 1.05
+
+
+def rights_pending(con: Any, codes: "list[str]", asof: str) -> "dict[str, dict]":
+    """권리락이 지났는데 신주가 아직 상장주식수에 안 들어온 종목 — ``{code: {"date": 권리락일, "rt": upd_rt}}``.
+
+    가격은 이미 권리락 뒤(최대 절반)인데 주식수는 옛 값이라 시총이 작게, 시총대비는 크게(1/(1+rt/100) 배 안쪽) 나온다.
+    한 종목에 여럿이면 가장 늦은 것. ``asof`` 뒤의 행은 읽지 않는다(지난 기준일 재구성).
+    """
+    from datetime import date as _date
+
+    if not codes:
+        return {}
+    ph = "%s" if _is_pg(con) else "?"
+    placeholders = ",".join([ph] * len(codes))
+    cur = con.cursor()
+    cur.execute(f"SELECT code, date, upd_stkpc_tp, upd_rt FROM corporate_actions "
+                f"WHERE code IN ({placeholders}) AND date <= {ph}", (*codes, asof))
+    day = _date.fromisoformat(asof)
+    events: dict[str, list] = {}
+    for c, d, tp, rt in cur.fetchall():
+        try:
+            tpi, r = int(tp), float(rt)
+        except (TypeError, ValueError):
+            continue
+        d = str(d)
+        if tpi & 256 and r <= RIGHTS_PENDING_RT and (day - _date.fromisoformat(d)).days <= RIGHTS_PENDING_DAYS:
+            events.setdefault(c, []).append((d, r))
+    if not events:
+        return {}
+    keys = sorted(events)
+    cur.execute(f"SELECT code, date, shares_outstanding FROM shares_outstanding_history "
+                f"WHERE code IN ({','.join([ph] * len(keys))}) AND date <= {ph}", (*keys, asof))
+    hist: dict[str, list] = {}
+    for c, d, v in cur.fetchall():
+        if v and v > 0:
+            hist.setdefault(c, []).append((str(d), float(v)))
+    out: dict[str, dict] = {}
+    for c, evs in events.items():
+        rows = sorted(hist.get(c, []))
+        for d, r in sorted(evs):
+            before = [v for s, v in rows if s < d]
+            after = [v for s, v in rows if s >= d]
+            if before and (not after or after[-1] < before[-1] * RIGHTS_CAUGHT_UP):
+                out[c] = {"date": d, "rt": r}
+    return out
 
 
 def market_cap_asof_bulk(con: Any, df: Any) -> Any:

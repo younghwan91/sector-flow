@@ -238,6 +238,7 @@ tr.thin td{color:var(--ink-3)}
     <div class="rows" id="rows"></div>
   </section>
 
+  <div id="d-pending" style="font-size:12px;color:var(--ink-2);margin:0 0 8px"></div>
   <div class="two">
     <section class="panel"><h2 id="d-buy">순매수 상위<small>금액(억) 순<span class="ev" id="ev-buy-amt"></span> · 오른쪽은 시총 대비 %p<span class="ev" id="ev-buy-share"></span> · 이름 아래 투신·연기금(억)<span class="ev" id="ev-buy-trust"></span></small></h2><div class="lst" id="lst-buy"></div></section>
     <section class="panel"><h2 id="d-sell">순매도 상위<small>금액(억) 순<span class="ev" id="ev-sell-amt"></span> · 오른쪽은 시총 대비 %p<span class="ev" id="ev-sell-share"></span> · 이름 아래 투신·연기금(억)<span class="ev" id="ev-sell-trust"></span></small></h2><div class="lst" id="lst-sell"></div></section>
@@ -470,7 +471,7 @@ function drivers(sec,k){
     if(!x||x[k]==null) continue;
     const v=x[k];
     rows.push({code,name:r.name,v,tv:x.tv,cap:r.cap,iv:x.invtrt,pf:x.penfnd_etc,
-               a:(r.cap&&r.cap>0)?v/r.cap*100:null});}
+               pend:r.cap_pending,a:(r.cap&&r.cap>0)?v/r.cap*100:null});}
   rows.sort((x,y)=>y.v-x.v);
   return rows;
 }
@@ -665,6 +666,10 @@ function renderNames(){
     document.getElementById("ev-"+sd+"-share").textContent=" "+evName(actor,"share");
     const iv=evName("invtrt","amt"), pf=evName("penfnd","amt");
     document.getElementById("ev-"+sd+"-trust").textContent=" "+(iv===pf?iv:"투신 "+iv+" · 연기금 "+pf);});
+  // 권리락 신주 미반영 — TUI `CAP_PENDING_MARK` 와 같은 표지. 시총이 작게, 오른쪽 %p 가 크게 나온다.
+  const pend=Object.values(D.names).filter(r=>r.cap_pending&&r.sector===picked&&(market==="전체"||r.market===market));
+  document.getElementById("d-pending").textContent=pend.length
+    ?"! 권리락 신주 미반영 "+pend.length+"종목("+pend.slice(0,4).map(r=>r.name+" "+r.cap_pending.date.slice(5)).join(" · ")+(pend.length>4?" …":"")+") — 신주 상장 전이라 시총이 작게, 시총 대비 %p 가 크게 나온다(최대 약 2배)":"";
   const all=drivers(picked,actor);
   // 부호로 나누므로 같은 종목이 양쪽에 뜨지 않는다. 금액 순 — 화면의 순매수·순매도 상위와 같다.
   fill("lst-buy", all.filter(r=>r.v>0).slice(0,6));
@@ -684,7 +689,7 @@ function renderNames(){
         sub.append(document.createTextNode(ko+" ")); sub.append(el("b","num "+(v==null?"":cls(v)),v==null?"—":amt(v))); });
       sub.append(document.createTextNode("억")); nm.append(sub); li.append(nm);
       li.append(el("div","amt num "+cls(t.v),amt(t.v)+"억"));
-      li.append(el("div","rt num "+cls(t.a==null?t.v:t.a),t.a==null?"—":pp(t.a)+"%p"));
+      li.append(el("div","rt num "+cls(t.a==null?t.v:t.a),t.a==null?"—":pp(t.a)+"%p"+(t.pend?"!":"")));
       box.append(li);});
   }
 }

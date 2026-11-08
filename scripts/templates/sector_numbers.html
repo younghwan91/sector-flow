@@ -148,6 +148,7 @@ details.explore .xnote{margin:0; padding:10px 15px; font-size:11.5px; color:var(
     <div class="scrollhint">← 표를 옆으로 밀면 열이 더 있다 →</div>
     <div class="tw"><table id="tbl"></table></div>
     <div class="legend-ev" id="legend-ev"></div>
+    <div class="legend-ev" id="cap-pending" hidden></div>
   </section>
 
   <details class="explore" id="explore">
@@ -619,6 +620,11 @@ function render(){
   });
   t.append(tb);
 }
+// 권리락 신주 미반영 — 섹터 시총(가속의 분모)이 그만큼 작다. 값은 그대로 두고 표지만(TUI `cap_pending_note`).
+{ const pend=Object.values(D.names||{}).filter(r=>r.cap_pending);
+  const box=document.getElementById("cap-pending");
+  box.hidden=!pend.length;
+  box.textContent=pend.length?"! 권리락 신주 미반영 "+pend.length+"종목: "+pend.map(r=>r.name+"("+r.sector+" "+r.cap_pending.date.slice(5)+" "+r.cap_pending.rt.toFixed(1)+"%)").join(" · ")+" — 신주 상장 전이라 그 종목·섹터의 시총이 작게 나온다":""; }
 document.getElementById("legend-ev").replaceChildren(...[
   ["[측정] [측]","지금·지난 구간을 잰 값. 앞날을 주장하지 않는다(앞날 검정 안 함)"],
   ["[앞날 증거 없음] [무]","섹터 앞날 5·20일 수익률과의 순위 관계를 검정함 — 증거 없음. 검정한 것: 가속(순매수÷섹터 시총) 기관 20·60일·외국인 20일, 기관 임펄스 20일, x·G 20일 — 전부 전체 시장(10종목 미만 제외). 그 밖의 창은 같은 열이라도 [측정] · 앞날 검정은 N일만, 거래소·코스닥은 [측정] · 전체 시장만 검정, 투신+연기금(금액)은 [측정] · ÷시총 기준으로만 검정(S1). 1일 탭에서 값이 없는 열은 표지가 없다"],
