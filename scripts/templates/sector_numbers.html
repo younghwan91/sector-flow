@@ -363,11 +363,15 @@ function renderToday(){
   const unc=mk.reduce((a,m)=>a+(+(((D.n_by_sector||{})[m]||{})["(미분류)"])||0),0);
   if(unc) c2.append(el("div","tnote","※ (미분류) "+unc+"종목 — 벤더 마스터에 섹터가 빈 종목이다(섹터가 아니다). 은행 넷은 금융으로 덮었다."));
   const RS=D.revision_stats;
-  if(prov&&RS){ const rl=el("div","tline rev"), sd=RS.seed&&RS.seed.dates&&RS.seed.dates.length?RS.seed:null;
-    // TUI `revision_line` 과 같은 글자 — 상위3 유지율과 시드 출처까지(검증기 W 층이 대조한다).
+  if(prov&&RS){ const rl=el("div","tline rev"), sd=RS.seed&&RS.seed.dates&&RS.seed.dates.length?RS.seed:null,
+      ST=RS.stocks||{};
+    // TUI `revision_line` 과 같은 글자 — 상위3 유지율·종목(주도주) 층·시드 출처까지(검증기 W 층이 대조한다).
     rl.textContent=(RS.n_dates&&RS.rel_median_pct!=null)
       ?"최근 "+RS.n_dates+"일 잠정→확정: 섹터 칸 중앙 "+RHU(RS.rel_median_pct)+"%, 부호 뒤집힘 "+(RS.flips||0)+"회"
-        +(RS.top3_keep_pct!=null?", 상위3 유지 "+RHU(RS.top3_keep_pct)+"%":"")+" (1일 칸 "+(RS.n_cells||0)+"개)"
+        +(RS.top3_keep_pct!=null?", 상위3 유지 "+RHU(RS.top3_keep_pct)+"%":"")
+        +(ST.n_dates&&ST.rel_median_pct!=null?", 주도주 중앙 "+RHU(ST.rel_median_pct)+"%"
+          +(ST.top3_keep_pct!=null?"·종목 상위3 유지 "+RHU(ST.top3_keep_pct)+"%":""):"")
+        +" (1일 칸 "+(RS.n_cells||0)+"개)"
         +(sd?" · "+sd.label+" "+sd.dates.length+"일":"")
       :"잠정→확정 수정 폭: 아직 확정 기록이 없다 — 확정 리포트가 쌓이면 여기 적는다";
     c2.append(rl); }
