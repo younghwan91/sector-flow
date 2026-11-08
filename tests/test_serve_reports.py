@@ -353,6 +353,79 @@ def test_serve_sh_restarts_a_server_that_stops_answering(web):
     assert f"pid {hung_pid}" in alert and "대답하지 않는다" in alert and "curl" in alert, alert
 
 
+UNHEALTHY = """
+import http.server, os, sys
+class H(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        b = b"unhealthy - FileNotFoundError: reports gone\\n"
+        self.send_response(503)
+        self.send_header("Content-Length", str(len(b)))
+        self.end_headers()
+        self.wfile.write(b)
+    def log_message(self, *a):
+        pass
+s = http.server.HTTPServer(("127.0.0.1", int(sys.argv[1])), H)
+open(sys.argv[2], "w").write(str(os.getpid()))
+s.serve_forever()
+"""
+
+
+def _start_unhealthy(r: Path, port: int, procs: list) -> int:
+    (r / "sick").mkdir(exist_ok=True)
+    (r / "sick" / "serve_reports.py").write_text(UNHEALTHY)
+    pidfile = r / "reports" / ".serve.pid"
+    pidfile.unlink(missing_ok=True)
+    sick = subprocess.Popen(["flock", str(r / "reports" / ".serve.lock"), sys.executable,
+                             str(r / "sick" / "serve_reports.py"), str(port), str(pidfile)],
+                            start_new_session=True)
+    procs.append(sick)
+    assert _until(pidfile.exists, 10) and _until(lambda: _status(port) == 503, 10)
+    return int(pidfile.read_text())
+
+
+def _status(port: int) -> int | None:
+    try:
+        c = http.client.HTTPConnection("127.0.0.1", port, timeout=1)
+        c.request("GET", "/healthz")
+        return c.getresponse().status
+    except OSError:
+        return None
+
+
+def test_serve_sh_names_a_503_and_resets_the_streak_once_healthy(web):
+    """503(리포트를 못 보여 준다)은 무응답과 다른 일이다 — 알림이 그 이유(본문)를 싣는다. 건강해지면 연속 횟수를 지운다."""
+    r, port, procs = web
+    sick_pid = _start_unhealthy(r, port, procs)
+    stub, alert_log = _alert_stub(r)
+    p = _serve_sh(r, port, stub)
+    procs.append(p)
+    assert _until(lambda: _healthy(port), 40)
+    alert = alert_log.read_text()
+    assert f"pid {sick_pid}" in alert and "HTTP 503" in alert and "reports gone" in alert, alert
+    assert "대답하지 않는다" not in alert, "503 을 무응답이라 불렀다"
+    assert (r / "reports" / ".serve.restarts").read_text().strip() == "1"
+    again = subprocess.run(["/bin/bash", str(r / "scripts" / "serve.sh")], capture_output=True, text=True,
+                           timeout=30, env={**os.environ, "SECTOR_FLOW_HOST": "127.0.0.1",
+                                            "SECTOR_FLOW_PORT": str(port), "SECTOR_FLOW_ALERT": str(stub)})
+    assert again.returncode == 0 and not (r / "reports" / ".serve.restarts").exists()
+
+
+@pytest.mark.parametrize(("before", "alerts"), [(1, False), (11, True)])
+def test_serve_sh_restart_alerts_once_an_hour_not_every_five_minutes(web, before, alerts):
+    """다시 띄워도 503 이 이어지면 5분마다 재시작한다 — 알림까지 5분마다면 하루 288건이다(연속 첫 회와 12회마다)."""
+    r, port, procs = web
+    _start_unhealthy(r, port, procs)
+    (r / "reports" / ".serve.restarts").write_text(str(before))
+    stub, alert_log = _alert_stub(r)
+    p = _serve_sh(r, port, stub)
+    procs.append(p)
+    assert _until(lambda: _healthy(port), 40)
+    assert (r / "reports" / ".serve.restarts").read_text().strip() == str(before + 1)
+    assert alert_log.exists() == alerts, alert_log.read_text() if alert_log.exists() else ""
+    if alerts:
+        assert f"연속 {before + 1}회" in alert_log.read_text()
+
+
 def test_serve_sh_leaves_a_healthy_server_alone(web):
     """대답하는 서버를 5분마다 죽였다 살리면 그 틈의 요청이 끊긴다."""
     r, port, procs = web

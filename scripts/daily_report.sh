@@ -40,6 +40,8 @@ fi
 # 실패 사유는 보여 준다 — 버리면 `set -e` 때문에 아래 안내까지 못 가고 빈 알림으로 끝난다.
 # libpq 가 접속 문자열을 되읊을 수 있어 비밀번호 자리는 가린다.
 # 임시 파일은 디스크에 — /tmp(사용자 할당량 tmpfs)가 차면 mktemp 가 죽고 set -e 로 이유 없이 끝났다(2026-11-08 리허설).
+# KILL 로 끝나 못 지운 지난 것(하루 넘은 것)은 쓸어 낸다. 파일은 0600 이고, 접속 문자열은 쓰자마자 가린다(아래 sed -i).
+find "$OUT_ROOT" -maxdepth 1 -name '.asof_err.*' -mtime +0 -delete 2>/dev/null || true
 ASOF_ERR="$(mktemp -p "$OUT_ROOT" .asof_err.XXXXXX)" || {
   echo "[$(date '+%F %T')] 임시 파일을 못 만들었다($OUT_ROOT) — 디스크 용량·권한을 보라. 중단." >&2
   exit 1
@@ -53,6 +55,7 @@ cur = con.cursor(); cur.execute("SELECT max(date) FROM supply_demand")
 print(cur.fetchone()[0]); con.close()
 PY
 )" || ASOF_RC=$?
+sed -i -E 's#://[^@ ]*@#://***@#g' "$ASOF_ERR" 2>/dev/null || true
 if [ "$ASOF_RC" -ne 0 ]; then
   echo "[$(date '+%F %T')] DB 에서 기준일을 못 읽었다(rc=$ASOF_RC) — 접속정보(KR_QUANT_DB)와 DB 서버를 확인하라. 중단." >&2
   # 10줄 — uv 의 힌트 줄이 예외 뒤에 붙어 3줄이면 예외가 잘렸다(2026-11-08 모의 실행).

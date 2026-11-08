@@ -13,6 +13,7 @@ import sqlite3
 import stat
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -274,6 +275,30 @@ def test_cron_run_says_why_the_tail_is_missing(repo, tmp_path):
     p, alert = _cron_run(repo, tmp_path, "sh", "-c", "echo 터졌다; exit 3", TMPDIR=str(tmp_path / "없는-tmp"))
     assert p.returncode == 3 and "터졌다" in p.stdout
     assert alert.startswith("error|rpt 실패 (rc=3)") and "임시 파일을 못 만들었" in alert, alert
+
+
+def _stale_and_fresh(d: Path, prefix: str) -> tuple[Path, Path]:
+    d.mkdir(parents=True, exist_ok=True)
+    old, new = d / f"{prefix}old123", d / f"{prefix}new456"
+    old.write_text("x")
+    new.write_text("x")
+    two_days_ago = time.time() - 2 * 86400
+    os.utime(old, (two_days_ago, two_days_ago))
+    return old, new
+
+
+def test_cron_run_sweeps_tail_files_left_by_a_kill(repo, tmp_path):
+    """KILL 로 끝난 크론은 trap 이 못 돈다 — 하루 넘은 꼬리 파일은 다음 실행이 지운다(돌고 있는 실행의 것은 둔다)."""
+    old, new = _stale_and_fresh(repo / "reports", ".cron_run.")
+    _cron_run(repo, tmp_path, "sh", "-c", "true")
+    assert not old.exists() and new.exists()
+
+
+def test_report_sweeps_stale_asof_err_files(repo):
+    _seed(repo.parent / "db.sqlite", today_kosdaq=50)
+    old, new = _stale_and_fresh(repo / "reports", ".asof_err.")
+    assert _run(repo).returncode == 0
+    assert not old.exists() and new.exists()
 
 
 def test_report_is_built_when_tmp_is_unusable(repo):

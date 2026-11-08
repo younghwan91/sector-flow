@@ -23,24 +23,42 @@ LOCK="$REPO/reports/.serve.lock"
 # 그 pid 가 정말 이 서버인지(/proc 의 명령줄) 확인하고, 모르겠으면 아무것도 안 죽이고 기동 실패로 센다
 # (--soft-fail: 한 시간 이어질 때만 알린다). KILL 로 끝난 서버는 그 서버를 띄웠던 크론 래퍼가 rc 137 로 알린다.
 # curl 이 없으면 예전처럼 잠금만 본다.
+# 503(/healthz 가 리포트를 못 보여 준다 — serve_reports._healthz)과 무응답을 알림에서 가른다. 503 은 다시 띄워도
+# 이어지기 쉽다(루트가 사라졌다 등) — 5분마다 재시작은 하되 알림은 연속 첫 회와 그 뒤 RESTART_ALERT_EVERY 회마다
+# 한 번(serve_reports.SOFT_FAIL_ALERT_EVERY 와 같은 1시간). 연속 횟수는 .serve.restarts, 건강하면 지운다.
+RESTARTS="$REPO/reports/.serve.restarts"
+RESTART_ALERT_EVERY=12
 if ! flock -n "$LOCK" true; then
   command -v curl >/dev/null 2>&1 || exit 0
-  if WHY="$(curl -fsS -m 5 -o /dev/null "http://$HOST:$PORT/healthz" 2>&1)"; then
+  OUT="$(curl -sS -m 5 -w '\n%{http_code}' "http://$HOST:$PORT/healthz" 2>&1)"
+  CODE="${OUT##*$'\n'}"
+  if [ "$CODE" = "200" ]; then
+    rm -f "$RESTARTS"
     exit 0
+  fi
+  if [[ "$CODE" =~ ^[1-9][0-9][0-9]$ ]]; then
+    WHY="healthz 실패(HTTP $CODE): $(printf '%s' "${OUT%$'\n'*}" | head -c 300 | tr '\n' ' ')"
+  else
+    WHY="5초 안에 대답하지 않는다($(printf '%s' "$OUT" | head -n 1 | head -c 200))"
   fi
   PID="$(cat "$REPO/reports/.serve.pid" 2>/dev/null || true)"
   if [ -z "$PID" ] || ! tr '\0' ' ' < "/proc/$PID/cmdline" 2>/dev/null | grep -q "serve_reports.py"; then
     exec python3 "$REPO/scripts/serve_reports.py" --root "$REPO/reports" \
       --soft-fail "서버가 떠 있는데 /healthz 가 대답하지 않고, 누구인지(.serve.pid) 몰라 못 끈다 — 손으로 확인하라"
   fi
-  MSG="서버(pid $PID)가 떠 있는데 http://$HOST:$PORT/healthz 가 5초 안에 대답하지 않는다(${WHY:-이유 없음}) — 끄고 다시 띄운다"
+  N="$(cat "$RESTARTS" 2>/dev/null || true)"
+  case "$N" in ''|*[!0-9]*) N=0 ;; esac
+  N=$((N + 1))
+  echo "$N" > "$RESTARTS" 2>/dev/null || true
+  MSG="서버(pid $PID)가 떠 있는데 http://$HOST:$PORT/healthz — $WHY — 끄고 다시 띄운다(연속 ${N}회)"
   echo "[$(date '+%F %T')] $MSG"
   # **여기서 한 번 알린다.** 끈 서버를 띄웠던 크론 줄은 TERM 이면 0(알림 없음), KILL 이면 137 인데 그 본문(서버 출력 꼬리)에는
   # 왜 껐는지가 없다. 알림 통로는 cron_run.sh 와 같다. alert.sh 는 늘 0 이라 재시작을 막지 않는다.
   ALERT="${SECTOR_FLOW_ALERT:-$REPO/../quant-airflow/scripts/alert.sh}"
-  if [ -x "$ALERT" ]; then
-    printf '%s\n/healthz 본문(이유): curl -sS http://%s:%s/healthz · 기록: reports/serve.log\n' "$MSG" "$HOST" "$PORT" \
-      | "$ALERT" warn "sector-flow-web 재시작 — /healthz 무응답(pid $PID)" || true
+  if [ -x "$ALERT" ] && { [ "$N" -eq 1 ] || [ $((N % RESTART_ALERT_EVERY)) -eq 0 ]; }; then
+    printf '%s\n확인: curl -sS http://%s:%s/healthz · 기록: reports/serve.log · 다음 알림은 같은 원인이 %s회 더 이어질 때\n' \
+      "$MSG" "$HOST" "$PORT" "$RESTART_ALERT_EVERY" \
+      | "$ALERT" warn "sector-flow-web 재시작 — /healthz 실패(pid $PID, 연속 ${N}회)" || true
   fi
   kill "$PID" 2>/dev/null
   for _ in 1 2 3 4 5 6 7 8 9 10; do

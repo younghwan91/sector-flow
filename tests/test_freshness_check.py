@@ -116,11 +116,23 @@ def test_dead_webhook_warns(hook, status):
     assert url not in "\n".join(lines) and "secret-token" not in "\n".join(lines)
 
 
-def test_unreachable_webhook_warns_without_printing_the_url():
-    url = "http://127.0.0.1:9/api/webhooks/1/secret-token"        # discard 포트 — 닫혀 있다
+@pytest.mark.parametrize("url", [
+    "http://127.0.0.1:9/api/webhooks/1/FAKE-tok3n-closed",            # discard 포트 — 닫혀 있다
+    "discord.com/api/webhooks/1/FAKE-tok3n-noscheme",                 # 스킴 없음 — Request 가 ValueError(주소 통째)
+    "https://discord.invalid/api/webhooks/1/FAKE tok3n-space",        # 공백 — InvalidURL 이 경로(토큰)를 되읊는다
+], ids=["closed-port", "no-scheme", "space"])
+def test_unreachable_webhook_warns_without_printing_the_url(url, capsys):
+    """이 줄은 cron_run 꼬리 → alert.sh → Discord 로 나간다. 주소 꼴 오류는 str(e) 에 토큰을 싣는다 — 종류만 적는다."""
     rc, lines = fc.check_webhook(url)
     assert rc == 75 and "닿지 못했다" in lines[0]
-    assert "secret-token" not in lines[0]
+    out = "\n".join(lines) + "".join(capsys.readouterr())
+    assert "tok3n" not in out and "webhooks" not in out, out
+
+
+def test_bad_url_in_heartbeat_does_not_crash_or_leak(capsys):
+    lines = fc.heartbeat("hc-ping.invalid/FAKE-tok3n", ok=True)
+    assert "못 보냈다" in lines[0]
+    assert "tok3n" not in "\n".join(lines) + "".join(capsys.readouterr())
 
 
 def test_webhook_answering_html_is_not_taken_as_discord(hook):

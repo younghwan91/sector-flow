@@ -24,6 +24,8 @@ shift
 # 꼬리를 담을 임시 파일은 **디스크(reports/)에 먼저** 만든다. /tmp 는 사용자 할당량이 걸린 tmpfs 라 다른 세션이
 # 채우면 mktemp 가 실패하거나(→ 예전엔 `tail: cannot open ''` 로 본문이 빈 알림), 빈 파일은 만들어지고 쓰기만
 # 조용히 실패한다(2026-11-08 크론 리허설). 둘 다 안 되면 출력은 그대로 흘리고 알림 본문에 그 사실을 적는다.
+# KILL 로 끝나 trap 이 못 지운 지난 꼬리 파일(하루 넘은 것)은 여기서 쓸어 낸다.
+find "$REPO/reports" -maxdepth 1 -name '.cron_run.*' -mtime +0 -delete 2>/dev/null || true
 tmp="$(mktemp -p "$REPO/reports" .cron_run.XXXXXX 2>/dev/null || mktemp 2>/dev/null || true)"
 trap '[ -n "$tmp" ] && rm -f "$tmp"' EXIT
 

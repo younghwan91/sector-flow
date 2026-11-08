@@ -4,6 +4,7 @@
 """
 from __future__ import annotations
 
+import calendar
 import importlib.util
 import os
 import time
@@ -35,7 +36,10 @@ def test_saturday_run_finalizes_friday(tmp_path):
 
 
 def test_tuesday_run_finalizes_monday_though_its_run_id_says_saturday(tmp_path):
-    """화요일 실행의 run_id(logical date)는 지난 토요일이다 — 그걸로 창을 세면 월요일이 창 밖으로 보인다."""
+    """화(11-10) 06:30 KST 실행의 run_id 는 ``scheduled__2026-11-06T21:30Z`` — logical date 는 한 틱 앞(토 11-07 06:30 KST)이다.
+
+    run_id 날짜(UTC 11-06)로 창을 세면 11-03~11-06 이라 월요일(11-09)이 창 밖으로 보인다. 수집기는 실제로 돈 순간의
+    UTC 날짜(첫 줄 ``2026-11-09T21:31Z`` → 11-09)에서 3일을 세므로 창은 11-06~11-09 이고 월요일을 덮는다."""
     _run(tmp_path, "scheduled__2026-11-06T21:30:00+00:00", "2026-11-09T21:31:18", "2026-11-10 07:20")
     ok, why = fd.finalize_done(str(tmp_path), "2026-11-09")
     assert ok, why
@@ -65,8 +69,9 @@ def test_window_edge_is_inclusive(tmp_path):
 
 
 def test_run_day_falls_back_to_file_time_without_a_stamp(tmp_path):
+    """첫 줄 타임스탬프가 없으면 파일 시각의 **UTC** 날짜다 — 토 07:20 KST 에 끝난 기록은 금요일(UTC 22:20)."""
     f = tmp_path / "attempt=1.log"
     f.write_text("no stamp\n")
-    t = time.mktime(time.strptime("2026-11-07 07:20", "%Y-%m-%d %H:%M"))
+    t = calendar.timegm((2026, 11, 6, 22, 20, 0))      # = 2026-11-07 07:20 KST — 이 머신 시간대와 무관
     os.utime(f, (t, t))
-    assert fd.run_day(str(f)).isoformat() in ("2026-11-06", "2026-11-07")   # UTC 날짜 — 이 머신 시간대에 따라
+    assert fd.run_day(str(f)).isoformat() == "2026-11-06"

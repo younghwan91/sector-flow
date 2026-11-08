@@ -109,7 +109,7 @@ def check_prev_final(root: Path, prev: str | None) -> tuple[int, list[str]]:
     return WARN, [f"⚠️ [확정] 전 거래일({prev})이 확정되지 않았다 — {state}(FINAL.txt 없음). 08:20 확정 모드가 "
                   "안 돌았거나 daily_finalize 를 확인하지 못했다.",
                   f"    reports/cron.log 의 08:20 줄과 `uv run python scripts/finalize_done.py --asof {prev}` 를 본다. "
-                  "다음 거래일 수집이 들어와 08:20 은 이 날을 다시 안 본다 — 손으로 다시 만들어야 한다(README §3.1)."]
+                  "다음 거래일 수집이 들어와 08:20 은 이 날을 다시 안 본다 — 지난 기준일 재구성으로 다시 만든다(README §3.1)."]
 
 
 # ── 알림 통로 — quant-airflow scripts/alert.sh 가 읽는 그대로 ─────────────────────
@@ -156,17 +156,30 @@ def alert_value(key: str, environ, alert_sh: Path) -> str:
     return v.strip()
 
 
+def _why(e: BaseException) -> str:
+    """실패 이유 — 예외 **종류와 errno 만**. ``str(e)`` 는 절대 안 쓴다: 주소 꼴 오류(ValueError ``unknown url type``,
+    InvalidURL ``can't contain control characters``)는 주소나 그 경로(=웹훅 토큰)를 그대로 되읊고, 공백 등으로
+    잘린 조각이라 ``replace(url, …)`` 로도 못 가린다. 이 줄은 cron_run 꼬리 → alert.sh → Discord 로 나간다."""
+    inner = getattr(e, "reason", None)
+    inner = inner if isinstance(inner, BaseException) else None
+    parts = [type(e).__name__] + ([type(inner).__name__] if inner else [])
+    eno = getattr(inner or e, "errno", None)
+    if isinstance(eno, int):
+        parts.append(f"errno {eno}")
+    return " ".join(parts)
+
+
 def probe(url: str, timeout: float = PROBE_TIMEOUT) -> tuple[int | None, bytes, str]:
-    """GET 한 번 — (HTTP 상태 또는 None, 본문 앞부분, 실패 이유). 이유에서 주소는 지운다."""
-    req = urllib.request.Request(url, headers={"User-Agent": _UA}, method="GET")
+    """GET 한 번 — (HTTP 상태 또는 None, 본문 앞부분, 실패 이유). 요청 만들기부터 try 안이다 — 주소 꼴이 틀려
+    Request 가 던지면 트레이스백이 주소를 통째로 찍는다."""
     try:
+        req = urllib.request.Request(url, headers={"User-Agent": _UA}, method="GET")
         with urllib.request.urlopen(req, timeout=timeout) as r:  # noqa: S310 — 운영자가 넣은 주소다
             return r.status, r.read(65536), ""
     except urllib.error.HTTPError as e:
         return e.code, b"", ""
     except Exception as e:  # noqa: BLE001 — 접속·시간 초과·주소 꼴 무엇이든 "닿지 못했다"
-        why = f"{type(e).__name__}: {getattr(e, 'reason', e)}".replace(url, "***")
-        return None, b"", why
+        return None, b"", _why(e)
 
 
 def check_webhook(webhook: str | None, *, probe_fn=probe) -> tuple[int, list[str]]:
@@ -220,6 +233,9 @@ def db_facts(db: str, day: str) -> tuple[int, str | None, bool | None]:
         prev = None if prev is None else str(prev)[:10]
         market_open = None
         if rows == 0:
+            if _is_pg(con):
+                # 틱 표는 크다(하이퍼테이블). 범위 조회라 평소 ms 지만, 걸려도 점검 전체(크론 10분)를 잡지 않게.
+                cur.execute("SET LOCAL statement_timeout = '15s'")
             # 틱은 scalp-it 이 장중에 쌓는다(quant-airflow daily_health_check 와 같은 휴장 판정). 표가 없으면 모른다.
             # ticks.ts 는 시간대 없는 timestamp 로 KST 벽시계(09:00~15:20)를 담는다 — timestamptz 로 비교하면 세션 시간대(UTC)
             # 만큼 밀려 휴장일에 전날 장중 틱이 걸린다(2026-10-09 로 확인).

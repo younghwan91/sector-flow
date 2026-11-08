@@ -1975,7 +1975,7 @@ id = "web-healthy-server-killed"
 why = "대답하는 서버를 5분마다 죽였다 살려 그 틈의 요청이 끊긴다"
 guards = ["tests/test_serve_reports.py::test_serve_sh_leaves_a_healthy_server_alone"]
 file = "scripts/serve.sh"
-find = """  if WHY="$(curl -fsS -m 5 -o /dev/null "http://$HOST:$PORT/healthz" 2>&1)"; then"""
+find = """  if [ "$CODE" = "200" ]; then"""
 replace = """  if false; then"""
 
 [[mutation]]
@@ -2969,7 +2969,8 @@ replace = """        if False:"""
 [[mutation]]
 id = "finalize-window-counted-in-kst"
 why = "창을 KST 날짜로 센다 — 수집기의 date.today() 는 UTC 컨테이너라 하루 늦게 세어 창 첫날(휴장 뒤 금요일)을 놓친다"
-guards = ["tests/test_finalize_done.py::test_window_edge_is_inclusive"]
+guards = ["tests/test_finalize_done.py::test_window_edge_is_inclusive",
+          "tests/test_finalize_done.py::test_run_day_falls_back_to_file_time_without_a_stamp"]
 file = "scripts/finalize_done.py"
 find = """    return started.astimezone(COLLECTOR_TZ).date()"""
 replace = """    return started.astimezone(KST).date()"""
@@ -3022,7 +3023,91 @@ id = "web-restart-not-alerted"
 why = "멈춘 서버를 끄고 다시 띄워도 이유를 담은 알림이 없다 — TERM 으로 끝난 서버의 크론 줄은 0 이라 아무 알림도 안 간다"
 guards = ["tests/test_serve_reports.py::test_serve_sh_restarts_a_server_that_stops_answering"]
 file = "scripts/serve.sh"
-find = """  if [ -x "$ALERT" ]; then
-    printf"""
-replace = """  if false; then
-    printf"""
+find = """  if [ -x "$ALERT" ] && { [ "$N" -eq 1 ] || [ $((N % RESTART_ALERT_EVERY)) -eq 0 ]; }; then"""
+replace = """  if false; then"""
+
+# ── ops-r2 독립 리뷰(2026-11-08): 주소 누출 · 재시작 알림 폭주 · 남은 임시 파일 · 빠진 변이 ──
+
+[[mutation]]
+id = "probe-request-outside-try"
+why = "주소 꼴이 틀리면(스킴 없음) Request 가 try 밖에서 던져 트레이스백이 웹훅 주소를 통째로 cron_run 꼬리 → Discord 로 보낸다"
+guards = ["tests/test_freshness_check.py::test_unreachable_webhook_warns_without_printing_the_url"]
+file = "scripts/freshness_check.py"
+find = """    try:
+        req = urllib.request.Request(url, headers={"User-Agent": _UA}, method="GET")"""
+replace = """    req = urllib.request.Request(url, headers={"User-Agent": _UA}, method="GET")
+    try:"""
+
+[[mutation]]
+id = "probe-why-echoes-the-url"
+why = "실패 이유에 str(e) 를 싣는다 — ValueError·InvalidURL 이 주소나 그 경로(토큰)를 되읊고, 공백에서 잘린 조각이라 replace 로도 못 가린다"
+guards = ["tests/test_freshness_check.py::test_unreachable_webhook_warns_without_printing_the_url",
+          "tests/test_freshness_check.py::test_bad_url_in_heartbeat_does_not_crash_or_leak"]
+file = "scripts/freshness_check.py"
+find = """        return None, b"", _why(e)"""
+replace = """        return None, b"", f"{type(e).__name__}: {e}".replace(url, "***")"""
+
+[[mutation]]
+id = "webhook-reader-first-line-wins"
+why = ".env 에 같은 키가 두 번 있으면 alert.sh(tail -n 1)는 마지막 줄을 쓰는데 점검은 첫 줄을 본다"
+guards = ["tests/test_freshness_check.py::test_last_line_wins_like_tail"]
+file = "scripts/freshness_check.py"
+find = """    value = hits[-1][len(prefix):]"""
+replace = """    value = hits[0][len(prefix):]"""
+
+[[mutation]]
+id = "webhook-html-200-taken-as-alive"
+why = "로그인 페이지·리다이렉트처럼 200 HTML 로 답하는 주소를 살아 있는 웹훅으로 본다 — POST 는 거기서 사라진다"
+guards = ["tests/test_freshness_check.py::test_webhook_answering_html_is_not_taken_as_discord"]
+file = "scripts/freshness_check.py"
+find = """            json.loads(body.decode("utf-8", "replace"))"""
+replace = """            pass"""
+
+[[mutation]]
+id = "prev-day-rebuilt-not-counted"
+why = "재구성(REBUILT.txt)한 전 거래일을 미확정이라 매일 경고한다"
+guards = ["tests/test_freshness_check.py::test_rebuilt_previous_day_counts_as_final"]
+file = "scripts/freshness_check.py"
+find = """    if (d / "FINAL.txt").is_file() or (d / "REBUILT.txt").is_file():"""
+replace = """    if (d / "FINAL.txt").is_file():"""
+
+[[mutation]]
+id = "web-restart-alerts-every-five-minutes"
+why = "503 이 이어지면 5분마다 재시작하며 알림도 5분마다 — 하루 288건이면 알림을 안 읽게 된다"
+guards = ["tests/test_serve_reports.py::test_serve_sh_restart_alerts_once_an_hour_not_every_five_minutes"]
+file = "scripts/serve.sh"
+find = """  if [ -x "$ALERT" ] && { [ "$N" -eq 1 ] || [ $((N % RESTART_ALERT_EVERY)) -eq 0 ]; }; then"""
+replace = """  if [ -x "$ALERT" ]; then"""
+
+[[mutation]]
+id = "web-503-called-no-answer"
+why = "/healthz 503(리포트를 못 보여 준다)을 무응답이라 부른다 — 다시 띄워도 안 낫는 원인(본문)을 알림이 안 싣는다"
+guards = ["tests/test_serve_reports.py::test_serve_sh_names_a_503_and_resets_the_streak_once_healthy"]
+file = "scripts/serve.sh"
+find = """  if [[ "$CODE" =~ ^[1-9][0-9][0-9]$ ]]; then"""
+replace = """  if false; then"""
+
+[[mutation]]
+id = "web-restart-streak-never-reset"
+why = "건강해져도 연속 횟수를 안 지우면 다음 사고의 첫 재시작이 알림 없이 지나간다"
+guards = ["tests/test_serve_reports.py::test_serve_sh_names_a_503_and_resets_the_streak_once_healthy"]
+file = "scripts/serve.sh"
+find = """    rm -f "$RESTARTS"
+    exit 0"""
+replace = """    exit 0"""
+
+[[mutation]]
+id = "cron-run-stale-tails-kept"
+why = "KILL 로 끝난 크론의 꼬리 파일이 reports/ 에 영영 쌓인다"
+guards = ["tests/test_daily_report_flow.py::test_cron_run_sweeps_tail_files_left_by_a_kill"]
+file = "scripts/cron_run.sh"
+find = """find "$REPO/reports" -maxdepth 1 -name '.cron_run.*' -mtime +0 -delete 2>/dev/null || true"""
+replace = """true"""
+
+[[mutation]]
+id = "report-stale-asof-err-kept"
+why = "KILL 로 끝난 배치의 DB 오류 파일(접속 문자열이 실릴 수 있다)이 reports/ 에 영영 남는다"
+guards = ["tests/test_daily_report_flow.py::test_report_sweeps_stale_asof_err_files"]
+file = "scripts/daily_report.sh"
+find = """find "$OUT_ROOT" -maxdepth 1 -name '.asof_err.*' -mtime +0 -delete 2>/dev/null || true"""
+replace = """true"""
