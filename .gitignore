@@ -24,3 +24,6 @@ dist/
 # 에이전트·앱 로컬 상태
 .claude/worktrees/
 .orca/
+
+# 검증 연구 재현 산출물 (research/validation/*/out) — 수백 MB 피클·CSV, 소스가 아니다
+/research/validation/*/out/
