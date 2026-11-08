@@ -35,6 +35,9 @@ body{margin:0; background:var(--ground); color:var(--ink);
   font-family:"IBM Plex Sans KR",-apple-system,BlinkMacSystemFont,sans-serif;
   font-size:14px; line-height:1.5; -webkit-font-smoothing:antialiased}
 .wrap{max-width:1320px; margin:0 auto; padding:24px 16px 56px; display:flex; flex-direction:column; gap:16px}
+/* 플렉스 자식은 기본 min-width:auto 라 안의 넓은 표·히트맵 폭으로 페이지가 부풀었다(폰 390px 에서 머리글이
+   화면 밖으로 잘렸다). 자식이 줄어들게 두고 넓은 것은 자기 칸 안에서 옆으로 민다. */
+.wrap>*{min-width:0}
 .num{font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace; font-variant-numeric:tabular-nums}
 .pos{color:var(--buy)} .neg{color:var(--sell)}
 header{display:flex; flex-direction:column; gap:6px}
@@ -46,7 +49,7 @@ h1{margin:0; font-size:clamp(22px,3vw,30px); font-weight:700; letter-spacing:-.0
 .bar{display:flex; flex-wrap:wrap; gap:10px 16px; align-items:center; padding:11px 13px;
   background:var(--card); border:1px solid var(--line); border-radius:10px}
 .grp{display:flex; align-items:center; gap:7px}
-.lab{font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-3); font-weight:600}
+.lab{font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-3); font-weight:600; white-space:nowrap}
 .seg{display:inline-flex; background:var(--sunk); border:1px solid var(--line); border-radius:8px; padding:3px; gap:2px}
 .seg button{font:inherit; font-size:12.5px; font-weight:500; padding:5px 11px; border:0; border-radius:5px;
   background:transparent; color:var(--ink-2); cursor:pointer}
@@ -81,14 +84,29 @@ td.drv b{font-weight:500; color:var(--ink)}
 .notes{border-left:3px solid var(--line); padding:2px 0 2px 13px; display:flex; flex-direction:column; gap:5px}
 .notes p{margin:0; font-size:11.5px; color:var(--ink-2)}
 .notes b{color:var(--ink); font-weight:600}
+nav.links{display:flex; gap:12px; flex-wrap:wrap; font-size:12.5px}
+nav.links a{color:var(--focus); text-decoration:none}
+nav.links a:hover{text-decoration:underline}
+.chipnote{color:var(--ink-2); font-size:12px}
+.ev{display:inline-block; font-size:10px; font-weight:500; color:var(--ink-3); letter-spacing:0}
+.legend-ev{font-size:11.5px; color:var(--ink-2); display:flex; gap:6px 14px; flex-wrap:wrap; padding:9px 15px 11px; border-top:1px solid var(--line-2)}
+.legend-ev b{color:var(--ink); font-weight:600}
+details.explore{background:var(--card); border:1px dashed var(--line); border-radius:11px}
+details.explore>summary{cursor:pointer; padding:12px 15px; font-size:13px; font-weight:600; color:var(--ink-2)}
+details.explore[open]>summary{border-bottom:1px solid var(--line-2)}
+details.explore .xnote{margin:0; padding:10px 15px; font-size:11.5px; color:var(--ink-2)}
+.scrollhint{display:none; font-size:11px; color:var(--ink-3); padding:6px 15px 0}
+@media (max-width:900px){.scrollhint{display:block}}
 </style>
 
 <div class="wrap">
   <header>
     <div class="eyebrow">KR MARKET · SECTOR NUMBERS</div>
     <h1>섹터 수치표</h1>
-    <div class="sub"><span class="num" id="asof"></span><span id="chip"></span>
-      <span class="dim">해석·추천 없음 — 숫자만</span></div>
+    <div class="sub"><span class="num" id="asof"></span><span id="chip"></span><span class="num dim" id="range"></span></div>
+    <div class="sub"><span class="chipnote" id="chipnote"></span></div>
+    <div class="sub"><span class="dim">추천 없음 — 누가 어디서 사고팔았나의 관측 숫자다. 섹터 지표의 앞날 관계는 검정함 — 증거 없음(<a href="https://github.com/younghwan91/sector-flow/tree/main/docs/validation">docs/validation</a>).</span></div>
+    <nav class="links" aria-label="다른 화면"><a href="viewer.html">흐름 뷰어 →</a><a href="../">기준일 목록 →</a></nav>
   </header>
 
   <div class="bar">
@@ -98,26 +116,32 @@ td.drv b{font-weight:500; color:var(--ink)}
   </div>
 
   <section class="panel">
-    <h2 id="cttl">종합 <small>창별 G 의 등가중 평균 · "통과 창" 은 힘·압축·풀림 세 조건을 다 만족한 창 수 — 어느 창을 볼지 정하는 근거가 데이터에 없어(k 가 창마다 요동) 가중치를 두지 않는다</small></h2>
-    <div class="tw"><table id="ctbl"></table></div>
+    <h2 id="ttl">섹터별 <small>단위 억원 · 헤더를 누르면 정렬 · 10종목 미만(회색)은 정렬과 무관하게 맨 아래</small></h2>
+    <div class="scrollhint">← 표를 옆으로 밀면 열이 더 있다 →</div>
+    <div class="tw"><table id="tbl"></table></div>
+    <div class="legend-ev" id="legend-ev"></div>
   </section>
 
-  <section class="panel">
-    <h2 id="ttl">섹터별 <small>단위 억원 · 헤더를 누르면 정렬</small></h2>
-    <div class="tw"><table id="tbl"></table></div>
-  </section>
+  <details class="explore" id="explore">
+    <summary>탐색 — 검정 결과 앞날 증거 없음(G 판정 불가) · 열면 G 열과 종합 G 표가 보인다</summary>
+    <p class="xnote"><b>G</b> 는 관문(얇지 않고 a&gt;0·x&gt;0·ẍ&gt;0)을 통과한 섹터끼리의 순위 평균이다. 관문 통과가 날마다 2~7개라 앞날 관계를 판정할 검정력이 없다(판정 불가). <b>종합 G</b> 는 섞은 창 가운데 <b>통과한 창만</b>의 평균이라 1/2 통과가 2/2 통과보다 위에 올 수 있다 — 옆의 통과 구간(n/m)을 같이 보라.</p>
+    <section class="panel" style="border:0;border-radius:0">
+      <h2 id="cttl">종합 G <small>통과한 창만의 G 평균 · 통과 구간 = 세 조건을 다 만족한 창 수 / 섞은 창 수</small></h2>
+      <div class="tw"><table id="ctbl"></table></div>
+    </section>
+  </details>
 
   <div class="notes">
-    <p><b>임펄스</b> = 구간 누적 기관 순매수(수량 × 그날 종가). <b>가속도</b> = 임펄스 ÷ 구간말 섹터 시총 × 100. <b>수익률</b> = 그 섹터 <b>자체 바구니</b>(자금흐름·시총과 같은 종목집합)의 구간 수익률 — <b>전일</b> 시총 가중 일별 수익률의 기하누적이다. KRX 업종지수가 아니다: 구성종목이 달라 분자·분모·수익률이 서로 다른 바구니가 되고, 실측으로 부동산 20일이 지수 +6.0% vs 자체 +74.9% 였다.</p>
+    <p><b>임펄스</b> = 구간 누적 기관 순매수(수량 × 그날 종가). <b>가속</b> = 임펄스 ÷ 구간말 섹터 시총 × 100 [%p]. <b>수익률</b> = 그 섹터 <b>자체 바구니</b>(자금흐름·시총과 같은 종목집합)의 구간 수익률 — <b>전일</b> 시총 가중 일별 수익률의 기하누적이다. KRX 업종지수가 아니다: 구성종목이 달라 분자·분모·수익률이 서로 다른 바구니가 되고, 실측으로 부동산 20일이 지수 +6.0% vs 자체 +74.9% 였다.</p>
     <p><b>순매수 금액은 종가 환산 근사다</b> — DB 는 수량만 준다. 참값은 VWAP 가중이다.</p>
     <p><b>0 은 "관망"이 아니라 "0 또는 미보고"</b>다. <b>종목</b> 열은 그 (시장,섹터)에서 <b>이 구간에 거래된</b> 종목 수 — 벤더 마스터(<span class="num">stocks</span>)에는 수급 보고가 두 달 전에 끊긴 이름이 남아 있어, 그걸 세면 표의 수가 실제보다 많아진다.</p>
-    <p><b>종목이 10개 미만인 섹터는 회색으로 죽였고 G 순위 산정에서도 뺐다.</b> 벤더 분류(<span class="num">stocks.sector</span>)가 좁아 부동산 3 · 출판/매체복제 2 · 제조 8 처럼 사실상 단일종목인 라벨이 있다 — 부동산은 자이에스앤디가 시총의 80%다. 부동산업 회사들은 실제로 <b>금융</b>(한국토지신탁·한국자산신탁·리츠)과 <b>건설</b>(HDC현대산업개발·동원개발 등)에 흩어져 있다. 그런 행의 x·ẍ·G 는 섹터가 아니라 개별 종목 이야기다.</p>
-    <p><b>선정</b> — TUI(<code>sw-flow</code>)의 <code>선정</code> 열과 <b>같은 이름·같은 설계</b>다. <b>관문이 탈락을, 점수가 순서를 정한다</b>: 얇지 않고(종목 10개 이상) <b>아직 눌려 있고(x&gt;0) · 계속 밀리고 있고(a&gt;0) · 막 풀리기 시작한(ẍ&gt;0)</b> 섹터만 점수를 받는다(<b class="pos">●</b>). 하나라도 어기면 점수가 없다 — 예전엔 통과 여부를 따로 내고 점수는 전 섹터에 줘서 "점수는 높은데 통과는 못 한" 줄이 생겼다. 점수는 세 양의 <b>횡단면 순위 평균</b>(0~1, 동률은 중간순위)이다. 순위를 쓰는 이유는 a(0~5%p)·x(±50%p)·ẍ(1e-2) 의 스케일이 달라 그냥 더하면 x 가 전부 지배하고, 곱하면 하나가 0 근처일 때 전체가 죽기 때문이다. ⚠️ <b>x 는 −Δv 와 강하게 얽혀 있어(ρ 0.94~1.00), 이 점수는 순수 수급 신호가 아니라 "많이 빠졌고 + 돈은 들어오고 + 반등이 시작된" 평균회귀형 화면이다.</b> 그리고 이 화면은 <b>검증된 적이 없다</b> — 전방수익으로 태워본 적 없는 탐색 도구다.</p>
-    <p><b>풀림 속도 ẋ · 풀림 가속도 ẍ</b> — 미실현 변위 <span class="num">x</span> 가 해소되는 동역학. 구간을 셋으로 갈라 조각별 x 를 구하고 중앙차분한다(<span class="num">ẋ = −(x₃−x₁)/2Δ</span>, <span class="num">ẍ = −(x₃−2x₂+x₁)/Δ²</span>, 부호 반전은 x 가 줄어드는 것이 "풀림"이기 때문). <b>양수 = 압축이 풀리는 중, ẍ 가 양수로 돌아서는 것이 풀리기 시작하는 순간</b>이다. ⚠️ 2차 차분이라 <b>짧은 창에서는 조각이 6~7일밖에 안 돼 값이 흔들린다</b> — 60일 이상에서 보라.</p>
-    <p><b>일률 dW/dt</b> — 구간을 반으로 갈라 <span class="num">W = 가속도 × 수익률</span> 의 변화를 거래일로 나눈 값. U 는 상태량이라 "얼마나 눌렸나" 만 말하고 언제 풀릴지는 말하지 않지만, dW/dt 는 유량이라 방향이 있다. <b>음 → 양으로 돌아서는 것이 힘과 운동이 정렬되는 순간</b>이다. 차분이라 k 절편 편향이 상쇄된다.</p>
-    <p><b>포텐셜 에너지</b> <span class="num">U = ½·k·x²</span>, <span class="num">x = 예상Δv − 실제Δv</span>(미실현 변위). <span class="num">예상Δv = k·가속도 + 절편</span>, k 는 그 블록 횡단면에서 추정한 강성이다. <b>x &gt; 0 = 덜 감(압축), x &lt; 0 = 더 감(신장).</b> k 는 추정치라 헤더에 t 를 같이 띄운다 — <b>|t| &lt; 2 인 블록에서는 예상Δv 가 사실상 절편(그 구간 평균)이고 가속도가 기여하지 않는다.</b></p>
+    <p><b>종목이 10개 미만인 섹터는 회색으로 죽였고 G 순위 산정에서도 뺐으며, 어떤 열로 정렬해도 맨 아래에 둔다</b>(분모가 작아 가속이 쉽게 튄다). 벤더 분류(<span class="num">stocks.sector</span>)가 좁아 부동산 3 · 출판/매체복제 2 · 제조 8 처럼 사실상 단일종목인 라벨이 있다 — 부동산은 자이에스앤디가 시총의 80%다. 부동산업 회사들은 실제로 <b>금융</b>(한국토지신탁·한국자산신탁·리츠)과 <b>건설</b>(HDC현대산업개발·동원개발 등)에 흩어져 있다. 그런 행의 x·ẍ·G 는 섹터가 아니라 개별 종목 이야기다.</p>
+    <p><b>미실현 x</b> = 예상Δv − 실제Δv. 적합선(k·가속 + 절편) 대비 덜 오른 폭(+)·더 오른 폭(−)이다. <b>x 는 섹터 20일 수익률 반전(−Δv)과 순위상관 ρ 0.82~0.93</b>(2026-11-08 실측)이라 사실상 "많이 빠진 순" 이다. 앞날 관계도 검정함 — 증거 없음.</p>
+    <p><b>풀림 속도 ẋ · 풀림 가속도 ẍ</b> — 구간을 셋으로 갈라 조각별 x 를 구하고 중앙차분한 값(<span class="num">ẋ = −(x₃−x₁)/2Δ</span>, <span class="num">ẍ = −(x₃−2x₂+x₁)/Δ²</span>). 부호를 뒤집어 x 가 줄어드는 쪽을 양수로 적는다. 2차 차분이라 조각이 6~7일인 짧은 창에서는 값이 크게 흔들린다. 앞날 검정은 하지 않았다.</p>
+    <p><b>일률 dW/dt</b> — 구간을 반으로 갈라 <span class="num">W = 가속 × 수익률</span> 의 전·후반 차를 거래일로 나눈 값. 차분이라 k 절편 편향이 상쇄된다. 앞날 검정은 하지 않았다.</p>
+    <p><b>포텐셜</b> <span class="num">U = ½·k·x²</span>. <span class="num">예상Δv = k·가속 + 절편</span>, k 는 그 블록 횡단면에서 추정한 기울기다. k 는 추정치라 헤더에 t 를 같이 띄운다 — <b>|t| &lt; 2 인 블록에서는 예상Δv 가 사실상 절편(그 구간 평균)이고 가속이 기여하지 않는다.</b></p>
     <p><b>이전 "미반응" 잔차 열은 내렸다(2026-08-27).</b> 자금흐름은 <span class="num">stocks.sector</span> 바구니에서, 수익률은 KRX 업종지수에서 쟀는데 두 바구니의 구성종목이 다르다. 그리고 설령 같았어도 그 지표는 정보를 담지 않았다 — 잔차와 −수익률의 순위상관이 중앙값 0.94(20일 0.99), R² 0.02~0.15 로 사실상 "많이 빠진 순"의 재포장이었다.</p>
-    <p><b>시총이 작은 섹터는 가속도가 쉽게 튄다</b> — 임펄스와 시총을 같이 보라. 빨강 = 순매수, 파랑 = 순매도(국내 관행).</p>
+    <p><b>시총이 작은 섹터는 가속이 쉽게 튄다</b> — 임펄스와 시총을 같이 보라. 빨강 = 순매수, 파랑 = 순매도(국내 관행).</p>
   </div>
 </div>
 
@@ -126,7 +150,12 @@ const D = __DATA__;
 const WINS = [...new Set(Object.keys(D.blocks).map(k=>+k.split("|")[0]))].sort((a,b)=>a-b);
 const MKTS = [...new Set(Object.keys(D.blocks).map(k=>k.split("|")[1]))];
 let win = WINS.includes(20) ? 20 : WINS[0], mkt = "전체";
-let sortKey = "G", sortDir = -1;
+// 기본 정렬은 가속 — G 는 탐색 표지 아래에만 있다(검정 결과 판정 불가).
+let sortKey = "accel", sortDir = -1;
+const EXP_KEYS = new Set(["G"]);
+/** 증거 수준 — TUI(`flow_view.EVIDENCE`)와 **같은 표**다. 검사가 둘을 대조한다. */
+const EV={"accel":"[앞날 증거 없음]","inst":"[앞날 증거 없음]","forgn":"[앞날 증거 없음]","indiv":"[측정]","etc":"[측정]","x":"[≈섹터 20일 반전: x]","G":"[판정 불가: G]","exp":"[측정]","U":"[측정]","P":"[측정]","xdot":"[측정]","xddot":"[측정]","ret":"[측정]","tv":"[측정]","cap":"[측정]","n_all":"[측정]"};
+const expOpen=()=>document.getElementById("explore").open;
 
 const el=(t,c,x)=>{const e=document.createElement(t); if(c)e.className=c; if(x!=null)e.textContent=x; return e;};
 const cls=n=>n>=0?"pos":"neg";
@@ -135,9 +164,16 @@ const A=n=>n==null?"—":sg(n)+Math.abs(n).toLocaleString("ko-KR",{maximumFracti
 const P=n=>n==null?"—":sg(n)+Math.abs(n).toFixed(2);
 const N0=n=>n==null?"—":Math.round(n).toLocaleString("ko-KR");
 
-document.getElementById("asof").textContent = D.dates[0]+" ~ "+D.dates[1];
+// 맨 앞은 **기준일**이다. 페이로드 전체 범위(1년)를 먼저 적으면 그게 이 숫자들의 날짜로 읽힌다.
+document.getElementById("asof").textContent = "기준일 "+D.asof;
+document.getElementById("range").textContent = "· 1년 백분위 표본 "+D.dates[0]+" ~ "+D.dates[1];
 const chip=el("span","chip", D.final?"마감 · 확정":D.finalized?"마감 · 잠정":"장중 · 미확정");
 document.getElementById("chip").append(chip);
+// 칩의 뜻은 **글로** 적는다 — title 에만 두면 폰에서는 볼 길이 없다.
+document.getElementById("chipnote").textContent = D.final
+  ? "확정: 다음날 아침 확정치(daily_finalize)를 확인한 뒤 다시 만든 리포트다."
+  : D.finalized ? "잠정: 수집 창(17시) 뒤 그날 잠정값으로 만든 리포트다. 다음날 아침 확정치로 다시 만든다."
+  : "미확정: 17시 이전이라 부분 데이터일 수 있다.";
 // 받은 폴더·멈춘 배치를 오늘 것으로 읽지 않게. 문턱은 화면(`STALE_DAYS`)과 같다.
 const age=Math.floor((Date.now()-Date.parse(D.asof+"T00:00:00+09:00"))/864e5);
 if(age>=4) document.getElementById("chip").append(el("span","chip","⚠ "+age+"일 지난 리포트"));
@@ -153,10 +189,10 @@ seg("seg-mkt", MKTS.map(m=>[m,m]), ()=>mkt, v=>{mkt=v; render();});
 
 const COLS=[
   ["sector","섹터","l"],
-  ["n_all","종목","n"],
-  ["G","선정","n"],
+  ["n_all","종목수","n"],
+  ["G","G","n"],
   ["inst","기관 임펄스","n"],
-  ["accel","가속도 %p","n"],
+  ["accel","가속 %p","n"],
   ["ret","수익률 %","n"],
   ["exp","예상 Δv %","n"],
   ["x","미실현 %p","n"],
@@ -186,10 +222,10 @@ function absentRow(r){ return r.n_all===0 && !r.cap; }
 function renderCombined(){
   const C=D.combined&&D.combined[mkt];
   const t=document.getElementById("ctbl"); t.replaceChildren();
-  document.getElementById("cttl").firstChild.textContent="종합 — "+mkt+" ";
+  document.getElementById("cttl").firstChild.textContent="종합 G — "+mkt+" ";
   if(!C){ noCombined(t); return; }
   const thead=el("thead"),tr=el("tr");
-  ["섹터","종목","종합 G",...C.windows.map(w=>w+"일 G"),"통과 창"].forEach((h,i)=>
+  ["섹터","종목수","종합 G",...C.windows.map(w=>w+"일 G"),"통과 구간"].forEach((h,i)=>
     tr.append(el("th",i===0?"l":null,h)));
   thead.append(tr); t.append(thead);
   const tb=el("tbody");
@@ -197,7 +233,8 @@ function renderCombined(){
     const x=el("tr"); if(r.thin) x.className="thin";
     x.append(el("td","l",r.sector));
     x.append(el("td","num",r.n_all));
-    x.append(el("td","num"+(r.G_pass?" pos":""), r.G==null?"—":r.G.toFixed(2)));
+    // 통과 구간을 G 옆에 같이 적는다 — 1/2 통과의 종합 G 가 2/2 통과보다 높게 뜰 수 있다.
+    x.append(el("td","num"+(r.G_pass?" pos":""), r.G==null?"—":r.G.toFixed(2)+" ("+(r.pass_n||0)+"/"+C.windows.length+")"));
     C.windows.forEach(w=>x.append(el("td","num", r.per[w]==null?"—":r.per[w].toFixed(2))));
     // 분모는 섞은 창 수다. `seen` 은 "G 가 나온 창" 이라 언제나 pass_n 과 같다.
     const pn=r.pass_n||0, sn=C.windows.length;
@@ -216,7 +253,10 @@ function render(){
   document.getElementById("rangeinfo").textContent = B.from+" ~ "+B.to+" · k="+B.k+" (t="+B.t+") · 절편 "+B.b+"%";
   document.getElementById("ttl").firstChild.textContent = "섹터별 — "+mkt+" · 최근 "+win+"거래일 ";
 
+  if(!expOpen()&&EXP_KEYS.has(sortKey)){ sortKey="accel"; sortDir=-1; }
   const rows=B.rows.filter(r=>!absentRow(r)).sort((a,b)=>{
+    // 얇은 섹터(10종목 미만)는 어느 정렬에서도 맨 아래 — 화면(`State.rows`)과 같은 규칙.
+    if(!!a.thin!==!!b.thin) return a.thin?1:-1;
     const x=a[sortKey], y=b[sortKey];
     if(x==null) return 1; if(y==null) return -1;
     if(typeof x==="string") return sortDir*x.localeCompare(y);
@@ -225,8 +265,9 @@ function render(){
 
   const t=document.getElementById("tbl"); t.replaceChildren();
   const thead=el("thead"), tr=el("tr");
-  COLS.forEach(([k,label,kind])=>{
+  COLS.filter(([k])=>expOpen()||!EXP_KEYS.has(k)).forEach(([k,label,kind])=>{
     const th=el("th",kind==="l"?"l":null,label);
+    if(EV[k]){ th.title=EV[k]+" — 아래 증거 범례"; th.append(el("br"),el("span","ev",EV[k])); }
     if(k!=="drv"){ th.addEventListener("click",()=>{
       if(sortKey===k) sortDir=-sortDir; else {sortKey=k; sortDir=(k==="sector")?1:-1;}
       render(); }); }
@@ -242,8 +283,8 @@ function render(){
     x.append(el("td","l",r.sector));
     x.append(el("td","num", r.n_all==null?"—":r.n_all));
     const gt=el("td","num"+(r.G_pass?" pos":""), r.G==null?"—":r.G.toFixed(2)+(r.G_pass?" ●":""));
-    if(r.G_pass) gt.title="세 조건 통과: 힘 a>0 · 압축 x>0 · 풀림 ẍ>0";
-    x.append(gt);
+    if(r.G_pass) gt.title="세 조건 통과: a>0 · x>0 · ẍ>0";
+    if(expOpen()) x.append(gt);
     x.append(el("td","num "+cls(r.inst), A(r.inst)));
     x.append(el("td","num "+cls(r.accel), P(r.accel)));
     x.append(el("td","num "+(r.ret==null?"dim":cls(r.ret)), P(r.ret)));
@@ -275,5 +316,12 @@ function render(){
   });
   t.append(tb);
 }
+document.getElementById("legend-ev").replaceChildren(...[
+  ["[측정]","지금·지난 구간을 잰 값. 앞날을 주장하지 않는다(앞날 검정 안 함)"],
+  ["[앞날 증거 없음]","섹터 앞날 5·20일 수익률과의 순위 관계를 검정함 — 증거 없음"],
+  ["[판정 불가: G]","관문 통과 섹터가 날마다 2~7개라 검정력이 없다"],
+  ["[≈섹터 20일 반전: x]","x 는 섹터 20일 수익률 반전과 ρ 0.82~0.93"],
+].map(([b,t])=>{const p=el("span"); p.append(el("b",null,b),document.createTextNode(" "+t)); return p;}));
+document.getElementById("explore").addEventListener("toggle",render);
 render();
 </script>

@@ -207,3 +207,98 @@ def test_viewer_drops_a_sector_with_no_stocks_in_the_market(tmp_path):
     texts = _page("sector_flow.html", d, tmp_path)
     assert "섹터A" in texts
     assert "없는섹터" not in texts
+
+
+# ── 웹 두 장도 TUI 와 같은 말을 한다 ─────────────────────────────────────────
+
+def _ev(tpl: str) -> dict:
+    html = (REPO / "scripts" / "templates" / tpl).read_text("utf-8")
+    m = re.search(r"const EV=(\{.*?\});", html)
+    assert m, f"{tpl} 에 증거 표(const EV)가 없다"
+    return json.loads(m.group(1))
+
+
+@pytest.mark.parametrize("tpl", ["sector_numbers.html", "sector_flow.html"])
+def test_web_evidence_badges_match_the_tui(tpl):
+    """웹의 증거 표지는 TUI(`flow_view.EVIDENCE`)와 **같은 값**이어야 한다.
+
+    주입: 한쪽에서 `accel` 을 `[측정]` 으로 바꾸면 실패한다 — 두 화면이 같은 열에 다른 지위를 단다.
+    """
+    sys.path.insert(0, str(REPO / "src"))
+    from sectorflow.tui.flow_view import BADGES, EVIDENCE
+
+    ev = _ev(tpl)
+    assert ev, "증거 표가 비었다"
+    for k, badge in ev.items():
+        assert badge in BADGES, f"{tpl}: 모르는 표지 {badge!r}"
+        assert EVIDENCE.get(k) == badge, f"{tpl}: {k} 표지가 TUI({EVIDENCE.get(k)})와 다르다({badge})"
+
+
+def test_numbers_page_defaults_to_flow_and_hides_g_behind_the_exploration_label():
+    """수치표의 기본 정렬은 가속이고, G 와 종합 G 는 탐색 표지가 달린 접힌 칸 안에 있다.
+
+    주입: `sortKey = "G"` 로 되돌리거나 탐색 칸을 `open` 으로 두면 실패한다.
+    """
+    html = (REPO / "scripts" / "templates" / "sector_numbers.html").read_text("utf-8")
+    assert re.search(r'let sortKey = "accel"', html), "기본 정렬이 가속이 아니다"
+    m = re.search(r'<details class="explore" id="explore"(.*?)>(.*?)</details>', html, re.S)
+    assert m and "open" not in m.group(1), "탐색 칸이 없거나 처음부터 열려 있다"
+    assert "탐색 — 검정 결과 앞날 증거 없음(G 판정 불가)" in m.group(2)
+    assert 'id="ctbl"' in m.group(2), "종합 G 표가 탐색 칸 밖에 있다"
+    assert html.index('id="tbl"') < html.index('id="ctbl"'), "종합 G 표가 수급 표보다 위에 있다"
+
+
+@pytest.mark.parametrize("tpl", ["sector_numbers.html", "sector_flow.html"])
+def test_pages_carry_no_stale_or_timing_language(tpl):
+    """낡은 상관값·타이밍 은유·"미반응" 지표가 다시 들어오지 않는다."""
+    html = (REPO / "scripts" / "templates" / tpl).read_text("utf-8")
+    for bad in ("0.94~1.00", "막 풀리기 시작", "정렬되는 순간", "60일 이상에서 보라", "미반응순",
+                "아직 안 간 섹터", '"resid"', "검증된 적이 없다", "해석·추천 없음 — 숫자만", "가속도 %p",
+                "비중%p", "던진 종목"):
+        assert bad not in html, f"{tpl} 에 {bad!r} 가 남았다"
+
+
+@pytest.mark.parametrize("tpl,other", [("sector_numbers.html", "viewer.html"),
+                                       ("sector_flow.html", "numbers.html")])
+def test_pages_link_each_other_and_the_index(tpl, other):
+    html = (REPO / "scripts" / "templates" / tpl).read_text("utf-8")
+    assert f'href="{other}"' in html and 'href="../"' in html, f"{tpl} 에 다른 화면 링크가 없다"
+
+
+@node
+def test_pages_lead_with_the_report_day_and_spell_out_the_chip(tmp_path):
+    """제목 아래 첫 줄은 **기준일**이고, 칩의 뜻이 title 이 아니라 본문 글로 있다."""
+    for tpl, data in (("sector_numbers.html", _numbers_data()), ("sector_flow.html", _viewer_payload())):
+        texts = _page(tpl, data, tmp_path)
+        assert "기준일 2026-11-02" in texts, f"{tpl}: 기준일이 안 보인다"
+        assert any(t.startswith("잠정:") for t in texts), f"{tpl}: 칩 설명 글이 없다"
+
+
+@node
+def test_viewer_driver_names_follow_the_tui_rule(tmp_path):
+    """뷰어 섹터 이름 아래 종목 = TUI 견인주(`State._leads`)와 같은 규칙 — **금액** 순.
+
+    회귀: 뷰어가 시총 대비(%p)로 줄세워 시총 10억짜리 스팩이 섹터 1위로 떴다(금융: 'KB제34호스팩'
+    vs 화면 'SK +5,426억'). 주입: `drivers` 를 `a` 기준 정렬로 되돌리면 실패한다.
+    """
+    sys.path.insert(0, str(REPO / "src"))
+    from sectorflow.tui.flow_view import State
+
+    p = _viewer_payload()
+    win = {"forgn": 0.0, "indiv": 0.0, "etc": 0.0, "tv": 50.0, "invtrt": 0.0, "penfnd_etc": 0.0,
+           "ret": 0.0}
+    p["names"] = {
+        "000010": {"name": "큰종목", "sector": "섹터A", "market": "거래소", "cap": 1_000_000.0,
+                   "win": {w: dict(win, inst=500.0) for w in ("5", "20", "60", "120")}},
+        "000020": {"name": "스팩", "sector": "섹터A", "market": "거래소", "cap": 10.0,
+                   "win": {w: dict(win, inst=5.0) for w in ("5", "20", "60", "120")}},
+        "000030": {"name": "중간종목", "sector": "섹터A", "market": "거래소", "cap": 5_000.0,
+                   "win": {w: dict(win, inst=50.0) for w in ("5", "20", "60", "120")}},
+    }
+    texts = _page("sector_flow.html", p, tmp_path)
+    tui = State({"asof": "2026-11-02", "names": p["names"],
+                 "blocks": {"20|전체": {"rows": [{"sector": "섹터A", "inst": 555.0}]},
+                            "20|거래소": {"rows": []}}})
+    want = " · ".join(t["name"] for t in tui._leads()["섹터A"]["buy"][:2])
+    assert want == "큰종목 · 중간종목", want
+    assert want in texts, f"뷰어 이름 줄이 TUI 와 다르다: {[t for t in texts if '·' in t][:5]}"

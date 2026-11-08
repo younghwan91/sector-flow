@@ -736,9 +736,9 @@ def layer_e(D: dict) -> None:
                     for t in rows:
                         if t["sector"] == r["sector"] and pm.get(t["code"]) != t["pick"]:
                             bad_p.append(f"{tag}/{t['code']}")
-    chk("E", "전 종목: 곱 = 섹터선정 × 종목선정", not bad_mul, "; ".join(bad_mul[:3]))
+    chk("E", "전 종목: 곱 = 섹터G × 종목선정", not bad_mul, "; ".join(bad_mul[:3]))
     chk("E", "전 종목: 곱 내림차순 고정", not bad_ord, "; ".join(bad_ord[:3]))
-    chk("E", "전 종목: 섹터선정 = 섹터 표의 그 값", not bad_g, "; ".join(bad_g[:3]))
+    chk("E", "전 종목: 섹터G = 섹터 표의 그 값", not bad_g, "; ".join(bad_g[:3]))
     chk("E", "전 종목: 종목선정 = 드릴다운의 그 값", not bad_p, "; ".join(bad_p[:3]))
     chk("E", "전 종목: 관문 탈락 섹터의 종목은 안 나온다", not bad_dead,
         "; ".join(bad_dead[:3]))
@@ -1906,7 +1906,7 @@ def layer_h(D: dict, P: dict) -> None:
 
     KEYS = _key_ints()
     FF = ("wi", "mi", "ai", "si", "nsi", "row", "drow", "arow", "hrow",
-          "drill", "allv", "help", "rev", "nrev")
+          "drill", "allv", "help", "rev", "nrev", "explore")
     LF = ("wi", "mi", "ai", "si", "vi", "row", "crow", "hrow", "help_row", "help",
           "detrend")
 
@@ -1935,9 +1935,16 @@ def layer_h(D: dict, P: dict) -> None:
     #: (앱, 화면 이름, 상태 생성기, 키 적용, 상태 필드, 푸터 단계) — 곱집합의 축.
     SCREENS = [
         ("flow", "섹터 표", fst(), fapply, FF, FV.footer_tiers(False, False)),
-        ("flow", "종합", fst(wi=comb), fapply, FF, FV.footer_tiers(False, False)),
         ("flow", "드릴다운", fst(drill=True), fapply, FF, FV.footer_tiers(True, False)),
-        ("flow", "전 종목(t)", fst(allv=True), fapply, FF, FV.footer_tiers(False, True)),
+        # 탐색 모드(`e`) — 종합·전 종목(곱)은 여기서만 닿는다.
+        ("flow", "탐색 섹터 표", fst(explore=True), fapply, FF,
+         FV.footer_tiers(False, False, explore=True)),
+        ("flow", "탐색 드릴다운", fst(drill=True, explore=True), fapply, FF,
+         FV.footer_tiers(True, False, explore=True)),
+        ("flow", "종합", fst(wi=comb, explore=True), fapply, FF,
+         FV.footer_tiers(False, False, combined=True, explore=True)),
+        ("flow", "전 종목(t)", fst(allv=True, explore=True), fapply, FF,
+         FV.footer_tiers(False, True, explore=True)),
         ("flow", "도움말", fst(help=True), fapply, FF, FV.HELP_FOOT_TIERS),
         ("ledger", "원장", lmo("ledger"), lapply, LF, LV.FOOTER_TIERS),
         ("ledger", "전개", lmo("timeline"), lapply, LF, LV.FOOTER_TIERS),
@@ -1989,7 +1996,7 @@ def layer_h(D: dict, P: dict) -> None:
 
     # 그 예외는 화면이 적는가 — 헤더가 "정렬이 없다" 를 말해야 한다.
     bad = []
-    st = fst(wi=comb)()
+    st = fst(wi=comb, explore=True)()
     if "정렬없음" not in " ".join(FV.header_lines(st, 120)):
         bad.append("flow/종합 헤더가 정렬 없음을 안 적는다")
     if "정렬" not in FA.hint_text(st, 120):
@@ -1999,7 +2006,7 @@ def layer_h(D: dict, P: dict) -> None:
     # 순인데 힌트는 가속으로 줄세웠다 하고, `r` 은 여기서 안 듣는다. "정렬" 이라는
     # 글자가 있는지만 보면 그 거짓말이 그대로 통과하므로 **무엇을 말하는지**를 본다.
     for w2 in (40, 80, 120, 200):
-        t2 = FA.hint_text(fst(allv=True)(), w2)
+        t2 = FA.hint_text(fst(allv=True, explore=True)(), w2)
         if "고정" not in t2:
             bad.append(f"flow/전 종목 힌트({w2})가 순서 고정을 안 적는다: {t2.strip()!r}")
         if "뒤집기" in t2 or "▼" in t2:
@@ -2116,6 +2123,8 @@ def layer_h(D: dict, P: dict) -> None:
     flow_cur = {"섹터 표": ("row", lambda st: len(st.rows())),
                 "종합": ("row", lambda st: len(st.rows())),
                 "드릴다운": ("drow", lambda st: len(st.names())),
+                "탐색 섹터 표": ("row", lambda st: len(st.rows())),
+                "탐색 드릴다운": ("drow", lambda st: len(st.names())),
                 "전 종목(t)": ("arow", lambda st: len(st.all_picks())),
                 # 도움말의 끝은 마지막 줄이 아니라 **마지막 한 화면의 첫 줄**이다
                 # (`handle_key` 의 help_page 기본 10).
@@ -2203,18 +2212,24 @@ def layer_h(D: dict, P: dict) -> None:
         not bad, f"{len(bad)}건  " + "; ".join(bad[:4])
         + (f"  (처음=끝이라 못 본 화면: {', '.join(unseen)})" if unseen else ""))
 
-    # t — 전 종목 화면을 여는 키. 도움말이 화면을 가리지 않는 한 어디서나 같다.
+    # t — 전 종목 화면을 여는 키. **탐색 모드에서만** 듣고, 거기서는 어디서나 같다.
+    # 기본 모드에서 t 가 곱 화면을 열면 숨긴 탐색 점수가 키 하나로 새어 나온다.
     bad = []
-    for name in ("섹터 표", "종합", "드릴다운"):
+    for name in ("탐색 섹터 표", "종합", "탐색 드릴다운"):
         o = [s for s in SCREENS if s[1] == name and s[0] == "flow"][0][2]()
         FA.handle_key(o, ord("t"))
         if not o.allv or o.drill:
             bad.append(f"flow/{name} 에서 t 가 전 종목 화면을 안 연다")
-    o = fst(allv=True)()
+    for name in ("섹터 표", "드릴다운"):
+        o = [s for s in SCREENS if s[1] == name and s[0] == "flow"][0][2]()
+        FA.handle_key(o, ord("t"))
+        if o.allv:
+            bad.append(f"flow/{name}(기본 모드) 에서 t 가 탐색 화면을 열었다")
+    o = fst(allv=True, explore=True)()
     FA.handle_key(o, ord("t"))
     if o.allv:
         bad.append("flow/전 종목 에서 t 가 안 닫는다")
-    chk("H", "t 가 어느 화면에서나 전 종목 화면을 여닫는가", not bad, "; ".join(bad))
+    chk("H", "t 가 탐색 모드의 어느 화면에서나 전 종목 화면을 여닫고 기본 모드에서는 안 듣는가", not bad, "; ".join(bad))
 
     # w·m·a — 상태를 바꾸는 키는 도움말 말고는 어디서나 듣는다.
     bad = []
@@ -2263,9 +2278,9 @@ def layer_h(D: dict, P: dict) -> None:
             tag = "AMBIGUOUS_WIDE=1 " if ambi else ""
             for term in range(40, 201):
                 w = FV.view_width(term)
-                for name, mk in (("섹터 표", fst()), ("종합", fst(wi=comb)),
+                for name, mk in (("섹터 표", fst()), ("종합", fst(wi=comb, explore=True)),
                                  ("드릴다운", fst(drill=True)),
-                                 ("전 종목(t)", fst(allv=True)),
+                                 ("전 종목(t)", fst(allv=True, explore=True)),
                                  ("도움말", fst(help=True))):
                     st = mk()
                     seen += 1
@@ -2288,8 +2303,10 @@ def layer_h(D: dict, P: dict) -> None:
                     # 예외다(그보다 짧게 쓸 문장이 없다는 뜻이라 잘림을 감수한다).
                     for what, s2, tiers in (
                             ("힌트", FA.hint_text(st, w), None),
-                            ("푸터", FV.footer_line(w, st.drill, st.allv),
-                             FV.footer_tiers(st.drill, st.allv))):
+                            ("푸터", FV.footer_line(w, st.drill, st.allv, not st.sortable,
+                                                    st.explore),
+                             FV.footer_tiers(st.drill, st.allv, not st.sortable,
+                                             st.explore))):
                         if FV.cell_len(s2) > w and (tiers is None
                                                     or s2 != tiers[-1]):
                             bad.append(f"{tag}{term}/{name} {what} "
@@ -2398,7 +2415,7 @@ def layer_h(D: dict, P: dict) -> None:
                 # (곱을 소수 한 자리로 찍게 바꿔도 검사가 초록이었다). 세 열은
                 # 여기서 **따로 셈해** 기대값을 만든다 — G 층이 이미 같은 규율이다.
                 mine = {"곱": lambda t: f"{t['gsec'] * t['pick']:.2f}",
-                        "섹터선정": lambda t: f"{t['gsec']:.2f}",
+                        "섹터G": lambda t: f"{t['gsec']:.2f}",
                         "종목선정": lambda t: f"{t['pick']:.2f}"}
                 for ln, t in zip(lines[nh:], picks):
                     for i, c in enumerate(cols):

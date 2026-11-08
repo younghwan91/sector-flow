@@ -48,8 +48,8 @@ id = "thin-marker-color-only"
 why = "얇은 섹터 경고를 글자에서 빼면 무색 터미널·색맹에서 통째로 사라진다"
 guards = ["tests/test_tui_flow_view.py::test_thin_sector_warning_survives_without_color"]
 file = "src/sectorflow/tui/flow_view.py"
-find = "\"~\" if r.get(\"thin\") else (\"*\" if r.get(\"G_pass\") else \"\")"
-replace = "(\"*\" if r.get(\"G_pass\") else \"\")"
+find = "lambda r, st: \"~\" if r.get(\"thin\") else"
+replace = "lambda r, st: \"\" if r.get(\"thin\") else"
 
 [[mutation]]
 id = "name-sort-reversed"
@@ -1054,8 +1054,8 @@ id = "combined-footer-lies"
 why = "종합 화면에서 안 듣는 s·r 을 광고한다"
 guards = ["tests/test_tui_user_facing.py::test_combined_footer_does_not_advertise_dead_keys"]
 file = "src/sectorflow/tui/flow_view.py"
-find = "    return FOOTER_COMBINED_TIERS if combined else FOOTER_TIERS"
-replace = "    return FOOTER_TIERS"
+find = "    if combined:\n        return FOOTER_COMBINED_TIERS\n"
+replace = ""
 
 [[mutation]]
 id = "pass-count-over-seen"
@@ -1271,7 +1271,7 @@ id = "viewer-claims-krx"
 why = "수익률은 자체 바구니인데 KRX 지수라고 적는다"
 guards = ["tests/test_report_pages.py::test_viewer_does_not_claim_krx_index_returns"]
 file = "scripts/templates/sector_flow.html"
-find = "실제 Δv (자체 바구니)"
+find = "수익률 (자체 바구니)"
 replace = "실제 Δv (KRX지수)"
 
 [[mutation]]
@@ -2211,3 +2211,245 @@ guards = ["tests/test_payload_today.py::test_main_writes_final_diff_next_to_the_
 file = "scripts/sector_flow.py"
 find = """        if a.json or a.html:"""
 replace = """        if False:"""
+
+# ── honesty-ui (2026-11-08): 사실 배너 · 탐색 모드 · 증거 표지 · 웹 정합 ──
+
+[[mutation]]
+id = "banner-shows-exploration-scores"
+why = "첫 화면 배너에 탐색 점수(G 통과)가 다시 들어온다 — 검정 결과 앞날 증거가 없는 점수가 첫 화면을 차지한다"
+guards = ["tests/test_tui_flow_view.py::test_banner_states_facts_not_picks"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "    lines.append(pad(f\" {ko} {w}일 1년%ile 극단 — {basis}:\", width))"
+replace = "    lines.append(pad(f\" G 통과 {ko} {w}일 1년%ile 극단 — {basis}:\", width))"
+
+[[mutation]]
+id = "banner-totals-skip-1d"
+why = "1일 블록이 있는데 5일 합계를 적는다 — 가장 최근 값을 두고 낡은 창을 보인다"
+guards = ["tests/test_tui_flow_view.py::test_banner_market_totals_are_the_sum_of_the_shortest_block"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "    for w in (\"1\", \"5\"):"
+replace = "    for w in (\"5\", \"1\"):"
+
+[[mutation]]
+id = "banner-bottom-is-top"
+why = "하위 3 이 상위 3 과 같은 목록이 된다 — 순매도 쪽이 첫 화면에서 사라진다"
+guards = ["tests/test_tui_flow_view.py::test_banner_top_and_bottom_are_ordered_by_amount"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "        bot = [f\"{_sec_label(r)} {fmt_amt(v)}\" for r, v in ranked[::-1][:3]]"
+replace = "        bot = [f\"{_sec_label(r)} {fmt_amt(v)}\" for r, v in ranked[:3]]"
+
+[[mutation]]
+id = "banner-trusted-drops-pension"
+why = "투신+연기금 합에서 연기금이 빠진다 — 이름과 다른 값을 적는다"
+guards = ["tests/test_tui_flow_view.py::test_banner_trusted_is_invtrt_plus_pension_from_the_stocks"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "        vals = [w.get(k) for k, _ in TREND_ACTORS]"
+replace = "        vals = [w.get(k) for k, _ in TREND_ACTORS[:1]]"
+
+[[mutation]]
+id = "banner-hides-empty-list"
+why = "목록이 비면 \"없음\" 대신 빈 줄 — 검사했는데 없는 것과 안 본 것이 같아 보인다"
+guards = ["tests/test_tui_flow_view.py::test_banner_says_none_rather_than_hiding_an_empty_list"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "        return pad(prefix + empty, width)"
+replace = "        return pad(prefix, width)"
+
+[[mutation]]
+id = "reversal-uses-cumulative-not-prior-15"
+why = "직전 15일 대신 20일 누적과 견준다 — 20일이 양수인 채 앞에서 팔던 섹터의 반전을 놓친다"
+guards = ["tests/test_tui_flow_view.py::test_reversal_flags_compares_the_last_5_days_with_the_prior_15_for_all_sectors"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "        prior = cur - f5"
+replace = "        prior = cur"
+
+[[mutation]]
+id = "reversal-follows-screen-window"
+why = "배너 반전이 화면 창을 따른다 — 5일 화면에서 5일과 5일을 견줘 늘 비어 있다"
+guards = ["tests/test_tui_flow_view.py::test_reversal_flags_do_not_depend_on_the_screen_window"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "    for r in _block_rows(st.d, BANNER_WIN, mk):\n        s = five.get(r.get(\"sector\"))"
+replace = "    for r in _block_rows(st.d, st.window if st.window != \"종합\" else BANNER_WIN, mk):\n        s = five.get(r.get(\"sector\"))"
+
+[[mutation]]
+id = "pct-extremes-ignore-prior"
+why = "직전 리포트와 안 견준다 — 어제도 극단이던 섹터가 \"새로\" 로 적힌다"
+guards = ["tests/test_tui_flow_view.py::test_pct_extremes_are_new_relative_to_the_prior_report"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "        if p >= PCT_HI and (ppct is None or before is None or before < PCT_HI):"
+replace = "        if p >= PCT_HI:"
+
+[[mutation]]
+id = "prior-report-picks-oldest"
+why = "직전 리포트로 가장 오래된 폴더를 읽는다 — \"새로\" 의 기준이 몇 주 전이 된다"
+guards = ["tests/test_tui_flow_view.py::test_prior_pct_reads_the_latest_earlier_report_with_numbers"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "                       if _REPORT_DAY.fullmatch(n) and n < str(asof)), reverse=True)"
+replace = "                       if _REPORT_DAY.fullmatch(n) and n < str(asof)))"
+
+[[mutation]]
+id = "banner-line-unpadded"
+why = "배너 목록 줄을 폭에 안 맞춘다 — 배경색 띠가 줄마다 다른 길이로 끊긴다"
+guards = ["tests/test_tui_flow_view.py::test_banner_lines_share_one_display_width"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "        if cell_len(line) <= width:\n            return pad(line, width)"
+replace = "        if cell_len(line) <= width:\n            return line"
+
+[[mutation]]
+id = "banner-list-all-or-nothing"
+why = "목록이 폭을 넘으면 항목 대신 개수만 적는다 — 좁은 터미널에서 섹터 이름이 다 사라진다"
+guards = ["tests/test_tui_flow_view.py::test_banner_cuts_lists_at_item_boundaries"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "    for n in range(len(items), 0, -1):"
+replace = "    for n in range(len(items), len(items) - 1, -1):"
+
+[[mutation]]
+id = "default-view-shows-g"
+why = "기본 화면에 G 열이 다시 나온다 — 판정 불가 점수가 탐색 표지 없이 보인다"
+guards = ["tests/test_tui_flow_view.py::test_default_view_hides_every_exploration_score"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "        return [c for c in _TABLE_COLS if st.explore or c.header not in EXPLORE_COLS]"
+replace = "        return list(_TABLE_COLS)"
+
+[[mutation]]
+id = "explore-label-missing"
+why = "탐색 모드에서 표지를 안 붙인다 — 점수가 보이는데 그 지위가 화면에 없다"
+guards = ["tests/test_tui_flow_view.py::test_exploration_mode_shows_the_scores_with_a_visible_label"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "    if st.explore:\n        # 탐색 표지는"
+replace = "    if False:\n        # 탐색 표지는"
+
+[[mutation]]
+id = "explore-off-keeps-all-screen"
+why = "탐색을 꺼도 곱 화면에 머문다 — 꺼졌다고 적힌 점수가 계속 화면을 정한다"
+guards = ["tests/test_tui_flow_view.py::test_turning_exploration_off_leaves_no_exploration_state"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "            self.nsi = 0\n        self.allv = False"
+replace = "            self.nsi = 0"
+
+[[mutation]]
+id = "t-works-without-explore"
+why = "기본 모드에서 t 가 곱 화면을 연다 — 숨긴 탐색 점수가 키 하나로 새어 나온다"
+guards = ["tests/test_tui_flow_view.py::test_t_and_e_keys_follow_the_mode"]
+file = "src/sectorflow/tui/flow_app.py"
+find = "    if k == ord(\"t\") and st.explore:\n        # 전 종목(곱) 화면 토글"
+replace = "    if k == ord(\"t\"):\n        # 전 종목(곱) 화면 토글"
+
+[[mutation]]
+id = "thin-sectors-sort-with-the-rest"
+why = "얇은 섹터가 정렬에 섞인다 — 3종목짜리 섹터가 가속 1등을 한다"
+guards = ["tests/test_tui_flow_view.py::test_thin_sectors_sort_after_every_normal_sector"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "            return (bool(r.get(\"thin\")), v is None,"
+replace = "            return (False, v is None,"
+
+[[mutation]]
+id = "help-column-without-evidence"
+why = "도움말의 열 하나에 증거 표지가 빠진다 — 그 열만 검정 결과를 모르는 채 읽힌다"
+guards = ["tests/test_tui_flow_view.py::test_every_rendered_column_has_an_evidence_badge_in_help"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "    \"가속[%p]\": (B_NONE, \"20일, 섹터 앞날 5·20일 순위 IC\"),\n"
+replace = ""
+
+[[mutation]]
+id = "help-hardcodes-k"
+why = "도움말에 k 숫자를 박는다 — 다음 리포트에서 화면 헤더와 다른 k 를 말한다"
+guards = ["tests/test_tui_flow_view.py::test_help_has_no_hardcoded_k_and_no_dead_doc_links"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "    (\"\", \"  k=…(t=…) 다. 도움말에 숫자로 적어 두면 다음 리포트에서 틀린 말이 된다.\"),"
+replace = "    (\"\", \"  k=…(t=…) 다. 예: 20일 k 14.7 · 60일 9.2.\"),"
+
+[[mutation]]
+id = "help-links-missing-doc"
+why = "도움말이 이 저장소에 없는 문서를 가리킨다(GUARDRAILS 가 그랬다)"
+guards = ["tests/test_tui_flow_view.py::test_help_has_no_hardcoded_k_and_no_dead_doc_links"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "    (\"\", \"  docs/validation/).\"),"
+replace = "    (\"\", \"  docs/GUARDRAILS.md).\"),"
+
+[[mutation]]
+id = "help-timing-language"
+why = "최근집중 설명에 \"급하게 산\" 같은 타이밍 말이 돌아온다"
+guards = ["tests/test_tui_flow_view.py::test_help_says_tested_not_never_validated"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "    (\"\", \"        최근 5일에 몰림 · >100 이면 앞에서는\"),"
+replace = "    (\"\", \"        최근 5일에 몰림(오늘 급하게 산 것) · >100 이면 앞에서는\"),"
+
+[[mutation]]
+id = "default-footer-advertises-t"
+why = "기본 푸터가 안 듣는 t 를 적고 e 를 뺀다 — 숨긴 화면으로 가는 길이 화면에서 사라진다"
+guards = ["tests/test_tui_flow_view.py::test_every_footer_tier_that_names_enter_also_names_the_all_stocks_screen"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "    \" PgUp/PgDn:쪽 Enter:종목 e:탐색 ?:도움말 q:종료\","
+replace = "    \" PgUp/PgDn:쪽 Enter:종목 t:전종목 ?:도움말 q:종료\","
+
+[[mutation]]
+id = "web-evidence-diverges"
+why = "수치표가 가속에 TUI 와 다른 증거 표지를 단다 — 두 화면이 같은 열의 지위를 다르게 말한다"
+guards = ["tests/test_report_pages.py::test_web_evidence_badges_match_the_tui"]
+file = "scripts/templates/sector_numbers.html"
+find = "const EV={\"accel\":\"[앞날 증거 없음]\","
+replace = "const EV={\"accel\":\"[측정]\","
+
+[[mutation]]
+id = "numbers-default-sort-g"
+why = "수치표 기본 정렬이 G 로 돌아간다 — 판정 불가 점수가 표 순서를 정한다"
+guards = ["tests/test_report_pages.py::test_numbers_page_defaults_to_flow_and_hides_g_behind_the_exploration_label"]
+file = "scripts/templates/sector_numbers.html"
+find = "let sortKey = \"accel\", sortDir = -1;"
+replace = "let sortKey = \"G\", sortDir = -1;"
+
+[[mutation]]
+id = "viewer-resid-metric-back"
+why = "뷰어에 \"미반응\" 기준이 돌아온다 — 많이 빠진 순을 신호처럼 이름 붙인다"
+guards = ["tests/test_report_pages.py::test_pages_carry_no_stale_or_timing_language"]
+file = "scripts/templates/sector_flow.html"
+find = "const METRICS=[[\"amt\",\"임펄스 억\"],[\"share\",\"가속 %p\"]];"
+replace = "const METRICS=[[\"amt\",\"임펄스 억\"],[\"share\",\"가속 %p\"],[\"resid\",\"미반응\"]];"
+
+[[mutation]]
+id = "numbers-link-broken"
+why = "수치표에서 뷰어로 가는 링크가 깨진다"
+guards = ["tests/test_report_pages.py::test_pages_link_each_other_and_the_index"]
+file = "scripts/templates/sector_numbers.html"
+find = "<a href=\"viewer.html\">흐름 뷰어 →</a>"
+replace = "<a href=\"flow.html\">흐름 뷰어 →</a>"
+
+[[mutation]]
+id = "numbers-header-drops-asof"
+why = "수치표 머리가 기준일 대신 1년 범위를 먼저 적는다 — 그 범위가 숫자들의 날짜로 읽힌다"
+guards = ["tests/test_report_pages.py::test_pages_lead_with_the_report_day_and_spell_out_the_chip"]
+file = "scripts/templates/sector_numbers.html"
+find = "document.getElementById(\"asof\").textContent = \"기준일 \"+D.asof;"
+replace = "document.getElementById(\"asof\").textContent = D.dates[0]+\" ~ \"+D.dates[1];"
+
+[[mutation]]
+id = "viewer-drivers-by-share"
+why = "뷰어 견인주를 시총 대비로 줄세운다 — 분모 하한이 없어 스팩이 섹터 1위로 뜬다(금융 KB제34호스팩)"
+guards = ["tests/test_report_pages.py::test_viewer_driver_names_follow_the_tui_rule"]
+file = "scripts/templates/sector_flow.html"
+find = "  rows.sort((x,y)=>y.v-x.v);"
+replace = "  rows.sort((x,y)=>(y.a??-1e9)-(x.a??-1e9));"
+
+[[mutation]]
+id = "name-clip-silent"
+why = "종목명을 말줄임표 없이 자른다 — 잘린 이름이 다른 종목명으로 읽힌다"
+guards = ["tests/test_tui_flow_view.py::test_long_stock_names_end_with_an_ellipsis"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "    return out + ell\n"
+replace = "    return out\n"
+
+[[mutation]]
+id = "pass-marker-never-drawn"
+why = "탐색 모드에서도 `*` 를 안 찍는다 — G 열과 통과 표시가 갈린다"
+guards = ["tests/test_tui_flow_view.py::test_pass_marker_survives_rendering"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "        (\"*\" if st.explore and r.get(\"G_pass\") else \"\")),"
+replace = "        \"\"),"
+
+[[mutation]]
+id = "name-sort-span-ignores-explore"
+why = "정렬 하이라이트가 탐색 모드 열 배치를 모른다 — 선정 열이 낀 화면에서 엉뚱한 열을 칠한다"
+guards = ["tests/test_tui_flow_view.py::test_name_sort_highlight_matches_columns"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "    return col_span(names_cols(st.explore), header) if header else None"
+replace = "    return col_span(names_cols(), header) if header else None"

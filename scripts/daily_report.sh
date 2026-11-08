@@ -189,7 +189,7 @@ else
   cp "$BUILD/VERIFY.txt" "$BUILD/VERIFY_FAILED.txt"
   # 브라우저로만 보는 사람도 알아야 한다 — 화면 제목의 ⚠ 는 터미널에만 있다.
   for page in numbers.html viewer.html; do
-    sed -i '0,/<header>/s//<div style="padding:10px 14px;margin:0 0 12px;background:#fff3cd;color:#664d03;border:1px solid #ffda6a;border-radius:6px;font-weight:600">⚠ 이 리포트는 자기 검증에 걸렸다 — 같은 폴더의 VERIFY_FAILED.txt 를 보라<\/div>\n&/' "$BUILD/$page"
+    sed -i '0,/<header>/s//<div style="padding:10px 14px;margin:0 0 12px;background:#fff3cd;color:#664d03;border:1px solid #ffda6a;border-radius:6px;font-weight:600">⚠ 이 리포트는 자기 검증에 걸렸다 — 같은 폴더의 <a href="VERIFY_FAILED.txt">VERIFY_FAILED.txt<\/a> 를 보라<\/div>\n&/' "$BUILD/$page"
   done
   echo "[$(date '+%F %T')] ⚠️ 검증 실패 — $DEST/VERIFY_FAILED.txt 확인" >&2
   tail -5 "$BUILD/VERIFY.txt" >&2

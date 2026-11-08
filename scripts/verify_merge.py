@@ -504,8 +504,8 @@ EXPECT = {
     "섹터": ("sector", "str"), "종목[수]": ("n_all", "int"),
     "임펄스[억]": ("flow", "amt"), "가속[%p]": ("accel", "pct2"),
     "수익률[%]": ("ret", "pct2"), "미실현[%p]": ("x", "pct1"),
-    "G[0~1]": ("G", "f2"),
-    "종목": ("name", "str"), "코드": ("code", "raw"),
+    "G": ("G", "f2"), "선정": ("pick", "f2"),
+    "종목": ("name", "clip"), "코드": ("code", "raw"),
     "순매수[억]": ("flow", "amt"), "시총대비[%p]": ("a", "pct2"),
 }
 if len(sys.argv) > 2 and sys.argv[2]:
@@ -524,7 +524,7 @@ def want(r, name):
         return None                      # 선언이 없으면 구조 검사만
     key, how = spec
     v = r.get(key)
-    if how == "str":
+    if how in ("str", "clip"):
         return v if v is not None else "—"
     if how == "raw":
         return v if v is not None else ""
@@ -606,6 +606,8 @@ def check_block(tag, lines, width, cols, nhead, rows, want_of):
             val = want_of(r, name)
             if val is None:
                 continue
+            if EXPECT.get(name, (None, None))[1] == "clip" and hasattr(V, "clip"):
+                val = V.clip(val, w)         # 이름 열은 넘치면 `…` 로 끝난다(flow_view.clip)
             if start + w <= width:
                 # ② 헤더와 셀이 같은 칸에 있는가 (strip 금지 — 여백이 어긋남을 먹는다)
                 if got != V.pad(val, w, right):
@@ -633,7 +635,8 @@ for _k, _h in V.SORT_COL.items():
     if _h not in all_headers:
         bad.append(f"SORT_COL[{_k}]={_h!r} 라는 열이 어느 폭에도 없다")
 for _k, _h in V.NAME_SORT_COL.items():
-    if _h not in {c[0] for c in V.names_cols()}:
+    _ncols = V.names_cols(True) if "explore" in V.names_cols.__code__.co_varnames else V.names_cols()
+    if _h not in {c[0] for c in _ncols}:
         bad.append(f"NAME_SORT_COL[{_k}]={_h!r} 라는 열이 종목 목록에 없다")
 for width in widths:
     for wi in range(len(V.WINDOWS)):
@@ -718,10 +721,35 @@ for width in widths:
                             except Exception as e:
                                 bad.append(f"{tag} 종목목록 예외 {e!r}")
                                 continue
-                            ncols = V._fit(V.names_cols(), width)
+                            ncols = V.fit_names(width) if hasattr(V, "fit_names") else V._fit(V.names_cols(), width)
                             names = st.names()
                             check_block(tag + " 종목", nl, width, ncols, nh,
                                         names, want)
+
+# 탐색 모드(`e`) — G·선정 열이 끼는 배치. 기본 모드보다 열이 많아 위치가 다 밀린다.
+# 조합을 다 돌면 분 단위가 두 배가 되므로 폭 둘·정렬 하나만 본다.
+if hasattr(st, "explore"):
+    st.explore = True
+    for width in (80, 200):
+        for wi in range(len(V.WINDOWS)):
+            for mi in range(len(st.markets)):
+                st.wi, st.mi, st.ai, st.si, st.nsi, st.row = wi, mi, 0, 0, 0, 0
+                n += 1
+                tag = f"w{width} 탐색 {V.WINDOWS[wi]}/{st.market}"
+                try:
+                    rows = st.rows()
+                    lines, thin, nhead = V.table_lines(st, width, 40)
+                except Exception as e:
+                    bad.append(f"{tag} 예외 {e!r}")
+                    continue
+                check_block(tag, lines, width, V._fit(V.table_cols(st, width), width),
+                            nhead, rows, want)
+                if st.selected() is None:
+                    continue
+                nl, nh = V.names_lines(st, width)
+                check_block(tag + " 종목", nl, width, V.fit_names(width, True), nh,
+                            st.names(), want)
+    st.explore = False
 
 for line in bad[:40]:
     print("  " + line)
