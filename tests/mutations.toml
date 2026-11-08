@@ -2792,3 +2792,63 @@ file = "src/sectorflow/tui/flow_view.py"
 find = "    lines += _banner_today(st, width) if st.has_today else _banner_20d(st, width)"
 replace = "    lines += _banner_today(st, width)"
 
+
+[[mutation]]
+id = "code-moves-under-formulas-doc"
+why = """코드가 몇 줄 움직였는데 docs/formulas.md 의 `파일:줄` 은 그대로다 — 정본이 엉뚱한 줄을
+가리킨다(2026-11-08 하루 아홉 PR 뒤 ~250개 중 55개 짝 인용이 어긋나 있었다). 인용 앞에 주석 8줄을 끼워
+짝 지은 기호(`SHARE_EVENTS`)가 ±3줄 밖으로 밀리는지 본다."""
+guards = ["tests/test_docs_refs.py::test_every_cited_line_exists_and_paired_symbol_is_there"]
+file = "src/sectorflow/storage.py"
+find = "SHARE_EVENTS = 8 | 16 | 64\n"
+replace = "#\n#\n#\n#\n#\n#\n#\n#\nSHARE_EVENTS = 8 | 16 | 64\n"
+
+[[mutation]]
+id = "docs-refs-fix-skips-history"
+why = """--fix 가 기준 소스와의 diff 를 안 쓰고 기호로만 옮긴다 — 짝 없는 줄 인용과 ±3 안에서 밀린 인용이
+그대로 남아, 병합마다 조금씩 엉뚱한 줄을 가리키게 된다(검사는 짝 없는 인용을 범위로만 본다)."""
+guards = ["tests/test_docs_refs.py::test_fix_restores_shifted_file_from_the_base_version"]
+file = "scripts/docs_refs.py"
+find = "            mapped = m is not None and orig[r.line - 1] in in_base"
+replace = "            mapped = False"
+
+[[mutation]]
+id = "docs-refs-fix-base-is-last-doc-commit"
+why = """--fix 가 기준 표시 대신 문서를 마지막으로 고친 커밋을 기준으로 삼는다 — 코드가 움직인 뒤 오타만 고친
+커밋이 하나 끼면 diff 가 0 이 되어 짝 없는 인용이 조용히 낡은 채 남는다."""
+guards = ["tests/test_docs_refs.py::test_cli_fix_uses_the_stamp_not_the_last_doc_commit"]
+file = "scripts/docs_refs.py"
+find = "        rev = base or (stamp.group(1) if stamp else None)"
+replace = "        rev = base or (_git(root, \"log\", \"-1\", \"--format=%H\", \"--\", doc) or \"\").strip() or None"
+
+[[mutation]]
+id = "docs-refs-fix-guesses-ambiguous-symbol"
+why = "기준 소스가 없을 때 기호가 여러 곳인데 --fix 가 첫 번째로 옮긴다 — 추측한 줄이 검사를 통과해 틀린 인용이 초록으로 남는다"
+guards = ["tests/test_docs_refs.py::test_fix_without_history_reports_ambiguous_symbol"]
+file = "scripts/docs_refs.py"
+find = "    if len(hits) > 1:"
+replace = "    if False:"
+
+[[mutation]]
+id = "docs-refs-fix-guesses-ambiguous-content"
+why = "기준 소스의 그 줄과 같은 줄이 지금 여럿인데 첫 번째로 옮긴다 — 부르는 곳 인용이 다른 부르는 곳으로 간다"
+guards = ["tests/test_docs_refs.py::test_relocation_reports_ambiguous_content_instead_of_guessing"]
+file = "scripts/docs_refs.py"
+find = "    if len(hits) != 1:"
+replace = "    if not hits:"
+
+[[mutation]]
+id = "docs-refs-def-span-matches-any-use"
+why = "`def X` 짝이 정의 줄이 아니라 X 를 부르는 줄에서도 통과한다 — 정의를 가리키던 인용이 호출로 밀려도 초록"
+guards = ["tests/test_docs_refs.py::test_def_span_requires_the_definition_line"]
+file = "scripts/docs_refs.py"
+find = "    return re.compile(rf\"\\b(?:def|class)\\s+{e}\\b\" if defn else rf\"\\b{e}\\b\")"
+replace = "    return re.compile(rf\"\\b{e}\\b\")"
+
+[[mutation]]
+id = "docs-line-only-ref-added"
+why = "기호 없는 줄 인용이 늘어난다 — 검사가 위치를 못 보는 인용이 쌓인다"
+guards = ["tests/test_docs_refs.py::test_line_only_refs_do_not_grow"]
+file = "docs/formulas.md"
+find = "## 근거 수준 — 먼저 읽을 것\n"
+replace = "## 근거 수준 — 먼저 읽을 것\n\n`scripts/sector_flow.py:1`\n"
