@@ -24,8 +24,8 @@ uv run sw-flow --dir <리포트 폴더>   # 받은 폴더(DB 불요, §4.3)
 scripts/daily_report.sh              # 수급 DB 에 접속할 수 있으면 직접 만든다(§4.1) → uv run sw-flow
 ```
 
-> **리포트 폴더는 제3자에게 넘기지 않는다.** 실제 종목별 수급이 들어 있고, KRX·키움에 낸 이용 범위 질의
-> ([`docs/strategy/inquiries/`](docs/strategy/inquiries/))의 서면 회신을 받기 전이다. 본인 기기 사이에서만 옮긴다(§4.3).
+> **리포트 폴더는 제3자에게 넘기지 않는다.** 실제 종목별 수급이 들어 있고, KRX·키움 이용 범위 질의
+> ([`docs/strategy/inquiries/`](docs/strategy/inquiries/), 아직 보내지 않은 초안)의 서면 회신을 받기 전이다. 본인 기기 사이에서만 옮긴다(§4.3).
 
 > **데이터는 어디서 오나.** 일일 배치는 [quant-airflow](https://github.com/younghwan91/quant-airflow) 가 적재한 DB 를 읽기만
 > 한다. `src/sectorflow/collect/`(`sector-flow-collect`)는 자기 키움 키로 sqlite 를 채우는 BYO 수집기로, 아직 섹터 몇 개 크기의
