@@ -31,15 +31,18 @@
 변이 선언 형식 — 워크트리의 ``tests/mutations.toml`` (또는 ``--mutations``)::
 
     [[mutation]]
-    id      = "drop-accel-cell"
-    why     = "가속 셀을 통째로 빼면 그 뒤 열이 한 칸씩 밀린다"
+    id      = "accel-cell-shows-wrong-field"
+    why     = "가속 열이 다른 값을 그린다"
     guards  = ["tests/test_tui_flow_view.py::test_data_cells_sit_under_their_headers"]
     file    = "src/sectorflow/tui/flow_view.py"
-    find    = "pad(fmt_pct(r.get(\"accel\")), 9, True),"
-    replace = ""
+    find    = "    Col(\"가속[%p]\", 9, True, _num(\"accel\")),"
+    replace = "    Col(\"가속[%p]\", 9, True, _num(\"ret\")),"
 
 ``find`` 는 파일 안에서 **정확히 한 번** 나와야 한다(여러 번이면 무엇을 바꿨는지
-모호해진다). 주입 후에는 원본 바이트로 되돌리고 ``git status`` 로 확인한다.
+모호해진다). **한 번도 안 나오면 REJECT 다** — 앵커를 잃은 변이는 아무것도 증명하지
+않는다. 주입 후에는 원본 바이트로 되돌리고 ``git status`` 로 확인한다.
+선언 자체의 정합성(앵커 1회·가드 존재·id 중복)은 ``tests/test_mutation_spec.py`` 가
+DB 없이 pytest 에서 먼저 본다.
 """
 
 from __future__ import annotations
@@ -114,6 +117,13 @@ def git(cwd: Path, *args: str) -> str:
     return p.stdout.strip()
 
 
+def porcelain(cwd: Path) -> list[str]:
+    """``git status --porcelain`` 줄 — **strip 하지 않는다.** :func:`git` 은 앞뒤 공백을
+    걷어 첫 줄의 ``" M"`` 이 ``"M"`` 이 되고, ``ln[3:]`` 이 경로 첫 글자를 먹었다
+    (``cripts/verify_merge.py`` — 첫 줄이 고친 검사 파일이면 새 검사 목록에서 빠진다)."""
+    return run(["git", "status", "--porcelain"], cwd, timeout=60).stdout.splitlines()
+
+
 def tail(text: str, n: int = 2000) -> str:
     text = text.strip()
     return text if len(text) <= n else "…\n" + text[-n:]
@@ -152,10 +162,10 @@ def sec_worktree(wt: Path, base: str, py: str) -> tuple[Section, list[str]]:
     if not (wt / ".git").exists():
         s.fail(f"{wt} 는 git 워크트리가 아니다")
         return s, []
-    dirty = git(wt, "status", "--porcelain")
+    dirty = porcelain(wt)
     if dirty:
         s.warn("작업 트리가 깨끗하지 않다 — 커밋 안 된 변경 위에서 판정한다:\n"
-               + "\n".join("      " + ln for ln in dirty.splitlines()[:20]))
+               + "\n".join("      " + ln for ln in dirty[:20]))
     head = git(wt, "rev-parse", "--short", "HEAD")
     mb = git(wt, "merge-base", base, "HEAD")
     if not mb:
@@ -168,7 +178,7 @@ def sec_worktree(wt: Path, base: str, py: str) -> tuple[Section, list[str]]:
         s.say(line)
     changed = git(wt, "diff", "--name-only", f"{mb}..HEAD").splitlines()
     if dirty:
-        changed += [ln[3:] for ln in dirty.splitlines()]
+        changed += [ln[3:] for ln in dirty]
     s.say(f"바뀐 파일 {len(set(changed))}개: " + ", ".join(sorted(set(changed))[:12]))
 
     # 임포트 출처 — 여기서 틀리면 아래 모든 초록이 거짓말이다.
@@ -298,6 +308,10 @@ def sec_tests(wt: Path, py: str) -> Section:
 
 # --------------------------------------------------------------------------- 4. 주입 검증
 
+class _DeadEdit(Exception):
+    """다중 편집 변이에서 앞 편집 뒤 다음 앵커가 사라졌다."""
+
+
 def new_test_functions(wt: Path, base_sha: str) -> set[str]:
     """기준 이후 **추가·수정된** 검사 함수의 nodeid 집합.
 
@@ -307,7 +321,7 @@ def new_test_functions(wt: Path, base_sha: str) -> set[str]:
     out: set[str] = set()
     files = [f for f in git(wt, "diff", "--name-only", f"{base_sha}..HEAD").splitlines()
              if f.startswith("tests/") and f.endswith(".py")]
-    files += [ln[3:] for ln in git(wt, "status", "--porcelain").splitlines()
+    files += [ln[3:] for ln in porcelain(wt)
               if ln[3:].startswith("tests/") and ln[3:].endswith(".py")]
     for f in sorted(set(files)):
         path = wt / f
@@ -359,7 +373,7 @@ def sec_mutations(wt: Path, py: str, base_sha: str, spec_path: Path | None) -> S
         s.fail(f"{spec} 에 [[mutation]] 이 하나도 없다")
         return s
 
-    before = git(wt, "status", "--porcelain")
+    before = porcelain(wt)
     guarded: set[str] = set()
     env = py_env(wt)
 
@@ -384,13 +398,14 @@ def sec_mutations(wt: Path, py: str, base_sha: str, spec_path: Path | None) -> S
                 break
             n = target.read_text("utf-8").count(e["find"])
             if n == 0:
-                # 애매한 경우다 — 사람이 봐야 한다(리포터 원칙). 자기가 선언한
-                # 변이라면 오타이고, 기준 브랜치에서 물려받은 변이라면 리팩터로
-                # 앵커가 사라진 것이다. 둘은 코드를 봐야 갈린다.
-                s.warn(f"[{mid}] 앵커가 {e['file']} 에 없어 이 변이는 "
-                       f"**돌지 않았다**. 자기 선언이면 오타이고, 기준에서 "
-                       f"물려받은 것이면 리팩터로 앵커가 사라진 것이다 — 그 회귀 "
-                       f"검사가 아직 무는지 사람이 확인하라 ({m.get('why', '')})")
+                # 예전엔 경고였다 — "리팩터인지 오타인지는 사람이 봐야 갈린다". 그 사이
+                # 변이 셋이 앵커를 잃고 **조용히 죽었다**(경고는 아무도 안 읽었다).
+                # 어느 쪽이든 그 회귀 검사는 지금 아무것도 증명하지 않으므로 REJECT 다.
+                # 고치는 법은 같다 — 앵커를 지금 코드에 맞추거나, 버그가 표현 불가능해졌으면
+                # 변이를 지운다. 같은 규칙을 tests/test_mutation_spec.py 가 pytest 에서 본다.
+                s.fail(f"[{mid}] 앵커가 {e['file']} 에 없어 이 변이는 "
+                       f"**돌지 않았다** — 앵커를 지금 코드에 맞추거나, 버그가 표현 "
+                       f"불가능해졌으면 변이를 지워라 ({m.get('why', '')})")
                 skip = True
                 break
             if n != 1:
@@ -426,10 +441,18 @@ def sec_mutations(wt: Path, py: str, base_sha: str, spec_path: Path | None) -> S
                 # 편집마다 새로 읽어 쌓으면 두 번째 스냅샷이 이미 변이본이라
                 # 복구가 변이를 되살린다(원상복구 검사가 실제로 이걸 잡았다).
                 saved.setdefault(target, target.read_bytes())
-                target.write_text(
-                    target.read_text("utf-8").replace(e["find"], e["replace"], 1),
-                    encoding="utf-8")
+                text = target.read_text("utf-8")
+                if text.count(e["find"]) != 1:
+                    # 같은 파일의 앞 편집이 이 앵커를 지웠거나 하나 더 만들었다.
+                    # 그대로 두면 replace 가 아무것도 안 바꾸고 "가드가 초록" 으로 끝난다.
+                    raise _DeadEdit(e["file"])
+                target.write_text(text.replace(e["find"], e["replace"], 1),
+                                  encoding="utf-8")
             hit = run([py, "-m", "pytest", "-q", *guards], wt, env, timeout=900)
+        except _DeadEdit as dead:
+            s.fail(f"[{mid}] 앞 편집을 넣은 뒤 {dead} 의 앵커가 정확히 1번이 아니다 — "
+                   f"편집 순서나 앵커를 고쳐라")
+            continue
         finally:
             for target, original in saved.items():   # 무슨 일이 있어도 원상복구
                 target.write_bytes(original)
@@ -442,10 +465,10 @@ def sec_mutations(wt: Path, py: str, base_sha: str, spec_path: Path | None) -> S
                           if ln.startswith("FAILED") or " failed" in ln), "")
             s.say(f"  [{mid}] 잡힘 — {m.get('why', '')} ({first.strip()})")
 
-    after = git(wt, "status", "--porcelain")
+    after = porcelain(wt)
     if after != before:
         s.fail("주입 후 워크트리가 원상복구되지 않았다:\n"
-               + "\n".join("      " + ln for ln in after.splitlines()[:20]))
+               + "\n".join("      " + ln for ln in after[:20]))
     else:
         s.say("원상복구 확인 (git status 가 주입 전과 같다)")
 
@@ -918,6 +941,25 @@ def render_report(wt: Path, verdict: str, secs: list[Section]) -> str:
 SELF_SCENARIOS = """일부러 깨진 워크트리를 만들어 하네스가 정말 REJECT 를 내는지 본다.
 늘 PASS 하는 하네스는 장식이다."""
 
+#: 자기 검증이 주입하는 변이 — 가속 열이 다른 값을 그린다. 앵커가 지금 코드에 있어야
+#: 시나리오가 **맞는 이유로** 판정된다(예전 앵커 ``pad(fmt_pct(...accel...))`` 는 리팩터로
+#: 사라져, 눈먼 검사 시나리오가 "가드가 초록" 이 아니라 "앵커 없음" 으로 걸렸다).
+#: ``tests/test_mutation_spec.py`` 가 이 앵커도 본다.
+SELF_TEST_FILE = "src/sectorflow/tui/flow_view.py"
+SELF_TEST_FIND = '    Col("가속[%p]", 9, True, _num("accel")),'
+SELF_TEST_REPLACE = '    Col("가속[%p]", 9, True, _num("ret")),'
+SELF_TEST_GUARD = "tests/test_tui_flow_view.py::test_data_cells_sit_under_their_headers"
+
+
+def _self_spec(guard: str, find: str = SELF_TEST_FIND) -> str:
+    return ("[[mutation]]\n"
+            'id = "accel-cell-shows-wrong-field"\n'
+            'why = "가속 열이 다른 값을 그린다"\n'
+            f"guards = [{json.dumps(guard)}]\n"
+            f"file = {json.dumps(SELF_TEST_FILE)}\n"
+            f"find = {json.dumps(find, ensure_ascii=False)}\n"
+            f"replace = {json.dumps(SELF_TEST_REPLACE, ensure_ascii=False)}\n")
+
 
 def _scratch_repo(dst: Path, base: str, mail: str, name: str) -> None:
     """기준 커밋의 트리를 새 git 저장소로 복제한다(원본 워크트리를 안 건드린다)."""
@@ -998,13 +1040,7 @@ def self_test(py: str, report: str) -> int:
             "def test_blind():\n"
             "    assert cell_width('가') == 2\n", "utf-8")
         (wt / "tests/mutations.toml").write_text(
-            '[[mutation]]\n'
-            'id = "drop-accel-cell"\n'
-            'why = "가속 셀을 빼면 그 뒤 열이 밀린다"\n'
-            'guards = ["tests/test_zz_blind.py::test_blind"]\n'
-            'file = "src/sectorflow/tui/flow_view.py"\n'
-            'find = "pad(fmt_pct(r.get(\\"accel\\")), 9, True),"\n'
-            'replace = ""\n', "utf-8")
+            _self_spec("tests/test_zz_blind.py::test_blind"), "utf-8")
         commit(wt, "blind guard")
     scenario("blind-guard", {"mutations"}, REJECT, blind_guard,
              by="mutations")
@@ -1012,16 +1048,16 @@ def self_test(py: str, report: str) -> int:
     # ⑤ 진짜 잡는 검사 — 같은 변이를 기존 정렬 검사에 걸면 REJECT 가 아니어야 한다.
     def real_guard(wt: Path) -> None:
         (wt / "tests/mutations.toml").write_text(
-            '[[mutation]]\n'
-            'id = "drop-accel-cell"\n'
-            'why = "가속 셀을 빼면 그 뒤 열이 밀린다"\n'
-            'guards = ["tests/test_tui_flow_view.py::'
-            'test_data_cells_sit_under_their_headers"]\n'
-            'file = "src/sectorflow/tui/flow_view.py"\n'
-            'find = "pad(fmt_pct(r.get(\\"accel\\")), 9, True),"\n'
-            'replace = ""\n', "utf-8")
+            _self_spec(SELF_TEST_GUARD), "utf-8")
         commit(wt, "real guard")
     scenario("real-guard", {"mutations"}, PASS, real_guard)
+
+    # ⑤-2 앵커가 사라진 변이 — 예전엔 경고로 넘어가 변이 셋이 조용히 죽었다. REJECT 여야 한다.
+    def dead_anchor(wt: Path) -> None:
+        (wt / "tests/mutations.toml").write_text(
+            _self_spec(SELF_TEST_GUARD, find="이 앵커는 어디에도 없다"), "utf-8")
+        commit(wt, "dead anchor")
+    scenario("dead-anchor", {"mutations"}, REJECT, dead_anchor, by="mutations")
 
     # ⑥ 변이 미선언 새 검사 → 경고(REJECT 아님)이고, 판정은 PASS 여야 한다.
     def undeclared(wt: Path) -> None:
