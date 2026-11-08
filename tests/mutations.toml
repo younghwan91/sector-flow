@@ -4290,3 +4290,21 @@ guards = ["tests/test_web_render.py::test_without_node_the_layer_fails_rather_th
 file = "scripts/verify_report.py"
 find = "    chk(\"W\", \"환경 — node 가 있는가(웹 페이지를 그려 본다)\", node is not None,"
 replace = "    chk(\"W\", \"환경 — node 가 있는가(웹 페이지를 그려 본다)\", True,"
+
+[[mutation]]
+id = "ledger-null-memo-bypassed"
+why = """순환이동 널이 모듈 메모를 거치지 않는다. 값은 같지만 새 `Model` 마다 널(시프트 × 27×27)을 다시
+돌려, 상관행렬 메모로 아낀 일일 검증 시간을 도로 쓴다."""
+guards = ["tests/test_tui_ledger_view.py::test_a_fresh_model_reuses_the_null_instead_of_redoing_it"]
+file = "src/sectorflow/tui/ledger_view.py"
+find = "        out = _memo(_NULL_MEMO, _null_key(keys, ser, n), lambda: _null_neg_frac_of(keys, ser, n))"
+replace = "        out = _null_neg_frac_of(keys, ser, n)"
+
+[[mutation]]
+id = "ledger-null-memo-key-drops-n-and-lengths"
+why = """널 메모 키가 계열 키만 쓴다. 이어 붙인 비트와 첫 길이가 같고 계열 경계만 다른 입력, 또는 같은 계열에
+다른 `n` 을 넘긴 호출이 앞 호출의 널을 받는다."""
+guards = ["tests/test_tui_ledger_view.py::test_null_memo_key_carries_n_and_each_series_length"]
+file = "src/sectorflow/tui/ledger_view.py"
+find = "    return (_ser_key(keys, ser), n, tuple(len(ser[s]) for s in keys))"
+replace = "    return _ser_key(keys, ser)"

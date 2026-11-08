@@ -277,8 +277,9 @@ def _dev(a: list[float]) -> tuple[list[float], float]:
     """한 계열의 **편차와 제곱합** — :func:`_corr` 가 쌍마다 다시 세던 몫이다.
 
     상관행렬은 27×27 쌍마다 두 계열의 평균·분산을 처음부터 다시 셌다(일일 검증 시간의 대부분).
-    계열마다 한 번만 세어 둔다. 식과 덧셈 순서는 예전 그대로라 값이 **비트까지** 같다 —
-    `tests/test_tui_ledger_view.py` 가 옛 식과 비트 비교한다.
+    계열마다 한 번만 세어 둔다. 식과 덧셈 순서는 예전 그대로라 **유한한** 값은 **비트까지** 같다 —
+    `tests/test_tui_ledger_view.py` 가 옛 식과 비트 비교한다. 계열에 nan 이 섞여 상관이 nan 이 되면
+    부호 비트는 다를 수 있다(:func:`_corr_ordered_of` 참고) — 화면은 ``?``, 평균에서는 빠져 어느 쪽이든 같다.
     """
     ma = sum(a) / len(a)
     d = [x - ma for x in a]
@@ -316,6 +317,15 @@ def _ser_key(keys: list[str], ser: dict[str, list[float]]) -> tuple:
     return (tuple(keys), n, array("d", [v for s in keys for v in ser[s]]).tobytes())
 
 
+def _null_key(keys: list[str], ser: dict[str, list[float]], n: int) -> tuple:
+    """널 메모의 키 — 계열 키에 **실제로 넘기는** ``n`` 과 계열별 길이를 더한다.
+
+    :func:`_ser_key` 의 길이는 첫 계열 것뿐이고 값은 이어 붙인 비트라, 길이가 서로 다른 계열은
+    경계가 달라도 같은 키가 될 수 있다. 널은 ``randrange(n)`` 으로 돌리므로 ``n`` 도 키여야 한다.
+    """
+    return (_ser_key(keys, ser), n, tuple(len(ser[s]) for s in keys))
+
+
 def _memo(memo: OrderedDict, key: tuple, make):
     if key in memo:
         memo.move_to_end(key)
@@ -345,7 +355,10 @@ def neg_frac(values) -> float | None:
 def _corr_ordered_of(keys: list[str], ser: dict[str, list[float]]):
     """:meth:`Model._corr_ordered` 의 계산 — ``(평균상관 순 keys, 행렬, 평균)``. 결과는 메모가 공유한다.
 
-    쌍은 위 삼각만 세고 거울로 채운다 — ``a·b`` 와 ``b·a`` 는 곱의 교환법칙이라 비트까지 같다.
+    쌍은 위 삼각만 세고 거울로 채운다 — ``a·b`` 와 ``b·a`` 는 곱의 교환법칙이라 **유한한** 값은 비트까지 같다.
+    nan 은 예외다: 예전엔 ``(b, a)`` 를 따로 쟀고, 계열에 nan 이 섞이면 IEEE 는 어느 피연산자의 nan 을
+    넘길지 정하지 않아 거울 칸의 **부호 비트**가 옛 값과 다를 수 있다. nan 은 화면에서 ``?`` 이고
+    평균·정렬·``neg_frac`` 에서 빠지므로 보이는 출력은 같다.
     """
     keys = list(keys)
     up = iter(_corr_upper([_dev(ser[s]) for s in keys]))
@@ -730,7 +743,7 @@ class Model:
         if n < _MIN_CORR_N or len(keys) < 2:
             self._null_cache[key] = None
             return None
-        out = _memo(_NULL_MEMO, _ser_key(keys, ser), lambda: _null_neg_frac_of(keys, ser, n))
+        out = _memo(_NULL_MEMO, _null_key(keys, ser, n), lambda: _null_neg_frac_of(keys, ser, n))
         self._null_cache[key] = out
         return out
 
