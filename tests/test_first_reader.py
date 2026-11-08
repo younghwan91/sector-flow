@@ -123,3 +123,102 @@ def test_env_example_does_not_promise_a_sqlite_fallback():
     text = (REPO / ".env.example").read_text("utf-8")
     assert "기준일이 없다" in text and "--demo" in text
     assert "로컬 SQLite(" not in text
+
+
+# ── 당국 질의서 — 발송 전에 사실이 맞아야 한다 ─────────────────────────────────
+
+INQ = REPO / "docs/strategy/inquiries"
+FSC = (INQ / "fsc_advisory_scope.md").read_text("utf-8")
+KRX = (INQ / "krx_market_data.md").read_text("utf-8")
+KIWOOM = (INQ / "kiwoom_api_terms.md").read_text("utf-8")
+
+
+def test_inquiries_state_what_the_screen_really_shows():
+    """'종목 없음·점수 없음' 은 사실이 아니다 — 첫 화면 종목명, 드릴다운 전 종목, 탐색 모드 점수를 적고 묻는다."""
+    for must in ("종목명", "전 종목", "탐색 모드", "질문 12"):
+        assert must in FSC, must
+    assert "점수·등급·판정" not in FSC
+    assert "탐색 모드" in KRX and "전 종목" in KRX
+    assert "탐색 모드" in KIWOOM
+
+
+def test_inquiries_state_the_publication_schedule_and_window():
+    """'확정 기준 하루 1회'·'약 250거래일' 은 틀렸다 — 18:10 잠정·08:20 확정, 260거래일."""
+    for doc in (FSC, KRX):
+        assert "18:10" in doc and "08:20" in doc and "하루 1회" not in doc
+        assert "260거래일" in doc
+    assert "약 250" not in KRX
+
+
+def test_krx_inquiry_states_the_real_sources():
+    """정보데이터시스템에서 '받지 않는다' 는 틀렸다 — 상장폐지 목록·업종 분류·DART 주식수를 적는다."""
+    assert "정보데이터시스템에서는 받지 않습니다" not in KRX
+    for must in ("상장폐지", "OpenDART", "KRX 체결만", "400 LOGOUT"):
+        assert must in KRX, must
+
+
+def test_fsc_inquiry_does_not_claim_a_notice_the_screen_lacks():
+    """'권유 아님' 은 지금 화면에 없다 — 있다고 적으면 질의의 사실관계가 틀린다."""
+    assert '화면에 "관측이며 예측·권유가 아님"과 검증 결과를 표시합니다' not in FSC
+    assert "지금 화면에 없고" in FSC
+
+
+@pytest.mark.parametrize("rel", [
+    "docs/strategy/inquiries/fsc_advisory_scope.md", "docs/strategy/inquiries/krx_market_data.md",
+    "docs/strategy/inquiries/kiwoom_api_terms.md", "docs/strategy/inquiries/opendart_terms.md",
+    "docs/strategy/inquiries/attachments/A_screen_example.md", "docs/strategy/inquiries/attachments/B_metric_definitions.md",
+    "docs/strategy/inquiries/attachments/C_byo_structure.md", "docs/strategy/inquiries/attachments/D_sales_copy_draft.md",
+    "docs/strategy/legal/terms_of_service_draft.md", "docs/strategy/legal/privacy_policy_draft.md",
+    "docs/strategy/legal/refund_policy_draft.md"])
+def test_drafts_say_they_are_drafts(rel):
+    head = "\n".join((REPO / rel).read_text("utf-8").splitlines()[:5])
+    assert "법률 검토 전 초안" in head, rel
+
+
+def test_screen_example_attachment_has_no_real_name():
+    """첨부 A 는 합성 데모다. 이름은 전부 가상이어야 한다."""
+    text = (INQ / "attachments/A_screen_example.md").read_text("utf-8")
+    assert "수치는 가상" in text and "[합성 데모]" in text and "가상유통" in text
+    for name in ("삼성전자", "SK하이닉스", "NAVER", "전기/전자"):
+        assert name not in text, name
+
+
+# ── 전략 문서 ────────────────────────────────────────────────────────────────
+
+STRATEGY = sorted((REPO / "docs/strategy").rglob("*.md"))
+
+
+def test_strategy_docs_have_no_local_absolute_link():
+    bad = [p.name for p in STRATEGY if "/home/young" in p.read_text("utf-8")]
+    assert not bad, bad
+
+
+def test_strategy_report_marks_interpretation_as_interpretation():
+    """'법적 방패'·'가장 싼 방법' 은 확인 없는 단정이었고, 지불 의사와 공개 검증도 없는 것을 있는 듯 적었다."""
+    text = next(p for p in STRATEGY if p.parent.name == "reports").read_text("utf-8")
+    for gone in ("법적 방패", "광고 규제를 피하는", "통과하는 가장 싼 방법", "예측력 없음", "관측에는 월 5,900", "업종 한 개씩",
+                 "검사 144건", "(/home"):
+        assert gone not in text, gone
+    for must in ("지불 미검증", "해석", "미확인", "비공개", "확인하지 못한 것", "204건"):
+        assert must in text, must
+
+
+def test_competitor_note_does_not_call_vendor_labels_its_own_basket():
+    """섹터 라벨은 벤더 업종 27칸(미분류 포함)과 덮어쓴 4종목이다 — 자체 분류가 아니다."""
+    text = next(p for p in STRATEGY if p.name == "competitors.md").read_text("utf-8")
+    assert "자체 바스켓" not in text and "벤더 업종" in text and "[0797]" in text
+
+
+def test_scorecard_does_not_claim_being_faster():
+    text = (REPO / "docs/strategy/2026-11-08-scorecard.md").read_text("utf-8")
+    assert "무료 소스보다 빠르고" not in text and "16:10" in text
+
+
+# ── 연구 재현 문서 ───────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("study", ["q1_data", "q2_calc", "q3ab_revision"])
+def test_research_inputs_point_at_the_archive(study):
+    """2026-11-09 에 48개를 다시 만들어 '지금 reports/ 그대로다' 는 거짓이 됐다."""
+    text = (REPO / "research/validation" / study / "README.md").read_text("utf-8")
+    assert "reports/.archive/" in text
+    assert "지금 `reports/` 그대로" not in text
