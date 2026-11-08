@@ -5995,3 +5995,24 @@ find = """    return e.get("event") == "report" and (e.get("outcome") == "final"
                                            or (e.get("final") is True and e.get("mode") == "final"))"""
 replace = """    return e.get("event") == "report" and (e.get("outcome") == "final"
                                            or e.get("final") is True)"""
+
+# ── 비샤드 실행의 시간 예산 (2026-11-09): 변이 692개 × 예산 12분이 로컬 pre-push 전부를 막았다 ──
+
+[[mutation]]
+id = "harness-unsharded-budget-not-scaled"
+why = "샤드 없는 실행(ci-local 전체 범위)에 샤드 한 몫의 예산을 그대로 건다 — 변이가 늘 때마다 core 파일을 건드린 푸시가 전부 REJECT 로 막힌다(692개 12.3분 > 12분)"
+guards = ["tests/test_verify_merge.py::test_unsharded_budget_scales_by_the_ci_shard_count",
+          "tests/test_verify_merge.py::test_budget_overrun_stops_and_rejects"]
+file = "scripts/verify_merge.py"
+find = """    n = ci_shard_count(wt)
+    return budget_min * n, (f"예산 {budget_min * n:g}분 = --budget-min {budget_min:g}분 × 샤드 {n} — \""""
+replace = """    n = 1
+    return budget_min * n, (f"예산 {budget_min * n:g}분 = --budget-min {budget_min:g}분 × 샤드 {n} — \""""
+
+[[mutation]]
+id = "harness-shard-count-misread-as-one"
+why = "ci.yml 의 matrix 를 못 읽으면 1 로 본다 — 조용히 예전(한 몫 예산)으로 돌아간다. 못 읽으면 4 다"
+guards = ["tests/test_verify_merge.py::test_unsharded_budget_scales_by_the_ci_shard_count"]
+file = "scripts/verify_merge.py"
+find = "def ci_shard_count(wt: Path, fallback: int = 4) -> int:"
+replace = "def ci_shard_count(wt: Path, fallback: int = 1) -> int:"
