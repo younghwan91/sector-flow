@@ -352,12 +352,15 @@ def market_cap_asof_bulk(con: Any, df: Any) -> Any:
     sd_px = _prices("SELECT code, date, close FROM supply_demand WHERE source='kiwoom' "
                     "AND code IN ({c}) AND date IN ({d})")
     raw_px = _prices("SELECT code, date, close FROM daily_bars_raw WHERE code IN ({c}) AND date IN ({d})")
+    # 주식수·이벤트는 물어본 가장 늦은 날까지만 읽는다. 아래 조인이 전부 뒤를 안 보므로(backward) 값은 같고,
+    # 지난 기준일 재구성에서 그 뒤의 행이 아예 안 들어온다.
+    upto = wanted[-1]
     shares = pd.read_sql_query(
         f"SELECT code, date, shares_outstanding FROM shares_outstanding_history "
-        f"WHERE code IN ({placeholders})", con, params=codes)
+        f"WHERE code IN ({placeholders}) AND date <= {ph}", con, params=[*codes, upto])
     events = pd.read_sql_query(
-        f"SELECT code, date, upd_stkpc_tp, upd_rt FROM corporate_actions WHERE code IN ({placeholders})",
-        con, params=codes)
+        f"SELECT code, date, upd_stkpc_tp, upd_rt FROM corporate_actions "
+        f"WHERE code IN ({placeholders}) AND date <= {ph}", con, params=[*codes, upto])
     if shares.empty:
         return pd.Series([float("nan")] * len(df), index=df.index)
 

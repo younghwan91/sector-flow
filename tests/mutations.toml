@@ -1406,9 +1406,9 @@ id = "web-serves-the-payload"
 why = "웹 서비스가 내보내는 파일 목록이 넓어지면 페이로드·로그가 밖으로 나간다"
 guards = ["tests/test_serve_reports.py::test_only_the_report_pages_are_served"]
 file = "scripts/serve_reports.py"
-find = """    "FINAL.txt": "text/plain; charset=utf-8",
+find = """    "REBUILT.txt": "text/plain; charset=utf-8",
 }"""
-replace = """    "FINAL.txt": "text/plain; charset=utf-8",
+replace = """    "REBUILT.txt": "text/plain; charset=utf-8",
     "payload.json": "application/json",
 }"""
 
@@ -2100,7 +2100,7 @@ id = "numbers-drop-today"
 why = "화면이 읽는 numbers.html 에 오늘 블록이 안 간다"
 guards = ["tests/test_payload_today.py::test_numbers_page_carries_today_for_the_terminal"]
 file = "scripts/sector_numbers.py"
-find = """    for k in ("today", "change", "change_reason", "final_diff", "final_diff_reason", "revision_stats"):"""
+find = """    for k in ("today", "change", "change_reason", "final_diff", "final_diff_reason", "revision_stats", "rebuilt"):"""
 replace = """    for k in ():"""
 
 [[mutation]]
@@ -4497,3 +4497,94 @@ guards = ["tests/test_runbook.py::test_documented_lint_commands_match_ci"]
 file = "CLAUDE.md"
 find = "ruff check src/ tests/ scripts/ research/` 와"
 replace = "ruff check src/ tests/ scripts/` 와"
+
+# ── 재구성(KR_QUANT_ASOF·--asof·rebuild_history) ─────────────────────────────
+
+[[mutation]]
+id = "rebuild-reads-past-asof"
+why = """재구성이 기준일을 무시하고 DB 최신일까지 읽는다 — 지난 기준일 폴더에 그 뒤 데이터가 든다.
+거래일 목록이 모든 읽기의 끝을 정하므로 여기가 새는 길이다."""
+guards = ["tests/test_rebuild_asof.py::test_no_row_after_asof_leaks_into_a_rebuilt_payload"]
+file = "scripts/sector_flow.py"
+find = "    dates = recent_dates(con, days, asof=asof)"
+replace = "    dates = recent_dates(con, days)"
+
+[[mutation]]
+id = "rebuild-holiday-uses-day-before"
+why = "휴장일을 주면 직전 거래일로 조용히 만들어 엉뚱한 날짜 폴더에 같은 리포트가 둘 생긴다"
+guards = ["tests/test_rebuild_asof.py::test_asof_on_a_holiday_refuses_instead_of_using_the_day_before"]
+file = "scripts/sector_flow.py"
+find = "    if asof is not None and dates[-1] != asof:"
+replace = "    if False:"
+
+[[mutation]]
+id = "rebuild-verify-against-db-latest"
+why = "재구성 리포트를 DB 최신일과 맞춰 보면 지난 기준일은 전부 검증 실패가 된다(또는 엉뚱한 날을 통과시킨다)"
+guards = ["tests/test_rebuild_asof.py::test_verify_takes_the_rebuilt_asof_as_the_reference_day"]
+file = "scripts/verify_report.py"
+find = "            db_last == dates[-1] == asof, f\"지정 {asof} / DB {db_last} / 리포트 {dates[-1]}\")"
+replace = "            db_last == dates[-1], f\"지정 {asof} / DB {db_last} / 리포트 {dates[-1]}\")"
+
+[[mutation]]
+id = "rebuild-index-without-tag"
+why = "웹 목록이 재구성한 날을 그날 저녁 게시본처럼 보여 준다"
+guards = ["tests/test_serve_reports.py::test_rebuilt_day_says_rebuilt_alongside_final"]
+file = "scripts/serve_reports.py"
+find = "        tags.append(f'<a class=\"tag rebuilt\" href=\"/{d}/REBUILT.txt\">재구성</a>')"
+replace = "        pass"
+
+[[mutation]]
+id = "rebuild-note-not-served"
+why = "재구성 표시가 여는 REBUILT.txt 가 404 — 원본이 어디 있는지 웹에서 못 본다"
+guards = ["tests/test_serve_reports.py::test_rebuilt_day_says_rebuilt_alongside_final"]
+file = "scripts/serve_reports.py"
+find = "    \"REBUILT.txt\": \"text/plain; charset=utf-8\","
+replace = ""
+
+[[mutation]]
+id = "rebuild-chip-silent"
+why = "화면 칩이 재구성 리포트를 그냥 '마감·확정' 이라 말한다"
+guards = ["tests/test_validation_fixes.py::test_status_chip_says_rebuilt_for_reconstructed_reports"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "        base += \"·재구성\""
+replace = "        base += \"\""
+
+[[mutation]]
+id = "rebuild-numbers-drop-flag"
+why = "수치표 페이지가 rebuilt 를 안 건네 TUI 칩이 모른다(sw-flow 는 numbers.html 만 읽는다)"
+guards = ["tests/test_validation_fixes.py::test_status_chip_says_rebuilt_for_reconstructed_reports"]
+file = "scripts/sector_numbers.py"
+find = "\"final_diff_reason\", \"rebuilt\"):"
+replace = "\"final_diff_reason\"):"
+
+[[mutation]]
+id = "rebuild-moves-latest-backward"
+why = "지난 날을 재구성할 때마다 latest 가 그날로 돌아가 화면·웹이 옛 리포트를 최신으로 연다"
+guards = ["tests/test_daily_report_flow.py::test_rebuild_builds_the_past_day_as_final_and_marks_it"]
+file = "scripts/daily_report.sh"
+find = "[[ ! \"$ASOF\" < \"$CUR_LATEST\" ]]; then"
+replace = "true; then"
+
+[[mutation]]
+id = "rebuild-deletes-original"
+why = "재구성이 바꿔 낀 원본을 지운다 — 옛 게시본과 비교할 길이 없어진다"
+guards = ["tests/test_daily_report_flow.py::test_rebuild_builds_the_past_day_as_final_and_marks_it"]
+file = "scripts/daily_report.sh"
+find = "    mv \"$OLD\" \"$ARCHIVED\""
+replace = "    rm -rf \"$OLD\""
+
+[[mutation]]
+id = "rebuild-gate-on-latest-day"
+why = "재구성 기준일 대신 DB 최신일을 기준일로 잡는다 — 관문이 엉뚱한 날을 보고 폴더 이름도 틀린다"
+guards = ["tests/test_daily_report_flow.py::test_rebuild_gate_judges_the_asof_day_not_the_latest"]
+file = "scripts/daily_report.sh"
+find = "if upto:"
+replace = "if False:"
+
+[[mutation]]
+id = "rebuild-history-newest-first"
+why = "새 날부터 만들면 직전 대비(change)가 같은 루트의 직전 거래일 폴더를 못 찾는다"
+guards = ["tests/test_rebuild_asof.py::test_rebuild_history_runs_oldest_first_and_summarises"]
+file = "scripts/rebuild_history.py"
+find = "        days = weekdays(a.start, a.end)"
+replace = "        days = weekdays(a.start, a.end)[::-1]"

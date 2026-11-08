@@ -72,11 +72,19 @@ def _finalized(date: str) -> bool:
     return date != now.strftime("%Y-%m-%d") or now.hour >= FINALIZED_KST_HOUR
 
 
-def load(con, days: int) -> tuple[pd.DataFrame, list[str]]:
-    dates = recent_dates(con, days)
+def load(con, days: int, asof: "str | None" = None) -> tuple[pd.DataFrame, list[str]]:
+    """``asof`` 를 주면 그날까지의 거래일만 본다 — 지난 기준일을 지금 코드로 다시 만드는 재구성.
+
+    아래 읽기는 전부 이 ``dates`` 의 끝(=기준일) 안에 묶인다: 수급·조정 종가는 날짜 구간, 시총은
+    기준일 이하 주식수·이벤트(``market_cap_asof_bulk``), 업종지수는 ``index_returns`` 의 구간. 묶이지 않는 것은
+    ``stocks`` 뿐이다 — 이력이 없는 지금의 마스터라 섹터·시장 분류와 유니버스는 지금 기준이다.
+    """
+    dates = recent_dates(con, days, asof=asof)
     if not dates:
         raise SystemExit("supply_demand 에 데이터가 없다 — 접속정보를 불러왔는지 확인하라.\n"
                          "  set -a; . ~/git/quant-airflow/.env; set +a  (또는 --db)")
+    if asof is not None and dates[-1] != asof:
+        raise SystemExit(f"{asof} 는 거래일이 아니다(그 이하 마지막 수급일 {dates[-1]}) — 휴장일이면 건너뛴다.")
 
     sd = read_supply_demand(
         con,
@@ -174,7 +182,11 @@ def index_returns(con, dates: list[str], sectors, markets,
     하나뿐인 업종(보험·증권 등 코스피 전용)은 거래소에만 붙인다. 지수가 아예 없는
     섹터는 ``None`` 으로 남겨, 소비자가 **섞지 않고 제외**할 수 있게 한다.
     """
-    si = pd.read_sql_query("SELECT code, name, date, close FROM sector_index", con)
+    # 구간 밖 행은 ``reindex(dates)`` 가 어차피 버린다 — 재구성에서 기준일 뒤 행을 읽지 않게 SQL 에서 묶는다.
+    ph = "%s" if _is_pg(con) else "?"
+    si = pd.read_sql_query(
+        f"SELECT code, name, date, close FROM sector_index WHERE date >= {ph} AND date <= {ph}",
+        con, params=[dates[0], dates[-1]])
     si["date"] = si["date"].astype(str)
     lookup: dict = {m: {} for m in markets}
     for name, g in si.groupby("name"):
@@ -1036,6 +1048,9 @@ def main():
     ap.add_argument("--from-json", help="이미 만든 페이로드를 읽어 HTML 만 낸다")
     ap.add_argument("--final", action="store_true",
                     help="daily_finalize 확인 뒤 확정치로 만든다(daily_report.sh 확정 모드가 붙인다)")
+    ap.add_argument("--asof", help="이 기준일(YYYY-MM-DD)까지의 데이터로 만든다 — 지난 기준일 재구성")
+    ap.add_argument("--rebuilt", action="store_true",
+                    help="재구성 리포트로 표시한다(daily_report.sh 의 KR_QUANT_ASOF 가 붙인다)")
     ap.add_argument("--reports-root",
                     help="직전 리포트를 찾을 리포트 루트(기본: --json 이 <루트>/<기준일>[.building.N]/ 안이면 그 루트)")
     a = ap.parse_args()
@@ -1053,7 +1068,7 @@ def main():
         return
 
     con = connect(a.db)
-    df, dates = load(con, a.days)
+    df, dates = load(con, a.days, asof=a.asof)
     df = attach_daily_cap(con, df)
     caps = sector_cap(con, df, dates[-1])
     global INDEX_RET
@@ -1072,7 +1087,12 @@ def main():
     if a.final:
         # 키를 확정일 때만 싣는다.
         payload["final"] = True
-        payload["final_diff"], payload["final_diff_reason"] = final_diff_block(payload, root)
+        if a.rebuilt:
+            # 같은 자리의 옛 리포트는 옛 코드·정의로 만든 것이라 잠정→확정 비교가 아니다.
+            payload["final_diff"] = None
+            payload["final_diff_reason"] = "재구성 리포트다 — 같은 기준일의 옛 리포트는 옛 코드·정의로 만들어 비교하지 않는다"
+        else:
+            payload["final_diff"], payload["final_diff_reason"] = final_diff_block(payload, root)
         # FINAL.txt 는 daily_report.sh 가 쓴다 — 거기 덧붙일 글을 산출물 옆에 둔다.
         if a.json or a.html:
             here = os.path.dirname(os.path.abspath(a.json or a.html))
@@ -1083,6 +1103,9 @@ def main():
                 with open(os.path.join(here, "final_diff.json"), "w", encoding="utf-8") as f:
                     json.dump(payload["final_diff"], f, ensure_ascii=False)
     payload["revision_stats"] = revision_stats(payload, root)
+    if a.rebuilt:
+        # 키를 재구성일 때만 싣는다 — 화면이 "재구성" 을 붙인다.
+        payload["rebuilt"] = True
     covered = sum(1 for m in payload["markets"] for s in payload["sectors"]
                   if payload["iret"][m].get(s))
     print(f"업종지수 커버리지: {covered} / "

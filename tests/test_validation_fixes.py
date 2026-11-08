@@ -158,6 +158,17 @@ def test_verifier_flags_a_passer_without_a_score():
 
 # ── 확정 표시 ───────────────────────────────────────────────────────────────
 
+def test_status_chip_says_rebuilt_for_reconstructed_reports():
+    """지난 기준일을 나중 코드·확정 데이터로 다시 만든 리포트(KR_QUANT_ASOF)는 확정과 함께 재구성이라 말한다."""
+    assert status_chip({"finalized": True, "final": True, "rebuilt": True}).startswith("마감·확정·재구성")
+    assert "재구성" not in status_chip({"finalized": True, "final": True})
+    # 수치표 페이지(TUI 가 읽는 것)까지 키가 건너가야 칩이 안다 — 재구성이 아닌 날은 키를 싣지 않는다.
+    P = _payload(0)
+    assert "rebuilt" not in SN.build(P)
+    P["rebuilt"] = True
+    assert SN.build(P)["rebuilt"] is True
+
+
 def test_status_chip_says_final_only_for_rebuilt_reports():
     assert status_chip({"finalized": True}).startswith("마감·잠정")
     assert status_chip({"finalized": True, "final": True}).startswith("마감·확정")

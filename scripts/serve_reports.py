@@ -41,6 +41,7 @@ FILES = {
     "VERIFY_FAILED.txt": "text/plain; charset=utf-8",
     "INCOMPLETE.txt": "text/plain; charset=utf-8",
     "FINAL.txt": "text/plain; charset=utf-8",
+    "REBUILT.txt": "text/plain; charset=utf-8",
 }
 PAGES = (("numbers.html", "수치표"), ("viewer.html", "흐름"))
 #: 화면(`flow_view.STALE_DAYS`)·페이지(`staleChip`)와 같은 문턱.
@@ -85,6 +86,9 @@ def day_tags(root: str, d: str) -> list[str]:
     ``확정`` 은 08:20 확정 모드가 확정치로 다시 만든 날(``FINAL.txt``)뿐이다. 그 표시가
     없는 날은 18:10 의 잠정치로 만든 그대로다 — 확정 모드가 확정치를 확인하지 못했거나
     그 모드가 생기기 전의 리포트다. 리포트가 없는 날(수집 미완)에는 둘 다 안 붙인다.
+
+    ``재구성`` 은 지난 기준일을 나중 코드·확정 데이터로 다시 만든 날(``REBUILT.txt``)이다 — 그날 저녁에
+    게시된 그대로가 아니라는 표시라 ``확정`` 과 함께 단다.
     """
     p = os.path.join(root, d)
     has = {f: os.path.exists(os.path.join(p, f)) for f in FILES}
@@ -97,6 +101,8 @@ def day_tags(root: str, d: str) -> list[str]:
         tags.append(f'<a class="tag ok" href="/{d}/FINAL.txt">확정</a>')
     else:
         tags.append('<span class="tag prov">잠정</span>')
+    if has["REBUILT.txt"]:
+        tags.append(f'<a class="tag rebuilt" href="/{d}/REBUILT.txt">재구성</a>')
     if has["VERIFY_FAILED.txt"]:
         tags.append(f'<a class="tag warn" href="/{d}/VERIFY_FAILED.txt">검증 실패</a>')
     elif has["VERIFY.txt"]:
@@ -143,6 +149,7 @@ h1{{font-size:20px;margin:0 0 12px}} a{{color:#2457c5}} .big{{font-size:18px;mar
 .tag.new{{background:#2457c5;color:#fff;font-weight:600}} .tag.ok{{background:#dcfce7;color:#166534}}
 .tag.prov{{background:#f1f5f9;color:#475569;border:1px dashed #94a3b8}}
 .tag.warn{{background:#fef3c7;color:#92400e;font-weight:600}}
+.tag.rebuilt{{background:#ede9fe;color:#5b21b6}}
 ul.days{{list-style:none;margin:0;padding:0;background:#fff;border:1px solid #e2e5ea;border-radius:8px}}
 ul.days li{{display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px;padding:8px 10px;border-bottom:1px solid #e2e5ea}}
 ul.days li:last-child{{border-bottom:0}}
@@ -154,7 +161,8 @@ ul.days li.latest{{background:#eef3fd;border-left:4px solid #2457c5;font-weight:
 <h1>섹터 자금흐름 리포트</h1>
 {head}
 <p class=dim>평일 18:10 리포트는 그날 <b>잠정치</b>로 만든다. 다음날 08:20 에 그 기준일을 확정치로 다시 만들면
-<b>확정</b> 표시가 붙는다(확정치가 확인되지 않으면 잠정 그대로 둔다). 크론은 그보다 앞선 날을 다시 만들지 않는다.</p>
+<b>확정</b> 표시가 붙는다(확정치가 확인되지 않으면 잠정 그대로 둔다). 크론은 그보다 앞선 날을 다시 만들지 않는다.
+<b>재구성</b> 은 지난 기준일을 나중 코드와 확정 데이터로 다시 만든 날이다 — 그날 저녁 게시본이 아니다.</p>
 <ul class="days">{''.join(rows)}</ul>
 </body></html>"""
 

@@ -29,6 +29,9 @@ a = sys.argv
 if "--final" in a:
     pathlib.Path(a[a.index("--json") + 1]).with_name("ARGS_FINAL").write_text("1")
     pathlib.Path(a[a.index("--json") + 1]).with_name("final_diff.txt").write_text("잠정 → 확정 비교")
+if "--asof" in a:
+    pathlib.Path(a[a.index("--json") + 1]).with_name("ARGS_ASOF").write_text(
+        a[a.index("--asof") + 1] + (" rebuilt" if "--rebuilt" in a else ""))
 if "--json" in a:
     pathlib.Path(a[a.index("--json") + 1]).write_text("{}")
 if "--html" in a:
@@ -595,3 +598,43 @@ def test_finalize_that_ran_before_the_report_day_does_not_count(repo, tmp_path):
     p = _run(repo, today="2026-11-03", KR_QUANT_FINAL="1", KR_QUANT_AIRFLOW_LOGS=str(logs))
     assert p.returncode == 75
     assert not (dest / "FINAL.txt").exists()
+
+
+# ── 재구성(KR_QUANT_ASOF) — 지난 기준일을 지금 코드·확정 데이터로 ───────────────────────────────
+
+def test_rebuild_builds_the_past_day_as_final_and_marks_it(repo):
+    """지난 기준일을 그날 이하 데이터로(--asof), 확정 의미로 만들고 REBUILT.txt 를 남긴다. 원본은 지우지 않고 latest 는 안 돌린다."""
+    _seed(repo.parent / "db.sqlite", today_kosdaq=50)
+    assert _run(repo).returncode == 0                       # 오늘(11-02) 것이 latest
+    old = repo / "reports" / DAYS[-2]
+    old.mkdir()
+    (old / "numbers.html").write_text("<옛 정의>")
+    p = _run(repo, KR_QUANT_ASOF=DAYS[-2], KR_QUANT_CODE_REV="abc1234")
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert (old / "ARGS_ASOF").read_text() == f"{DAYS[-2]} rebuilt", "sector_flow 에 --asof·--rebuilt 를 안 넘겼다"
+    assert (old / "FINAL.txt").is_file() and "재구성" in (old / "FINAL.txt").read_text()
+    note = (old / "REBUILT.txt").read_text()
+    assert "abc1234" in note and "원본은 " in note and ".archive" in note
+    kept = list((repo / "reports" / ".archive").glob(f"{DAYS[-2]}.*"))
+    assert len(kept) == 1 and (kept[0] / "numbers.html").read_text() == "<옛 정의>", "원본을 지웠다"
+    assert (repo / "reports" / "latest").resolve() == (repo / "reports" / TODAY).resolve(), "latest 를 뒤로 돌렸다"
+    # 다시 돌리면 건너뛰고(이어서 돌기), 휴장일은 3 으로 거절한다.
+    again = _run(repo, KR_QUANT_ASOF=DAYS[-2])
+    assert again.returncode == 0 and "이미 재구성" in again.stdout
+    hol = _run(repo, KR_QUANT_ASOF="2026-10-31")            # 토요일
+    assert hol.returncode == 3 and "거래일이 아니다" in hol.stderr
+    assert not (repo / "reports" / "2026-10-31").exists()
+
+
+def test_rebuild_gate_judges_the_asof_day_not_the_latest(repo):
+    """완전성 관문은 재구성 기준일을 본다 — 최신일이 멀쩡해도 그날이 부분 수집이면 안 만든다."""
+    db = repo.parent / "db.sqlite"
+    _seed(db, today_kosdaq=50)
+    con = sqlite3.connect(db)
+    con.execute("DELETE FROM supply_demand WHERE date=? AND code >= '000060'", (DAYS[-2],))
+    con.commit()
+    con.close()
+    p = _run(repo, KR_QUANT_ASOF=DAYS[-2])
+    assert p.returncode == 1, p.stdout + p.stderr
+    assert (repo / "reports" / DAYS[-2] / "INCOMPLETE.txt").is_file()
+    assert not (repo / "reports" / DAYS[-2] / "numbers.html").exists()

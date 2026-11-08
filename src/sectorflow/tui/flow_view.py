@@ -1627,6 +1627,9 @@ def status_chip(d: dict) -> str:
     """
     # ``final`` 은 다음날 아침 daily_finalize 확인 뒤 확정치로 다시 만든 리포트에만 있다(daily_report.sh 확정 모드).
     base = "마감·확정" if d.get("final") else "마감·잠정" if d.get("finalized") else "장중·미확정"
+    # ``rebuilt`` 은 지난 기준일을 지금 코드·확정 데이터로 다시 만든 리포트(KR_QUANT_ASOF)에만 있다 — 그날 게시본이 아니다.
+    if d.get("rebuilt"):
+        base += "·재구성"
     return " ".join([base, *(f"⚠ {w}" for w in d.get("report_warnings") or ())])
 
 

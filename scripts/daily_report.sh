@@ -5,8 +5,14 @@
 # 휴장일에 돌면 전 거래일 폴더가 이미 있으므로 건너뛴다 — 같은 데이터로 폴더가
 # 여러 개 생기는 걸 막는다.
 #
+# **재구성(KR_QUANT_ASOF=YYYY-MM-DD).** 지난 기준일을 지금 코드와 지금 DB(그 사이 확정된 값)로 다시 만든다.
+# 모든 읽기를 그날 이하로 묶고(sector_flow.py --asof), 확정 모드 의미로 만들며(FINAL.txt), 폴더에 REBUILT.txt 를
+# 남겨 웹 목록·화면이 "재구성" 이라 말하게 한다. 바꿔 끼운 옛 폴더는 지우지 않고 $OUT_ROOT/.archive/ 로 옮긴다.
+# latest 는 뒤로 돌리지 않는다. 여러 날은 scripts/rebuild_history.py 가 오래된 날부터 차례로 부른다
+# (직전 대비 `change` 가 같은 루트의 직전 거래일 폴더를 읽는다).
+#
 # 종료코드: 0 = 게시했거나 건너뜀 · 75 = 오늘 기준일이 수집 미완이라 안 만듦(재실행하면 된다) ·
-# 그 밖 = 오류·검증 실패·**지난** 기준일이 아직 수집 미완(1 — 재시도 창이 끝나 간다).
+# 그 밖 = 오류·검증 실패·**지난** 기준일이 아직 수집 미완(1 — 재시도 창이 끝나 간다) · 3 = 재구성 기준일이 휴장일(KR_QUANT_ASOF).
 # 몇 번을 돌려도 안전하다 — 크론이 재시도로 같은 명령을 다시 부른다.
 #
 # 리포트는 생성물이지 소스가 아니다 — git 추적 대상은 아니지만(.gitignore 의
@@ -39,6 +45,11 @@ fi
 
 # 실패 사유는 보여 준다 — 버리면 `set -e` 때문에 아래 안내까지 못 가고 빈 알림으로 끝난다.
 # libpq 가 접속 문자열을 되읊을 수 있어 비밀번호 자리는 가린다.
+REBUILD="${KR_QUANT_ASOF:-}"
+if [ -n "$REBUILD" ] && ! [[ "$REBUILD" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+  echo "[$(date '+%F %T')] KR_QUANT_ASOF 가 날짜 꼴(YYYY-MM-DD)이 아니다: $REBUILD — 중단." >&2
+  exit 2
+fi
 # 임시 파일은 디스크에 — /tmp(사용자 할당량 tmpfs)가 차면 mktemp 가 죽고 set -e 로 이유 없이 끝났다(2026-11-08 리허설).
 # KILL 로 끝나 못 지운 지난 것(하루 넘은 것)은 쓸어 낸다. 파일은 0600 이고, 접속 문자열은 쓰자마자 가린다(아래 sed -i).
 find "$OUT_ROOT" -maxdepth 1 -name '.asof_err.*' -mtime +0 -delete 2>/dev/null || true
@@ -47,11 +58,17 @@ ASOF_ERR="$(mktemp -p "$OUT_ROOT" .asof_err.XXXXXX)" || {
   exit 1
 }
 ASOF_RC=0
+# 재구성이면 그날 **이하**의 마지막 수급일 — 그날이 아니면 휴장일이다(아래에서 끊는다).
 ASOF="$("${UVR[@]}" python - <<'PY' 2>"$ASOF_ERR"
 import os
-from sectorflow.storage import connect, db_default
+from sectorflow.storage import _is_pg, connect, db_default
 con = connect(os.environ.get("KR_QUANT_DB") or db_default())
-cur = con.cursor(); cur.execute("SELECT max(date) FROM supply_demand")
+cur = con.cursor()
+upto = os.environ.get("KR_QUANT_ASOF")
+if upto:
+    cur.execute("SELECT max(date) FROM supply_demand WHERE date <= " + ("%s" if _is_pg(con) else "?"), (upto,))
+else:
+    cur.execute("SELECT max(date) FROM supply_demand")
 print(cur.fetchone()[0]); con.close()
 PY
 )" || ASOF_RC=$?
@@ -74,6 +91,10 @@ case "$ASOF" in
     ;;
 esac
 TODAY="$(TZ=Asia/Seoul date +%F)"
+if [ -n "$REBUILD" ] && [ "$ASOF" != "$REBUILD" ]; then
+  echo "[$(date '+%F %T')] 재구성 $REBUILD 는 거래일이 아니다(그 이하 마지막 수급일 $ASOF) — 휴장일이다(종료코드 3). 만들지 않는다." >&2
+  exit 3
+fi
 
 DEST="$OUT_ROOT/$ASOF"
 # 건너뛰기는 **데이터**가 그대로일 때를 위한 것이다(휴장일 재실행). 리포트에 실리는
@@ -100,7 +121,17 @@ DEST="$OUT_ROOT/$ASOF"
 FINAL_OK=""
 FINAL_REBUILD=""
 FINAL_UNCONFIRMED=""
-if [ -f "$DEST/FINAL.txt" ]; then
+if [ -n "$REBUILD" ]; then
+  # 지난 기준일의 값은 그 뒤 daily_finalize 가 이미 덮었다 — 확정 모드 의미로 만든다.
+  # 이미 재구성한 날은 다시 안 만든다(rebuild_history 재실행이 이어서 돈다). 원본(REBUILT.txt 없음)은 바꿔 낀다.
+  if [ -f "$DEST/REBUILT.txt" ] && [ -f "$DEST/numbers.html" ] && [ ! -f "$DEST/VERIFY_FAILED.txt" ] \
+     && [ -z "${KR_QUANT_FORCE:-}" ]; then
+    echo "[$(date '+%F %T')] $ASOF 는 이미 재구성했다 — 건너뛴다(다시 만들려면 KR_QUANT_FORCE=1)."
+    exit 0
+  fi
+  FINAL_OK=1
+  FINAL_REBUILD=1
+elif [ -f "$DEST/FINAL.txt" ]; then
   FINAL_OK=1
   if [ -n "${KR_QUANT_FINAL:-}" ] && [ -z "${KR_QUANT_FORCE:-}" ] && [ ! -f "$DEST/VERIFY_FAILED.txt" ]; then
     echo "[$(date '+%F %T')] $ASOF 는 이미 확정치로 만들었다 — 건너뛴다."
@@ -183,6 +214,12 @@ if [ -n "$FINAL_OK" ]; then
   FINAL_ARGS=(--final)
   echo "[$(date '+%F %T')] 확정치로 만든다 — 제목이 '마감·확정' 이 된다"
 fi
+VERIFY_ARGS=()
+if [ -n "$REBUILD" ]; then
+  FINAL_ARGS+=(--asof "$ASOF" --rebuilt)
+  VERIFY_ARGS=(--asof "$ASOF")
+  echo "[$(date '+%F %T')] 재구성 — 지금 코드로 $ASOF 이하 데이터만 읽는다"
+fi
 "${UVR[@]}" python scripts/sector_flow.py    --days "$DAYS" --json "$BUILD/payload.json" "${FINAL_ARGS[@]}"
 "${UVR[@]}" python scripts/sector_flow.py    --from-json "$BUILD/payload.json" --html "$BUILD/viewer.html"
 "${UVR[@]}" python scripts/sector_numbers.py --payload "$BUILD/payload.json" --html "$BUILD/numbers.html"
@@ -190,7 +227,7 @@ fi
 # 저장한 것을 그 자리에서 검증한다 — 실패하면 폴더에 VERIFY_FAILED 를 남긴다.
 # 조용히 틀린 리포트가 쌓이는 것이 검증 없이 도는 것보다 나쁘다.
 VERIFY_RC=0
-if "${UVR[@]}" python scripts/verify_report.py --dir "$BUILD" --db-check \
+if "${UVR[@]}" python scripts/verify_report.py --dir "$BUILD" --db-check "${VERIFY_ARGS[@]}" \
      > "$BUILD/VERIFY.txt" 2>&1; then
   echo "[$(date '+%F %T')] 검증 통과 — $DEST/VERIFY.txt"
 else
@@ -204,23 +241,56 @@ else
   VERIFY_RC=1
 fi
 
-if [ -n "$FINAL_OK" ]; then
+if [ -n "$REBUILD" ]; then
+  echo "[$(date '+%F %T')] 재구성 — 기준일 뒤에 확정된 DB 값으로 만들었다(REBUILT.txt)." > "$BUILD/FINAL.txt"
+  # 잠정 대비는 없다 — sector_flow.py --rebuilt 가 그 이유 한 줄을 남긴다.
+  if [ -s "$BUILD/final_diff.txt" ]; then cat "$BUILD/final_diff.txt" >> "$BUILD/FINAL.txt"; fi
+elif [ -n "$FINAL_OK" ]; then
   echo "[$(date '+%F %T')] daily_finalize 확인 뒤 확정치로 만들었다." > "$BUILD/FINAL.txt"
   # 잠정 → 확정에서 바뀐 머리 숫자(sector_flow.py --final 이 남긴다).
   if [ -f "$BUILD/final_diff.txt" ]; then cat "$BUILD/final_diff.txt" >> "$BUILD/FINAL.txt"; fi
+fi
+if [ -n "$REBUILD" ]; then
+  # 원본을 지우지 않는다 — 재구성은 옛 게시본을 대신하는 것이지 없애는 것이 아니다.
+  ORIGIN="${KR_QUANT_REBUILD_ORIGIN:-}"
+  ARCHIVED=""
+  if [ -d "$DEST" ]; then
+    ARCHIVED="$OUT_ROOT/.archive/$ASOF.$(date +%Y%m%d%H%M%S)"
+    # 재구성을 다시 재구성하면 원본은 처음 것 그대로다.
+    if [ -z "$ORIGIN" ] && [ -f "$DEST/REBUILT.txt" ]; then
+      ORIGIN="$(sed -n '1s/.*; 원본은 //p' "$DEST/REBUILT.txt")"
+    fi
+    [ -n "$ORIGIN" ] || ORIGIN="$ARCHIVED"
+  fi
+  REV="${KR_QUANT_CODE_REV:-$(git -C "$REPO" describe --always --dirty 2>/dev/null || echo '?')}"
+  { echo "$(TZ=Asia/Seoul date '+%F %H:%M') 현재 코드($REV)·확정 데이터로 다시 만듦; 원본은 ${ORIGIN:-없음(이 루트에서 처음 만들었다)}"
+    echo "모든 DB 읽기는 $ASOF 이하로 묶었다(수급·조정 종가·업종지수·주식수·수정주가 이벤트)."
+    echo "묶지 못한 것: 섹터·시장 분류와 유니버스는 지금의 stocks 마스터다(이력이 없다)."
+    echo "그날 저녁 게시본은 그때의 잠정치·그때의 정의로 만든 것이라 이 숫자와 다를 수 있다."
+  } > "$BUILD/REBUILT.txt"
 fi
 if [ -d "$DEST" ]; then
   OLD="$DEST.replaced.$$"
   mv "$DEST" "$OLD"
   mv "$BUILD" "$DEST"
-  rm -rf "$OLD"
-  echo "[$(date '+%F %T')] 바꿔 끼웠다 — $DEST"
+  if [ -n "$REBUILD" ]; then
+    mkdir -p "$OUT_ROOT/.archive"
+    mv "$OLD" "$ARCHIVED"
+    echo "[$(date '+%F %T')] 바꿔 끼웠다 — $DEST (옛 폴더: $ARCHIVED)"
+  else
+    rm -rf "$OLD"
+    echo "[$(date '+%F %T')] 바꿔 끼웠다 — $DEST"
+  fi
 else
   mv "$BUILD" "$DEST"
 fi
 trap - EXIT
 
-ln -sfn "$DEST" "$OUT_ROOT/latest"
+# 재구성은 latest 를 뒤로 돌리지 않는다 — 지금 latest 보다 늦거나 같은 날일 때만 옮긴다.
+CUR_LATEST="$(basename "$(readlink "$OUT_ROOT/latest" 2>/dev/null || echo none)")"
+if [ -z "$REBUILD" ] || [ ! -d "$OUT_ROOT/$CUR_LATEST" ] || [[ ! "$ASOF" < "$CUR_LATEST" ]]; then
+  ln -sfn "$DEST" "$OUT_ROOT/latest"
+fi
 if [ "$VERIFY_RC" -eq 0 ]; then
   echo "[$(date '+%F %T')] 완료 — $DEST 를 latest 로 게시했다"
   if [ -n "$FINAL_UNCONFIRMED" ]; then

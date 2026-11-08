@@ -394,7 +394,7 @@ def test_main_writes_final_diff_next_to_the_payload(tmp_path, monkeypatch):
     """확정 모드는 산출물 옆에 final_diff.txt 를 남긴다 — daily_report.sh 가 FINAL.txt 에 붙인다."""
     df, dates, caps = _df()
     monkeypatch.setattr(sf, "connect", lambda db: type("C", (), {"close": lambda self: None})())
-    monkeypatch.setattr(sf, "load", lambda con, days: (df.drop(columns=["cap", "cap_lag"]), dates))
+    monkeypatch.setattr(sf, "load", lambda con, days, asof=None: (df.drop(columns=["cap", "cap_lag"]), dates))
     monkeypatch.setattr(sf, "attach_daily_cap", lambda con, d: df)
     monkeypatch.setattr(sf, "sector_cap", lambda con, d, last: caps)
     monkeypatch.setattr(sf, "index_returns", lambda *a, **k: {m: {} for m in SECTORS})

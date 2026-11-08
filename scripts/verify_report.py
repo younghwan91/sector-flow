@@ -631,7 +631,7 @@ def check_market_presence(payload: dict) -> None:
             f"{tv[-1]:,.0f}억 / 직전 5일 중앙값 {base:,.0f}억")
 
 
-def layer_b(payload: dict, db: str | None) -> None:
+def layer_b(payload: dict, db: str | None, asof: "str | None" = None) -> None:
     print("\nB. 데이터 — DB 에서 들어온 것이 온전한가")
     dates = payload["dates"]
     chk("B", "거래일 수", len(dates) >= 60, f"{len(dates)}일")
@@ -706,9 +706,17 @@ def layer_b(payload: dict, db: str | None) -> None:
     from sectorflow.storage import connect
     con = connect(db)
     cur = con.cursor()
-    cur.execute("SELECT max(date) FROM supply_demand")
-    db_last = str(cur.fetchone()[0])
-    chk("B", "페이로드 기준일 = DB 최신일", db_last == dates[-1], f"DB {db_last} / 리포트 {dates[-1]}")
+    ph = "?" if con.__class__.__module__.startswith("sqlite3") else "%s"
+    if asof:
+        # 재구성(--asof): 기준일은 DB 최신일이 아니라 지정한 날이다. 그날이 거래일이고 페이로드가 거기서 끝나야 한다.
+        cur.execute(f"SELECT max(date) FROM supply_demand WHERE date <= {ph}", (asof,))
+        db_last = str(cur.fetchone()[0])
+        chk("B", "페이로드 기준일 = 재구성 기준일 = 그 이하 DB 마지막 거래일",
+            db_last == dates[-1] == asof, f"지정 {asof} / DB {db_last} / 리포트 {dates[-1]}")
+    else:
+        cur.execute("SELECT max(date) FROM supply_demand")
+        db_last = str(cur.fetchone()[0])
+        chk("B", "페이로드 기준일 = DB 최신일", db_last == dates[-1], f"DB {db_last} / 리포트 {dates[-1]}")
     for tbl in ("supply_demand", "daily_bars_adjusted"):
         cur.execute(f"SELECT count(*) FROM (SELECT code,date FROM {tbl} "
                     f"GROUP BY code,date HAVING count(*)>1) q")
@@ -717,7 +725,7 @@ def layer_b(payload: dict, db: str | None) -> None:
     chk("B", "주식수 ≤ 0 행", cur.fetchone()[0] == 0)
     cur.execute("SELECT count(*) FROM daily_bars_adjusted WHERE close<=0 OR low>close OR high<close")
     chk("B", "OHLC 불변식 위반", cur.fetchone()[0] == 0)
-    check_trade_value_units(cur)
+    check_trade_value_units(cur, dates[-1], ph)
     con.close()
 
 
@@ -725,7 +733,7 @@ def layer_b(payload: dict, db: str | None) -> None:
 TV_UNIT_BAND = (0.8, 1.25)
 
 
-def check_trade_value_units(cur) -> None:
+def check_trade_value_units(cur, day: "str | None" = None, ph: str = "%s") -> None:
     """단위 sanity — 페이로드의 거래대금(`acc_trde_qty × close`)이 보고된 거래대금과 **같은 단위**인가.
 
     예전엔 종목마다 ``|수량×종가 ÷ 거래대금 − 1| < 5%`` 인 비율이 90% 를 넘는지 봤다. 그건 **정의가
@@ -739,11 +747,13 @@ def check_trade_value_units(cur) -> None:
     비를 본다 — Σ(수량×종가)/1e6 ÷ Σ거래대금(백만원). 같은 실측에서 266일 전부 0.940~1.040
     (09-14 뒤 36일 0.969~1.032)이고, 단위 착오는 10³ 배다.
     """
-    cur.execute("""SELECT sum(s.acc_trde_qty * 1.0 * abs(s.close)) / 1e6, sum(b.trade_value * 1.0),
+    # ``day`` 는 페이로드 기준일 — 재구성(--asof)에선 DB 최신일이 아니다. 없으면 DB 최신일.
+    on = f"s.date={ph}" if day else "s.date=(SELECT max(date) FROM supply_demand)"
+    cur.execute(f"""SELECT sum(s.acc_trde_qty * 1.0 * abs(s.close)) / 1e6, sum(b.trade_value * 1.0),
                           count(*)
         FROM supply_demand s JOIN daily_bars b ON b.code=s.code AND b.date=s.date
-        WHERE s.source='kiwoom' AND s.date=(SELECT max(date) FROM supply_demand)
-          AND b.trade_value>0""")
+        WHERE s.source='kiwoom' AND {on}
+          AND b.trade_value>0""", (day,) if day else ())
     qc, tv, total = cur.fetchone()
     ratio = float(qc) / float(tv) if total and qc is not None and tv else None
     lo, hi = TV_UNIT_BAND
@@ -3383,6 +3393,7 @@ def main() -> int:
     ap.add_argument("--layers", default="",
                     help="쉼표로 고른 층만 돈다(예: A,A3,F). 테스트가 빠르게 돌려고 쓴다 — 배치는 늘 전 층이다. "
                          "고르면 출력 첫 줄에 '부분 검증' 이라고 적는다")
+    ap.add_argument("--asof", help="재구성 리포트의 기준일 — B 층이 DB 최신일 대신 이 날을 기준일로 본다")
     a = ap.parse_args()
     want = {x.strip() for x in a.layers.split(",") if x.strip()}
     unknown = want - set(LAYERS)
@@ -3412,7 +3423,7 @@ def main() -> int:
             "KR_QUANT_DB 나 --db 가 없다 — set -a; . ~/git/quant-airflow/.env; set +a")
     go("A", layer_a, D)
     go("A3", layer_a3, D, payload)
-    go("B", layer_b, payload, a.db if a.db_check else None)
+    go("B", layer_b, payload, a.db if a.db_check else None, a.asof)
     go("C", layer_c, D, html)
     go("D", layer_d, D, payload, html)
     go("E", layer_e, D)
