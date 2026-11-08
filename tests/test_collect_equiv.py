@@ -96,3 +96,39 @@ def test_slice_refuses_to_overwrite_without_force(tmp_path):
         E.main(["slice", "--dsn", "postgresql://u@127.0.0.1:1/x", "--sectors", "보험",
                 "--start", "2026-01-01", "--end", "2026-11-06", "--out", str(out)])
     assert out.read_bytes() == b"keep me"
+
+
+def _long(n=30):
+    dates = [f"2026-{1 + i // 28:02d}-{1 + i % 28:02d}" for i in range(n)]
+    one = lambda v: [v] * n  # noqa: E731
+    return {"dates": dates, "markets": ["거래소", "코스닥"], "sectors": ["보험"],
+            "ret": {"거래소": {"보험": one(0.5)}, "코스닥": {"보험": one(-0.5)}},
+            "retw": {"거래소": {"보험": one(3.0)}, "코스닥": {"보험": one(1.0)}}}
+
+
+def test_any_end_window_finds_a_gap_that_the_reference_day_window_misses():
+    """오차가 구간 앞에 몰려 있으면 기준일에 끝나는 창은 깨끗하다 — Phase 1 이 처음 놓친 부류."""
+    A, B = _long(), _long()
+    A["ret"]["코스닥"]["보험"][3] = 1.5                     # 4번째 날 하루만 2%p 다르다
+    res = E.ret_any_end(A, B, windows=(1, 5, 20))
+    assert res["1"]["max_pp"] == pytest.approx(2.0) and res["1"]["end"] == B["dates"][3]
+    assert res["1"]["market"] == "코스닥" and res["1"]["n"] == 3 * 30     # 거래소·코스닥·전체
+    assert res["5"]["end"] in B["dates"][3:8] and res["5"]["max_pp"] > 1.9
+    tail = {r["market"]: r["cum_diff_pp"]["5"] for r in E.ret_table(A, B, "ret")}
+    assert tail == {"거래소": 0.0, "코스닥": 0.0}            # 기준일 끝 5일 창은 0 이다
+    late = E.ret_any_end(A, B, windows=(1, 5), first=B["dates"][4])
+    assert late["1"]["max_pp"] == 0 and late["5"]["max_pp"] == 0 and late["5"]["n"] == 3 * 22
+    early = E.ret_any_end(A, B, windows=(1,), last=B["dates"][3])
+    assert early["1"]["max_pp"] == pytest.approx(2.0) and early["1"]["n"] == 3 * 4
+
+
+def test_all_markets_cell_is_cap_weighted_like_the_numbers_page():
+    A, B = _long(), _long()
+    A["retw"]["거래소"]["보험"] = [1.0] * 30                # 가중치만 바뀌어도 전체 칸 수익률이 달라진다
+    res = E.ret_any_end(A, B, windows=(1,))
+    assert res["1"]["market"] == "전체"
+    # B 전체 = (0.5·3 − 0.5·1)/4 = 0.25,  A 전체 = 0
+    assert res["1"]["max_pp"] == pytest.approx(0.25)
+    assert E.ret_any_end(A, B, windows=(1,), first="2099-01-01")["1"]["n"] == 0
+    B["iret"] = A["iret"] = {"거래소": {"보험": [0.1] * 30}, "코스닥": {"보험": None}}
+    assert E.ret_any_end(A, B, key="iret", windows=(1,))["1"]["n"] == 30   # 업종지수엔 전체 칸이 없다

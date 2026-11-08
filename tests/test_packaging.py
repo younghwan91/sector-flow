@@ -87,9 +87,9 @@ def test_strip_remote_keeps_clickable_links():
     assert '<a href="https://github.com/x">' in out and "w3.org/2000/svg" in out
 
 
-def test_shipped_code_talks_only_to_kiwoom():
-    """설계 §4.2 — 네트워크 목적지는 키움 하나(DART 는 붙일 때 여기 더한다). 중계·공유 캐시·텔레메트리 없음."""
-    allowed = {"api.kiwoom.com"}
+def test_shipped_code_talks_only_to_kiwoom_and_dart():
+    """설계 §4.2 — 네트워크 목적지는 키움과 (선택) OpenDART 둘뿐. 중계·공유 캐시·텔레메트리 없음."""
+    allowed = {"api.kiwoom.com", "opendart.fss.or.kr"}
     hosts: dict[str, set[str]] = {}
     shipped = list((REPO / "src/sectorflow").rglob("*.py")) + [REPO / "scripts" / Path(d).name
                                                               for d in FORCE.values() if d.endswith(".py")]

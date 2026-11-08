@@ -1,7 +1,8 @@
-"""``sector-flow-collect`` — 자기 키움 키로 sqlite 를 채운다. 서브커맨드 ``smoke`` · ``backfill`` · ``reseed``.
+"""``sector-flow-collect`` — 자기 키움 키로 sqlite 를 채운다. 서브커맨드 ``smoke`` · ``backfill`` · ``reseed`` · ``dart-shares``.
 
     sector-flow-collect smoke --code 005930
     sector-flow-collect backfill --db data/byo.db --sectors "운송/창고,오락/문화" --days 300
+    sector-flow-collect dart-shares --db data/byo.db          # 선택: DART 분기 주식수(본인 DART_API_KEY)
     sector-flow-collect --busy-file deploy/kiwoom_busy.simnode.toml backfill ... --resume
 
 같은 앱키를 다른 프로그램과 나눠 쓰면 ``--busy-file`` 로 그 프로그램의 운영 창을 준다(:mod:`.busy`). 요청 직전마다
@@ -19,8 +20,8 @@ import os
 import sys
 from datetime import datetime, timedelta, timezone
 
-from . import fetch, write
-from .auth import load_keys, mask
+from . import dart, fetch, write
+from .auth import load_dart_key, load_keys, mask
 from . import busy
 from .kiwoom import BusyWindow, CallBudgetExceeded, KiwoomRest, TokenConflict
 from .shares import reseed
@@ -223,6 +224,48 @@ def cmd_reseed(args) -> int:
     return 0
 
 
+def cmd_dart_shares(args) -> int:
+    """DART 분기 발행주식총수 → ``shares_outstanding_history``(출처 dart) → 시드 다시 계산. 키움은 부르지 않는다."""
+    key = load_dart_key(args.env_file)
+    con = write.open_db(args.db)
+    client = dart.DartClient(key, rate=args.dart_rate, max_calls=args.dart_max_calls)
+    run_id = write.start_run(con, "dart-shares")
+    codes = sorted({c.strip() for c in (args.codes or "").split(",") if c.strip()} or
+                   {r[0] for r in con.execute("SELECT code FROM stocks").fetchall()})
+    since = args.since or con.execute("SELECT min(date) FROM supply_demand").fetchone()[0]
+    until = args.until or datetime.now(KST).strftime("%Y-%m-%d")
+    plan = dart.periods(since, until) if since else []
+    stats: dict = {}
+    rows: dict = {}
+    notes: list = []
+    ok = False
+    try:
+        if not plan or not codes:
+            raise SystemExit("물을 종목·분기가 없다 — 먼저 backfill 하거나 --codes/--since 를 준다")
+        print(f"🗂 DART {len(codes)}종목 × {len(plan)}분기({plan[0][2]} ~ {plan[-1][2]})", file=sys.stderr)
+        stats = dart.fetch_history(con, client, codes, plan,
+                                   progress=lambda m: print(m, file=sys.stderr))
+        ok = True
+    except (CallBudgetExceeded, dart.DartError) as e:
+        notes.append(["-", "dart", mask(str(e))])
+        print(f"⏹ {mask(str(e))}", file=sys.stderr)
+    finally:
+        # 원장에 이미 받은 칸은 반영한다(멈춘 실행도 받은 만큼은 쓴다 — 다시 돌리면 남은 칸만 묻는다).
+        applied = dart.apply_history(con, codes)
+        rows = {"dart": applied["rows"], "dart_moved": applied["moved"], "seed": reseed(con, codes)}
+        for code, d, n in applied["dropped"]:
+            notes.append([code, "dart", f"단위 오류로 버림 {d} {n}"])
+        failed = [[c, "dart", "corp_code 없음"] for c in stats.get("no_corp", [])]
+        write.finish_run(con, run_id, calls={f"dart:{k}": v for k, v in client.calls.items()}, rows=rows,
+                         failed=failed, ok=ok, notes=notes)
+        con.close()
+        print(json.dumps({"ok": ok, "calls": dict(client.calls), "total_calls": client.total_calls,
+                          "asked": stats.get("asked", 0), "skipped": stats.get("skipped", 0),
+                          "status": dict(stats.get("status", {})), "rows": rows, "failed": failed,
+                          "notes": notes[:20]}, ensure_ascii=False, indent=1))
+    return 0 if ok else 1
+
+
 def main(argv: "list[str] | None" = None) -> int:
     ap = argparse.ArgumentParser(prog="sector-flow-collect", description=__doc__.splitlines()[0])
     ap.add_argument("--env-file", default=os.environ.get("SECTORFLOW_ENV_FILE"),
@@ -244,8 +287,16 @@ def main(argv: "list[str] | None" = None) -> int:
     bf.add_argument("--resume", action="store_true", help="같은 기준일에 이미 끝난 종목을 건너뛴다")
     rs = sub.add_parser("reseed", help="저장된 스냅숏·기업행동으로 주식수 시드를 다시 만든다(호출 없음)")
     rs.add_argument("--db", required=True)
+    ds = sub.add_parser("dart-shares", help="DART 분기 발행주식총수로 주식수 이력을 채운다(본인 DART_API_KEY, 선택)")
+    ds.add_argument("--db", required=True)
+    ds.add_argument("--codes", default="", help="쉼표로 준 종목코드(기본: stocks 전부)")
+    ds.add_argument("--since", help="이 날을 덮는 분기말부터(기본: 첫 수급일)")
+    ds.add_argument("--until", help="이 날 이하 마지막 분기말까지(기본: 오늘)")
+    ds.add_argument("--dart-rate", type=float, default=1.0, help="DART 속도[req/s] (기본 1.0)")
+    ds.add_argument("--dart-max-calls", type=int, default=1000, help="이 실행의 DART 호출 상한(기본 1000)")
     args = ap.parse_args(argv)
-    return {"smoke": cmd_smoke, "backfill": cmd_backfill, "reseed": cmd_reseed}[args.cmd](args)
+    return {"smoke": cmd_smoke, "backfill": cmd_backfill, "reseed": cmd_reseed,
+            "dart-shares": cmd_dart_shares}[args.cmd](args)
 
 
 if __name__ == "__main__":

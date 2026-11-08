@@ -6405,8 +6405,8 @@ id = "byo-mask-misses-single-quotes"
 why = "파이썬 dict repr(작은따옴표)의 토큰·키를 못 가린다"
 guards = ["tests/test_collect_kiwoom.py::test_mask_covers_single_quoted_and_bearer_forms"]
 file = "src/sectorflow/collect/auth.py"
-find = "_JSON_SECRET = re.compile(r\"\"\"(?i)([\"']?(?:token|appkey|secretkey|app_key|app_secret|authorization)[\"']?\"\"\"\n                          r\"\"\"\\s*[:=]\\s*[\"']?)[^\"',\\s}]+\"\"\")"
-replace = "_JSON_SECRET = re.compile(r'(?i)(\"?(?:token|appkey|secretkey|app_key|app_secret|authorization)\"?\\s*[:=]\\s*\"?)'\n                          r'[^\",\\s}]+')"
+find = "_JSON_SECRET = re.compile(r\"\"\"(?i)([\"']?(?:token|appkey|secretkey|app_key|app_secret|authorization|crtfc_key)[\"']?\"\"\"\n                          r\"\"\"\\s*[:=]\\s*[\"']?)[^\"',\\s}&]+\"\"\")"
+replace = "_JSON_SECRET = re.compile(r'(?i)(\"?(?:token|appkey|secretkey|app_key|app_secret|authorization|crtfc_key)\"?\\s*[:=]\\s*\"?)'\n                          r'[^\",\\s}&]+')"
 
 [[mutation]]
 id = "byo-env-export-ignored"
@@ -6451,7 +6451,7 @@ replace = "TEMPLATES = (\"sector_flow.html\",)"
 [[mutation]]
 id = "shipped-code-phones-home"
 why = "설치본 코드에 키움 밖 목적지가 생긴다(텔레메트리·중계)"
-guards = ["tests/test_packaging.py::test_shipped_code_talks_only_to_kiwoom"]
+guards = ["tests/test_packaging.py::test_shipped_code_talks_only_to_kiwoom_and_dart"]
 file = "src/sectorflow/collect/kiwoom.py"
 find = "PROD_URL = \"https://api.kiwoom.com\"\n"
 replace = "PROD_URL = \"https://api.kiwoom.com\"\nSTATS_URL = \"https://stats.example.com/ping\"\n"
@@ -6463,3 +6463,253 @@ guards = ["tests/test_collect_busy.py::test_guard_raises_inside_a_window_and_byo
 file = "src/sectorflow/collect/busy.py"
 find = "        if w is not None:\n"
 replace = "        if False:\n"
+
+# ── BYO Phase 2: DART 주식수 이력 · 아무 끝날 창 대조 ─────────────────────────────
+
+[[mutation]]
+id = "byo-dart-free-float-instead-of-issued"
+why = "보통주 발행주식총수 대신 유통주식수(자기주식 제외)를 써 시총이 작아진다"
+guards = ["tests/test_collect_dart.py::test_recorded_response_gives_common_issued_shares_at_its_settlement_date"]
+file = "src/sectorflow/collect/dart.py"
+find = "    n = _int(row.get(\"istc_totqy\"))"
+replace = "    n = _int(row.get(\"distb_stock_co\"))"
+
+[[mutation]]
+id = "byo-dart-total-row-accepted"
+why = "우선주가 섞인 합계 행을 보통주 후보로 받는다"
+guards = ["tests/test_collect_dart.py::test_total_row_alone_or_no_data_is_not_a_value", "tests/test_collect_dart.py::test_company_specific_labels_follow_the_kr_quant_parser"]
+file = "src/sectorflow/collect/dart.py"
+find = "LABEL_COMMON = (\"보통주\", \"의결권있는주식\")"
+replace = "LABEL_COMMON = (\"보통주\", \"의결권있는주식\", \"합계\")\nLABEL_EXCLUDE = (\"비고\", \"우선\")"
+
+[[mutation]]
+id = "byo-dart-unknown-label-guessed"
+why = "모르는 라벨(유통주식 등)이 섞인 응답에서 보통주 값을 추측해 쓴다"
+guards = ["tests/test_collect_dart.py::test_company_specific_labels_follow_the_kr_quant_parser"]
+file = "src/sectorflow/collect/dart.py"
+find = "    if unknown or len(cands) != 1:"
+replace = "    if not cands:"
+
+[[mutation]]
+id = "byo-dart-voting-share-label-missed"
+why = "'의결권 있는 주식' 표기를 보통주로 못 알아봐 그 회사의 DART 값이 통째로 빠진다(Phase 2 실측 3종목)"
+guards = ["tests/test_collect_dart.py::test_company_specific_labels_follow_the_kr_quant_parser"]
+file = "src/sectorflow/collect/dart.py"
+find = "LABEL_COMMON = (\"보통주\", \"의결권있는주식\")"
+replace = "LABEL_COMMON = (\"보통주\",)"
+
+[[mutation]]
+id = "byo-dart-quarter-end-day-skipped"
+why = "분기말 당일을 시작으로 주면 그 분기를 건너뛰고 한 분기 앞을 묻는다"
+guards = ["tests/test_collect_dart.py::test_periods_cover_the_start_and_stop_at_the_last_closed_quarter"]
+file = "src/sectorflow/collect/dart.py"
+find = "    if _month_end(y, m) > d:"
+replace = "    if _month_end(y, m) >= d:"
+
+[[mutation]]
+id = "byo-dart-no-data-settled-before-deadline"
+why = "아직 안 낸 3분기 보고서의 '공시 없음'을 확정으로 쳐서 다시 묻지 않는다"
+guards = ["tests/test_collect_dart.py::test_no_data_is_final_only_after_the_filing_deadline", "tests/test_collect_dart.py::test_history_fills_rows_by_settlement_date_and_resume_skips_settled_cells"]
+file = "src/sectorflow/collect/dart.py"
+find = ">= date.fromisoformat(period_end) + timedelta(days=SETTLE_DAYS)"
+replace = ">= date.fromisoformat(period_end)"
+
+[[mutation]]
+id = "byo-dart-unit-error-kept"
+why = "천 주 단위로 잘못 낸 값(×1,000)이 시총을 천 배로 만든다"
+guards = ["tests/test_collect_dart.py::test_unit_errors_are_dropped_not_divided"]
+file = "src/sectorflow/collect/dart.py"
+find = "        bad = n > MAX_PLAUSIBLE_SHARES or bool(median and n % 1000 == 0 and n >= UNIT_ERROR_RATIO * median)"
+replace = "        bad = n > MAX_PLAUSIBLE_SHARES"
+
+[[mutation]]
+id = "byo-dart-path-allow-list-off"
+why = "허용 목록 밖의 DART 경로도 부른다"
+guards = ["tests/test_collect_dart.py::test_client_refuses_paths_outside_the_allow_list"]
+file = "src/sectorflow/collect/dart.py"
+find = "        if path not in PATHS:"
+replace = "        if False:"
+
+[[mutation]]
+id = "byo-dart-no-throttle"
+why = "1 req/s 제한 없이 몰아 부른다"
+guards = ["tests/test_collect_dart.py::test_client_throttles_and_stops_at_the_call_cap_before_sending"]
+file = "src/sectorflow/collect/dart.py"
+find = "            if wait > 0:"
+replace = "            if False:"
+
+[[mutation]]
+id = "byo-dart-cap-off-by-one"
+why = "호출 상한을 한 건 넘겨 보낸다"
+guards = ["tests/test_collect_dart.py::test_client_throttles_and_stops_at_the_call_cap_before_sending"]
+file = "src/sectorflow/collect/dart.py"
+find = "self.total_calls >= self.max_calls:"
+replace = "self.total_calls > self.max_calls:"
+
+[[mutation]]
+id = "byo-dart-key-in-http-error"
+why = "서버가 요청 URL 을 되돌려 주면 키가 예외 메시지·원장에 남는다"
+guards = ["tests/test_collect_dart.py::test_errors_never_carry_the_key"]
+file = "src/sectorflow/collect/dart.py"
+find = "mask(body[:120].decode(\"utf-8\", \"replace\"), self._key)"
+replace = "body[:120].decode(\"utf-8\", \"replace\")"
+
+[[mutation]]
+id = "byo-dart-quota-swallowed"
+why = "일한도 소진(020)을 '자료 없음'처럼 넘겨 원장에 빈 칸이 쌓인다"
+guards = ["tests/test_collect_dart.py::test_errors_never_carry_the_key", "tests/test_collect_dart.py::test_corp_codes_map_listed_stocks_only"]
+file = "src/sectorflow/collect/dart.py"
+find = "    if st == QUOTA or st in AUTH_ERRORS:"
+replace = "    if st in AUTH_ERRORS:"
+
+[[mutation]]
+id = "byo-dart-5xx-not-retried"
+why = "DART 일시 장애(5xx)에 재시도 없이 실행이 죽는다"
+guards = ["tests/test_collect_dart.py::test_server_errors_are_retried_and_counted"]
+file = "src/sectorflow/collect/dart.py"
+find = "            if status >= 500:"
+replace = "            if status >= 600:"
+
+[[mutation]]
+id = "byo-dart-resume-reasks-everything"
+why = "다시 돌릴 때 이미 받은 칸까지 다시 물어 호출을 낭비한다"
+guards = ["tests/test_collect_dart.py::test_history_fills_rows_by_settlement_date_and_resume_skips_settled_cells", "tests/test_collect_dart.py::test_nothing_to_ask_does_not_touch_the_network"]
+file = "src/sectorflow/collect/dart.py"
+find = " for y, r, pe in plan if (c, y, r) not in done]"
+replace = " for y, r, pe in plan]"
+
+[[mutation]]
+id = "byo-dart-corpcode-when-idle"
+why = "물을 칸이 없어도 corpCode(수 MB)를 받는다 — 할 일 없는 실행이 DART 가용성에 기댄다"
+guards = ["tests/test_collect_dart.py::test_nothing_to_ask_does_not_touch_the_network"]
+file = "src/sectorflow/collect/dart.py"
+find = "    if not todo:\n        return stats\n"
+replace = ""
+
+[[mutation]]
+id = "byo-dart-older-filing-wins"
+why = "같은 기준일 값이 여럿이면 먼저 접수된(정정 전) 값을 쓴다"
+guards = ["tests/test_collect_dart.py::test_latest_filing_wins_and_a_same_day_kiwoom_snapshot_is_kept"]
+file = "src/sectorflow/collect/dart.py"
+find = "(rcept or \"\") > best[stlm][0]"
+replace = "(rcept or \"\") < best[stlm][0]"
+
+[[mutation]]
+id = "byo-dart-overrides-kiwoom-snapshot"
+why = "같은 날 키움 상장주식수 실측이 있는데 DART 발행주식총수로 덮는다"
+guards = ["tests/test_collect_dart.py::test_latest_filing_wins_and_a_same_day_kiwoom_snapshot_is_kept"]
+file = "src/sectorflow/collect/dart.py"
+find = " if d not in others and d >= listed_from]"
+replace = " if d >= listed_from]"
+
+[[mutation]]
+id = "byo-seed-hijacks-dart-covered-start"
+why = "DART 행이 구간 첫날을 덮는데도 시드를 첫날에 써서 DART 값을 가린다(시드의 유상증자 맹점이 그대로 남는다)"
+guards = ["tests/test_collect_dart.py::test_seed_only_fills_the_gap_before_the_earliest_measured_row"]
+file = "src/sectorflow/collect/shares.py"
+find = "        if anchor is None or first is None or str(anchor[0]) <= str(first):"
+replace = "        if anchor is None or first is None:"
+
+[[mutation]]
+id = "byo-seed-anchored-on-latest-snapshot"
+why = "시드를 가장 이른 실측이 아니라 현재 값에서 거꾸로 세어, 그 사이 증자·소각이 시드에 섞인다"
+guards = ["tests/test_collect_dart.py::test_seed_only_fills_the_gap_before_the_earliest_measured_row"]
+file = "src/sectorflow/collect/shares.py"
+find = "AND p.source <> 'seed' ORDER BY h.date LIMIT 1\""
+replace = "AND p.source <> 'seed' ORDER BY h.date DESC LIMIT 1\""
+
+[[mutation]]
+id = "byo-dart-cli-drops-fetched-values"
+why = "받은 DART 값을 주식수 이력에 반영하지 않는다(원장에만 남는다)"
+guards = ["tests/test_collect_dart.py::test_cli_uses_only_dart_and_logs_the_run"]
+file = "src/sectorflow/collect/run.py"
+find = "        applied = dart.apply_history(con, codes)"
+replace = "        applied = {\"rows\": 0, \"dropped\": []}"
+
+[[mutation]]
+id = "byo-dart-key-env-file-ignored"
+why = "--env-file 의 DART_API_KEY 를 읽지 않는다"
+guards = ["tests/test_collect_dart.py::test_cli_uses_only_dart_and_logs_the_run"]
+file = "src/sectorflow/collect/auth.py"
+find = " or _from_env_file(env_path, (DART_ENV,)).get(DART_ENV, \"\")"
+replace = ""
+
+[[mutation]]
+id = "byo-mask-misses-dart-query-key"
+why = "DART 키가 실린 URL 쿼리(crtfc_key=)를 로그 마스킹이 못 가린다"
+guards = ["tests/test_collect_dart.py::test_errors_never_carry_the_key"]
+file = "src/sectorflow/collect/auth.py"
+find = "app_secret|authorization|crtfc_key)"
+replace = "app_secret|authorization)"
+
+[[mutation]]
+id = "shipped-code-dart-host-swapped"
+why = "DART 목적지가 허용 목록 밖 호스트(중계 서버)로 바뀐다"
+guards = ["tests/test_packaging.py::test_shipped_code_talks_only_to_kiwoom_and_dart"]
+file = "src/sectorflow/collect/dart.py"
+find = "BASE_URL = \"https://opendart.fss.or.kr/api\""
+replace = "BASE_URL = \"https://dart-proxy.example.com/api\""
+
+[[mutation]]
+id = "equiv-any-end-only-reference-day"
+why = "아무 끝날 창이 기준일 끝 창만 재서, 구간 앞에 몰린 오차를 놓친다(Phase 1 이 처음 놓친 부류)"
+guards = ["tests/test_collect_equiv.py::test_any_end_window_finds_a_gap_that_the_reference_day_window_misses"]
+file = "src/sectorflow/collect/equiv.py"
+find = "            for e in range(lo + w - 1, hi + 1):"
+replace = "            for e in range(hi, hi + 1):"
+
+[[mutation]]
+id = "equiv-any-end-first-ignored"
+why = "first 로 가른 구간에 그 앞 날짜를 품은 창이 섞인다"
+guards = ["tests/test_collect_equiv.py::test_any_end_window_finds_a_gap_that_the_reference_day_window_misses"]
+file = "src/sectorflow/collect/equiv.py"
+find = "    lo = 0 if first is None else next((i for i, d in enumerate(dates) if d >= first), len(dates))"
+replace = "    lo = 0"
+
+[[mutation]]
+id = "equiv-all-market-unweighted"
+why = "전체 칸을 시총 가중이 아니라 단순 평균해 수치표와 다른 수를 잰다"
+guards = ["tests/test_collect_equiv.py::test_all_markets_cell_is_cap_weighted_like_the_numbers_page"]
+file = "src/sectorflow/collect/equiv.py"
+find = "                num += r[i] * w[i]\n                den += w[i]"
+replace = "                num += r[i]\n                den += 1"
+
+[[mutation]]
+id = "byo-dart-merger-counted-twice"
+why = "분기말에 이미 병합 뒤인 DART 값을 변경상장일 이벤트로 한 번 더 나눠 시총이 5배 작아진다(033830 실측)"
+guards = ["tests/test_collect_dart.py::test_post_merger_quarter_value_moves_to_the_relisting_day", "tests/test_collect_dart.py::test_aligned_history_gives_the_listing_based_market_cap"]
+file = "src/sectorflow/collect/dart.py"
+find = "            out[i] = (between[-1], n, \"dart_moved\")"
+replace = "            pass"
+
+[[mutation]]
+id = "byo-dart-align-guesses-ambiguous-gap"
+why = "병합 뒤 증자까지 겹쳐 어느 쪽과도 안 맞는 점을 '가까운 쪽'으로 추측해 옮긴다(012170 은 병합 전 값이다)"
+guards = ["tests/test_collect_dart.py::test_pre_merger_value_or_an_ambiguous_gap_is_left_alone"]
+file = "src/sectorflow/collect/dart.py"
+find = "        if raw <= SAME_SHARES_LOG < recount:"
+replace = "        if raw < recount:"
+
+[[mutation]]
+id = "byo-dart-moved-onto-kiwoom-day"
+why = "옮긴 DART 점이 같은 날 키움 실측을 덮어쓴다"
+guards = ["tests/test_collect_dart.py::test_pre_merger_value_or_an_ambiguous_gap_is_left_alone"]
+file = "src/sectorflow/collect/dart.py"
+find = "        if row[0] in taken or row[0] in seen:"
+replace = "        if row[0] in seen:"
+
+[[mutation]]
+id = "byo-dart-pre-listing-value-used"
+why = "구간 중 상장한 종목에 공모 신주가 빠진 상장 전 주식수를 써서 상장 초 시총이 작아진다(403850 −14%)"
+guards = ["tests/test_collect_dart.py::test_pre_listing_value_of_a_new_listing_is_not_used"]
+file = "src/sectorflow/collect/dart.py"
+find = "and d >= listed_from]"
+replace = "]"
+
+[[mutation]]
+id = "byo-dart-window-start-values-dropped"
+why = "구간 첫날부터 있던 종목의 구간 앞 DART 값까지 버려 as-of 조회의 출발점이 시드로 바뀐다"
+guards = ["tests/test_collect_dart.py::test_pre_listing_value_of_a_new_listing_is_not_used"]
+file = "src/sectorflow/collect/dart.py"
+find = "        listed_from = first if first and start and first > start else \"\""
+replace = "        listed_from = first or \"\""

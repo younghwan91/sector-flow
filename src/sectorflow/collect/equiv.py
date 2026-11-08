@@ -222,6 +222,69 @@ def ret_table(A: dict, B: dict, key: str) -> list[dict]:
     return rows
 
 
+#: 아무 날에 끝나는 창의 길이(1 = 일별). 뷰어가 임의 구간·260일 프리셋을 고를 수 있어 기준일 끝 창만으로는 모자란다.
+ANY_END_WINDOWS = (1, 5, 20, 60, 120, 260)
+ALL_MARKETS = "전체"
+
+
+def _cell_series(P: dict, key: str, m: str, s: str) -> "list | None":
+    """한 칸의 일별 수익률. ``m == "전체"`` 이면 시장별 ``ret`` 를 전일 시총 가중치 ``retw`` 로 합친다
+    (``scripts/sector_numbers.py`` ``agg`` 와 같은 식 — 수치표·뷰어의 전체 칸)."""
+    if m != ALL_MARKETS:
+        return P[key].get(m, {}).get(s)
+    parts = [(P[key].get(mk, {}).get(s), P["retw"].get(mk, {}).get(s)) for mk in P["markets"]]
+    parts = [(r, w) for r, w in parts if r and w]
+    if not parts:
+        return None
+    out = []
+    for i in range(len(P["dates"])):
+        num = den = 0.0
+        for r, w in parts:
+            if r[i] is not None and w[i]:
+                num += r[i] * w[i]
+                den += w[i]
+        out.append(num / den if den else 0.0)
+    return out
+
+
+def ret_any_end(A: dict, B: dict, key: str = "ret", windows: tuple[int, ...] = ANY_END_WINDOWS, *,
+                first: "str | None" = None, last: "str | None" = None) -> dict:
+    """창 길이마다 **모든 끝날**의 누적 수익률 차 최대 |A − B|[%p]와 그 칸(시장·섹터·끝날).
+
+    시장 키는 페이로드의 시장들에 ``전체``(시총 가중 합, ``key == "ret"`` 일 때)를 더한다.
+    누적 = Π(1 + r/100) − 1. 결측(``None``)은 0 수익으로 센다 — 한쪽만 결측이면 그 차가 그대로 드러난다.
+    ``first``·``last`` 를 주면 그 날짜 범위 **안에 통째로 든** 창만 본다(오차가 몰린 구간을 가르는 용도).
+    Returns: ``{"<창>": {"max_pp", "market", "sector", "end", "n"}}`` — ``n`` = 잰 (칸, 끝날) 수.
+    """
+    dates = B["dates"]
+    lo = 0 if first is None else next((i for i, d in enumerate(dates) if d >= first), len(dates))
+    hi = len(dates) - 1 if last is None else max((i for i, d in enumerate(dates) if d <= last), default=-1)
+    markets = list(B["markets"]) + ([ALL_MARKETS] if key == "ret" else [])
+    cells = []
+    for m in markets:
+        for s in B["sectors"]:
+            a, b = _cell_series(A, key, m, s), _cell_series(B, key, m, s)
+            if a is None and b is None:
+                continue
+            ca, cb = [1.0], [1.0]
+            for x, y in zip(a or [None] * len(dates), b or [None] * len(dates)):
+                ca.append(ca[-1] * (1 + (x or 0.0) / 100.0))
+                cb.append(cb[-1] * (1 + (y or 0.0) / 100.0))
+            cells.append((m, s, ca, cb))
+    out: dict = {}
+    for w in windows:
+        best: dict = {"max_pp": 0.0, "market": None, "sector": None, "end": None, "n": 0}
+        for m, s, ca, cb in cells:
+            for e in range(lo + w - 1, hi + 1):
+                d = abs((ca[e + 1] / ca[e + 1 - w]) - (cb[e + 1] / cb[e + 1 - w])) * 100.0
+                best["n"] += 1
+                if d > best["max_pp"]:
+                    best.update(max_pp=d, market=m, sector=s, end=dates[e])
+        best["max_pp"] = round(best["max_pp"], 4)
+        out[str(w)] = best
+    return out
+
+
 def leaf_diff(a: Any, b: Any, path: str = "", out: "list | None" = None) -> list:
     """두 JSON 의 숫자 잎을 경로별로 대조한다. 구조가 다르면 그것도 적는다."""
     out = [] if out is None else out
@@ -310,7 +373,7 @@ def compare(a: dict, b: dict) -> dict:
                  "dates": [b["dates"][0], b["dates"][-1], len(b["dates"])],
                  "n_by_sector": {"a": a["n_by_sector"], "b": b["n_by_sector"]},
                  "flows": flows_table(a, b), "ret": ret_table(a, b, "ret"),
-                 "iret": ret_table(a, b, "iret")}
+                 "iret": ret_table(a, b, "iret"), "ret_any_end": ret_any_end(a, b)}
     res["payload_leaves"] = summarize_leaves(leaf_diff(a, b))
     try:
         res["numbers_leaves"] = summarize_leaves(leaf_diff(numbers_of(a), numbers_of(b)))

@@ -6,6 +6,8 @@
 - ``collect_runs`` — 실행 원장(종류·기준일·TR별 호출 수·행 수·실패). 확정 판정(설계 §2.4)의 근거가 된다.
 - ``shares_provenance`` — 주식수 행이 어디서 왔나(``kiwoom`` 스냅숏 / ``seed`` 역산 / ``dart``).
   ``shares_outstanding_history`` 에는 source 열이 없어 옆 표로 둔다.
+- ``dart_fetch`` — DART 주식 총수 조회 원장((종목, 사업연도, 보고서)마다 status·값·접수번호). 다시 돌리면 확정된
+  칸은 건너뛴다(:mod:`.dart`).
 - ``PRAGMA user_version`` — 스키마 판. 전진 마이그레이션만 한다.
 """
 
@@ -18,7 +20,7 @@ from pathlib import Path
 
 from sectorflow.storage import INVESTOR_COLUMNS, connect
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 BYO_DDL = """
 CREATE TABLE IF NOT EXISTS collect_runs (
@@ -36,6 +38,16 @@ CREATE TABLE IF NOT EXISTS collect_runs (
 -- 기준일별로 끝난 종목 — backfill --resume 이 건너뛴다.
 CREATE TABLE IF NOT EXISTS collect_done (
     code TEXT NOT NULL, asof TEXT NOT NULL, run_id INTEGER, done_at TEXT, PRIMARY KEY (code, asof)
+);
+CREATE TABLE IF NOT EXISTS dart_fetch (
+    code TEXT NOT NULL, bsns_year INTEGER NOT NULL, reprt_code TEXT NOT NULL,
+    period_end TEXT NOT NULL,  -- 물은 분기말(YYYY-MM-DD)
+    status     TEXT NOT NULL,  -- DART status(000 값 있음 · 013 공시 없음 · no_common 보통주 행 없음 …)
+    shares     INTEGER,        -- 보통주 istc_totqy
+    stlm_dt    TEXT,           -- 응답의 기준일 = shares_outstanding_history.date
+    rcept_no   TEXT,           -- 접수번호(앞 8자리가 공시 접수일)
+    fetched_at TEXT NOT NULL,
+    PRIMARY KEY (code, bsns_year, reprt_code)
 );
 CREATE TABLE IF NOT EXISTS shares_provenance (
     code TEXT NOT NULL, date TEXT NOT NULL, source TEXT NOT NULL, PRIMARY KEY (code, date)
