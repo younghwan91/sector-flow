@@ -3574,3 +3574,37 @@ guards = ["tests/test_diff_coverage.py::test_non_ascii_paths_are_matched"]
 file = "scripts/diff_coverage.py"
 find = "    if len(path) >= 2 and path[0] == path[-1] == '\"':"
 replace = "    if False:"
+
+# ── 자료 범위 표지(KRX 단독, NXT 제외) — sectorflow.basis.DATA_BASIS 한 곳에서 네 화면으로 ──
+
+[[mutation]]
+id = "flow-help-drops-data-basis"
+why = "sw-flow 도움말에서 자료 범위 절이 빠져 화면이 KRX 몫이라는 걸 안 말한다"
+guards = ["tests/test_data_basis.py::test_basis_label_is_on_the_flow_help_screen_unclipped_at_width_80"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "HELP = _with_evidence(HELP) + BASIS_HELP"
+replace = "HELP = _with_evidence(HELP)"
+
+[[mutation]]
+id = "ledger-help-drops-data-basis"
+why = "sw-ledger 도움말만 자료 범위 절을 잃는다 — 같은 리포트를 두 화면이 다르게 말한다"
+guards = ["tests/test_data_basis.py::test_basis_label_is_on_the_ledger_help_screen_unclipped_at_width_80"]
+file = "src/sectorflow/tui/ledger_view.py"
+find = "] + BASIS_HELP"
+replace = "]"
+
+[[mutation]]
+id = "viewer-template-drops-basis-slot"
+why = "웹 뷰어 notes 에서 자료 범위 줄이 빠진다"
+guards = ["tests/test_data_basis.py::test_web_templates_carry_the_basis_slot"]
+file = "scripts/templates/sector_flow.html"
+find = "<p><b>__BASIS__</b>."
+replace = "<p><b>자료 범위: KRX</b>."
+
+[[mutation]]
+id = "numbers-render-leaves-basis-slot"
+why = "수치표가 자리표시를 안 갈아 페이지에 __BASIS__ 가 그대로 찍힌다"
+guards = ["tests/test_pipeline_e2e.py::test_rendered_pages_carry_the_data_basis"]
+file = "scripts/sector_numbers.py"
+find = "                .replace(BASIS_SLOT, DATA_BASIS))"
+replace = "                )"

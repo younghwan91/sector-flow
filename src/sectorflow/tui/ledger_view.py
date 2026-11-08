@@ -32,6 +32,7 @@ import math
 import os
 import random
 
+from sectorflow.basis import BASIS_HELP
 from sectorflow.tui.flow_view import (
     HELP_TITLE_TIERS, MARKET_ORDER, cell_len, cell_width, fit_widths, fmt_amt, help_desc,
     help_lines, hint_line, missing_report_hint, pad, report_warnings, scroll_mark,
@@ -1477,7 +1478,7 @@ LEDGER_HELP = [
     # 잘못 보고**했다. 두 화면이 같은 숫자를 적고 있는지는 검사가 본다.
     ("", "  빠진 **금액**은 거래소가 5배다. v 로 한계 화면 7번에 더 적었다."),
     ("", "· 숫자는 리포트 폴더의 payload.json 그대로다. numbers.html 과 같은 값이다."),
-]
+] + BASIS_HELP
 
 
 def help_body(width: int, offset: int = 0, height: int = 10**6,

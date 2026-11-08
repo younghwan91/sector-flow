@@ -14,6 +14,8 @@ import unicodedata
 from collections import namedtuple
 from datetime import date
 
+from sectorflow.basis import BASIS_HELP
+
 #: East Asian Width 가 'A'(Ambiguous) 인 글자를 **두 칸으로 센다**.
 #:
 #: 이 화면들은 `·` `—` `↑` `↓` `→` `×` `÷` `²` `½` `Δ` `Σ` `β` `▲` `▼` `※` `≠`
@@ -2364,7 +2366,7 @@ HELP = [
     ("", "     KR_QUANT_FORCE=1 scripts/daily_report.sh      (약 6분)"),
     ("", "  옆에 지어 마지막에 바꿔 끼우므로, 실패하면 옛 리포트가 그대로 남는다."),
 ]
-HELP = _with_evidence(HELP)
+HELP = _with_evidence(HELP) + BASIS_HELP
 
 
 #: 도움말 제목 — 넓은 것부터. 폭에 안 들어가면 다음 단계로 내려간다.
