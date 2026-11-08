@@ -32,6 +32,7 @@ REPO = Path(__file__).resolve().parent.parent
 EX_HOLIDAY = 3
 _DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
 _COUNT = re.compile(r"검사 (\d+)건 · 실패 (\d+)건")
+_CLAIMS = re.compile(r"문서 주장 어긋남 (\d+)건")
 
 
 def weekdays(start: str, end: str) -> list[str]:
@@ -54,6 +55,9 @@ def verify_summary(folder: Path) -> tuple[str, str]:
     fails = next((ln.split(":", 1)[1].strip() for ln in reversed(text.splitlines())
                   if ln.startswith("실패 목록:")), "")
     head = f"{m.group(1)}건 중 실패 {m.group(2)}" if m else "형식 불명"
+    c = _CLAIMS.search(text)        # 문서 주장 어긋남은 실패가 아니다(CLAIMS.txt) — 따로 센다
+    if c and int(c.group(1)):
+        head += f" · 주장 {c.group(1)}"
     return head, fails
 
 
