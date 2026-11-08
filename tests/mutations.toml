@@ -6016,3 +6016,124 @@ guards = ["tests/test_verify_merge.py::test_unsharded_budget_scales_by_the_ci_sh
 file = "scripts/verify_merge.py"
 find = "def ci_shard_count(wt: Path, fallback: int = 4) -> int:"
 replace = "def ci_shard_count(wt: Path, fallback: int = 1) -> int:"
+
+# ── 종목(주도주) 잠정→확정 수정(stock-diff): 주도주 경계·문턱·상한·게이트·집계·검증기·화면·시드 ──────────
+
+[[mutation]]
+id = "stock-diff-threshold-too-high"
+why = "종목 행 문턱이 사실상 무한대 — 기관 12억이 바뀐 주도주 행이 기록에서 사라진다"
+guards = ["tests/test_streaks_revisions.py::test_stock_diff_lists_driver_rows_beyond_the_threshold"]
+file = "scripts/sector_flow.py"
+find = "        if dmax is not None and dmax > STOCK_DIFF_TOL:"
+replace = "        if dmax is not None and dmax > 1e9:"
+
+[[mutation]]
+id = "stock-drivers-skip-the-crossing-row"
+why = "80% 를 처음 넘긴 행(화면 가로줄이 포함하는 그 줄)이 주도주에서 빠진다 — 화면 정의와 어긋난다"
+guards = ["tests/test_streaks_revisions.py::test_stock_diff_lists_driver_rows_beyond_the_threshold"]
+file = "scripts/sector_flow.py"
+find = """        cum = 0.0
+        for v, code in rows:
+            out.add(code)
+            cum += v
+            if cum >= STOCK_DIFF_CUT / 100.0 * tot:
+                break"""
+replace = """        cum = 0.0
+        for v, code in rows:
+            if cum + v >= STOCK_DIFF_CUT / 100.0 * tot:
+                break
+            out.add(code)
+            cum += v"""
+
+[[mutation]]
+id = "stock-rows-uncapped"
+why = "rows 상한이 없다 — 수정이 큰 날 final_diff.json 이 통제 없이 커진다"
+guards = ["tests/test_streaks_revisions.py::test_stock_diff_lists_driver_rows_beyond_the_threshold"]
+file = "scripts/sector_flow.py"
+find = '        "rows": [r for _d, r in rows[:STOCK_DIFF_CAP]],'
+replace = '        "rows": [r for _d, r in rows],'
+
+[[mutation]]
+id = "stock-rel-without-denominator-gate"
+why = "0 근처 종목 칸의 상대 변화(수백%)가 중앙값에 섞인다 — 분모 게이트 결함의 재발(다섯 번째+1)"
+guards = ["tests/test_streaks_revisions.py::test_stock_diff_summary_gates_small_cells_and_counts_flips"]
+file = "scripts/sector_flow.py"
+find = "            if vn and abs(vn) >= REV_GATE_SHARE * tot[(m, s, a)]:"
+replace = "            if vn:"
+
+[[mutation]]
+id = "stock-top3-counts-thin-lists"
+why = "6종목 미만 (시장, 섹터, 주체) 목록이 유지율에 섞인다 — 세 종목뿐이면 유지율이 늘 100% 다"
+guards = ["tests/test_streaks_revisions.py::test_stock_top3_keeps_and_skips_thin_or_reshuffled_lists"]
+file = "scripts/sector_flow.py"
+find = "        if ms in dropped or rows_o is None or len(by_new[ms]) < STOCK_TOP_MIN or len(rows_o) < STOCK_TOP_MIN:"
+replace = "        if ms in dropped or rows_o is None:"
+
+[[mutation]]
+id = "revision-stats-stock-days-not-pooled"
+why = "종목 집계가 날들을 합치지 않고 마지막 날 것만 남긴다"
+guards = ["tests/test_streaks_revisions.py::test_revision_stats_pools_stock_summaries_across_days"]
+file = "scripts/sector_flow.py"
+find = '            scells += S.get("n_cells") or 0'
+replace = '            scells = S.get("n_cells") or 0'
+
+[[mutation]]
+id = "verify-stock-final-diff-blind"
+why = "확정 리포트의 종목(주도주) 행·요약이 틀려도 검증이 모른다"
+guards = ["tests/test_streaks_revisions.py::test_the_verifier_recounts_final_diff_from_the_provisional_report_before_the_swap"]
+file = "scripts/verify_report.py"
+find = '    chk("T", "잠정 → 확정 — 종목(주도주) 행·요약을 옆 잠정 리포트에서 다시 센 것과 같은가", not bad,'
+replace = '    chk("T", "잠정 → 확정 — 종목(주도주) 행·요약을 옆 잠정 리포트에서 다시 센 것과 같은가", True,'
+
+[[mutation]]
+id = "verify-stock-revision-blind"
+why = "revision_stats 의 종목 집계가 일별 요약과 어긋나도 검증이 모른다"
+guards = ["tests/test_streaks_revisions.py::test_the_verifier_recounts_revision_stats_from_the_sibling_folders"]
+file = "scripts/verify_report.py"
+find = '    chk("T", "잠정→확정 수정 폭 — 종목(주도주) 일별 요약의 집계 재계산", ok,'
+replace = '    chk("T", "잠정→확정 수정 폭 — 종목(주도주) 일별 요약의 집계 재계산", True,'
+
+[[mutation]]
+id = "revision-stock-line-hidden"
+why = "잠정 화면에 종목(주도주) 수정 폭이 없다 — 행동 단위(종목)의 수정 폭을 아무도 모른다"
+guards = ["tests/test_streaks_revisions.py::test_first_screen_shows_streaks_and_the_revision_line_with_top3_and_seed"]
+file = "src/sectorflow/tui/flow_view.py"
+find = """        stk = f", 주도주 중앙 {rhu(S['rel_median_pct']):.0f}%\""""
+replace = '        stk = ""'
+
+[[mutation]]
+id = "web-revision-stock-line-hidden"
+why = "웹 잠정 리포트의 수정 폭 줄에 종목(주도주) 층이 없다 — 터미널 첫 화면과 다른 말을 한다"
+guards = ["tests/test_streaks_revisions.py::test_web_today_panel_says_the_same_streaks_and_revision_line_as_the_terminal"]
+file = "scripts/templates/sector_numbers.html"
+find = """        +(ST.n_dates&&ST.rel_median_pct!=null?", 주도주 중앙 "+RHU(ST.rel_median_pct)+"%"
+          +(ST.top3_keep_pct!=null?"·종목 상위3 유지 "+RHU(ST.top3_keep_pct)+"%":""):"")"""
+replace = '        +""'
+
+[[mutation]]
+id = "seed-drops-stock-block"
+why = "시드가 종목(주도주) 층을 안 남긴다 — 확정 모드 이전 날들의 종목 수정 폭이 영영 없다"
+guards = ["tests/test_streaks_revisions.py::test_seed_script_writes_final_diff_cells_from_the_evening_archive"]
+file = "scripts/seed_revisions.py"
+find = '        "stocks": fd["stocks"],'
+replace = '        "stocks": None,'
+
+[[mutation]]
+id = "stock-diff-fakes-revisions-against-legacy-base"
+why = "옛 형식(1일 종목 칸 없음) 게시본 대비에서 모든 주도주가 '수정'으로 적힌다 — 시드가 실제로 밟았다"
+guards = ["tests/test_streaks_revisions.py::test_stock_diff_lists_driver_rows_beyond_the_threshold"]
+file = "scripts/sector_flow.py"
+find = """    new1, old1 = _win1(P), _win1(old)
+    if not new1 or not old1:
+        return None
+    mn, mo = _stock_membership(P), _stock_membership(old)"""
+replace = """    new1, old1 = _win1(P), _win1(old)
+    mn, mo = _stock_membership(P), _stock_membership(old)"""
+
+[[mutation]]
+id = "verify-stock-legacy-blind"
+why = "옛 형식 게시본 대비인데 종목 층이 채워져 있어도 검증이 모른다"
+guards = ["tests/test_streaks_revisions.py::test_the_stock_layer_is_empty_against_a_legacy_provisional_without_one_day_cells"]
+file = "scripts/verify_report.py"
+find = '        chk("T", "잠정 → 확정 — 종목(주도주) 층은 1일 칸이 없는 옛 형식 게시본 대비에서 비어 있는가", S is None,'
+replace = '        chk("T", "잠정 → 확정 — 종목(주도주) 층은 1일 칸이 없는 옛 형식 게시본 대비에서 비어 있는가", True,'

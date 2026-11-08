@@ -1464,13 +1464,20 @@ def revision_tiers(d: dict) -> "list[str] | None":
     keep = R.get("top3_keep_pct")
     head = (f" 최근 {R['n_dates']}일 잠정→확정: 섹터 칸 중앙 {rhu(R['rel_median_pct']):.0f}%,"
             f" 부호 뒤집힘 {R.get('flips', 0)}회" + (f", 상위3 유지 {rhu(keep):.0f}%" if keep is not None else ""))
+    # 종목(주도주) 층 — 기록이 그 요약을 남긴 날이 있을 때만. 좁은 화면에서는 섹터 줄보다 먼저 줄인다.
+    S = R.get("stocks") or {}
+    stk = ""
+    if S.get("n_dates") and S.get("rel_median_pct") is not None:
+        stk = f", 주도주 중앙 {rhu(S['rel_median_pct']):.0f}%"
+        if S.get("top3_keep_pct") is not None:
+            stk += f"·종목 상위3 유지 {rhu(S['top3_keep_pct']):.0f}%"
     cells = f" (1일 칸 {R.get('n_cells', 0)}개)"
     seed = R.get("seed") or {}
     if not seed.get("dates"):
-        return [head + cells, head]
+        return [head + stk + cells, head + cells, head]
     k = len(seed["dates"])
-    return [f"{head}{cells} · {seed.get('label')} {k}일", f"{head} · {seed.get('label')} {k}일",
-            f"{head} · 시드 {k}일"]
+    return [f"{head}{stk}{cells} · {seed.get('label')} {k}일", f"{head}{cells} · {seed.get('label')} {k}일",
+            f"{head} · {seed.get('label')} {k}일", f"{head} · 시드 {k}일"]
 
 
 def revision_line(d: dict) -> "str | None":
@@ -2770,6 +2777,9 @@ HELP = [
     ("", "        상위3 유지 = (시장, 주체)마다 잠정 상위 3 중 확정 상위 3 에도"),
     ("", "        든 몫. 확정 기록이 없는 날은 시드(아카이브 18:10 게시본 대"),
     ("", "        확정 재구성)로 세고 그렇게 적는다."),
+    ("", "        주도주 중앙 = 종목 층(주도주 = 섹터 1일 |기관| 누적 80%)의 1일"),
+    ("", "        |확정−잠정|÷|확정| 일별 중앙값들의 중앙값, 종목 상위3 유지 ="),
+    ("", "        (시장, 섹터, 주체)마다 잠정 상위 3 종목이 확정에도 든 몫."),
     ("", "        잠정 리포트의 %ile 극단 목록에는 (잠정) 표지가 붙는다."),
     ("연속순매매", "1일 순매수 부호가 오늘까지 같은 날 수와 그 누적, 그 길이의 1년%ile"),
     ("", "        (최근 260일 날마다의 연속 길이 분포 안 순위, 부호 무관). 그날 |값| 이"),
