@@ -7593,3 +7593,11 @@ guards = ["tests/test_verify_merge.py::test_direct_scope_runs_the_touched_mutati
 file = "scripts/verify_merge.py"
 find = "        if scope == \"direct\":\n            muts, why = direct_scope("
 replace = "        if False:\n            muts, why = direct_scope("
+
+[[mutation]]
+id = "harness-identity-ignores-committer"
+why = "커미터 주소를 안 본다 — 회사 주소로 다시 적은 커밋(rebase·amend)이 통과한다"
+guards = ["tests/test_verify_merge.py::test_identity_section_rejects_another_address_on_either_side"]
+file = "scripts/verify_merge.py"
+find = "        if not (_ok_identity(ae, want_mail) and _ok_identity(ce, want_mail)):"
+replace = "        if not _ok_identity(ae, want_mail):"

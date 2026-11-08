@@ -122,6 +122,24 @@ def test_new_test_without_mutation_is_rejected_unless_exempt_with_a_reason(mini)
     assert "샤드 1 이 한다" in out
 
 
+def test_identity_section_rejects_another_address_on_either_side(mini):
+    """작성자·커미터 어느 쪽이든 레포 설정과 다르면 REJECT, GitHub 머지 주소는 통과. 자기 검증의 같은 시나리오는 주 1회이고,
+    로컬에서는 전역 신원 훅이 그 커밋을 막아 시나리오가 성립하지 않는다 — 판정 자체는 여기서 매번 본다."""
+    wt, _ = mini
+    def commit_as(author: str, committer: str) -> str:
+        (wt / "lib.py").write_text((wt / "lib.py").read_text("utf-8") + "\n", "utf-8")
+        _git(wt, "add", "-A")
+        subprocess.run(["git", "commit", "-q", "-m", "x"], cwd=wt, check=True, capture_output=True,
+                       env={**GIT_ENV, "GIT_AUTHOR_EMAIL": author, "GIT_COMMITTER_EMAIL": committer})
+        return _git(wt, "rev-parse", "HEAD")
+    me, other = "t@example.com", "someone@corp.example.com"
+    assert VM.sec_identity(wt, [commit_as(me, me)]).status == VM.PASS
+    assert VM.sec_identity(wt, [commit_as(me, "noreply@github.com")]).status == VM.PASS
+    for a, c in ((other, me), (me, other)):
+        s = VM.sec_identity(wt, [commit_as(a, c)])
+        assert s.status == VM.REJECT and other in "\n".join(s.lines)
+
+
 def test_changed_scope_runs_only_mutations_touching_the_branch(mini):
     wt, _ = mini
     other = BLIND.replace('file = "lib.py"', 'file = "other.py"').replace(

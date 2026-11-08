@@ -21,7 +21,7 @@ permissions:
 jobs:
   selftest:
     runs-on: ubuntu-latest
-    timeout-minutes: 90           # 스텝 상한(자기 검증 60분)보다 넉넉히
+    timeout-minutes: 60           # 스텝 상한(자기 검증 30분)보다 넉넉히
     steps:
       - uses: actions/checkout@v7
         with:
@@ -41,7 +41,7 @@ jobs:
         id: st
         if: steps.install.outcome == 'success'
         continue-on-error: true
-        timeout-minutes: 60
+        timeout-minutes: 30
         run: |
           set -o pipefail   # 기본 bash 는 pipefail 이 꺼져 있어 | tee 가 자기 검증의 실패 종료코드를 삼킨다
           git config --global user.email "selftest@example.invalid"
