@@ -37,6 +37,7 @@ DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 FILES = {
     "numbers.html": "text/html; charset=utf-8",
     "viewer.html": "text/html; charset=utf-8",
+    "trust.html": "text/html; charset=utf-8",  # 검증·품질 — scripts/trust_page.py 가 latest 폴더에 쓴다
     "VERIFY.txt": "text/plain; charset=utf-8",
     "VERIFY_FAILED.txt": "text/plain; charset=utf-8",
     "INCOMPLETE.txt": "text/plain; charset=utf-8",
