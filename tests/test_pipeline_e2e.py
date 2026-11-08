@@ -279,6 +279,14 @@ def test_pipeline_derived_columns_are_recomputed(report):
         "A/t 반올림 편차(표시용)")
 
 
+def test_pipeline_today_context_and_web_pages_are_checked(report):
+    """F 의 KRX 지수·금액 근사 오차 재계산과 W 의 웹 렌더 대조가 실제로 돌았고 OK 다(리뷰 2차 M1·7)."""
+    _ok(report, "F/KRX 지수 1·20일 수익률 = sector_index 재계산(없는 날은 결측)",
+        "F/금액 근사 오차(시장·섹터 최대) = DB 재계산",
+        "W/본표 칸 = 페이로드 값(표시 반올림)", "W/본표 칸 = TUI 가 같은 칸에 그리는 글자",
+        "W/'오늘' 패널 = TUI 첫 화면(주체·상위/하위·%ile 극단 글자)", "W/1일 탭이 있는가(오늘 블록이 있는 리포트)")
+
+
 def test_pipeline_combined_mark_means_every_judged_window(report):
     _ok(report, "A/종합 * = 판정된 모든 창에서 통과 (seen = 판정 창, pass_n = G 창)",
         "A/종합 G = G 가 나온 창의 등가중 평균")

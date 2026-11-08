@@ -33,6 +33,7 @@ from datetime import datetime, timedelta, timezone
 import pandas as pd
 
 from sectorflow.basis import BASIS_SLOT, DATA_BASIS
+from sectorflow.sector_override import SECTOR_OVERRIDE, SOURCE as OVERRIDE_SOURCE, UNCLASSIFIED, fingerprint
 from sectorflow.storage import (
     _is_pg,
     connect, db_default, market_cap_asof_bulk, read_supply_demand, recent_dates)
@@ -43,6 +44,8 @@ warnings.filterwarnings("ignore", message="pandas only supports SQLAlchemy", cat
 
 EOK = 1e8                 # 원 → 억원
 INDEX_RET: dict = {}
+#: 이번 실행에서 실제로 덮은 (코드 → 섹터) — ``load`` 가 채우고 ``main`` 이 페이로드 ``sector_override`` 에 싣는다.
+OVERRIDE_APPLIED: dict = {}
 DEFAULT_DAYS = 260        # 거래일 ≈ 1년
 #: 종목 집계를 낼 구간(거래일). 수치표·TUI 의 프리셋과 같아야 한다. 1 은 "오늘" — 뷰어의 1일 프리셋이
 #: 종목을 비워 내던 칸이다. 1일 창에는 사실(순매수·거래대금·수익률)만 있다 — x·G·가속 같은 파생값은
@@ -88,7 +91,11 @@ def load(con, days: int) -> tuple[pd.DataFrame, list[str]]:
     meta = pd.read_sql_query("SELECT code, name, sector, market FROM stocks", con)
     df = sd.merge(meta, on="code", how="inner")
     df["close"] = df["close"].abs()
-    df["sector"] = df["sector"].fillna("").replace("", "(미분류)")
+    raw = df["sector"].fillna("")
+    df["sector"] = apply_sector_override(df["code"], df["sector"])
+    OVERRIDE_APPLIED.clear()
+    OVERRIDE_APPLIED.update({c: SECTOR_OVERRIDE[c] for c in
+                             set(df.loc[raw.eq("") & df["code"].isin(list(SECTOR_OVERRIDE)), "code"])})
 
     for raw, short in ACTORS:
         df[short] = df[raw].astype(float) * df["close"] / EOK
@@ -97,6 +104,17 @@ def load(con, days: int) -> tuple[pd.DataFrame, list[str]]:
     df["tv"] = df["acc_trde_qty"].astype(float) * df["close"] / EOK
     df["ret"] = adjusted_returns(con, df[["code", "date"]], dates)
     return df, dates
+
+
+def apply_sector_override(codes: pd.Series, sectors: pd.Series) -> pd.Series:
+    """마스터가 비워 둔 섹터를 :data:`SECTOR_OVERRIDE` 로 덮고, 남은 빈 값은 ``(미분류)``.
+
+    덮는 것은 표에 적힌 종목뿐이다(근거와 함께 ``sectorflow/sector_override.py``). 검증기 F 층이
+    같은 표로 SQL 을 짠다.
+    """
+    empty = sectors.fillna("").eq("")
+    out = codes.map(SECTOR_OVERRIDE).where(empty)          # 마스터가 비었을 때만 — 채워지면 마스터를 따른다
+    return out.where(out.notna(), sectors).fillna("").replace("", UNCLASSIFIED)
 
 
 def adjusted_returns(con, keys: pd.DataFrame, dates: list[str]) -> pd.Series:
@@ -596,6 +614,22 @@ def _read_report(root: "str | None", date: str) -> "tuple[dict | None, str | Non
     return old, None
 
 
+def override_block(applied: dict) -> dict:
+    """``payload["sector_override"]`` — 실제로 덮은 섹터와 그 지문·근거."""
+    return {"applied": dict(sorted(applied.items())), "fp": fingerprint(applied), "source": OVERRIDE_SOURCE}
+
+
+def override_fp(P: dict) -> str:
+    """페이로드의 덮어쓰기 지문 — 그 키가 없는 옛 리포트는 덮어쓰기 전이므로 ``none``."""
+    return (P.get("sector_override") or {}).get("fp") or "none"
+
+
+def _override_mismatch(P: dict, old: dict) -> "str | None":
+    """두 리포트의 섹터 라벨이 다르면 이유 — 같은 섹터 이름이 다른 종목 집합이라 견주면 섞인다(첫날 오염)."""
+    a, b = override_fp(old), override_fp(P)
+    return None if a == b else f"섹터 덮어쓰기가 달라졌다(지문 {a}→{b}) — 같은 섹터가 다른 종목 집합이라 견주지 않는다"
+
+
 def change_block(P: dict, root: "str | None") -> "tuple[dict | None, str | None]":
     """``payload["change"]`` — **직전 거래일 리포트**(``<root>/<dates[-2]>/payload.json``) 대비.
 
@@ -609,6 +643,8 @@ def change_block(P: dict, root: "str | None") -> "tuple[dict | None, str | None]
     prev_date = P["dates"][-2]
     old, why = _read_report(root, prev_date)
     if old is None:
+        return None, why
+    if (why := _override_mismatch(P, old)):
         return None, why
     out = {
         "prev_date": prev_date,
@@ -645,8 +681,10 @@ def final_diff_block(P: dict, root: "str | None") -> "tuple[dict | None, str | N
     old, why = _read_report(root, asof)
     if old is None:
         return None, why.replace(f"{asof} 리포트 폴더가 없다", "같은 기준일의 잠정 리포트가 없었다")
+    if (why := _override_mismatch(P, old)):
+        return None, why
     built = os.path.getmtime(os.path.join(root, asof, "payload.json"))
-    changed, totals, n_cells = [], [], 0
+    changed, totals, n_cells, cells_1d = [], [], 0, []
 
     def win_sum(ser, w):
         return None if ser is None or len(ser) < w else round(sum(ser[-w:]), 2)
@@ -662,6 +700,8 @@ def final_diff_block(P: dict, root: "str | None") -> "tuple[dict | None, str | N
                 so = _series(old, [m], s, a) if m in (old.get("markets") or []) else None
                 if sn is None:
                     continue
+                # 1일 칸은 (잠정, 확정) 그대로 남긴다 — 다음 리포트들이 잠정→확정 수정 폭을 모은다(revision_stats).
+                cells_1d.append([m, s, a, None if so is None else so[-1], sn[-1]])
                 for j, w in enumerate(FINAL_DIFF_WINDOWS):
                     vn, vo = win_sum(sn, w), win_sum(so, w)
                     n_cells += 1
@@ -675,13 +715,164 @@ def final_diff_block(P: dict, root: "str | None") -> "tuple[dict | None, str | N
                 totals.append({"market": m, "actor": a, "win": w, "old": vo, "new": round(tn[j], 2),
                                "diff": None if vo is None else round(tn[j] - vo, 2)})
     changed.sort(key=lambda r: -(abs(r["diff"]) if r["diff"] is not None else float("inf")))
+    ext_change = extremes_change(P, old)
     return {
         "base_final": bool(old.get("final")),
         "base_built": datetime.fromtimestamp(built, timezone(timedelta(hours=9))).strftime("%Y-%m-%d %H:%M"),
         "windows": list(FINAL_DIFF_WINDOWS), "tol": FINAL_DIFF_TOL,
         "n_cells": n_cells, "n_changed": len(changed),
         "changed": changed, "market_totals": totals,
+        "cells_1d": cells_1d,
+        "pct_hi": PCT_HI, "pct_lo": PCT_LO, "extremes_change": ext_change,
     }, None
+
+
+#: 오늘 1년%ile 의 극단 문턱 — 화면(``flow_view.PCT_HI/LO``)과 웹(``PCT_HI/LO``)이 같은 값을 쓴다.
+PCT_HI, PCT_LO = 95.0, 5.0
+#: 극단 목록의 들고 남을 적는 주체 — 첫 화면이 극단을 적는 주체(기관·투신+연기금)와 그날 최대 순매매 주체이 될 수 있는 셋.
+EXTREME_ACTORS = ("inst", "invpen", "forgn", "indiv", "etc")
+
+
+def _extremes(P: dict, mks: list[str], actor: str) -> "tuple[set, set] | None":
+    """그 페이로드에서 (≥95 섹터, ≤5 섹터) — ``day_pct`` 로 센다. 그 시장이 없으면 ``None``."""
+    if not set(mks) <= set(P.get("markets") or []):
+        return None
+    hi, lo = set(), set()
+    for s in P["sectors"]:
+        if not _present(P, mks, s):
+            continue
+        ser = _series(P, mks, s, actor)
+        p = None if ser is None else day_pct(ser)
+        if p is None:
+            continue
+        if p >= PCT_HI:
+            hi.add(s)
+        elif p <= PCT_LO:
+            lo.add(s)
+    return hi, lo
+
+
+def extremes_change(P: dict, old: dict) -> dict:
+    """잠정 → 확정에서 오늘 1년%ile 극단(≥95·≤5) 목록에 들고 난 섹터 — 바뀐 (시장, 주체)만 싣는다."""
+    out: dict = {}
+    for mkey, mks in _mkeys(P):
+        for a in EXTREME_ACTORS:
+            new, prev = _extremes(P, mks, a), _extremes(old, mks, a)
+            if new is None or prev is None:
+                continue
+            ch = {"hi_in": sorted(new[0] - prev[0]), "hi_out": sorted(prev[0] - new[0]),
+                  "lo_in": sorted(new[1] - prev[1]), "lo_out": sorted(prev[1] - new[1])}
+            if any(ch.values()):
+                out.setdefault(mkey, {})[a] = ch
+    return out
+
+
+# ─────────────────────────────────────────────── 잠정 → 확정 수정 폭 — 지난 확정 리포트에서 모은다
+#
+# 18:10 리포트는 수집 시각(~16:00~18:10)의 스냅숏이다. 애프터마켓은 20:00 까지 돌고 확정치는 다음날 새벽
+# daily_finalize 가 덮는다(quant-airflow CLAUDE.md §3). 실측: 11-05 거래소 기관 +8,855 → +9,658억, 금속 기관
+# 327 → 677, 10-29 금융 기관 1,786 → 5,477. 잠정 리포트를 보는 사람에게 "이 숫자가 보통 얼마나 바뀌나" 를
+# 지난 확정 리포트들의 ``final_diff.cells_1d``(잠정, 확정) 에서 센다 — 기준일 이하의 날만 읽는다.
+
+#: 모을 확정 기준일 수(최근 것부터).
+REV_DAYS = 20
+#: 분모 게이트 — (시장, 주체) 안에서 |확정값| 이 Σ|확정값| 의 이 몫 이상인 칸만 상대 변화를 잰다.
+#: 0 근처 칸의 상대 변화는 무한대로 튄다. 문턱은 목록 안 몫으로 잡는다(CLAUDE.md 화면·리포트 규칙).
+REV_GATE_SHARE = 0.02
+
+
+def _final_cells(root: str, date: str) -> "tuple[list | None, str | None]":
+    """그 기준일 확정 리포트의 ``cells_1d`` — ``final_diff.json``(작다) 먼저, 없으면 ``payload.json``."""
+    folder = os.path.join(root, date)
+    if not os.path.isfile(os.path.join(folder, "FINAL.txt")):
+        return None, "확정 아님"
+    if os.path.isfile(os.path.join(folder, "VERIFY_FAILED.txt")):
+        return None, "검증 실패 리포트"
+    fd = None
+    for name in ("final_diff.json", "payload.json"):
+        path = os.path.join(folder, name)
+        if not os.path.isfile(path):
+            continue
+        try:
+            with open(path, encoding="utf-8") as f:
+                doc = json.load(f)
+        except (OSError, ValueError):
+            continue
+        fd = doc if name == "final_diff.json" else doc.get("final_diff")
+        break
+    if not isinstance(fd, dict):
+        return None, "잠정 대비 기록 없음"
+    return _usable_base(fd, date)
+
+
+def _usable_base(fd: dict, date: str) -> "tuple[list | None, str | None]":
+    """그 확정 리포트의 잠정 대비가 **그날 저녁의 잠정 리포트** 대비인가 — 아니면 (None, 이유).
+
+    바꿔 끼운 리포트가 기준일 당일에 만든 것이어야 한다(``base_built`` 의 날짜 = 기준일). 다음날 확정 전에
+    손으로 다시 만든 것이나 확정 위에 다시 만든 것은 "18:10 잠정이 얼마나 바뀌나" 를 말하지 않는다.
+    """
+    if fd.get("base_final"):
+        return None, "확정 위에 다시 만든 날(잠정 대비 아님)"
+    if fd.get("cells_1d") is None:
+        return None, "칸별 기록 없음(옛 형식)"
+    if str(fd.get("base_built") or "")[:10] != date:
+        return None, f"바꿔 끼운 리포트가 기준일 당일 것이 아니다({fd.get('base_built')})"
+    return fd["cells_1d"], None
+
+
+def revision_rows(cells: list, gate_share: float = REV_GATE_SHARE) -> tuple[list[float], int]:
+    """(상대 변화 목록[%], 부호 뒤집힘 수) — 분모 게이트를 넘는 1일 칸만."""
+    tot: dict = {}
+    for m, _s, a, _old, new in cells:
+        tot[(m, a)] = tot.get((m, a), 0.0) + abs(new or 0.0)
+    rel, flips = [], 0
+    for m, _s, a, old, new in cells:
+        if old is None or not new or abs(new) < gate_share * tot[(m, a)]:
+            continue
+        rel.append(abs(new - old) / abs(new) * 100.0)
+        flips += old * new < 0
+    return rel, flips
+
+
+def revision_stats(P: dict, root: "str | None") -> dict:
+    """``payload["revision_stats"]`` — 최근 :data:`REV_DAYS` 개 확정 기준일의 잠정→확정 수정 폭.
+
+    섹터 1일 순매수 칸(시장 × 섹터 × 기관·투신·연기금·외국인·개인·기타법인)의 |확정 − 잠정| ÷ |확정| 중앙값과
+    부호 뒤집힘 수. 이 리포트가 확정이면 자기 ``final_diff`` 도 넣는다. 기준일보다 뒤의 폴더는 읽지 않는다.
+    """
+    asof = P["dates"][-1]
+    out = {"days": REV_DAYS, "gate_share": REV_GATE_SHARE, "win": 1, "n_dates": 0, "dates": [],
+           "n_cells": 0, "rel_median_pct": None, "flips": 0, "skipped": {}}
+    found: list = []
+    own = P.get("final_diff") if P.get("final") else None
+    if isinstance(own, dict):
+        cells, why = _usable_base(own, asof)
+        if cells is not None:
+            found.append((asof, cells))
+        else:
+            out["skipped"][asof] = why
+    if root and os.path.isdir(root):
+        # 최근 것부터 훑고 REV_DAYS 개를 모으면 멈춘다 — 1년치 폴더를 다 열지 않고, 건너뛴 이유도 그 안의 것만 적는다.
+        for name in sorted(os.listdir(root), reverse=True):
+            if len(found) >= REV_DAYS:
+                break
+            if not (re.fullmatch(r"\d{4}-\d{2}-\d{2}", name) and name < asof):
+                continue
+            cells, why = _final_cells(root, name)
+            if cells is None:
+                if why != "확정 아님":
+                    out["skipped"][name] = why
+                continue
+            found.append((name, cells))
+    found.sort()
+    rel, flips = [], 0
+    for _d, cells in found:
+        r, f = revision_rows(cells)
+        rel += r
+        flips += f
+    out.update(n_dates=len(found), dates=[d for d, _ in found], n_cells=len(rel), flips=flips,
+               rel_median_pct=round(float(pd.Series(rel).median()), 1) if rel else None)
+    return out
 
 
 def final_diff_text(P: dict, top: int = 15) -> str:
@@ -781,7 +972,10 @@ def approx_gap(con, df: pd.DataFrame, asof: str, markets: list[str]) -> dict:
     vwap = (bars["trade_value"].astype(float) * 1e6 / bars["volume"].astype(float))
     vwap.index = bars["code"]
     n = sum(day[c].astype(float).abs().fillna(0.0) for c in _QTY_COLS)
-    t = pd.DataFrame({"market": day["market"].to_numpy(), "n": n.to_numpy(),
+    t = pd.DataFrame({"market": day["market"].to_numpy(),
+                      "sector": (day["sector"] if "sector" in day else pd.Series(UNCLASSIFIED, index=day.index)
+                                 ).to_numpy(),
+                      "n": n.to_numpy(),
                       "close": day["close"].astype(float).to_numpy(),
                       "vwap": day["code"].map(vwap).to_numpy(dtype=float)})
     out = {}
@@ -796,8 +990,26 @@ def approx_gap(con, df: pd.DataFrame, asof: str, markets: list[str]) -> dict:
             continue
         out[mkey] = {"pct": round(abs(c - v) / v * 100.0, 2),
                      "close": round(c / EOK, 1), "vwap": round(v / EOK, 1),
-                     "cover": round(c / all_amt * 100.0, 1) if all_amt else None}
+                     "cover": round(c / all_amt * 100.0, 1) if all_amt else None,
+                     "sector_max": _sector_gap_max(cov, v)}
     return out
+
+
+#: 섹터별 근사 오차는 그 섹터의 VWAP 환산 금액이 시장의 이 몫 이상일 때만 잰다(분모 게이트).
+SECTOR_GAP_MIN_SHARE = 0.02
+
+
+def _sector_gap_max(cov: pd.DataFrame, market_vwap: float) -> "dict | None":
+    """시장 안에서 근사 오차가 가장 큰 섹터 — 시장 합계에서는 종목 간 오차가 상쇄되지만 섹터 칸은 덜 상쇄된다."""
+    best = None
+    for sec, g in cov.groupby("sector"):
+        v = float((g["n"] * g["vwap"]).sum())
+        if v <= 0 or v < SECTOR_GAP_MIN_SHARE * market_vwap:
+            continue
+        pct = abs(float((g["n"] * g["close"]).sum()) - v) / v * 100.0
+        if best is None or pct > best["pct"]:
+            best = {"sector": sec, "pct": round(pct, 2)}
+    return best
 
 
 def market_context(con, df: pd.DataFrame, P: dict) -> None:
@@ -851,6 +1063,7 @@ def main():
                               sorted(df["market"].dropna().unique()), members)
     cap_monthly = sector_cap_monthly(con, df, dates)
     payload = build_payload(df, dates, caps, cap_monthly)
+    payload["sector_override"] = override_block(OVERRIDE_APPLIED)
     market_context(con, df, payload)
     con.close()
     # 직전 리포트·바꿔 끼울 리포트는 **쓰기 전에** 읽는다 — --json 이 그 폴더의 payload.json 일 수 있다.
@@ -862,9 +1075,14 @@ def main():
         payload["final_diff"], payload["final_diff_reason"] = final_diff_block(payload, root)
         # FINAL.txt 는 daily_report.sh 가 쓴다 — 거기 덧붙일 글을 산출물 옆에 둔다.
         if a.json or a.html:
-            with open(os.path.join(os.path.dirname(os.path.abspath(a.json or a.html)),
-                                   "final_diff.txt"), "w", encoding="utf-8") as f:
+            here = os.path.dirname(os.path.abspath(a.json or a.html))
+            with open(os.path.join(here, "final_diff.txt"), "w", encoding="utf-8") as f:
                 f.write(final_diff_text(payload))
+            # 다음 리포트들의 revision_stats 가 3MB 페이로드 대신 이것만 읽는다.
+            if payload["final_diff"] is not None:
+                with open(os.path.join(here, "final_diff.json"), "w", encoding="utf-8") as f:
+                    json.dump(payload["final_diff"], f, ensure_ascii=False)
+    payload["revision_stats"] = revision_stats(payload, root)
     covered = sum(1 for m in payload["markets"] for s in payload["sectors"]
                   if payload["iret"][m].get(s))
     print(f"업종지수 커버리지: {covered} / "

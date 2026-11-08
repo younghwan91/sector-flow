@@ -242,6 +242,23 @@ def test_change_is_null_with_a_reason_when_the_previous_report_is_missing(tmp_pa
     assert _t_fails(cur, str(tmp_path / cur["dates"][-1]))
 
 
+def test_comparisons_skip_when_the_sector_override_changed_between_reports(tmp_path):
+    """덮어쓰기가 바뀐 첫날 — 같은 섹터 이름이 다른 종목 집합이라 직전 대비·잠정→확정을 내지 않는다(이유는 적는다)."""
+    prev, cur = _prev_and_cur()
+    cur["sector_override"] = sf.override_block({"024110": "금융"})
+    _write(tmp_path, prev["dates"][-1], prev)                   # 옛 리포트 — 지문 없음(none)
+    C, why = sf.change_block(cur, str(tmp_path))
+    assert C is None and "덮어쓰기" in why
+    cur["change"], cur["change_reason"] = C, why
+    assert _t_fails(cur, str(tmp_path / cur["dates"][-1])) == [], "지문이 다르면 비교가 비는 것이 맞다"
+    _write(tmp_path, cur["dates"][-1], dict(cur, sector_override=None))
+    fd, why = sf.final_diff_block(cur, str(tmp_path))
+    assert fd is None and "덮어쓰기" in why
+    prev["sector_override"] = cur["sector_override"]
+    _write(tmp_path, prev["dates"][-1], prev)
+    assert sf.change_block(cur, str(tmp_path))[0] is not None    # 같은 지문이면 비교한다
+
+
 def test_reports_root_is_only_inferred_from_a_dated_folder(tmp_path):
     assert sf.reports_root(str(tmp_path / "2026-11-06.building.123" / "payload.json")) == str(tmp_path)
     assert sf.reports_root(str(tmp_path / "2026-11-06" / "payload.json")) == str(tmp_path)
@@ -271,6 +288,95 @@ def test_final_diff_lists_only_changes_beyond_rounding(tmp_path):
     assert _t_fails(new) == []
     new["final_diff"]["changed"][0]["new"] += 1.0
     assert _t_fails(new), "확정값을 틀리게 적어도 검증기가 모른다"
+
+
+def test_final_diff_keeps_every_one_day_cell_as_provisional_and_final(tmp_path):
+    _prev, new = _prev_and_cur()
+    old = json.loads(json.dumps(new))
+    old["flows"]["코스닥"]["금융"]["inst"][-1] -= 12.34
+    _write(tmp_path, new["dates"][-1], old)
+    fd, _why = sf.final_diff_block(new, str(tmp_path))
+    cells = {(m, s, a): (o, n) for m, s, a, o, n in fd["cells_1d"]}
+    o, n = cells[("코스닥", "금융", "inst")]
+    assert n - o == pytest.approx(12.34, abs=0.011)
+    assert len(cells) == sum(1 for m in new["markets"] for s in new["sectors"]
+                             if new["n_by_sector"][m].get(s)) * len(sf.FINAL_DIFF_ACTORS)
+    assert fd["extremes_change"] == {} or all(
+        set(ch) == {"hi_in", "hi_out", "lo_in", "lo_out"} for v in fd["extremes_change"].values() for ch in v.values())
+
+
+def test_extremes_change_names_sectors_that_entered_the_top_percentile_after_finalisation():
+    _prev, new = _prev_and_cur()
+    old = json.loads(json.dumps(new))
+    ser = old["flows"]["코스닥"]["금융"]["inst"]
+    ser[-1] = min(ser) - 1.0                 # 잠정: 1년 최저 → 확정: 원래 값
+    newser = new["flows"]["코스닥"]["금융"]["inst"]
+    newser[-1] = max(newser) + 1.0           # 확정: 1년 최고
+    ch = sf.extremes_change(new, old)["코스닥"]["inst"]
+    assert ch["hi_in"] == ["금융"] and ch["lo_out"] == ["금융"]
+
+
+def _final_folder(root: Path, date: str, cells, base_final=False, as_payload=False, built=None, failed=False):
+    d = root / date
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "FINAL.txt").write_text("확정")
+    if failed:
+        (d / "VERIFY_FAILED.txt").write_text("x")
+    fd = {"base_final": base_final, "cells_1d": cells, "base_built": built or f"{date} 18:12"}
+    if as_payload:
+        (d / "payload.json").write_text(json.dumps({"final": True, "final_diff": fd}), encoding="utf-8")
+    else:
+        (d / "final_diff.json").write_text(json.dumps(fd), encoding="utf-8")
+
+
+def test_revision_stats_pool_final_reports_up_to_the_report_day_only(tmp_path):
+    """잠정→확정 수정 폭: 지난 확정 리포트의 1일 칸에서, 분모 게이트(목록 안 2%)를 넘는 칸만."""
+    big = [["거래소", f"S{i}", "inst", 100.0, 100.0] for i in range(8)]
+    cells_a = big + [["거래소", "X", "inst", 50.0, 100.0],      # 50% 수정
+                     ["거래소", "Y", "inst", -10.0, 100.0],     # 부호 뒤집힘 (110%)
+                     ["거래소", "Z", "inst", 0.0, 0.5]]         # 게이트 밖(0.5 < 2% × 1,000.5)
+    _final_folder(tmp_path, "2026-11-04", cells_a)
+    _final_folder(tmp_path, "2026-11-05", big, as_payload=True)
+    _final_folder(tmp_path, "2026-11-03", big, base_final=True)           # 확정 위의 확정 — 뺀다
+    _final_folder(tmp_path, "2026-11-02", big, built="2026-11-03 07:40")  # 다음날 아침에 다시 만든 잠정 — 뺀다
+    _final_folder(tmp_path, "2026-10-31", big, failed=True)               # 검증 실패 — 뺀다
+    (tmp_path / "2026-10-30").mkdir()                                       # 잠정 폴더 — 확정 아님
+    _final_folder(tmp_path, "2026-11-09", [["거래소", "F", "inst", -999.0, 100.0]])   # 기준일 뒤 — 미래
+    P = {"dates": ["2026-11-05", "2026-11-06"]}
+    R = sf.revision_stats(P, str(tmp_path))
+    assert R["dates"] == ["2026-11-04", "2026-11-05"] and R["n_dates"] == 2
+    assert R["n_cells"] == 8 + 2 + 8 and R["flips"] == 1
+    assert R["rel_median_pct"] == 0.0
+    assert not {"2026-11-03", "2026-11-02", "2026-10-31"} & set(R["dates"])
+    assert {"2026-11-03", "2026-11-02", "2026-10-31"} <= set(R["skipped"]), R["skipped"]
+    only_a = sf.revision_rows(cells_a)
+    assert sorted(only_a[0])[-2:] == pytest.approx([50.0, 110.0]) and only_a[1] == 1
+    # 확정 리포트는 자기 잠정 대비도 넣는다.
+    P2 = {"dates": ["2026-11-05", "2026-11-06"], "final": True,
+          "final_diff": {"base_final": False, "cells_1d": cells_a, "base_built": "2026-11-06 18:12"}}
+    assert sf.revision_stats(P2, str(tmp_path))["dates"][-1] == "2026-11-06"
+    assert sf.revision_stats({"dates": ["2026-11-06"]}, None)["n_dates"] == 0
+    # 최근 것부터 REV_DAYS 개를 모으면 멈춘다 — 그보다 오래된 폴더의 사유는 적지 않는다.
+    for i in range(1, 25):
+        _final_folder(tmp_path, f"2026-09-{i:02d}", big)
+    R = sf.revision_stats(P, str(tmp_path))
+    assert R["n_dates"] == sf.REV_DAYS and R["dates"][-1] == "2026-11-05" and "2026-09-01" not in R["dates"]
+
+
+def test_sector_override_fills_only_listed_codes_and_names_the_rest_unclassified():
+    from sectorflow.sector_override import SECTOR_OVERRIDE, sector_sql
+    codes = pd.Series(["024110", "323410", "999999", "000001", "006220"])
+    secs = pd.Series(["", None, "", "화학", "은행"])        # 제주은행 마스터가 채워졌다 — 마스터를 따른다
+    got = sf.apply_sector_override(codes, secs).tolist()
+    assert got == [SECTOR_OVERRIDE["024110"], SECTOR_OVERRIDE["323410"], "(미분류)", "화학", "은행"]
+    # 덮는 값은 마스터에 이미 있는 섹터여야 한다 — 새 섹터를 만들지 않는다.
+    assert set(SECTOR_OVERRIDE.values()) <= {"금융"}
+    import sqlite3
+    con = sqlite3.connect(":memory:")
+    con.execute("CREATE TABLE stocks(code, sector)")
+    con.executemany("INSERT INTO stocks VALUES (?,?)", list(zip(codes, secs)))
+    q = f"SELECT {sector_sql('st.code', 'st.sector')} FROM stocks st ORDER BY rowid"
+    assert [r[0] for r in con.execute(q)] == got, "검증기 F 층의 SQL 이 같은 표를 써야 한다"
 
 
 def test_final_diff_without_a_provisional_report_says_so(tmp_path):
@@ -368,6 +474,26 @@ def test_approx_gap_compares_close_with_vwap_weighted_by_absolute_net_quantity()
     assert got["코스닥"]["cover"] == pytest.approx(200 / 300 * 100, abs=0.1)
     want = abs(2000 + 200 - (2200 + 200)) / 2400 * 100
     assert got["전체"]["pct"] == pytest.approx(want, abs=0.01)
+
+
+def test_sector_gap_is_larger_than_the_market_gap_where_errors_do_not_cancel():
+    """시장 합계는 종목 간 오차가 상쇄된다 — 섹터 칸 최대값을 같이 싣는다(분모 게이트 2%)."""
+    asof = "2026-11-06"
+    df = pd.DataFrame([
+        {"code": "A", "date": asof, "market": "거래소", "sector": "금융", "close": 100.0,
+         "individual": -100, "foreign_": 0, "institution": 100, "etc_corp": 0},
+        {"code": "B", "date": asof, "market": "거래소", "sector": "화학", "close": 100.0,
+         "individual": 100, "foreign_": 0, "institution": -100, "etc_corp": 0},
+        # 작은 섹터(시장 VWAP 금액의 1% 남짓)의 큰 오차(50%) — 분모 게이트(2%) 밖이라 최대값이 아니다
+        {"code": "C", "date": asof, "market": "거래소", "sector": "보험", "close": 100.0,
+         "individual": -1, "foreign_": 0, "institution": 1, "etc_corp": 0},
+    ])
+    # A: vwap 110(종가 −9%), B: vwap 90.9(종가 +10%) — 시장에서는 거의 상쇄, 섹터에서는 그대로
+    bars = [("A", asof, 10000, 1.1, "kiwoom"), ("B", asof, 11000, 1.0, "kiwoom"),
+            ("C", asof, 100, 0.02, "kiwoom")]
+    got = sf.approx_gap(_ctx_db([asof], [], bars), df, asof, ["거래소"])["거래소"]
+    assert got["pct"] < 1.0
+    assert got["sector_max"]["sector"] == "화학" and got["sector_max"]["pct"] == pytest.approx(10.0, abs=0.01)
 
 
 def test_market_context_puts_index_and_gap_inside_today(P, monkeypatch):

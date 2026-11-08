@@ -9,6 +9,7 @@ NEVER print environment variables or the connection string.
 Definitions (all dates are trading dates = DISTINCT supply_demand.date):
 - SOURCES = ('kiwoom','kiwoom_backfill_2026-10-11','kiwoom_backfill_2026-10-12').
 - Sector membership: stocks.sector (NULL or '' means '(미분류)'), stocks.market IN ('거래소','코스닥'). Current labels, both markets together.
+  (Pre-override labels: the four banks the report now maps to '금융' — 024110·323410·279570·006220 — were in '(미분류)' here.)
 - Let D1..Dh be the h trading dates strictly after A.
 - For each day d in D1..Dh, universe U(d) = codes of sector S with a supply_demand row on d with source IN SOURCES.
 - Stock return r_i(d) in % = 100 * (adj(d) / adj(prev) - 1), where adj = daily_bars_adjusted.close (rows with close>0),

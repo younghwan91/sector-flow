@@ -28,11 +28,11 @@ from pathlib import Path
 
 from sectorflow.tui.flow_view import (
     HELP_FOOT_TIERS, NAME_SORT_COL, all_lines, NAME_SORTS, SORT_COL, SORTS,
-    State, banner_lines, cell_len as view_cell_len, color_spans,
+    ONE_DAY, State, banner_lines, ret_label, banner_view, cell_len as view_cell_len, color_spans,
     detail_lines, detail_title_span, footer_line, header_lines, help_entries, help_lines,
     hint_desc, hint_line,
     is_section, missing_report_hint, name_sort_span, names_lines, report_warnings,
-    scroll_mark, sort_span, staleness_warning, table_lines, tier_for,
+    B_SHORT, scroll_mark, sort_evidence, sort_span, staleness_warning, table_lines, tier_for,
     view_width)
 
 # `scripts/daily_report.sh` 가 `<repo>/reports/<기준일>` 에 쓰고 `latest` 를 그리로
@@ -363,13 +363,30 @@ def hint_text(st: State, width: int = 200) -> str:
                   or dict(SORTS).get(key, key))
         arrow = "▲" if st.rev else "▼"
     desc = _help_desc(header) or "? 로 설명"
+    if header == "수익률[%]":
+        # 잠정 리포트의 마지막 날은 수집 시각 스냅숏이다 — 힌트도 리포트 지위를 따른다.
+        desc = f"섹터 바구니 구간 수익률 [%], {ret_label(st.d, True)}"
     order = "오름차순" if arrow == "▲" else "내림차순"
     if st.drill and st.name_sort == "flow":
         order = "가장 많이 판 순" if st.nrev else "절댓값 큰 순"
     # 좁은 화면에서는 방향 풀이를 접는다 — 잘려나갈 자리는 열 설명에 준다.
-    tag = f"({order}, r 로 뒤집기)" if width >= 90 else ""
+    tag = f"({order}, r 로 뒤집기)" if width >= 100 else ""
+    head = f" 정렬 {header}{arrow}{tag}"
+    if not st.drill:
+        # 증거 표지를 값 옆에 — 도움말에만 있으면 정렬한 열이 앞날을 말하는 것처럼 읽힌다(리뷰 M2).
+        # 긴 꼴(근거까지) → 표지만 → 짧은 꼴 순으로, 설명이 잘리지 않는 첫 것을 쓴다.
+        ev = sort_evidence(st, key)
+        if ev is None:                        # 1일 창의 빈 열 — 달 표지가 없다
+            return hint_line(head, desc, width)
+        badge, why = ev
+        cands = ([f"{badge} · {why} · {desc}"] if why else []) + [f"{badge} {desc}", f"{B_SHORT[badge]} {desc}"]
+        for c in cands:
+            line = hint_line(head, c, width)
+            if "…" not in line:
+                return line
+        return hint_line(head, cands[-1], width)
     # 자르기는 `flow_view.hint_line` 하나가 한다 — 원장 힌트바도 같은 함수다.
-    return hint_line(f" 정렬 {header}{arrow}{tag}", desc, width)
+    return hint_line(head, desc, width)
 
 
 def _draw(scr, st: State) -> None:
@@ -605,6 +622,8 @@ JAMO_TO_ASCII = {
     # 구분되는 것 — Shift 로 쌍자음이 나오는 자리
     "ㅂ": "q", "ㅃ": "q", "ㅈ": "w", "ㅉ": "W", "ㄱ": "r", "ㄲ": "R",
     "ㅅ": "t", "ㅆ": "t", "ㄷ": "e", "ㄸ": "e",
+    # `o`(첫 화면 다시 열기) — Shift(ㅒ)는 다른 글자지만 대문자 O 는 쓰지 않는다
+    "ㅐ": "o", "ㅒ": "o",
     # 구분 안 되는 것 — 소문자 동작으로 떨어진다
     "ㅁ": "a", "ㄴ": "s", "ㅎ": "g", "ㅡ": "m",
     # vim 이동
@@ -613,7 +632,7 @@ JAMO_TO_ASCII = {
     "\u1107": "q", "\u1108": "q", "\u110c": "w", "\u110d": "W",
     "\u1100": "r", "\u1101": "R", "\u1106": "a", "\u1102": "s",
     "\u1109": "t", "\u110a": "t", "\u1103": "e", "\u1104": "e",
-    "\u1112": "g", "\u1173": "m", "\u1169": "h", "\u1165": "j",
+    "\u1112": "g", "\u1173": "m", "\u1169": "h", "\u1165": "j", "\u1162": "o", "\u1164": "o",
     "\u1161": "k", "\u1175": "l",
 }
 
@@ -703,6 +722,14 @@ def handle_key(st: State, k: int, page: int = 10, help_page: int = 10) -> bool:
         # 탐색 모드(G·선정·곱·종합) 켜기/끄기 — 어느 화면에서나 듣는다. 끄면 탐색 전용
         # 자리(종합 창·선정 정렬·전 종목 화면)에서 기본 자리로 돌아간다(`toggle_explore`).
         _keep_selection(st, st.toggle_explore)
+        return True
+    if k == ord("o"):
+        # 첫 화면(오늘의 수급) 다시 열기 — 닫은 뒤 다시 볼 길이 없었다(리뷰 M8). 어느 화면에서나 듣는다.
+        st.banner, st.brow = True, 0
+        return True
+    if k == ord("1"):
+        # 1일 창으로 바로 — `w` 를 몇 번 돌려야 닿던 자리(리뷰 4). 드릴다운이면 그날의 종목 목록이 된다.
+        _keep_selection(st, lambda: st.goto_window(ONE_DAY))
         return True
 
     if st.drill:
@@ -824,12 +851,30 @@ def _draw_banner(scr, st: State) -> None:
     h, w = scr.getmaxyx()
     w = view_width(w)
     col = _COLORED
-    lines = banner_lines(st, w)
-    for i, line in enumerate(lines[:h]):
+    lines = banner_view(st, w, h)
+    for i, line in enumerate(lines):
         base = (curses.color_pair(C_HEAD) | curses.A_BOLD if col and i == 0
                 else (curses.color_pair(C_BODY) if col else curses.A_NORMAL))
         _put(scr, i, line, base, col and i > 0)
     scr.refresh()
+
+
+#: 첫 화면이 화면보다 길 때 훑는 키 — 그 밖의 키는 닫는다.
+BANNER_SCROLL = {curses.KEY_DOWN: 1, ord("j"): 1, curses.KEY_UP: -1, ord("k"): -1,
+                 curses.KEY_NPAGE: 10, ord(" "): 10, curses.KEY_PPAGE: -10}
+
+
+def banner_key(st: State, k: int, width: int, height: int) -> bool:
+    """첫 화면의 키 하나 — 계속 돌면 True. 넘치는 동안 스크롤 키는 훑고, 그 밖의 키는 닫는다."""
+    if k in (curses.KEY_RESIZE,):            # 리사이즈는 "아무 키" 가 아니다 — 다시 그린다
+        return True
+    step = BANNER_SCROLL.get(k)
+    if step and len(banner_lines(st, width)) > height:
+        st.brow = max(0, st.brow + (step if abs(step) == 1 else (height - 2) * (1 if step > 0 else -1)))
+        banner_view(st, width, height)            # 아래 끝에서 멈추게 한 번 맞춘다
+        return True
+    st.banner = False
+    return leave_banner(st, k)
 
 
 def leave_banner(st: State, k: int) -> bool:
@@ -852,18 +897,19 @@ def _loop(scr, data: dict) -> None:
         pass
     _init_colors(scr)
     st = State(data)
+    st.banner = True
     while True:
-        _draw_banner(scr, st)
-        try:
-            k = _read_key(scr)
-        except KeyboardInterrupt:
-            return
-        # 리사이즈는 "아무 키" 가 아니다 — 다시 그리고 기다린다.
-        if k != curses.KEY_RESIZE:
-            break
-    if not leave_banner(st, k):
-        return
-    while True:
+        if st.banner:
+            _draw_banner(scr, st)
+            try:
+                k = _read_key(scr)
+            except KeyboardInterrupt:
+                return
+            h, w = scr.getmaxyx()
+            # 리사이즈는 "아무 키" 가 아니다 — 다시 그리고 기다린다(banner_key 가 안 닫는다).
+            if not banner_key(st, k, view_width(w), h):
+                return
+            continue
         _draw(scr, st)
         try:
             k = _read_key(scr)
