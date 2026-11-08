@@ -74,3 +74,29 @@ def test_nothing_changed_passes():
 def test_ranges():
     assert DC.ranges([1, 2, 3, 5, 7, 8]) == "1-3,5,7-8"
     assert DC.ranges([]) == ""
+
+
+def test_missing_coverage_json_fails(repo, capsys):
+    """재지 않고 넘어가면 관문이 없는 것과 같다."""
+    assert DC.main(["--base", "main", "--json", "nope.json"]) == 2
+    assert "커버리지 결과가 없다" in capsys.readouterr().out
+
+
+def test_a_new_file_below_its_floor_fails_even_when_the_total_passes(repo):
+    rows = [{"path": "src/a.py", "lines": set(range(1, 21)), "hit": set(range(1, 21)), "miss": [],
+             "measured": True},
+            {"path": "scripts/b.py", "lines": {1, 2, 3}, "hit": set(), "miss": [1, 2, 3],
+             "measured": False}]
+    ok, text = DC.report(rows, 80, {"scripts/b.py"}, 50)
+    assert not ok and "20/23" in text and "새 파일 scripts/b.py" in text
+    assert DC.report(rows, 80, set(), 50)[0]                 # 새 파일이 아니면 전체 몫만 본다
+    assert DC.new_files("main", repo) == {"scripts/b.py"}
+
+
+def test_non_ascii_paths_are_matched(repo):
+    (repo / "scripts" / "한글.py").write_text("x = 1\n", "utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "korean")
+    assert DC.changed_lines("main", repo)["scripts/한글.py"] == {1}
+    assert "scripts/한글.py" in DC.new_files("main", repo)
+    assert DC._unquote('"scripts/\\355\\225\\234.py"') == "scripts/한.py"

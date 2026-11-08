@@ -36,13 +36,15 @@
     --budget-min M     주입 검증이 M 분을 넘으면 REJECT, 75% 를 넘으면 WARN. 2M 분이면 남은 변이를
                        돌리지 않고 멈춘다(잡 시간 초과로 이유 없이 죽지 않게). 느린 변이 10개를 늘 적는다.
     --scope all|changed|auto
-                       changed = merge-base 이후 바뀐 파일을 대상·가드로 갖거나 선언이 새로 생긴·바뀐
-                       변이만. auto(기본)는 ``CI`` 가 있고 ``GITHUB_ACTIONS`` 가 없을 때(로컬 pre-push
+                       changed = merge-base 이후 바뀐 파일을 대상·가드로 갖거나, 가드가 바뀐 src 모듈·
+                       스크립트를 import·문자열로 참조하거나, 선언이 새로 생긴·바뀐 변이만. 의존성·하네스·
+                       sector_flow.py·템플릿이 바뀌면 전체. auto(기본)는 ``CI`` 가 있고 ``GITHUB_ACTIONS`` 가 없을 때(로컬 pre-push
                        ci-local) ``--only mutations`` 이면 changed, 그 밖은 all. **전체는 GitHub 이 돈다.**
                        로컬 changed 모드에선 샤드를 무시한다(ci-local 은 매트릭스를 펼치지 않는다).
 
 가드의 주입 전 초록 확인은 **pytest 한 번**으로 모든 가드를 함께 돈다(예전엔 변이마다 한 번 —
-pytest 가 변이당 두 번이었다). 주입 후 실행은 ``-x`` 로 첫 실패에서 멈춘다.
+pytest 가 변이당 두 번이었다). 주입 후 실행은 ``-x`` 로 첫 실패에서 멈추고, **잡힘은 종료코드 1(검사
+실패) 뿐**이다 — 수집 오류·내부 오류·시간 초과는 "판정 불가" REJECT 다.
 
 새 검사(merge-base 이후 추가·수정된 ``def test_*``)는 그 검사를 가드로 둔 변이가 없으면 **REJECT** 다.
 변이로 증명할 수 없는 검사(픽스처가 헛돌지 않는지 보는 검사 등)는 함수 안이나 바로 위에
@@ -332,23 +334,41 @@ class _DeadEdit(Exception):
     """다중 편집 변이에서 앞 편집 뒤 다음 앵커가 사라졌다."""
 
 
-#: 면제 표시 — ``# mutation-exempt: <이유>``. 이유가 이보다 짧으면 표시가 없는 것으로 본다.
-EXEMPT_RE = re.compile(r"#\s*mutation-exempt:\s*(.*?)\s*$")
-EXEMPT_MIN_REASON = 5
+#: 면제 표시 — ``# mutation-exempt: <이유>``. **주석 토큰만** 본다(문자열 안의 같은 글자는 표시가 아니다).
+EXEMPT_RE = re.compile(r"^#\s*mutation-exempt:\s*(.*?)\s*$")
+#: 이유가 이보다 짧거나 자리표시(TODO 등)면 표시가 없는 것으로 본다 — "나중에" 는 이유가 아니다.
+EXEMPT_MIN_REASON = 10
+EXEMPT_PLACEHOLDER = re.compile(r"^\W*(todo|fixme|tbd|xxx|later|나중에)\b", re.I)
 
 
-def _exempt_reason(lines: list[str], lo: int, hi: int) -> str | None:
+def _comments(lines: list[str]) -> dict[int, str]:
+    """줄 번호 → 그 줄의 주석(``tokenize`` 의 COMMENT 토큰). 토큰화가 안 되는 파일이면 빈 표."""
+    import io
+    import tokenize
+    out: dict[int, str] = {}
+    try:
+        for tok in tokenize.generate_tokens(io.StringIO("\n".join(lines) + "\n").readline):
+            if tok.type == tokenize.COMMENT:
+                out[tok.start[0]] = tok.string
+    except (tokenize.TokenError, SyntaxError):
+        return {}
+    return out
+
+
+def _exempt_reason(lines: list[str], lo: int, hi: int,
+                   comments: dict[int, str] | None = None) -> str | None:
     """``lines[lo-1 .. hi-1]``(함수 본문) 또는 그 바로 위에 붙은 주석 줄들의 면제 이유.
 
     위쪽은 빈 줄을 만나면 멈춘다 — 앞 함수의 면제가 다음 함수로 번지면 안 된다."""
+    comments = _comments(lines) if comments is None else comments
     cand = list(range(lo, hi + 1))
     i = lo - 1
     while i >= 1 and lines[i - 1].lstrip().startswith("#"):
         cand.append(i)
         i -= 1
     for n in cand:
-        m = EXEMPT_RE.search(lines[n - 1]) if 0 < n <= len(lines) else None
-        if m and len(m.group(1)) >= EXEMPT_MIN_REASON:
+        m = EXEMPT_RE.search(comments.get(n, ""))
+        if m and len(m.group(1)) >= EXEMPT_MIN_REASON and not EXEMPT_PLACEHOLDER.match(m.group(1)):
             return m.group(1)
     return None
 
@@ -386,13 +406,14 @@ def new_test_functions(wt: Path, base_sha: str) -> dict[str, str | None]:
         except SyntaxError:
             continue
         lines = text.splitlines()
+        comments = _comments(lines)
         for node in ast.walk(tree):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) \
                     and node.name.startswith("test"):
                 lo = min([node.lineno] + [d.lineno for d in node.decorator_list])
                 hi = node.end_lineno or lo
                 if touched & set(range(lo, hi + 1)):
-                    out[f"{f}::{node.name}"] = _exempt_reason(lines, lo, hi)
+                    out[f"{f}::{node.name}"] = _exempt_reason(lines, lo, hi, comments)
     return out
 
 
@@ -445,26 +466,96 @@ def shard_of(muts: list[dict], i: int, n: int) -> list[dict]:
     return sorted(pick[i - 1], key=lambda m: order[id(m)])   # 선언 순서대로 돈다
 
 
-#: 이게 바뀌면 모든 가드의 동작이 바뀔 수 있다 — changed 모드도 전체를 돈다.
-FULL_TRIGGERS = ("pyproject.toml", "uv.lock", "tests/conftest.py")
+#: 이게 바뀌면 모든 가드의 동작이 바뀔 수 있다 — changed 모드도 전체를 돈다. 하네스 자신, e2e 픽스처의
+#: 생산자(sector_flow.py 는 거의 모든 리포트 검사의 입력을 만든다), 템플릿은 어디에 닿는지 좁힐 수 없다.
+FULL_TRIGGERS = ("pyproject.toml", "uv.lock", "tests/conftest.py", "scripts/verify_merge.py",
+                 "scripts/sector_flow.py")
+FULL_TRIGGER_DIRS = ("scripts/templates/",)
+_MOD_REF = re.compile(r"sectorflow(?:\.\w+)+")
 
 
-def changed_scope(muts: list[dict], changed: set[str],
-                  base_muts: dict[str, dict]) -> tuple[list[dict], str]:
+def module_refs(text: str) -> set[str]:
+    """파이썬 소스가 참조하는 ``sectorflow`` 점 경로 — import 문(``from a.b import c`` → ``a.b.c``)과
+    문자열 안의 점 경로(``python -c "from sectorflow.tui.flow_app import main"``). 파싱이 안 되면 글자로."""
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return set(_MOD_REF.findall(text))
+    out: set[str] = set()
+    for n in ast.walk(tree):
+        if isinstance(n, ast.ImportFrom) and n.module and n.module.startswith("sectorflow"):
+            out |= {f"{n.module}.{a.name}" for a in n.names}
+        elif isinstance(n, ast.Import):
+            out |= {a.name for a in n.names if a.name.startswith("sectorflow")}
+        elif isinstance(n, ast.Constant) and isinstance(n.value, str):
+            out |= set(_MOD_REF.findall(n.value))
+    return out
+
+
+def _refs_hit(refs: set[str], mods: set[str]) -> bool:
+    """참조가 바뀐 모듈 자체이거나 그 안의 이름(``sectorflow.tui.flow_view.State``)이면 닿는다."""
+    return any(r == m or r.startswith(m + ".") for r in refs for m in mods)
+
+
+def affected_guard_files(wt: Path, changed: set[str], guard_files: set[str]) -> set[str]:
+    """바뀐 ``src/``·``scripts/`` 에 **닿는** 가드 파일 — import·문자열 참조를 따라간다(정적, 넉넉하게).
+
+    src 모듈은 그걸 참조하는 src 모듈로 닫고, 그 모듈을 참조하는 scripts 의 이름까지 넓힌 뒤, 가드 파일
+    본문이 그 모듈명이나 스크립트 이름을 언급하면 닿는다고 본다. 서브프로세스로 띄우는 스크립트·
+    ``python -c "from sectorflow…"`` 도 글자로 남으므로 잡힌다."""
+    def read(rel: str) -> str:
+        try:
+            return (wt / rel).read_text("utf-8")
+        except (OSError, UnicodeDecodeError):
+            return ""
+
+    def mod_of(rel: str) -> str:
+        parts = rel[len("src/"):-len(".py")].split("/")
+        return ".".join(parts[:-1] if parts[-1] == "__init__" else parts)
+
+    src_files = [p.relative_to(wt).as_posix() for p in (wt / "src").rglob("*.py")] \
+        if (wt / "src").is_dir() else []
+    mods = {mod_of(f) for f in changed if f.startswith("src/") and f.endswith(".py")}
+    refs = {f: module_refs(read(f)) for f in src_files}
+    grew = bool(mods)
+    while grew:                                 # 바뀐 모듈을 참조하는 src 모듈로 닫는다
+        more = {mod_of(f) for f, r in refs.items() if _refs_hit(r, mods)} - mods
+        mods |= more
+        grew = bool(more)
+    stems = {Path(f).stem for f in changed if f.startswith("scripts/")}
+    if mods and (wt / "scripts").is_dir():
+        stems |= {p.stem for p in (wt / "scripts").glob("*.py")
+                  if _refs_hit(module_refs(read(p.relative_to(wt).as_posix())), mods)}
+    out = set()
+    for g in guard_files:
+        text = read(g)
+        if (mods and _refs_hit(module_refs(text), mods)) or \
+                any(re.search(rf"\b{re.escape(s)}\b", text) for s in stems):
+            out.add(g)
+    return out
+
+
+def changed_scope(muts: list[dict], changed: set[str], base_muts: dict[str, dict],
+                  wt: Path | None = None) -> tuple[list[dict], str]:
     """로컬 pre-push 용 — 이 브랜치가 건드린 것과 닿는 변이만.
 
-    고르는 기준: 편집 대상 파일이 바뀌었다 · 가드 파일이 바뀌었다 · 선언이 기준에 없거나 달라졌다.
-    가드가 import 하는 다른 모듈만 바뀐 경우는 놓친다 — 그래서 **전체는 GitHub 이 돈다.**"""
-    hit = sorted(set(FULL_TRIGGERS) & changed)
+    고르는 기준: 편집 대상 파일이 바뀌었다 · 가드 파일이 바뀌었다 · 가드가 바뀐 src 모듈·스크립트를
+    (import·문자열로) 참조한다(:func:`affected_guard_files`) · 선언이 기준에 없거나 달라졌다.
+    정적 참조라 동적 import 는 놓칠 수 있다 — 그래서 **전체는 GitHub 이 돈다.**"""
+    hit = sorted({f for f in changed if f in FULL_TRIGGERS or f.startswith(FULL_TRIGGER_DIRS)})
     if hit:
         return list(muts), f"{', '.join(hit)} 가 바뀌어 전체"
+    touched: set[str] = set()
+    if wt is not None:
+        touched = affected_guard_files(wt, changed, {g.split("::")[0] for m in muts
+                                                     for g in m.get("guards") or []})
     out = []
     for m in muts:
         files = {e.get("file") for e in mutation_edits(m)}
         gfiles = {g.split("::")[0] for g in m.get("guards") or []}
-        if files & changed or gfiles & changed or base_muts.get(m.get("id")) != m:
+        if files & changed or gfiles & (changed | touched) or base_muts.get(m.get("id")) != m:
             out.append(m)
-    return out, f"바뀐 파일 {len(changed)}개에 닿는 변이만"
+    return out, f"바뀐 파일 {len(changed)}개에 닿는 변이만(가드 파일 {len(touched)}개가 바뀐 코드를 참조)"
 
 
 def auto_scope(env: dict, only: set[str]) -> str:
@@ -622,7 +713,7 @@ def sec_mutations(wt: Path, py: str, base_sha: str, spec_path: Path | None,
                          (tomllib.loads(base_text).get("mutation", []) if base_text else [])}
         except (ValueError, tomllib.TOMLDecodeError):
             base_muts = {}
-        muts, why = changed_scope(muts, changed_files(wt, base_sha), base_muts)
+        muts, why = changed_scope(muts, changed_files(wt, base_sha), base_muts, wt)
         s.say(f"범위: changed — {why}: {len(muts)}/{declared}개 "
               f"(로컬 pre-push 용. 전체는 GitHub CI 가 돈다. --scope all 로 전체)")
         if shard:
@@ -750,7 +841,9 @@ def sec_mutations(wt: Path, py: str, base_sha: str, spec_path: Path | None,
                     raise _DeadEdit(e["file"])
                 target.write_text(text.replace(e["find"], e["replace"], 1),
                                   encoding="utf-8")
-            # -x: 가드 하나라도 빨개지면 잡힌 것이다 — 나머지를 기다릴 이유가 없다.
+            # 기준선과 같은 pytest 에 두 가지만 다르다: -x(가드 하나라도 빨개지면 잡힌 것이다 — 나머지를
+            # 기다릴 이유가 없다)와 수집 오류 계속 끄기(기준선은 한 파일 오류가 다른 가드를 가리지 않게 켠다.
+            # 여기서는 수집 오류 = 종료코드 2 = 판정 불가로 따로 낸다). 잡힘은 **종료코드 1 뿐**이다.
             hit = run([py, "-m", "pytest", "-q", "-x", "-p", "no:cacheprovider", *guards],
                       wt, env, timeout=600)
         except _DeadEdit as dead:
@@ -767,7 +860,14 @@ def sec_mutations(wt: Path, py: str, base_sha: str, spec_path: Path | None,
         if hit is not None and hit.returncode != 0 and env_full(hit.stdout + hit.stderr):
             s.fail(f"[{mid}] {env_full(hit.stdout + hit.stderr)} — 이 변이는 판정하지 못했다")
         elif hit is None:
-            s.say(f"  [{mid}] 잡힘(시간 초과 600초 — 변이가 검사를 멈추게 했다) — {m.get('why', '')}")
+            # 멈춘 검사는 버그를 잡은 게 아니다 — CI 에서는 잡 시간 상한으로 죽는다.
+            s.fail(f"[{mid}] 판정 불가 — 주입 후 가드가 600초 안에 끝나지 않았다. 변이가 무한 루프를 만들면 "
+                   f"검사에 시간 상한을 두거나 변이를 고쳐라")
+        elif hit.returncode not in (0, 1):
+            # 2 수집 오류(변이가 import 를 깨뜨렸다 — 동작 버그가 아니다)·3 내부 오류·4 사용법·5 검사 없음.
+            s.fail(f"[{mid}] 판정 불가 — 주입 후 pytest 종료코드 {hit.returncode}(검사 실패 1 이 아니다). "
+                   f"변이가 문법·import 를 깨뜨렸으면 동작을 바꾸는 변이로 고쳐라\n"
+                   + tail(hit.stdout + hit.stderr, 800))
         elif hit.returncode == 0:
             s.fail(f"[{mid}] 변이를 넣었는데 가드가 **초록이다** — 이 검사는 "
                    f"{m.get('why', '이 버그')} 를 못 잡는다\n"
@@ -977,9 +1077,15 @@ seen_sort_keys = set()
 all_headers = set()
 for _w in widths:
     for _wi in range(len(V.WINDOWS)):
-        st.wi = _wi
-        all_headers |= {c[0] for c in V.table_cols(st, _w)}
+        # 탐색 모드에서만 서는 열(x 계열·G)도 열이다 — 기본·탐색 둘 다 본다.
+        for _ex in (False, True):
+            st.wi = _wi
+            if hasattr(st, "explore"):
+                st.explore = _ex
+            all_headers |= {c[0] for c in V.table_cols(st, _w)}
 st.wi = 0
+if hasattr(st, "explore"):
+    st.explore = False
 for _k, _h in V.SORT_COL.items():
     if _h not in all_headers:
         bad.append(f"SORT_COL[{_k}]={_h!r} 라는 열이 어느 폭에도 없다")

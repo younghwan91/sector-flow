@@ -238,7 +238,7 @@ def test_layer_subset_marks_equal_the_full_run(report):
     """빠른 부분 실행(``--layers``)이 전 층 실행과 **같은 표시**를 내는가 — 다르면 위 검사들이
     배치가 실제로 보는 것과 다른 것을 본다."""
     full = verified(report)["marks"]
-    for layers in (("A", "A3"), ("F",), ("A",)):
+    for layers in (("A", "A3"), ("F",), ("A",), ("A3",)):
         part = verified(report, *layers)
         assert "부분 검증" in part["out"]
         assert part["marks"], layers

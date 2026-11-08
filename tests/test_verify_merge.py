@@ -192,11 +192,17 @@ def test_auto_scope_is_changed_only_for_local_ci_mutation_runs():
 def test_exempt_marker_placement():
     lines = ["x = 1", "",
              "# mutation-exempt: 위에 붙은 이유가 있다", "@deco", "def test_a():", "    pass",
-             "", "def test_b():  # mutation-exempt: 줄 끝 이유도 된다", "    pass",
-             "# mutation-exempt: 빈 줄 위 표시는 번지지 않는다", "", "def test_c():", "    pass"]
+             "", "def test_b():  # mutation-exempt: 줄 끝에 단 이유도 된다", "    pass",
+             "# mutation-exempt: 빈 줄 위 표시는 번지지 않는다", "", "def test_c():", "    pass",
+             "", "def test_d():", "    s = '# mutation-exempt: 문자열 안의 글자는 표시가 아니다'",
+             "", "def test_e():  # mutation-exempt: TODO 나중에 변이를 넣는다", "    pass",
+             "", "def test_f():  # mutation-exempt: 짧다", "    pass"]
     assert VM._exempt_reason(lines, 4, 6) == "위에 붙은 이유가 있다"
-    assert VM._exempt_reason(lines, 8, 9) == "줄 끝 이유도 된다"
+    assert VM._exempt_reason(lines, 8, 9) == "줄 끝에 단 이유도 된다"
     assert VM._exempt_reason(lines, 12, 13) is None
+    assert VM._exempt_reason(lines, 15, 16) is None            # 문자열 리터럴
+    assert VM._exempt_reason(lines, 18, 19) is None            # 자리표시
+    assert VM._exempt_reason(lines, 21, 22) is None            # 10자 미만
 
 
 def test_broken_declarations_and_guards_are_each_rejected_for_their_own_reason(mini):
@@ -288,3 +294,43 @@ def test_a_full_temp_dir_is_reported_as_environment_not_as_a_broken_or_catching_
     # 단언 메시지 안에 인용된 같은 글자는 환경 실패가 아니다(이 검사 자신의 실패 출력이 그렇다).
     assert VM.env_full("E   AssertionError: assert 'FAILED t - OSError: [Errno 122] x' in y") is None
     assert VM.env_full("FAILED tests/t.py::x - OSError: [Errno 28] No space left on device")
+
+
+def test_only_a_test_failure_counts_as_caught(mini):
+    """주입 후 종료코드 1(검사 실패)만 잡힘이다. 변이가 import 를 깨뜨리면(2·4) 동작 버그를 잡은 게 아니다."""
+    wt, base = mini
+    (wt / "tests" / "mutations.toml").write_text(
+        SPEC.replace('replace = "    return a - b"', 'replace = "    return a +"'), "utf-8")
+    _commit(wt, "syntax mutation")
+    s, out = _run(wt, base)
+    # 이름을 대어 부른 검사의 파일이 import 에서 깨지면 pytest 는 2 나 4 로 끝난다.
+    assert s.status == VM.REJECT and "[add-subtracts] 판정 불가" in out and "종료코드" in out
+    assert "[add-subtracts] 잡힘" not in out
+
+
+def test_changed_src_reaches_guards_through_imports_scripts_and_strings(tmp_path):
+    """바뀐 src 모듈 → 그걸 import 하는 src 모듈 → 그걸 쓰는 스크립트 → 그 스크립트를 띄우는 검사까지 닿는다."""
+    files = {
+        "src/sectorflow/__init__.py": "",
+        "src/sectorflow/a.py": "X = 1\n",
+        "src/sectorflow/b.py": "from sectorflow.a import X\n",
+        "src/sectorflow/c.py": "Y = 2\n",
+        "scripts/s.py": "from sectorflow import b\n",
+        "tests/t1.py": "from sectorflow.b import X\n",
+        "tests/t2.py": "import subprocess\nsubprocess.run(['python', 'scripts/s.py'])\n",
+        "tests/t3.py": "from sectorflow.c import Y\n",
+        "tests/t4.py": "import subprocess\nsubprocess.run(['python', '-c', 'from sectorflow.a import X'])\n",
+    }
+    for rel, text in files.items():
+        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / rel).write_text(text, "utf-8")
+    guards = {"tests/t1.py", "tests/t2.py", "tests/t3.py", "tests/t4.py"}
+    assert VM.affected_guard_files(tmp_path, {"src/sectorflow/a.py"}, guards) == \
+        {"tests/t1.py", "tests/t2.py", "tests/t4.py"}
+    assert VM.affected_guard_files(tmp_path, {"src/sectorflow/c.py"}, guards) == {"tests/t3.py"}
+    assert VM.affected_guard_files(tmp_path, {"README.md"}, guards) == set()
+    m = {"id": "m", "guards": ["tests/t3.py::x"], "file": "src/other.py", "find": "1"}
+    assert VM.changed_scope([m], {"src/sectorflow/c.py"}, {"m": m}, tmp_path)[0] == [m]
+    assert VM.changed_scope([m], {"src/sectorflow/a.py"}, {"m": m}, tmp_path)[0] == []
+    for full in ("scripts/verify_merge.py", "scripts/sector_flow.py", "scripts/templates/x.html"):
+        assert VM.changed_scope([m], {full}, {"m": m}, tmp_path)[0] == [m], full

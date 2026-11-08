@@ -3302,7 +3302,7 @@ why = "로컬 changed 범위가 거르지 않는다 — pre-push 가 다시 15�
 guards = ["tests/test_verify_merge.py::test_changed_scope_runs_only_mutations_touching_the_branch",
           "tests/test_verify_merge.py::test_changed_scope_selection_rules"]
 file = "scripts/verify_merge.py"
-find = "        if files & changed or gfiles & changed or base_muts.get(m.get(\"id\")) != m:"
+find = "        if files & changed or gfiles & (changed | touched) or base_muts.get(m.get(\"id\")) != m:"
 replace = "        if True:"
 
 [[mutation]]
@@ -3310,8 +3310,8 @@ id = "harness-lockfile-change-not-full"
 why = "의존성(uv.lock)이 바뀌어도 changed 범위가 전체로 안 넓어진다 — 모든 가드의 동작이 바뀔 수 있는데"
 guards = ["tests/test_verify_merge.py::test_changed_scope_selection_rules"]
 file = "scripts/verify_merge.py"
-find = "FULL_TRIGGERS = (\"pyproject.toml\", \"uv.lock\", \"tests/conftest.py\")"
-replace = "FULL_TRIGGERS = (\"pyproject.toml\", \"tests/conftest.py\")"
+find = "FULL_TRIGGERS = (\"pyproject.toml\", \"uv.lock\", \"tests/conftest.py\", \"scripts/verify_merge.py\","
+replace = "FULL_TRIGGERS = (\"pyproject.toml\", \"tests/conftest.py\", \"scripts/verify_merge.py\","
 
 [[mutation]]
 id = "harness-budget-never-stops"
@@ -3476,3 +3476,101 @@ guards = ["tests/test_verify_merge.py::test_a_full_temp_dir_is_reported_as_envir
 file = "scripts/verify_merge.py"
 find = "        if hit is not None and hit.returncode != 0 and env_full(hit.stdout + hit.stderr):"
 replace = "        if False:"
+
+# ── 리뷰 반영(2026-11-08): 샤드 분모·면제 표시 토큰·잡힘=종료코드 1·changed 범위 의존·변경 줄 관문 ──
+
+[[mutation]]
+id = "harness-import-break-counts-as-caught"
+why = "주입 후 pytest 가 수집 오류(2)·사용법(4)로 끝난 것을 '잡힘' 으로 센다 — import 를 깨뜨린 변이는 동작 버그를 증명하지 않는다"
+guards = ["tests/test_verify_merge.py::test_only_a_test_failure_counts_as_caught"]
+file = "scripts/verify_merge.py"
+find = "        elif hit.returncode not in (0, 1):"
+replace = "        elif False:"
+
+[[mutation]]
+id = "harness-changed-src-not-closed-over-importers"
+why = "바뀐 src 모듈을 import 하는 다른 모듈로 닫지 않는다 — 간접으로 쓰는 가드의 변이를 로컬에서 안 돈다"
+guards = ["tests/test_verify_merge.py::test_changed_src_reaches_guards_through_imports_scripts_and_strings"]
+file = "scripts/verify_merge.py"
+find = "        more = {mod_of(f) for f, r in refs.items() if _refs_hit(r, mods)} - mods"
+replace = "        more = set()"
+
+[[mutation]]
+id = "harness-changed-src-misses-scripts"
+why = "바뀐 src 모듈을 쓰는 스크립트를 띄우는 가드(서브프로세스)를 놓친다"
+guards = ["tests/test_verify_merge.py::test_changed_src_reaches_guards_through_imports_scripts_and_strings"]
+file = "scripts/verify_merge.py"
+find = "                  if _refs_hit(module_refs(read(p.relative_to(wt).as_posix())), mods)}"
+replace = "                  if False}"
+
+[[mutation]]
+id = "harness-template-change-not-full"
+why = "템플릿이 바뀌어도 changed 범위가 전체로 안 넓어진다 — 어느 가드에 닿는지 좁힐 수 없는데"
+guards = ["tests/test_verify_merge.py::test_changed_src_reaches_guards_through_imports_scripts_and_strings"]
+file = "scripts/verify_merge.py"
+find = "FULL_TRIGGER_DIRS = (\"scripts/templates/\",)"
+replace = "FULL_TRIGGER_DIRS = ()"
+
+[[mutation]]
+id = "harness-exempt-marker-read-from-strings"
+why = "면제 표시를 주석이 아니라 줄 글자에서 찾는다 — 문자열 리터럴 안의 같은 글자가 검사를 면제한다"
+guards = ["tests/test_verify_merge.py::test_exempt_marker_placement"]
+file = "scripts/verify_merge.py"
+find = "        m = EXEMPT_RE.search(comments.get(n, \"\"))"
+replace = "        m = re.search(r\"#\\s*mutation-exempt:\\s*(.*?)\\s*$\", lines[n - 1]) if 0 < n <= len(lines) else None"
+
+[[mutation]]
+id = "harness-exempt-accepts-todo"
+why = "'TODO 나중에' 같은 자리표시가 면제 이유로 통한다"
+guards = ["tests/test_verify_merge.py::test_exempt_marker_placement"]
+file = "scripts/verify_merge.py"
+find = "        if m and len(m.group(1)) >= EXEMPT_MIN_REASON and not EXEMPT_PLACEHOLDER.match(m.group(1)):"
+replace = "        if m and len(m.group(1)) >= EXEMPT_MIN_REASON:"
+
+[[mutation]]
+id = "ci-shard-denominator-hardcoded"
+why = "샤드 분모를 matrix 와 따로 적는다 — matrix 를 줄이면 몫 하나가 조용히 안 돈다"
+guards = ["tests/test_ci_workflow.py::test_mutation_shards_cover_1_to_n_and_the_denominator_follows_the_matrix"]
+file = ".github/workflows/ci.yml"
+find = "          SHARD: ${{ matrix.shard }}/${{ strategy.job-total }}"
+replace = "          SHARD: ${{ matrix.shard }}/4"
+
+[[mutation]]
+id = "ci-shard-list-has-a-hole"
+why = "샤드 목록에 구멍이 있다(1,2,4) — 3번 몫이 아무 말 없이 안 돈다"
+guards = ["tests/test_ci_workflow.py::test_mutation_shards_cover_1_to_n_and_the_denominator_follows_the_matrix"]
+file = ".github/workflows/ci.yml"
+find = "        shard: [1, 2, 3, 4]"
+replace = "        shard: [1, 2, 4]"
+
+[[mutation]]
+id = "selftest-issue-step-can-turn-red"
+why = "이슈 열기가 실패하면 주간 잡이 빨갛게 남아 ci-gate 가 다음 배포를 멈춘다"
+guards = ["tests/test_ci_workflow.py::test_weekly_selftest_can_never_leave_a_red_check"]
+file = ".github/workflows/harness-selftest.yml"
+find = "        continue-on-error: true\n        env:\n          GH_TOKEN"
+replace = "        env:\n          GH_TOKEN"
+
+[[mutation]]
+id = "diffcov-missing-json-passes"
+why = "coverage.json 이 없으면 조용히 넘어간다 — 커버리지 실행이 빠져도 관문이 초록"
+guards = ["tests/test_diff_coverage.py::test_missing_coverage_json_fails"]
+file = "scripts/diff_coverage.py"
+find = "    if not Path(a.json).is_file():"
+replace = "    if False:"
+
+[[mutation]]
+id = "diffcov-new-file-floor-ignored"
+why = "새 파일 바닥을 안 본다 — 큰 PR 에서 아무도 안 돌린 새 스크립트가 전체 80% 에 묻힌다"
+guards = ["tests/test_diff_coverage.py::test_a_new_file_below_its_floor_fails_even_when_the_total_passes"]
+file = "scripts/diff_coverage.py"
+find = "    ok = pct >= minimum and not thin"
+replace = "    ok = pct >= minimum"
+
+[[mutation]]
+id = "diffcov-quoted-korean-paths"
+why = "따옴표·8진수로 감싼 git 경로(특수 문자가 든 경로)를 안 풀어 coverage 의 경로와 안 맞는다 — 그 파일의 변경 줄이 안 세진다. quotePath=false 만 바꾸는 변이는 이 풀기가 막아 초록이다(이중 방어)"
+guards = ["tests/test_diff_coverage.py::test_non_ascii_paths_are_matched"]
+file = "scripts/diff_coverage.py"
+find = "    if len(path) >= 2 and path[0] == path[-1] == '\"':"
+replace = "    if False:"
