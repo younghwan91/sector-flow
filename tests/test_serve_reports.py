@@ -226,13 +226,59 @@ def test_rebuilt_day_says_rebuilt_alongside_final(root, get):
     """지난 기준일을 지금 코드·확정 데이터로 다시 만든 날은 그날 저녁 게시본이 아니다 — 목록이 말하고 근거를 연다."""
     d = root / "2026-11-05"
     (d / "FINAL.txt").write_text("재구성", "utf-8")
-    (d / "REBUILT.txt").write_text("2026-11-08 10:00 현재 코드·확정 데이터로 다시 만듦", "utf-8")
+    (d / "REBUILT.txt").write_text("2026-11-08 10:00 현재 코드·확정 데이터로 다시 만듦\nfinalize: verified\n", "utf-8")
     page = srv.index_html(str(root), today=date(2026, 11, 7))
     row, other = _row(page, "2026-11-05"), _row(page, "2026-11-06")
     assert ">확정<" in row and ">재구성<" in row and 'href="/2026-11-05/REBUILT.txt"' in row
     assert "재구성" not in other, "재구성 표시가 없는 날에 붙었다"
     status, h, body = get("/2026-11-05/REBUILT.txt")
     assert status == 200 and h["Content-Type"].startswith("text/plain") and "다시 만듦" in body.decode()
+
+
+def test_old_rebuild_without_a_finalize_line_is_not_called_final(root):
+    """옛 재구성(3617962, 09-02·09-28)은 FINAL.txt 가 있어도 finalize: 줄이 없다 — 확정을 확인한 기록이 없는 날이다."""
+    d = root / "2026-11-05"
+    (d / "FINAL.txt").write_text("재구성", "utf-8")
+    (d / "REBUILT.txt").write_text("2026-11-08 17:52 현재 코드(3617962)·확정 데이터로 다시 만듦\n", "utf-8")
+    row = _row(srv.index_html(str(root), today=date(2026, 11, 7)), "2026-11-05")
+    assert ">확정 미확인<" in row and ">확정<" not in row and ">재구성<" in row
+
+
+def test_digest_and_validation_docs_are_served_and_nothing_else_around_them(root, get):
+    """비공개 웹의 허용 목록 — 다이제스트 글·카드와 문서 사본은 열리고, 곁의 다른 것은 안 열린다."""
+    d = root / "2026-11-06"
+    (d / "digest.md").write_text("글", "utf-8")
+    (d / "digest.png").write_bytes(b"\x89PNG" + b"x" * 500)
+    (d / "digest.json").write_text("{}", "utf-8")
+    (d / "digest_card.html").write_text("<html>", "utf-8")
+    (d / "validation").mkdir()
+    (d / "validation" / "results.md").write_text("# 결과", "utf-8")
+    (d / "validation" / "secret.txt").write_text("x", "utf-8")
+    status, h, body = get("/2026-11-06/digest.md")
+    assert status == 200 and h["Content-Type"].startswith("text/plain") and body.decode() == "글"
+    status, h, body = get("/2026-11-06/digest.png", headers={"Accept-Encoding": "gzip"})
+    assert status == 200 and h["Content-Type"] == "image/png" and body.startswith(b"\x89PNG")
+    assert "Content-Encoding" not in h, "그림을 다시 압축하지 않는다"
+    status, h, body = get("/2026-11-06/validation/results.md")
+    assert status == 200 and h["Content-Type"].startswith("text/plain") and "결과" in body.decode()
+    for path in ("/latest/digest.md", "/latest/digest.png", "/latest/validation/results.md"):
+        status, h, _ = get(path)
+        assert status == 302 and h["Location"] == path.replace("/latest", "/2026-11-06"), path
+    for path in ("/2026-11-06/digest.json", "/2026-11-06/digest_card.html", "/2026-11-06/validation/secret.txt",
+                 "/2026-11-06/validation/../payload.json", "/2026-11-06/validation/.md",
+                 "/2026-11-06/other/results.md", "/2026-11-06/validation/a/b.md", "/latest/validation/secret.txt"):
+        assert get(path)[0] == 404, path
+
+
+def test_index_links_extras_only_when_the_folder_has_them(root):
+    d = root / "2026-11-06"
+    page = srv.index_html(str(root), today=date(2026, 11, 7))
+    assert "/latest/trust.html" not in page and "/2026-11-06/digest.md" not in page
+    for f in ("trust.html", "digest.md", "digest.png"):
+        (d / f).write_text("x", "utf-8")
+    page = srv.index_html(str(root), today=date(2026, 11, 7))
+    assert 'href="/latest/trust.html"' in page and 'href="/latest/digest.md"' in page and 'href="/latest/digest.png"' in page
+    assert 'href="/2026-11-06/trust.html"' in page and 'href="/2026-11-05/trust.html"' not in page
 
 
 def test_rebuilt_day_outside_the_finalize_window_is_neither_final_nor_provisional(root):

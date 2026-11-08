@@ -96,6 +96,8 @@ def root(tmp_path):
         REBUILT_txt="2026-11-09 05:12 현재 코드(abcdef0123456789)·마감 데이터(daily_finalize 창 밖 — 확정 기록 없음)로 다시 만듦\n"
                     "commit: abcdef0123456789\nfinalize: unverified\n")
     (r / ".archive" / "2026-11-05-provisional").mkdir(parents=True)
+    (r / ".archive" / "2026-11-05-provisional" / "numbers.html").write_text("<html>", "utf-8")
+    (r / ".archive" / "rebuild-logs" / "2026-11-05").mkdir(parents=True)     # 리포트가 없는 묶음은 보관본이 아니다
     (r / "2026-11-10.building.77").mkdir()
     (r / "cron.log").write_text(
         "DB 접속 실패 postgres://user:hunter2@db\n"
@@ -161,8 +163,9 @@ def test_failure_reasons_and_tiles_count_what_happened(page):
     assert "G/도움말·한계의 동시성 범위가 오늘 실측을 덮는가" in page
     tiles = _tiles(page)
     assert tiles["기준일 폴더"] == 10
-    assert tiles["자기 검증 실패"] == 3           # 11-02 실패 · 11-09 검사기 중단 · 11-10 VERIFY_FAILED 만
-    assert tiles["자기 검증 통과"] == 5           # 11-03·11-11 은 문서 주장 어긋남이 있는 통과
+    assert tiles["지금 판 검증 실패"] == 3         # 11-02 실패 · 11-09 검사기 중단 · 11-10 VERIFY_FAILED 만
+    assert tiles["지금 판 검증 통과"] == 5         # 11-03·11-11 은 문서 주장 어긋남이 있는 통과
+    assert tiles["첫 게시 검증 실패"] == 3         # 재구성 아닌 날은 지금 판이 곧 첫 게시다(원장 없음)
     assert tiles["통과 · 문서 주장 어긋남"] == 2
     assert tiles["수집 미완(안 만듦)"] == 2
     assert tiles["재구성"] == 2 and tiles["확정"] == 2 and tiles["확정 기록 없음"] == 1   # 확정 = 11-05 + 재구성 뒤 확정 확인 11-06
@@ -186,8 +189,8 @@ EXPECTED_ROWS = {
 #: K1 의 단서 — 하나라도 빠지면 확인된 음의 IC 가 쓸 수 있는 것처럼 읽힌다.
 K1_CAVEATS = ("역효과", "확인 구간 IC 는 증거 없음", "왕복 비용을 빼면 발견 구간에서 진다", "공매도 없는 계좌에서 실현할 수 없다",
               "단기 반전", "생존편향")
-LIMITS = {"approx", "session", "survivorship", "labels", "inst-detail", "provisional", "weak-defs", "untested",
-          "declared-checks"}
+LIMITS = {"approx", "session", "survivorship", "labels", "inst-detail", "provisional", "weak-defs", "universe",
+          "untested", "declared-checks"}
 
 
 def test_every_unfavorable_result_row_is_on_the_page_with_its_verdict(page):
@@ -206,7 +209,7 @@ def test_every_limitation_is_on_the_page(page):
     assert set(re.findall(r'<li data-limit="([^"]+)">', page)) == LIMITS
     t = _text(page)
     for must in ("순매수 금액은 근사다", "애프터마켓 포함 통합값", "2026-09-14", "생존편향", "섹터 라벨은 지금의 분류다",
-                 "중앙 2", "검정된 적 없는 값"):
+                 "중앙 2", "검정된 적 없는 값", "우선주", "139종목", "약 160조", "약 1.04조", "3.6%"):
         assert must in t, must
 
 
@@ -221,14 +224,15 @@ def test_preregistration_wording_claims_only_commit_order_and_prints_gaps(page):
     assert re.search(r"간격이 \d+~\d+분이라", t)
     for r in tp.VALIDATION + tp.CHECKS:
         for _label, pre, res in r["links"]:
-            if pre:
-                assert f"/blob/{pre[1]}/{pre[0]}" in page and f"/blob/{res[1]}/{res[0]}" in page
+            if pre:   # 그 커밋 시점 문서의 사본으로 잇는다(저장소가 비공개라 GitHub 링크는 익명에게 404 다)
+                assert f"validation/{pre[1]}-{os.path.basename(pre[0])}" in page
+                assert f"validation/{res[1]}-{os.path.basename(res[0])}" in page
 
 
 def test_no_banned_words_no_signed_returns_no_leaked_log(page):
     t = _text(page)
     assert tp.banned_hits(page) == []
-    for w in ("추천", "매수 신호", "급등", "수익 보장", "적중"):
+    for w in ("추천", "매수 신호", "신호", "급등", "수익 보장", "적중", "주도주"):
         assert w not in page
     assert not re.findall(r"[+−-]\d+(?:\.\d+)?\s*%", t), "수익률처럼 읽히는 부호 붙은 % 가 있다"
     assert "hunter2" not in page and "postgres://" not in page
@@ -245,26 +249,93 @@ def test_a_banned_word_coming_from_the_data_blocks_the_write(root, tmp_path):
     assert not out.exists()
 
 
-def test_default_output_lands_in_the_latest_folder_and_the_web_serves_it(root):
-    """웹은 기준일 폴더의 허용 목록 파일만 내보낸다 — 기본 출력이 latest 폴더이고 /latest/trust.html 로 열린다."""
-    assert tp.main(["--root", str(root)]) == 0
-    assert (root / "2026-11-06" / "trust.html").exists()
+def _serve(root):
     srv.Handler.root = str(root)
     s = srv.ThreadingHTTPServer(("127.0.0.1", 0), srv.Handler)
     threading.Thread(target=s.serve_forever, daemon=True).start()
+
+    def get(path):
+        c = http.client.HTTPConnection("127.0.0.1", s.server_address[1], timeout=5)
+        c.request("GET", path)
+        resp = c.getresponse()
+        return resp.status, dict(resp.getheaders()), resp.read()
+    return s, get
+
+
+def _build(root, asof="2026-11-14", **files):
+    """배치가 짓는 폴더 — 아직 게시 전이다."""
+    b = root / f"{asof}.building.77"
+    b.mkdir()
+    base = {"numbers.html": "<html>", "payload.json": "{}", "viewer.html": "<html>", "VERIFY.txt": _pass(asof), **files}
+    for name, body in base.items():
+        (b / name).write_text(body, "utf-8")
+    return b
+
+
+def test_build_mode_writes_inside_the_build_folder_and_counts_that_day(root):
+    """배치의 길 — 짓는 폴더에 페이지와 문서 사본을 쓰고, 그날 줄은 곧 바꿔 낄 그 폴더의 기록이다."""
+    b = _build(root, **{"FINAL.txt": "[..] daily_finalize 확인 뒤 확정치로 만들었다.\n"})
+    assert tp.main(["--root", str(root), "--build", str(b), "--asof", "2026-11-14"]) == 0
+    page = (b / "trust.html").read_text("utf-8")
+    assert not (root / "2026-11-14").exists() and list(root.glob("20*/trust.html")) == [b / "trust.html"], "게시된 폴더를 건드렸다"
+    assert (b / "validation" / "formulas.md").exists()
+    assert "기준 폴더 2026-11-14" in page
+    assert ">확정<" in _row(page, "2026-11-14") and "<tr><td>2026-11-02</td>" in page
+    assert _tiles(page)["기준일 폴더"] == 11
+
+
+def test_a_published_folder_cannot_be_rewritten(root, tmp_path):
+    """게시된 폴더의 파일 하나를 고쳐 쓰는 길은 없다 — 바로든 latest 링크로든. 원하면 그 기준일을 다시 만든다."""
+    for out in (root / "2026-11-06" / "trust.html", root / "latest" / "trust.html",
+                root / "2026-11-06" / "x" / "trust.html"):
+        assert tp.main(["--root", str(root), "--out", str(out)]) == 2
+    assert not list(root.glob("20*/trust.html"))
+    with pytest.raises(SystemExit):
+        tp.main(["--root", str(root)])                                   # 어디에 쓸지 안 주면 쓰지 않는다
+    assert not list(root.glob("20*/trust.html"))
+    assert tp.main(["--root", str(root), "--build", str(root / "x.building.1")]) == 2
+
+
+def test_every_document_link_opens_on_the_private_web_and_none_goes_to_github(root):
+    """비공개 레포의 GitHub 링크는 익명에게 404 다 — 문서 사본을 웹이 내보내고, 페이지의 링크가 모두 실제로 열린다."""
+    b = _build(root)
+    assert tp.main(["--root", str(root), "--build", str(b), "--asof", "2026-11-14"]) == 0
+    b.rename(root / "2026-11-14")
+    (root / "latest").unlink()
+    (root / "latest").symlink_to(root / "2026-11-14")
+    page = (root / "2026-11-14" / "trust.html").read_text("utf-8")
+    assert "github.com" not in page
+    hrefs = sorted(set(re.findall(r'href="(validation/[^"]+)"', page)))
+    assert any(h.endswith("/formulas.md") for h in hrefs) and any(h.endswith("-2026-11-08-results.md") for h in hrefs)
+    s, get = _serve(root)
     try:
-        def get(path):
-            c = http.client.HTTPConnection("127.0.0.1", s.server_address[1], timeout=5)
-            c.request("GET", path)
-            resp = c.getresponse()
-            return resp.status, dict(resp.getheaders()), resp.read()
-        st, h, _ = get("/latest/trust.html")
-        assert st == 302 and h["Location"] == "/2026-11-06/trust.html"
-        st, h, body = get("/2026-11-06/trust.html")
-        assert st == 200 and h["Content-Type"].startswith("text/html") and "검증·품질" in body.decode()
+        for h in hrefs:
+            st, hdr, body = get(f"/2026-11-14/{html.unescape(h)}")
+            assert st == 200 and hdr["Content-Type"].startswith("text/plain") and body, h
+        st, hdr, _ = get("/latest/trust.html")
+        assert st == 302 and hdr["Location"] == "/2026-11-14/trust.html"
+        st, hdr, body = get("/2026-11-14/trust.html")
+        assert st == 200 and hdr["Content-Type"].startswith("text/html") and "검증·품질" in body.decode()
     finally:
         s.shutdown()
         s.server_close()
+
+
+def test_pinned_document_copy_is_that_commits_text_not_head(tmp_path):
+    """링크 칸은 '그 커밋 시점의 문서' 라 적는다 — 사본이 지금 판이면 그 말이 거짓이다."""
+    if _git("cat-file", "-e", "dae572f^{commit}").returncode:
+        pytest.skip("얕은 클론이라 연구 커밋이 없다")
+    docs = tp.export_docs(str(tmp_path))
+    got = (tmp_path / docs[(tp.RESULTS, "dae572f")]).read_bytes()      # 이 문서는 그 뒤에도 커밋됐다 — 지금 판과 다르다
+    assert got == subprocess.run(["git", "-C", str(REPO), "show", f"dae572f:{tp.RESULTS}"], capture_output=True).stdout
+    assert got != (REPO / tp.RESULTS).read_bytes()
+
+
+def test_report_pages_link_the_private_copy_not_the_private_repo():
+    for name in ("sector_numbers.html", "sector_flow.html"):
+        t = (REPO / "scripts" / "templates" / name).read_text("utf-8")
+        assert "github.com/younghwan91/sector-flow" not in t, name
+        assert 'href="../latest/trust.html#validation"' in t and 'href="../latest/trust.html"' in t, name
 
 
 def test_layers_come_from_the_latest_verify(page):
@@ -305,7 +376,7 @@ def test_parse_verify_reads_both_summary_formats_and_a_crash():
 
 def test_window_limits_strip_table_and_tiles(root):
     page = tp.render(str(root), window=3)
-    assert len(re.findall(r'<span class="cell ', page)) - 5 == 3     # 범례 칸 5개
+    assert len(re.findall(r'<span class="cell ', page)) - 5 == 6     # 범례 칸 5개 + 첫 게시·지금 판 띠 각 3칸
     days = page.split("기준일별 기록")[1]                             # 정정 표는 창과 무관하게 전 기간이다
     assert len(re.findall(r"<tr><td>\d{4}-\d{2}-\d{2}</td>", days)) == 3
     assert _tiles(page)["기준일 폴더"] == 3 and "최근 3개 기준일" in page
@@ -375,7 +446,7 @@ def test_slo_card_counts_come_from_the_ledger(ledger):
     assert "제때 2일" in slo and "늦음 1일 — 2026-11-11(11-11 19:00)" in slo
     assert "기록 없음 1일" in slo                                    # 11-06 — 재구성만 남은 날
     assert "목표 내 1일" in slo and "기한 지나 미확정 2일 — 2026-11-02, 2026-11-11" in slo
-    assert "관문 차단</b> — 2026-11-12" in slo and "검증 실패</b> — 2026-11-02" in slo
+    assert "관문 차단</b> — 2026-11-12" in slo and "검증 실패(이 30일)</b> — 2026-11-02" in slo
     assert "4회 중 200 OK 3회 (75.0%)" in slo
     assert "docs/slo.md" in slo
 
@@ -416,8 +487,228 @@ def test_errata_fall_back_to_folder_markers_without_a_ledger(page):
     assert "finalize unverified" in err and "commit abcdef012345" in err
 
 
-def test_no_report_folder_means_no_page_rather_than_an_unserved_root_file(tmp_path):
+def test_no_report_folder_means_no_page(tmp_path):
     empty = tmp_path / "reports"
     empty.mkdir()
-    assert tp.main(["--root", str(empty)]) == 1
-    assert not (empty / "trust.html").exists()
+    out = tmp_path / "밖" / "trust.html"
+    assert tp.main(["--root", str(empty), "--out", str(out)]) == 1
+    assert not out.exists()
+
+
+# ─────────────────────────────── 첫 게시 — 재구성이 지운 실패를 숨기지 않는다
+
+def _rebuilt_root(tmp_path, ledger_rows=(), archive_failed=None):
+    """전부 재구성한 루트 — 지금 판은 모두 통과다. 첫 게시 기록은 원장·보관 원본에만 있다."""
+    r = tmp_path / "reports"
+    for d in ("2026-10-26", "2026-10-27", "2026-10-28"):
+        p = r / d
+        p.mkdir(parents=True)
+        (p / "numbers.html").write_text("<html>", "utf-8")
+        (p / "payload.json").write_text("{}", "utf-8")
+        (p / "VERIFY.txt").write_text(_pass(d), "utf-8")
+        (p / "REBUILT.txt").write_text("2026-11-09 05:00 다시 만듦\ncommit: abc\nfinalize: unverified\n", "utf-8")
+    for d, body in (archive_failed or {}).items():
+        a = r / ".archive" / "pre-rebuild-2026-11-08" / d
+        a.mkdir(parents=True)
+        (a / "numbers.html").write_text("<html>", "utf-8")
+        (a / "VERIFY_FAILED.txt").write_text(body, "utf-8")
+    (r / "events.jsonl").write_text("".join(_ev(**x) + "\n" for x in ledger_rows), "utf-8")
+    os.symlink(r / "2026-10-28", r / "latest")
+    return r
+
+
+def _pub(asof, verify, ts):
+    return dict(ts=ts, event="report", asof=asof, mode="normal", rc=None, outcome="published", gate="pass", verify=verify,
+                final=False, diff=None, source="backfill", origin="cron.log")
+
+
+def _reb(asof, ts="2026-11-08T20:00:00Z"):
+    return dict(ts=ts, event="report", asof=asof, mode="rebuild", rc=None, outcome="rebuilt", final=False, diff=None,
+                source="backfill", origin="marker")
+
+
+def test_first_publication_failure_is_on_the_page_even_when_every_folder_was_rebuilt(tmp_path):
+    """자기모순 방지 — 지금 판이 전부 통과여도 첫 게시 실패가 칸·타일·사유에 나오고 '실패가 없다' 고 말하지 않는다."""
+    fail = "\n검사 137건 · 실패 2건\n실패 목록: G/동시성 범위, H/커서 범위\n"
+    r = _rebuilt_root(tmp_path, [_pub("2026-10-26", "pass", "2026-10-26T09:12:00Z"), _reb("2026-10-26"),
+                                 _pub("2026-10-27", "fail", "2026-10-27T09:10:48Z"), _reb("2026-10-27"), _reb("2026-10-28")],
+                      {"2026-10-27": fail})
+    page = tp.render(str(r), now=NOW)
+    tiles = _tiles(page)
+    assert tiles["첫 게시 검증 실패"] == 1 and tiles["지금 판 검증 실패"] == 0 and tiles["첫 게시 기록 없음"] == 1
+    assert "실패가 없다" not in page and "실패 기록이 없다" not in page
+    assert "실패 2" in _row(page, "2026-10-27") and ">통과<" in _row(page, "2026-10-26")
+    assert "기록 없음" in _row(page, "2026-10-28")                       # 재구성뿐 — 첫 게시를 지어내지 않는다
+    assert "G/동시성 범위" in page and "첫 게시 1일" in page
+    assert '<span class="cell fail" title="2026-10-27 · 첫 게시' in page
+    assert "전 기간 첫 게시 실패</b> — 3일 중 1일" in page.split("운영 SLO")[1]
+
+
+def test_a_rebuild_is_never_the_first_publication_even_if_ledger_order_says_so(tmp_path):
+    """원장이 시각순이 아니어도(백필 뒤 덧붙임) 가장 이른 재구성 아닌 게시가 첫 게시다."""
+    r = _rebuilt_root(tmp_path, [_reb("2026-10-27", "2026-10-27T01:00:00Z"), _pub("2026-10-27", "pass", "2026-10-28T09:00:00Z"),
+                                 _pub("2026-10-27", "fail", "2026-10-27T09:00:00Z")])
+    assert "실패" in _row(tp.render(str(r), now=NOW), "2026-10-27")
+
+
+def test_first_result_falls_back_to_the_archived_original_when_the_ledger_is_silent(tmp_path):
+    crash = LAYERS.format(d="2026-10-27") + "Traceback\nTypeError: boom\n"
+    r = _rebuilt_root(tmp_path, [_reb("2026-10-27")], {"2026-10-27": crash})
+    row = _row(tp.render(str(r), now=NOW), "2026-10-27")
+    assert "검사기 중단" in row and "보관 원본" in row
+
+
+def test_the_table_is_not_cut_to_a_recent_window(tmp_path):
+    """창을 줄이면 앞쪽의 실패가 페이지에서 사라진다 — 기본은 전 기준일이다."""
+    r = tmp_path / "reports"
+    for i in range(70):
+        p = r / f"2026-{1 + i // 28:02d}-{1 + i % 28:02d}"
+        p.mkdir(parents=True)
+        (p / "numbers.html").write_text("<html>", "utf-8")
+        (p / "VERIFY.txt").write_text(_pass(p.name), "utf-8")
+    page = tp.render(str(r), now=NOW)
+    days = page.split("기준일별 기록")[1]
+    assert len(re.findall(r"<tr><td>\d{4}-\d{2}-\d{2}</td>", days)) == 70 and "전 기준일 70개" in page
+
+
+def test_page_does_not_claim_the_records_are_as_they_were(page):
+    """전부 재구성한 날의 검증을 '그때 기록 그대로' 라 적으면 거짓이다."""
+    assert "그때 기록 그대로" not in _text(page) and "재구성 때 코드" in _text(page)
+
+
+# ─────────────────────────────── 확정 수 — finalize: 줄 없는 옛 재구성
+
+def test_old_rebuild_without_finalize_line_is_not_counted_as_final(tmp_path):
+    """옛 재구성(3617962)은 FINAL.txt 가 있어도 finalize: 줄이 없다. 확정으로 세면 확인하지 않은 날이 25 에 든다."""
+    r = _rebuilt_root(tmp_path)
+    (r / "2026-10-26" / "REBUILT.txt").write_text("2026-11-08 17:52 현재 코드(3617962)·확정 데이터로 다시 만듦\n", "utf-8")
+    (r / "2026-10-27" / "REBUILT.txt").write_text("다시 만듦\ncommit: abc\nfinalize: verified\n", "utf-8")
+    for d in ("2026-10-26", "2026-10-27"):
+        (r / d / "FINAL.txt").write_text("재구성\n", "utf-8")
+    page = tp.render(str(r), now=NOW)
+    tiles = _tiles(page)
+    assert tiles["확정"] == 1 and tiles["확정 미확인"] == 1 and tiles["확정 기록 없음"] == 1
+    assert ">확정 미확인<" in _row(page, "2026-10-26") and ">확정<" not in _row(page, "2026-10-26")
+    assert ">확정<" in _row(page, "2026-10-27")
+    srv_row = next(li for li in srv.index_html(str(r)).split("<li") if "2026-10-26" in li and 'class="d"' in li)
+    assert ">확정 미확인<" in srv_row, "목록과 페이지가 다른 말을 한다"
+
+
+# ─────────────────────────────── 정정의 크기 — 전후 값과 원인
+
+MKTS = ("거래소", "코스닥")
+
+
+def _payload(dates, by_date):
+    """by_date = {날: {시장: {주체|tv: 값}}} → 섹터 둘로 쪼갠 ``flows`` — 합이 시장 합계가 되는지까지 본다."""
+    flows = {m: {"가": {}, "나": {}} for m in MKTS}
+    for m in MKTS:
+        for k in ("inst", "forgn", "indiv", "etc", "tv"):
+            col = [by_date.get(d, {}).get(m, {}).get(k) for d in dates]
+            flows[m]["가"][k] = [None if v is None else v / 2 for v in col]
+            flows[m]["나"][k] = [None if v is None else v / 2 for v in col]
+    return {"dates": dates, "flows": flows}
+
+
+def _totals(**kw):
+    base = {"거래소": {"inst": 100.0, "forgn": -100.0, "indiv": 0.0, "etc": 0.0, "tv": 150000.0},
+            "코스닥": {"inst": 10.0, "forgn": -10.0, "indiv": 0.0, "etc": 0.0, "tv": 50000.0}}
+    for key, v in kw.items():
+        m, k = key.split("_")
+        base[{"K": "거래소", "Q": "코스닥"}[m]][k] = v
+    return base
+
+
+def test_market_totals_sum_the_sector_flows_of_that_day():
+    P = _payload(["2026-10-01", "2026-10-02"], {"2026-10-02": _totals(K_etc=500.0)})
+    got = tp.market_totals(P, "2026-10-02")
+    assert got["거래소"]["etc"] == 500.0 and got["코스닥"]["tv"] == 50000.0
+    assert tp.market_totals(P, "2026-09-30") is None
+
+
+def test_cause_of_a_change_is_read_from_the_records():
+    before = _totals(K_etc=15691.0, K_inst=-2465.0, K_tv=183375.0)
+    after = _totals(K_etc=-544.0, K_inst=8920.0, K_tv=216476.0)
+    # 다음날 원본 게시본이 이미 지금 값 — 코드가 아니라 DB 값이 바뀌었다(작은 차는 설명의 10% 안).
+    near = _totals(K_etc=-544.0, K_inst=8920.0, K_tv=216476.0, Q_tv=50050.0)
+    assert tp.errata_cause(before, after, near)[0] == "provisional"
+    assert "잠정치 → 확정치" in tp.errata_cause(before, after, near)[1]
+    assert tp.errata_cause(before, after, before)[0] == "later"          # 다음날 판은 옛 값 — 나중 코드·정정
+    half = _totals(K_etc=7000.0, K_inst=3000.0, K_tv=200000.0)
+    assert tp.errata_cause(before, after, half)[0] == "mixed"
+    assert tp.errata_cause(before, after, None)[0] == "unknown"          # 모르면 모른다고 적는다
+    assert tp.errata_cause(after, after, near)[0] == "same"
+    # 10-27 — 코스닥 거래대금 1,099억 → 59,125억: 수집 미완 중 게시. 다음날 판과 견주기 전에 먼저 말한다.
+    code, why = tp.errata_cause(_totals(Q_tv=1099.0), _totals(Q_tv=59125.0), _totals(Q_tv=59125.0))
+    assert code == "incomplete" and "코스닥 거래대금이 나중 값의 1.9%" in why
+
+
+def test_small_market_is_not_called_incomplete_by_its_ratio():
+    """분모 게이트 — 나중 값이 작으면 비율로 말하지 않는다(작은 시장의 흔들림)."""
+    code, _ = tp.errata_cause(_totals(Q_tv=100.0), _totals(Q_tv=500.0), None)
+    assert code != "incomplete"
+
+
+def test_size_keeps_the_largest_cell_and_sign_flips_only():
+    before = _totals(K_etc=16702.0, K_forgn=-6367.0, K_inst=100.0, K_tv=162592.0, Q_forgn=-30.0)
+    after = _totals(K_etc=9875.0, K_forgn=390.0, K_inst=120.0, K_tv=177237.0, Q_forgn=40.0)
+    sz = tp.errata_size(before, after)
+    assert [(c["market"], c["actor"], c["flip"]) for c in sz["net"]] == [("거래소", "기타법인", False), ("거래소", "외국인", True)]
+    assert {t["market"]: (t["before"], t["after"]) for t in sz["tv"]}["거래소"] == (162592.0, 177237.0)
+
+
+@pytest.fixture
+def errata_root(tmp_path):
+    """보관 원본·지금 판·다음날 원본이 다 있는 재구성 — 옛 형식 payload(``today`` 없음)도 ``flows`` 로 읽는다."""
+    r = tmp_path / "reports"
+    d1, d2 = "2026-09-03", "2026-09-04"
+    was, now = _totals(K_etc=15691.0, K_tv=183375.0), _totals(K_etc=-544.0, K_tv=216476.0)
+    arch = r / ".archive" / "pre-rebuild-2026-11-08"
+    (arch / d1).mkdir(parents=True)
+    (arch / d1 / "payload.json").write_text(json.dumps(_payload([d1], {d1: was})), "utf-8")
+    (arch / d2).mkdir()
+    (arch / d2 / "payload.json").write_text(json.dumps(_payload([d1, d2], {d1: now, d2: now})), "utf-8")
+    for d in (d1, d2):
+        p = r / d
+        p.mkdir()
+        (p / "numbers.html").write_text("<html>", "utf-8")
+        (p / "VERIFY.txt").write_text(_pass(d), "utf-8")
+        (p / "payload.json").write_text(json.dumps(_payload([d1, d2], {d1: now, d2: now})), "utf-8")
+        (p / "REBUILT.txt").write_text("다시 만듦\ncommit: abc\nfinalize: verified\n", "utf-8")
+    (r / "events.jsonl").write_text(_ev(ts="2026-11-07T16:37:02Z", event="archive", asof=d1, source="backfill") + "\n"
+                                    + _ev(ts="2026-11-07T16:37:02Z", event="archive", asof="2026-09-30", source="backfill") + "\n",
+                                    "utf-8")
+    os.symlink(r / d2, r / "latest")
+    return r
+
+
+def test_errata_row_says_how_much_and_why_not_just_archived(errata_root):
+    page = tp.render(str(errata_root), now=NOW)
+    err = page.split("정정 —")[1].split("기준일별 기록")[0]
+    row = re.search(r"<tr><td>2026-09-03</td>(.*?)</tr>", err, re.S).group(1)
+    t = _text(row)
+    assert "거래소 기타법인 +15,691 → −544" in t and "부호 반대" in t
+    assert "거래소 183,375 → 216,476" in t and "코스닥 50,000 → 50,000" in t
+    assert "잠정치 → 확정치" in t and "원본 보관" not in t
+    other = _text(re.search(r"<tr><td>2026-09-30</td>(.*?)</tr>", err, re.S).group(1))
+    assert "크기를 모른다" in other                                       # 원본이 없으면 없다고 적는다
+
+
+def test_final_correction_row_carries_the_market_moves_from_final_txt(root, tmp_path):
+    (root / "2026-11-05" / "FINAL.txt").write_text(
+        "[..] 확정\n잠정 → 확정 비교\n시장 합계: 12칸 중 2칸 바뀜\n  거래소 기관 1일  +1.00 → +2.00 (+1.00)\n"
+        "  거래소 기관 5일  +9.00 → +10.00 (+1.00)\n섹터 칸: 240칸 중 5칸 바뀜 — 큰 순 5\n", "utf-8")
+    err = tp.render(str(root), now=NOW).split("정정 —")[1].split("기준일별 기록")[0]
+    row = _text(re.search(r"<tr><td>2026-11-05</td>(.*?)</tr>", err, re.S).group(1))
+    assert "거래소 기관 +1.00 → +2.00" in row and "5일" not in row and "섹터 칸 5개 변경" in row
+
+
+# ─────────────────────────────── 낡은 주장
+
+def test_stale_claims_about_the_screen_are_gone(page):
+    t = _text(page)
+    assert "포텐셜" not in t, "화면에서 지운 열이다"
+    assert "탐색 점수" not in t, "G 의 화면 표지는 [판정 불가: G] 다"
+    assert "[판정 불가: G]" in _qrow(page, "Q3d-G")
+    assert "앞날 검정을 하지 않았다" in _qrow(page, "untested")
+    assert "1년%ile" in _qrow(page, "untested") and "앞날 검정을 하지 않았다" in t.split("검정된 적 없는 값")[1]

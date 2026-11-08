@@ -124,8 +124,8 @@ details.explore .xnote{margin:0; padding:10px 15px; font-size:11.5px; color:var(
     <h1>섹터 수치표</h1>
     <div class="sub"><span class="num" id="asof"></span><span id="chip"></span><span class="num dim" id="range"></span></div>
     <div class="sub"><span class="chipnote" id="chipnote"></span></div>
-    <div class="sub"><span class="dim">추천 없음 — 누가 어디서 사고팔았나의 관측 숫자다. 섹터 지표의 앞날 관계는 검정함 — 증거 없음(<a href="https://github.com/younghwan91/sector-flow/tree/main/docs/validation">docs/validation</a>).</span></div>
-    <nav class="links" aria-label="다른 화면"><a href="viewer.html">흐름 뷰어 →</a><a href="../">기준일 목록 →</a></nav>
+    <div class="sub"><span class="dim">추천 없음 — 누가 어디서 사고팔았나의 관측 숫자다. 섹터 지표의 앞날 관계는 검정함 — 증거 없음(<a href="../latest/trust.html#validation">검증·품질</a>).</span></div>
+    <nav class="links" aria-label="다른 화면"><a href="viewer.html">흐름 뷰어 →</a><a href="../latest/trust.html">검증·품질 →</a><a href="../">기준일 목록 →</a></nav>
   </header>
 
   <section class="panel today" id="today" aria-labelledby="t-ttl">
@@ -365,11 +365,11 @@ function renderToday(){
   const RS=D.revision_stats;
   if(prov&&RS){ const rl=el("div","tline rev"), sd=RS.seed&&RS.seed.dates&&RS.seed.dates.length?RS.seed:null,
       ST=RS.stocks||{};
-    // TUI `revision_line` 과 같은 글자 — 상위3 유지율·종목(주도주) 층·시드 출처까지(검증기 W 층이 대조한다).
+    // TUI `revision_line` 과 같은 글자 — 상위3 유지율·종목(기관상위) 층·시드 출처까지(검증기 W 층이 대조한다).
     rl.textContent=(RS.n_dates&&RS.rel_median_pct!=null)
       ?"최근 "+RS.n_dates+"일 잠정→확정: 섹터 칸 중앙 "+RHU(RS.rel_median_pct)+"%, 부호 뒤집힘 "+(RS.flips||0)+"회"
         +(RS.top3_keep_pct!=null?", 상위3 유지 "+RHU(RS.top3_keep_pct)+"%":"")
-        +(ST.n_dates&&ST.rel_median_pct!=null?", 주도주 중앙 "+RHU(ST.rel_median_pct)+"%"
+        +(ST.n_dates&&ST.rel_median_pct!=null?", 기관상위 중앙 "+RHU(ST.rel_median_pct)+"%"
           +(ST.top3_keep_pct!=null?"·종목 상위3 유지 "+RHU(ST.top3_keep_pct)+"%":""):"")
         +" (1일 칸 "+(RS.n_cells||0)+"개)"
         +(sd?" · "+sd.label+" "+sd.dates.length+"일":"")
