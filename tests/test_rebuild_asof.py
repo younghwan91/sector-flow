@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import stat
 import subprocess
 import sys
@@ -129,7 +128,6 @@ printf '검사 10건 · 실패 0건\n전부 통과\n' > "$d/VERIFY.txt"
 def test_rebuild_history_runs_oldest_first_and_summarises(tmp_path):
     repo = tmp_path / "repo"
     (repo / "scripts").mkdir(parents=True)
-    shutil.copy(REPO / "scripts" / "rebuild_history.py", repo / "scripts")
     fake = repo / "scripts" / "daily_report.sh"
     fake.write_text(FAKE_DAILY)
     fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
@@ -137,7 +135,7 @@ def test_rebuild_history_runs_oldest_first_and_summarises(tmp_path):
     (origin / "2026-10-07").mkdir(parents=True)
     calls = tmp_path / "calls"
     root = tmp_path / "root"
-    p = subprocess.run([sys.executable, str(repo / "scripts" / "rebuild_history.py"), "--root", str(root),
+    p = subprocess.run([sys.executable, str(REPO / "scripts" / "rebuild_history.py"), "--report-script", str(fake), "--root", str(root),
                         "--from", "2026-10-07", "--to", "2026-10-12", "--origin-root", str(origin),
                         "--origin-label", "reports/.archive/x"],
                        capture_output=True, text=True, timeout=60,
@@ -202,14 +200,13 @@ def test_rebuild_history_parallel_chunks_still_link_each_day_to_the_previous(tmp
     """--jobs 로 나눠 지어도 모든 날(첫날 빼고)이 같은 루트의 직전 거래일 폴더를 보고 만들어졌다."""
     repo = tmp_path / "repo"
     (repo / "scripts").mkdir(parents=True)
-    shutil.copy(REPO / "scripts" / "rebuild_history.py", repo / "scripts")
     fake = repo / "scripts" / "daily_report.sh"
     fake.write_text(FAKE_DAILY_PREV)
     fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
     root = tmp_path / "root"
     (root / "2026-10-02").mkdir(parents=True)                  # 구간 앞의 리포트가 이미 있다 — 0번 덩어리 첫날도 잇는다
     (root / "2026-10-02" / "payload.json").write_text("{}")
-    p = subprocess.run([sys.executable, str(repo / "scripts" / "rebuild_history.py"), "--root", str(root),
+    p = subprocess.run([sys.executable, str(REPO / "scripts" / "rebuild_history.py"), "--report-script", str(fake), "--root", str(root),
                         "--from", "2026-10-05", "--to", "2026-10-16", "--jobs", "2"],
                        capture_output=True, text=True, timeout=60)
     assert p.returncode == 0, p.stdout + p.stderr

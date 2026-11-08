@@ -80,6 +80,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--origin-root", help="원본 리포트가 지금 있는 루트 — 그날 폴더가 있으면 REBUILT.txt 에 원본 위치를 적는다")
     ap.add_argument("--origin-label", help="REBUILT.txt 에 적을 원본 루트 이름(기본 --origin-root). 바꿔 낀 뒤 옮길 곳을 적는다")
     ap.add_argument("--force", action="store_true", help="이미 재구성한 날도 다시 만든다")
+    ap.add_argument("--report-script", default=str(REPO / "scripts" / "daily_report.sh"),
+                    help="날마다 부를 리포트 스크립트(기본 이 체크아웃의 scripts/daily_report.sh)")
     ap.add_argument("--jobs", type=int, default=1,
                     help="날짜 구간을 N 덩어리로 나눠 나란히 짓는다(빈 루트에서만). 덩어리 첫날은 끝에 다시 짓는다")
     a = ap.parse_args(argv)
@@ -111,7 +113,7 @@ def main(argv: list[str] | None = None) -> int:
         log_path = logs / f"{d}.log"
         start = log_path.stat().st_size if log_path.exists() else 0
         with open(log_path, "a", encoding="utf-8") as log:
-            rc = subprocess.run([str(REPO / "scripts" / "daily_report.sh")], env=env,
+            rc = subprocess.run([a.report_script], env=env,
                                 stdout=log, stderr=subprocess.STDOUT).returncode
         secs = time.monotonic() - t0
         with open(log_path, encoding="utf-8", errors="replace") as f:
@@ -174,7 +176,10 @@ def main(argv: list[str] | None = None) -> int:
                        for p in root.iterdir() if _DAY.fullmatch(p.name)):
                 continue
             if (root / d).exists():
-                (root / d).rename(first_pass / f"{d}.{stamp}")
+                dst, n = first_pass / f"{d}.{stamp}", 1
+                while dst.exists():                    # 같은 초에 다시 돌린 경우 — 첫 판을 덮지 않는다
+                    dst, n = first_pass / f"{d}.{stamp}.{n}", n + 1
+                (root / d).rename(dst)
             rows = [build(d, root, False) if r[0] == d else r for r in rows]
         last = max((p.name for p in root.iterdir() if _DAY.fullmatch(p.name) and (p / "numbers.html").is_file()),
                    default=None)

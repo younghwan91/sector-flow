@@ -4694,3 +4694,63 @@ guards = ["tests/test_rebuild_asof.py::test_rebuild_history_runs_oldest_first_an
 file = "scripts/rebuild_history.py"
 find = "        elif rc != 0 and (\"수집 미완\" in said or (folder / \"INCOMPLETE.txt\").is_file()):"
 replace = "        elif (folder / \"INCOMPLETE.txt\").is_file() and not (folder / \"numbers.html\").is_file():"
+
+# ── rebuild_history 운전기(tests/test_rebuild_history.py) ─────────────────────
+
+[[mutation]]
+id = "rebuild-history-calls-weekends"
+why = "주말까지 daily_report.sh 를 부르면 휴장 줄이 요약을 덮고 실행이 길어진다"
+guards = ["tests/test_rebuild_history.py::test_weekdays_skip_weekends_and_keep_order",
+          "tests/test_rebuild_history.py::test_real_daily_report_rebuilds_in_order_skips_holidays_and_names_gate_blocks"]
+file = "scripts/rebuild_history.py"
+find = "        if d.weekday() < 5:"
+replace = "        if True:"
+
+[[mutation]]
+id = "rebuild-history-holiday-called-error"
+why = "휴장(rc 3)을 오류로 적어 문제 건수가 부풀고 종료코드가 실패가 된다"
+guards = ["tests/test_rebuild_history.py::test_states_force_and_claims_reach_the_summary"]
+file = "scripts/rebuild_history.py"
+find = "        if rc == EX_HOLIDAY:"
+replace = "        if False:"
+
+[[mutation]]
+id = "rebuild-history-claims-dropped"
+why = "문서 주장 어긋남(CLAIMS) 건수가 요약에서 빠져 '실패 0' 만 보인다"
+guards = ["tests/test_rebuild_history.py::test_verify_summary_counts_failures_and_claims_separately",
+          "tests/test_rebuild_history.py::test_states_force_and_claims_reach_the_summary"]
+file = "scripts/rebuild_history.py"
+find = "    if c and int(c.group(1)):"
+replace = "    if False:"
+
+[[mutation]]
+id = "rebuild-history-gap-called-error"
+why = "수급 수집 공백을 '오류' 로 적어 메워야 할 날이 코드 결함처럼 보인다"
+guards = ["tests/test_rebuild_history.py::test_states_force_and_claims_reach_the_summary"]
+file = "scripts/rebuild_history.py"
+find = "        elif rc != 0 and \"수집 공백\" in said:"
+replace = "        elif False:"
+
+[[mutation]]
+id = "rebuild-history-force-not-passed"
+why = "--force 를 KR_QUANT_FORCE 로 안 넘기면 이미 재구성한 날을 조용히 건너뛴다"
+guards = ["tests/test_rebuild_history.py::test_states_force_and_claims_reach_the_summary"]
+file = "scripts/rebuild_history.py"
+find = "            env[\"KR_QUANT_FORCE\"] = \"1\""
+replace = "            pass"
+
+[[mutation]]
+id = "rebuild-history-jobs-builds-over-existing"
+why = "--jobs 가 이미 있는 날을 거절하지 않으면 덩어리 루트에서 모은 폴더가 기존 폴더와 부딪힌다"
+guards = ["tests/test_rebuild_history.py::test_jobs_refuse_a_root_that_already_has_those_days"]
+file = "scripts/rebuild_history.py"
+find = "        if busy:"
+replace = "        if False:"
+
+[[mutation]]
+id = "rebuild-history-first-pass-overwritten"
+why = "같은 초에 다시 돌리면 덩어리 첫날의 첫 판 이름이 부딪혀 rename 이 실패하거나 덮는다"
+guards = ["tests/test_rebuild_history.py::test_jobs_rerun_in_the_same_root_keeps_every_first_pass"]
+file = "scripts/rebuild_history.py"
+find = "                while dst.exists():                    # 같은 초에 다시 돌린 경우 — 첫 판을 덮지 않는다"
+replace = "                while False:"
