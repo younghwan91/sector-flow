@@ -67,6 +67,18 @@ def test_only_the_report_pages_are_served(get, path):
     assert b"DB" not in body
 
 
+def test_healthz_checks_the_reports_can_be_shown(get, root, monkeypatch):
+    """대답만 보는 /healthz 는 루트가 사라지거나 목록이 죽어도 200 이라 serve.sh 가 그대로 둔다."""
+    assert get("/healthz")[0] == 200
+    monkeypatch.setattr(srv, "index_html", lambda r: 1 / 0)
+    status, _, body = get("/healthz")
+    assert status == 503 and b"ZeroDivisionError" in body
+    monkeypatch.undo()
+    shutil.rmtree(root)
+    status, _, body = get("/healthz")
+    assert status == 503 and b"FileNotFoundError" in body
+
+
 def test_latest_redirects_to_the_dated_page(get):
     status, h, _ = get("/latest/viewer.html")
     assert status == 302 and h["Location"] == "/2026-11-06/viewer.html"

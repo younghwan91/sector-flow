@@ -370,6 +370,19 @@ def test_db_failure_explains_itself_and_hides_the_password(repo):
     assert "s3cret" not in p.stderr + p.stdout
 
 
+def test_db_failure_shows_the_exception_not_just_uv_hints(repo):
+    """uv 가 예외 뒤에 힌트 줄을 붙이면 꼬리 3줄에는 힌트만 남았다(모의 실행) — 알림 본문이 원인을 못 말한다."""
+    (repo.parent / "uv").write_text(
+        "#!/bin/sh\ncat >/dev/null\n"
+        "echo 'Traceback (most recent call last):' >&2\n"
+        "echo 'psycopg2.OperationalError: connection to postgresql://u:s3cret@10.0.0.1/x failed' >&2\n"
+        "for i in 1 2 3 4; do echo \"hint: uv 힌트 $i\" >&2; done\nexit 1\n")
+    p = _run(repo)
+    assert p.returncode == 1
+    assert "OperationalError" in p.stderr, p.stderr
+    assert "s3cret" not in p.stderr + p.stdout
+
+
 def test_empty_database_is_not_called_a_connection_failure(repo):
     con = sqlite3.connect(repo.parent / "db.sqlite")
     con.execute("CREATE TABLE supply_demand(code TEXT, date TEXT)")

@@ -232,7 +232,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = self.path.split("?", 1)[0].split("#", 1)[0]
         if path == "/healthz":
-            return self._send(HTTPStatus.OK, "text/plain; charset=utf-8", b"ok\n")
+            return self._healthz()
         if path in ("/", "/index.html"):
             return self._send(HTTPStatus.OK, "text/html; charset=utf-8",
                               index_html(self.root).encode(), (("Cache-Control", "no-cache"),))
@@ -286,6 +286,21 @@ class Handler(BaseHTTPRequestHandler):
         with open(full, "rb") as f:
             body = f.read()
         return self._send(HTTPStatus.OK, ctype, body, cache)
+
+    def _healthz(self):
+        """대답만이 아니라 **보여 줄 수 있나**를 본다 — 리포트 루트를 읽을 수 있고 목록이 그려지나(수 ms).
+
+        예전엔 프로세스가 대답하면 200 이었다. 루트가 지워지거나(마운트 빠짐) 권한이 바뀌어도, 목록이 예외로
+        죽어도 serve.sh 는 "건강하다" 며 그대로 뒀다. 503 이면 serve.sh 가 다시 띄우고, 다시 떠도 안 되면
+        5분마다 되풀이되며 serve.log 에 남는다 — 본문이 이유다.
+        """
+        try:
+            os.listdir(self.root)
+            index_html(self.root)
+        except Exception as e:  # noqa: BLE001 — 무엇이든 "보여 줄 수 없다"
+            return self._send(HTTPStatus.SERVICE_UNAVAILABLE, "text/plain; charset=utf-8",
+                              f"unhealthy — {type(e).__name__}: {e}\n".encode())
+        return self._send(HTTPStatus.OK, "text/plain; charset=utf-8", b"ok\n")
 
     def _not_modified_since(self, st) -> bool:
         ims = self.headers.get("If-Modified-Since")

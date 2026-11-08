@@ -51,7 +51,8 @@ PY
 )" || ASOF_RC=$?
 if [ "$ASOF_RC" -ne 0 ]; then
   echo "[$(date '+%F %T')] DB 에서 기준일을 못 읽었다(rc=$ASOF_RC) — 접속정보(KR_QUANT_DB)와 DB 서버를 확인하라. 중단." >&2
-  tail -n 3 "$ASOF_ERR" | sed -E 's#://[^@ ]*@#://***@#g' >&2
+  # 10줄 — uv 의 힌트 줄이 예외 뒤에 붙어 3줄이면 예외가 잘렸다(2026-11-08 모의 실행).
+  tail -n 10 "$ASOF_ERR" | sed -E 's#://[^@ ]*@#://***@#g' >&2
   rm -f "$ASOF_ERR"
   exit 1
 fi

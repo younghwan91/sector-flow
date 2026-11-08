@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import http.server
 import importlib.util
 import os
 import shutil
@@ -12,6 +13,7 @@ import sqlite3
 import stat
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 import pytest
@@ -22,6 +24,37 @@ fc = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(fc)
 
 TODAY = "2026-11-06"          # 금요일
+
+
+@pytest.fixture
+def hook():
+    """가짜 웹훅·하트비트 — 127.0.0.1 에 띄운다. 진짜 네트워크는 안 쓴다. (주소, 받은 메서드 목록)."""
+    servers = []
+
+    def make(status: int, body: bytes):
+        hits: list[str] = []
+
+        class H(http.server.BaseHTTPRequestHandler):
+            def _answer(self):
+                hits.append(self.command)
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            do_GET = do_POST = _answer
+
+            def log_message(self, *a):
+                pass
+
+        s = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
+        threading.Thread(target=s.serve_forever, daemon=True).start()
+        servers.append(s)
+        return f"http://127.0.0.1:{s.server_address[1]}/api/webhooks/1/secret-token", hits
+    yield make
+    for s in servers:
+        s.shutdown()
+        s.server_close()
 
 
 def _reports(tmp_path: Path, latest: str | None, *, today_mark: str | None = None) -> Path:
@@ -67,8 +100,122 @@ def test_empty_webhook_warns(value):
     assert rc == 75 and "ALERT_WEBHOOK_URL" in lines[0]
 
 
-def test_set_webhook_is_silent():
-    assert fc.check_webhook("https://example.invalid/hook") == (0, [])
+def test_live_webhook_passes(hook):
+    url, _ = hook(200, b'{"type": 1, "id": "1"}')
+    rc, lines = fc.check_webhook(url)
+    assert rc == 0 and "OK" in lines[0]
+
+
+@pytest.mark.parametrize("status", [401, 404])
+def test_dead_webhook_warns(hook, status):
+    """채널에서 웹훅을 지우면 주소는 그대로 남아 '비었나' 검사를 통과한다 — 알림은 [alert.py] failed 로 사라진다."""
+    url, hits = hook(status, b'{"message": "Unknown Webhook"}')
+    rc, lines = fc.check_webhook(url)
+    assert rc == 75 and "폐기됐거나 틀렸다" in lines[0]
+    assert hits == ["GET"], "메시지를 보내면 안 된다 — GET 한 번만"
+    assert url not in "\n".join(lines) and "secret-token" not in "\n".join(lines)
+
+
+def test_unreachable_webhook_warns_without_printing_the_url():
+    url = "http://127.0.0.1:9/api/webhooks/1/secret-token"        # discard 포트 — 닫혀 있다
+    rc, lines = fc.check_webhook(url)
+    assert rc == 75 and "닿지 못했다" in lines[0]
+    assert "secret-token" not in lines[0]
+
+
+def test_webhook_answering_html_is_not_taken_as_discord(hook):
+    url, _ = hook(200, b"<html>login</html>")
+    rc, lines = fc.check_webhook(url)
+    assert rc == 75 and "JSON" in lines[0]
+
+
+# ── alert.sh 가 읽는 값 ────────────────────────────────────────────────────
+
+@pytest.mark.parametrize(("line", "want"), [
+    ("ALERT_WEBHOOK_URL=https://h/x", "https://h/x"),
+    ('ALERT_WEBHOOK_URL="https://h/x?a=b"', "https://h/x?a=b"),
+    ("ALERT_WEBHOOK_URL='https://h/x'", "https://h/x"),
+    ("export ALERT_WEBHOOK_URL=https://h/x", ""),       # alert.sh 의 grep '^KEY=' 에 안 걸린다
+    ("ALERT_WEBHOOK_URL = https://h/x", ""),
+    ("#ALERT_WEBHOOK_URL=https://h/x", ""),
+])
+def test_env_file_is_read_like_alert_sh(tmp_path, line, want):
+    env = tmp_path / ".env"
+    env.write_text(f"KR_QUANT_DB=x\n{line}\n")
+    assert fc.env_file_value(env, "ALERT_WEBHOOK_URL") == want
+
+
+def test_last_line_wins_like_tail(tmp_path):
+    env = tmp_path / ".env"
+    env.write_text("ALERT_WEBHOOK_URL=https://old\nALERT_WEBHOOK_URL=https://new\n")
+    assert fc.env_file_value(env, "ALERT_WEBHOOK_URL") == "https://new"
+
+
+def test_matches_alert_sh_env_get_byte_for_byte(tmp_path):
+    """같은 .env 를 진짜 alert.sh 의 env_get 과 이 함수가 같은 값으로 읽는다(셸 함수를 그대로 옮겨 돌린다)."""
+    env = tmp_path / ".env"
+    env.write_text("export ALERT_WEBHOOK_URL=https://a\nALERT_WEBHOOK_URL='https://b?x=1&y=\"2\"'\nX=1\n")
+    env_get = r"""grep "^$1=" "$F" 2>/dev/null | tail -n 1 | cut -d= -f2- | sed -e 's/^["'"'"']//' -e 's/["'"'"']$//'"""
+    out = subprocess.run(["bash", "-c", f"f() {{ {env_get}; }}; printf %s \"$(f ALERT_WEBHOOK_URL)\""],
+                         env={"F": str(env), "PATH": os.environ["PATH"]}, capture_output=True, text=True).stdout
+    assert fc.env_file_value(env, "ALERT_WEBHOOK_URL") == out
+
+
+def test_cron_env_wins_even_when_empty(tmp_path):
+    """alert.sh 는 `${VAR+x}` — 크론 환경에 빈 값으로 정의돼 있으면 .env 를 안 본다."""
+    sh = tmp_path / "qa" / "scripts" / "alert.sh"
+    sh.parent.mkdir(parents=True)
+    (tmp_path / "qa" / ".env").write_text("ALERT_WEBHOOK_URL=https://from-env-file\n")
+    assert fc.alert_value("ALERT_WEBHOOK_URL", {}, sh) == "https://from-env-file"
+    assert fc.alert_value("ALERT_WEBHOOK_URL", {"ALERT_WEBHOOK_URL": ""}, sh) == ""
+    # freshness_check.sh 를 거쳤으면 .env 가 섞인 지금 환경이 아니라 그 전 사본을 본다.
+    sourced = {"SF_CRON_ENV": "1", "ALERT_WEBHOOK_URL": "https://from-sector-flow-env"}
+    assert fc.alert_value("ALERT_WEBHOOK_URL", sourced, sh) == "https://from-env-file"
+
+
+# ── 하트비트 ──────────────────────────────────────────────────────────────
+
+def test_heartbeat_pings_only_a_clean_check(hook):
+    url, hits = hook(200, b"OK")
+    assert fc.heartbeat(url, ok=False) and hits == [], "실패한 날 핑을 보내면 외부 감시가 영영 조용하다"
+    assert "보냈다" in fc.heartbeat(url, ok=True)[0] and hits == ["GET"]
+
+
+def test_heartbeat_absent_is_a_one_line_note():
+    lines = fc.heartbeat("", ok=True)
+    assert len(lines) == 1 and "HEARTBEAT_URL 없음" in lines[0]
+
+
+# ── 휴장·전 거래일 확정 ─────────────────────────────────────────────────────
+
+def test_weekday_holiday_is_quiet(tmp_path):
+    """수급도 장중 틱도 없으면 휴장이다 — 연 10번 '수집 실패' 경고를 내면 경고를 안 읽게 된다."""
+    rc, lines = fc.judge(_reports(tmp_path, "2026-11-05"), TODAY, 0, market_open=False)
+    assert rc == 0 and "휴장" in lines[0]
+
+
+def test_open_market_without_rows_still_warns(tmp_path):
+    """틱이 있는데(장이 열렸다) 수급이 없으면 수집 실패다 — 휴장으로 넘기면 안 된다."""
+    rc, lines = fc.judge(_reports(tmp_path, "2026-11-05"), TODAY, 0, market_open=True)
+    assert rc == 75 and "수집이 실패했다" in lines[0]
+
+
+def test_previous_day_without_final_warns(tmp_path):
+    """08:20 확정 모드를 놓친 날은 다음 거래일 수집이 들어오면 아무도 다시 안 본다 — 그날 저녁에 알린다."""
+    root = _reports(tmp_path, TODAY)
+    (root / "2026-11-05").mkdir()
+    (root / "2026-11-05" / "numbers.html").write_text("<html>")
+    rc, lines = fc.check_prev_final(root, "2026-11-05")
+    assert rc == 75 and "확정되지 않았다" in lines[0] and "잠정 리포트만" in lines[0]
+    (root / "2026-11-05" / "FINAL.txt").write_text("x")
+    assert fc.check_prev_final(root, "2026-11-05")[0] == 0
+
+
+def test_rebuilt_previous_day_counts_as_final(tmp_path):
+    root = _reports(tmp_path, TODAY)
+    (root / "2026-11-05").mkdir()
+    (root / "2026-11-05" / "REBUILT.txt").write_text("x")
+    assert fc.check_prev_final(root, "2026-11-05")[0] == 0
 
 
 def test_error_outranks_warning():
@@ -94,35 +241,123 @@ def repo(tmp_path):
     uv = tmp_path / "uv"
     uv.write_text(f'#!/bin/sh\nshift 5\nexec "{sys.executable}" "$@"\n')
     uv.chmod(uv.stat().st_mode | stat.S_IEXEC)
+    # cron_run.sh 가 부르는 옆자리 quant-airflow/scripts/alert.sh — 그 옆 .env 가 웹훅의 정본이다.
+    alert = tmp_path / "quant-airflow" / "scripts" / "alert.sh"
+    alert.parent.mkdir(parents=True)
+    alert.write_text("#!/bin/sh\nexit 0\n")
+    alert.chmod(alert.stat().st_mode | stat.S_IEXEC)
+    (tmp_path / "quant-airflow" / ".env").write_text("")
     return r
+
+
+def _qa_env(repo: Path, text: str) -> None:
+    (repo.parent / "quant-airflow" / ".env").write_text(text)
+
+
+def _fresh(repo: Path) -> None:
+    """오늘 리포트가 걸렸고 전 거래일도 확정됐다."""
+    _reports(repo, TODAY)
+    (repo / "reports" / "2026-11-05").mkdir()
+    (repo / "reports" / "2026-11-05" / "FINAL.txt").write_text("x")
 
 
 def _run(repo: Path, *args: str, **env) -> subprocess.CompletedProcess:
     e = {k: v for k, v in os.environ.items()
-         if k not in ("KR_QUANT_DB", "KR_QUANT_REPORTS", "ALERT_WEBHOOK_URL")}
+         if k not in ("KR_QUANT_DB", "KR_QUANT_REPORTS", "ALERT_WEBHOOK_URL", "HEARTBEAT_URL",
+                      "SECTOR_FLOW_ALERT") and not k.startswith("SF_CRON_")}
     e.update(KR_QUANT_UV=str(repo.parent / "uv"), HOME=str(repo.parent), **env)
     return subprocess.run([str(repo / "scripts" / "freshness_check.sh"), "--today", TODAY, *args],
                           capture_output=True, text=True, env=e, timeout=60)
 
 
-def test_cron_path_flags_a_missing_report(repo):
+def test_cron_path_flags_a_missing_report(repo, hook):
     _reports(repo, "2026-11-05")
-    p = _run(repo, ALERT_WEBHOOK_URL="https://example.invalid/hook")
+    _qa_env(repo, f"ALERT_WEBHOOK_URL={hook(200, b'{}')[0]}\n")
+    p = _run(repo)
     assert p.returncode == 1, p.stdout + p.stderr
     assert "안 걸렸다" in p.stdout
 
 
 def test_cron_path_warns_about_the_webhook_even_when_fresh(repo):
-    _reports(repo, TODAY)
+    _fresh(repo)
     p = _run(repo)
     assert p.returncode == 75, p.stdout + p.stderr
     assert "[신선도] OK" in p.stdout and "ALERT_WEBHOOK_URL" in p.stdout
 
 
-def test_cron_path_db_failure_is_an_error_and_hides_the_password(repo):
+@pytest.mark.parametrize("where", ["export", "sector-flow-env"])
+def test_cron_path_does_not_count_a_webhook_alert_sh_cannot_see(repo, hook, where):
+    """`export KEY=` 줄이나 이 레포 .env 의 값은 _env.sh 가 불러와 '있다' 로 보이지만 alert.sh 는 못 읽는다."""
+    url, hits = hook(200, b"{}")
+    _fresh(repo)
+    if where == "export":
+        _qa_env(repo, f"export ALERT_WEBHOOK_URL={url}\n")
+    else:
+        with open(repo / ".env", "a") as f:
+            f.write(f"ALERT_WEBHOOK_URL={url}\n")
+    p = _run(repo)
+    assert p.returncode == 75, p.stdout + p.stderr
+    assert "ALERT_WEBHOOK_URL 이 비었다" in p.stdout and hits == []
+
+
+def test_cron_path_clean_day_passes_and_pings_the_heartbeat(repo, hook):
+    url, hits = hook(200, b'{"type": 1}')
+    beat, beats = hook(200, b"OK")
+    _fresh(repo)
+    _qa_env(repo, f"ALERT_WEBHOOK_URL='{url}'\nHEARTBEAT_URL={beat}\n")
+    p = _run(repo)
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert hits == ["GET"] and beats == ["GET"]
+    assert url not in p.stdout + p.stderr and beat not in p.stdout + p.stderr
+
+
+def test_cron_path_dead_webhook_warns(repo, hook):
+    url, _ = hook(404, b'{"message": "Unknown Webhook"}')
+    _fresh(repo)
+    _qa_env(repo, f"ALERT_WEBHOOK_URL={url}\n")
+    p = _run(repo)
+    assert p.returncode == 75, p.stdout + p.stderr
+    assert "폐기됐거나 틀렸다" in p.stdout and "secret-token" not in p.stdout + p.stderr
+
+
+def test_cron_path_previous_day_not_final_warns(repo, hook):
+    _reports(repo, TODAY)
+    (repo / "reports" / "2026-11-05").mkdir()
+    (repo / "reports" / "2026-11-05" / "numbers.html").write_text("<html>")
+    _qa_env(repo, f"ALERT_WEBHOOK_URL={hook(200, b'{}')[0]}\n")
+    p = _run(repo)
+    assert p.returncode == 75, p.stdout + p.stderr
+    assert "2026-11-05" in p.stdout and "확정되지 않았다" in p.stdout
+
+
+def test_cron_path_holiday_without_ticks_is_quiet(repo, hook):
+    """평일 휴장 — 수급도 틱도 없다. 틱 표가 있는 DB 에서만 휴장이라 말한다."""
+    con = sqlite3.connect(repo.parent / "db.sqlite")
+    con.execute("DELETE FROM supply_demand WHERE date = ?", (TODAY,))
+    con.execute("CREATE TABLE ticks(code TEXT, ts TEXT)")
+    con.execute("INSERT INTO ticks VALUES('000001', '2026-11-05 15:19:59')")      # 전날 장 끝
+    con.commit()
+    con.close()
+    _reports(repo, "2026-11-05")
+    (repo / "reports" / "2026-11-05" / "FINAL.txt").write_text("x")
+    _qa_env(repo, f"ALERT_WEBHOOK_URL={hook(200, b'{}')[0]}\n")
+    p = _run(repo)
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert "휴장으로 본다" in p.stdout
+    # 같은 날 틱이 있으면(장이 열렸다) 수집 실패다.
+    con = sqlite3.connect(repo.parent / "db.sqlite")
+    con.execute("INSERT INTO ticks VALUES('000001', ?)", (f"{TODAY} 09:00:02",))
+    con.commit()
+    con.close()
+    p = _run(repo)
+    assert p.returncode == 75 and "수집이 실패했다" in p.stdout, p.stdout + p.stderr
+
+
+def test_cron_path_db_failure_is_an_error_and_hides_the_password(repo, hook):
     (repo / ".env").write_text("KR_QUANT_DB=postgresql://u:s3cret@127.0.0.1:1/x\n")
     _reports(repo, TODAY)
-    p = _run(repo, ALERT_WEBHOOK_URL="https://example.invalid/hook")
+    _qa_env(repo, f"ALERT_WEBHOOK_URL={hook(200, b'{}')[0]}\n")
+    p = _run(repo)
     assert p.returncode == 1, p.stdout + p.stderr
     assert "못 셌다" in p.stdout
     assert "s3cret" not in p.stdout + p.stderr
