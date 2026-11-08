@@ -3460,3 +3460,19 @@ guards = ["tests/test_verify_merge.py::test_an_aborted_baseline_session_is_rejec
 file = "scripts/verify_merge.py"
 find = "        if p.returncode not in (0, 1):"
 replace = "        if False:"
+
+[[mutation]]
+id = "harness-full-tmp-reads-as-broken-guard"
+why = "가드가 /tmp 할당량(Errno 122)으로 실패한 것을 '이미 깨진 검사' 로 적는다 — 멀쩡한 가드를 고치러 간다"
+guards = ["tests/test_verify_merge.py::test_a_full_temp_dir_is_reported_as_environment_not_as_a_broken_or_catching_guard"]
+file = "scripts/verify_merge.py"
+find = "            why = env_full(v.get(\"msg\", \"\"))"
+replace = "            why = None"
+
+[[mutation]]
+id = "harness-full-tmp-counts-as-caught"
+why = "주입 후 실행이 임시 폴더 용량으로 죽은 것을 '잡힘' 으로 센다 — 못 잡는 가드가 통과한다"
+guards = ["tests/test_verify_merge.py::test_a_full_temp_dir_is_reported_as_environment_not_as_a_broken_or_catching_guard"]
+file = "scripts/verify_merge.py"
+find = "        if hit is not None and hit.returncode != 0 and env_full(hit.stdout + hit.stderr):"
+replace = "        if False:"

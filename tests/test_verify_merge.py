@@ -268,3 +268,23 @@ def test_an_aborted_baseline_session_is_rejected_not_read_as_missing_guards(mini
     assert s.status == VM.REJECT
     assert "기준선 pytest 가 결과를 남기지 않았다" in out and "종료코드 3" in out
     assert "찾지 못했다" not in out
+
+
+def test_a_full_temp_dir_is_reported_as_environment_not_as_a_broken_or_catching_guard(mini):
+    """/tmp 할당량이 바닥나면(Errno 122) 가드가 '이미 깨졌다' 거나 변이를 '잡았다' 고 읽히면 안 된다."""
+    wt, base = mini
+    (wt / "tests" / "test_full.py").write_text(
+        "def test_disk():\n    raise OSError(122, 'Disk quota exceeded')\n", "utf-8")
+    (wt / "tests" / "mutations.toml").write_text(SPEC.replace(
+        'replace = "    return a - b"',
+        'replace = "    raise OSError(28, \'No space left on device\')"') + SPEC.replace(
+        "add-subtracts", "full").replace("::test_add", "::test_full").replace(
+        "tests/test_lib.py::test_full", "tests/test_full.py::test_disk"), "utf-8")
+    _commit(wt, "full disk")
+    s, out = _run(wt, base)
+    assert s.status == VM.REJECT
+    assert "[full] 환경: 임시 폴더 용량" in out and "이미 깨진" not in out
+    assert "[add-subtracts] 환경: 임시 폴더 용량" in out and "[add-subtracts] 잡힘" not in out
+    # 단언 메시지 안에 인용된 같은 글자는 환경 실패가 아니다(이 검사 자신의 실패 출력이 그렇다).
+    assert VM.env_full("E   AssertionError: assert 'FAILED t - OSError: [Errno 122] x' in y") is None
+    assert VM.env_full("FAILED tests/t.py::x - OSError: [Errno 28] No space left on device")

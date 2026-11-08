@@ -410,6 +410,8 @@ GUARD_COST = {
     "tests/test_pipeline_e2e.py::test_layer_subset_marks_equal_the_full_run": 25.0,
     "tests/test_pipeline_e2e.py": 4.0,
     "tests/test_tui_smoke.py": 6.0,
+    "tests/test_serve_reports.py::test_serve_sh_restarts_a_server_that_stops_answering": 40.0,
+    "tests/test_serve_reports.py::test_serve_sh_leaves_a_healthy_server_alone": 30.0,
     "tests/test_verify_report.py": 3.0,
     "tests/test_serve_reports.py": 2.0,
     "tests/test_daily_report_flow.py": 2.0,
@@ -558,6 +560,22 @@ def run_baseline(wt: Path, py: str, guards: list[str], scratch: Path,
     return dict(broken), missing, out
 
 
+#: 임시 폴더가 찼다 — 검사가 아니라 **환경**이 실패한 것이다. /tmp(tmpfs) 사용자 할당량이 다른 세션 때문에
+#: 바닥나 Errno 122 가 "가드가 주입 전에도 실패한다"·"잡힘" 으로 읽혔다(2026-11-08). 그렇게 읽으면
+#: 멀쩡한 가드를 고치러 가거나, 못 잡는 가드를 잡았다고 적는다.
+#: 줄 머리의 예외만 본다 — 검사의 단언 메시지 **안에** 인용된 같은 글자(이 하네스 자신의 검사가 그렇다)는
+#: 환경 실패가 아니다.
+ENV_FULL_RE = re.compile(r"^(?:E\s+|(?:FAILED|ERROR) \S+ - )?\w*Error: \[Errno (?:28|122)\]", re.M)
+
+
+def env_full(text: str) -> str | None:
+    """출력에 임시 폴더 용량 오류가 있으면 사람에게 줄 설명."""
+    if not ENV_FULL_RE.search(text or ""):
+        return None
+    return (f"환경: 임시 폴더 용량(Errno 28/122) — 검사 판정이 아니다. TMPDIR={tempfile.gettempdir()} "
+            f"를 비우거나 `export TMPDIR=<디스크의 폴더>` 로 다시 돌려라")
+
+
 def _first_failure(stdout: str) -> str:
     return next((ln for ln in stdout.splitlines()
                  if ln.startswith("FAILED") or ln.startswith("ERROR") or " failed" in ln), "").strip()
@@ -669,7 +687,9 @@ def sec_mutations(wt: Path, py: str, base_sha: str, spec_path: Path | None,
             s.say(f"기준선: 가드 {len(set(guards_all))}개를 pytest 한 번에 "
                   f"({time.monotonic() - t0:.0f}초)")
         if guards_all and not results and not missing:
-            s.fail("기준선 pytest 가 결과를 남기지 않았다\n" + tail(base_out, 3000))
+            # 세션째 죽었다 — 임시 폴더가 찼으면 그렇게 적는다(가드별 실패는 아래에서 가드마다 가린다).
+            s.fail((env_full(base_out) or "기준선 pytest 가 결과를 남기지 않았다")
+                   + "\n" + tail(base_out, 3000))
             return s
         broken_files = {k[len("<collect>"):].split("::")[0]: v["msg"]
                         for k, v in results.items() if k.startswith("<collect>")}
@@ -702,7 +722,9 @@ def sec_mutations(wt: Path, py: str, base_sha: str, spec_path: Path | None,
                if v["outcome"] == "failed"}
         if red:
             k, v = next(iter(red.items()))
-            s.fail(f"[{mid}] 가드가 **주입 전에도** 실패한다 (이미 깨진 검사다): {k}\n"
+            why = env_full(v.get("msg", ""))
+            s.fail(f"[{mid}] {why}: {k}" if why else
+                   f"[{mid}] 가드가 **주입 전에도** 실패한다 (이미 깨진 검사다): {k}\n"
                    + tail(v.get("msg", ""), 1200))
             continue
         if all(v["outcome"] == "skipped" for g in guards
@@ -742,7 +764,9 @@ def sec_mutations(wt: Path, py: str, base_sha: str, spec_path: Path | None,
                 target.write_bytes(original)
         dt = time.monotonic() - t0
         timings.append((dt, mid))
-        if hit is None:
+        if hit is not None and hit.returncode != 0 and env_full(hit.stdout + hit.stderr):
+            s.fail(f"[{mid}] {env_full(hit.stdout + hit.stderr)} — 이 변이는 판정하지 못했다")
+        elif hit is None:
             s.say(f"  [{mid}] 잡힘(시간 초과 600초 — 변이가 검사를 멈추게 했다) — {m.get('why', '')}")
         elif hit.returncode == 0:
             s.fail(f"[{mid}] 변이를 넣었는데 가드가 **초록이다** — 이 검사는 "
