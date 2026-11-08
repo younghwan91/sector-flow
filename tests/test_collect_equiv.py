@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import copy
+import re
+from pathlib import Path
 
 import pytest
 
@@ -132,3 +134,21 @@ def test_all_markets_cell_is_cap_weighted_like_the_numbers_page():
     assert E.ret_any_end(A, B, windows=(1,), first="2099-01-01")["1"]["n"] == 0
     B["iret"] = A["iret"] = {"거래소": {"보험": [0.1] * 30}, "코스닥": {"보험": None}}
     assert E.ret_any_end(A, B, key="iret", windows=(1,))["1"]["n"] == 30   # 업종지수엔 전체 칸이 없다
+
+
+def test_any_end_windows_cover_every_preset_the_viewer_offers():
+    """뷰어가 고를 수 있는 구간(프리셋·260일 기본)을 대조 창이 다 덮는다 — 빠진 길이의 오차는 아무도 안 본다."""
+    html = (Path(E.__file__).resolve().parents[3] / "scripts/templates/sector_flow.html").read_text("utf-8")
+    presets = {int(n) for n in re.findall(r"\[(\d+),\"", re.search(r"const PRESETS=\[(.*?)\];", html).group(1))}
+    assert presets - {0} and (presets - {0}) | {260} <= set(E.ANY_END_WINDOWS)
+
+
+@pytest.mark.parametrize("side", ["A", "B"])
+def test_any_end_treats_a_missing_day_as_flat_on_either_side(side):
+    """결측 날은 0% 다 — 한쪽이 결측이고 다른 쪽이 0% 면 차이가 없다."""
+    A, B = _long(), _long()
+    for P in (A, B):
+        P["ret"]["거래소"]["보험"] = [0.0] * len(P["dates"])
+        P["ret"]["코스닥"]["보험"] = [0.0] * len(P["dates"])
+    (A if side == "A" else B)["ret"]["거래소"]["보험"][3] = None
+    assert E.ret_any_end(A, B, windows=(1,))["1"]["max_pp"] == 0

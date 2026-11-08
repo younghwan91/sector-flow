@@ -125,3 +125,39 @@ def test_a_doc_claim_mismatch_is_not_a_failure_and_lands_in_claims_txt(tmp_path)
     VR.CLAIMS.clear()
     VR.write_claims(str(tmp_path))       # 다시 만든 폴더에 옛 CLAIMS 가 남지 않는다
     assert not (tmp_path / "CLAIMS.txt").exists()
+
+
+# ── T 층 종목(주도주) 재계산 — 손으로 센 값과 맞댄다. 끝값 대조는 양쪽이 같으면 초록이라 정의가 움직여도 안 보인다.
+
+def _stk(new: dict, old: dict) -> tuple[dict, dict]:
+    def doc(rows):
+        return {"names": {c: {"market": "거래소", "sector": "보험", "name": c,
+                              "win": {"1": dict(zip(VR.VT_STK_ACTORS, r))}} for c, r in rows.items()}}
+    return doc(new), doc(old)
+
+
+def test_stock_layer_recount_matches_hand_numbers():
+    """기관 |값| 50·30·15·5 → 누적 80% 에 **딱** 닿는 둘째 종목에서 멈춘다(주도주 A·B).
+
+    수정 폭 = |신−구|/|신|: 칸 다섯 개가 10·10·10·10·200 %(B 외국인은 부호가 뒤집혔다) → 중앙값 10. 게이트(그
+    칸 합의 2%)에 **정확히** 걸린 칸이 둘(A 외국인 2 = 100×2%, B 투신은 합이 자기뿐) 들어간다."""
+    new = {"A": (50.0, 0.0, 0.0, 2.0), "B": (30.0, 0.01, 0.0, 98.0), "C": (15.0, 0.0, 0.0, 0.0),
+           "D": (5.0, 0.0, 0.0, 0.0), "E": (0.0, 0.0, 0.0, 0.0), "F": (0.0, 0.0, 0.0, 0.0)}
+    old = {"A": (55.0, 0.0, 0.0, 1.8), "B": (33.0, 0.009, 0.0, -98.0), "C": (15.0, 0.0, 0.0, 0.0),
+           "D": (5.0, 0.0, 0.0, 0.0), "E": (0.0, 0.0, 0.0, 0.0), "F": (0.0, 0.0, 0.0, 0.0)}
+    P, prov = _stk(new, old)
+    S = VR._vt_stock_diff(P, prov)
+    assert S["n_stocks"] == 2, "주도주 — 누적 80% 를 처음 넘긴(또는 닿은) 행까지"
+    assert S["n_cells"] == 5 and S["flips"] == 1
+    assert S["rel_median_pct"] == pytest.approx(10.0)
+
+
+def test_stock_revision_rollup_counts_zero_kept_as_zero():
+    """유지 0개인 날은 0 이다 — 결측처럼 1 로 메우면 유지율이 부푼다."""
+    VR.FAILS.clear()
+    found = [("2026-11-05", {"stocks": {"n_cells": 2, "flips": 0, "rel_median_pct": 1.0,
+                                        "top3_kept": 0, "top3_lists": 4}})]
+    R = {"stocks": {"n_dates": 1, "n_cells": 2, "flips": 0, "rel_median_pct": 1.0,
+                    "top3_lists": 4, "top3_keep_pct": 0.0}}
+    VR._vt_stock_rev_check(R, found)
+    assert VR.FAILS == []

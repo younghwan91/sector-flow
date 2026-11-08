@@ -421,3 +421,30 @@ def test_no_report_folder_means_no_page_rather_than_an_unserved_root_file(tmp_pa
     empty.mkdir()
     assert tp.main(["--root", str(empty)]) == 1
     assert not (empty / "trust.html").exists()
+
+
+def test_latest_dir_ignores_a_dangling_or_foreign_link(tmp_path):
+    """``latest`` 가 사라진 기준일이나 날짜가 아닌 폴더를 가리키면 리포트가 있는 가장 늦은 폴더로 간다."""
+    root = tmp_path / "r"
+    for d, files in (("2026-11-05", ["numbers.html"]), ("2026-11-06", ["numbers.html"]), ("2026-11-07", [])):
+        (root / d).mkdir(parents=True)
+        for f in files:
+            (root / d / f).write_text("x", "utf-8")
+    (root / "scratch").mkdir()
+    link = root / "latest"
+    link.symlink_to(root / "2026-11-30")                        # 날짜 꼴인데 폴더가 없다
+    assert tp.latest_dir(str(root)) == "2026-11-06"
+    link.unlink()
+    link.symlink_to(root / "scratch")                           # 폴더는 있는데 날짜가 아니다
+    assert tp.latest_dir(str(root)) == "2026-11-06"
+    link.unlink()
+    link.symlink_to(root / "2026-11-05")                        # 멀쩡한 링크는 그대로 따른다
+    assert tp.latest_dir(str(root)) == "2026-11-05"
+
+
+def test_folder_errata_lists_a_final_only_when_a_sector_cell_moved():
+    """확정이 섹터 칸을 **하나라도** 바꿔야 정정이다 — 0칸은 정정이 아니고 1칸은 정정이다."""
+    def day(n):
+        return {"date": "2026-11-05", "rebuilt": None, "final": {"kind": "diff", "sector": (n, 240), "market": None}}
+    assert tp.folder_errata([day(0)]) == []
+    assert [e["detail"] for e in tp.folder_errata([day(1)])] == ["섹터 칸 1개 변경"]

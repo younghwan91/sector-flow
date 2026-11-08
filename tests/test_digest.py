@@ -11,6 +11,7 @@ import copy
 import importlib.util
 import json
 import os
+import re
 import struct
 import subprocess
 import sys
@@ -479,3 +480,158 @@ def test_overflowing_card_is_not_shot(tmp_path):
     except dg.DigestError as e:                              # pragma: no cover
         pytest.skip(f"Chromium 을 못 띄웠다: {e}")
     assert not (tmp_path / "c.png").exists()
+
+
+def test_card_says_provisional_only_on_a_provisional_card():
+    """카드 표지가 값의 지위와 같다 — 뒤집혀도 글(md) 검사는 초록이었다(카드 노트는 따로 만든다)."""
+    _F, _t, prov = dg.build(fixture_payload())
+    _F, _t, final = dg.build(fixture_payload(final=True))
+    for page in prov:
+        assert "잠정치다" in page and 'class="chip prov"' in page
+        assert "잠정→확정 변경" not in page
+    for page in final:
+        assert "잠정치다" not in page and 'class="chip final"' in page
+        assert "잠정→확정 변경: 12칸 / 1,234칸" in page
+
+
+def _css(page: str) -> dict[str, dict[str, str]]:
+    """``<style>`` 의 선택자 → 속성. 브라우저 없이 읽는 만큼만(중첩·미디어 쿼리 없는 템플릿이다)."""
+    style = re.search(r"<style>(.*?)</style>", page, re.S).group(1)
+    out: dict[str, dict[str, str]] = {}
+    for sel, body in re.findall(r"([^{}]+)\{([^{}]*)\}", style):
+        props = dict(p.split(":", 1) for p in body.split(";") if ":" in p)
+        for s in sel.split(","):
+            out.setdefault(s.strip(), {}).update({k.strip(): v.strip() for k, v in props.items()})
+    return out
+
+
+def _lum(hex_color: str) -> float:
+    r, g, b = (int(hex_color[i:i + 2], 16) / 255 for i in (1, 3, 5))
+    lin = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in (r, g, b)]
+    return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2]
+
+
+def test_card_disclaimer_and_source_are_visible_without_a_browser():
+    """면책·출처는 글자가 HTML 에 있어도 CSS 로 가려지면 PNG 에서 사라진다. 숨기는 속성이 없고, 꼬리는 body 바로
+    아래 ``footer`` 이며 읽을 만한 크기·대비다(대비 4.5:1 — 본문 글자 기준)."""
+    page = dg.build(fixture_payload())[2][0]
+    css = _css(page)
+    for sel, props in css.items():
+        assert props.get("display") != "none", sel
+        assert props.get("visibility") not in ("hidden", "collapse"), sel
+        assert props.get("opacity") not in ("0", "0.0"), sel
+        assert not re.fullmatch(r"0(px|em|rem)?", props.get("font-size", "1")), sel
+    foot = re.search(r"</section>\s*<footer>(.*?)</footer>\s*</body>", page, re.S)
+    assert foot, "꼬리가 body 바로 아래 footer 가 아니다"
+    assert dg.DISCLAIMER in foot.group(1) and dg.SOURCE in foot.group(1)
+    assert "<!--" not in foot.group(1)
+    rule = css["footer"]
+    assert int(rule["font-size"].removesuffix("px")) >= 16
+    root = css[":root"]
+    ink, bg = (root[rule["color"][4:-1]], root["--surface"])
+    hi, lo = sorted((_lum(ink), _lum(bg)), reverse=True)
+    assert (hi + 0.05) / (lo + 0.05) >= 4.5, f"꼬리 글자 대비가 낮다: {ink} on {bg}"
+
+
+def test_card_colors_match_its_legend():
+    """범례가 '빨강 = 순매수, 파랑 = 순매도' 라고 말한다 — 색 변수가 뒤집히면 막대가 반대로 읽힌다."""
+    root = _css(dg.build(fixture_payload())[2][0])[":root"]
+    buy, sell = root["--buy"], root["--sell"]
+    assert int(buy[1:3], 16) > int(buy[5:7], 16) and int(sell[5:7], 16) > int(sell[1:3], 16)
+
+
+def test_change_phrase_table():
+    """한쪽만 바뀌어도 변동이다. 비교 자체가 없으면(None) '비교 없음'."""
+    ko = {"actor": "inst", "ko": "기관"}
+    assert dg.change_phrase({**ko, "entered": None, "exited": None}, 5) == "비교 없음"
+    assert dg.change_phrase({**ko, "entered": [], "exited": []}, 5) == "변동 없음"
+    assert dg.change_phrase({**ko, "entered": ["금융"], "exited": []}, 5).startswith("상위5에 새로 든 섹터: 금융")
+    assert "빠진 섹터: 금융" in dg.change_phrase({**ko, "entered": [], "exited": ["금융"]}, 5)
+
+
+def test_old_format_payload_falls_back_to_the_stated_defaults():
+    """옛 페이로드(키 없음)는 문서에 적힌 기본값 — 상위5·20일, 바뀐 칸 0."""
+    P = fixture_payload(final=True)
+    del P["change"]["top_n"], P["change"]["window"]
+    del P["final_diff"]["n_changed"], P["final_diff"]["n_cells"]
+    F = dg.collect(P)
+    assert F["change"]["top_n"] == 5 and F["change"]["window"] == 20
+    assert F["final_diff"]["n_changed"] == 0 and F["final_diff"]["n_cells"] == 0
+
+
+def test_trim_ladders_end_with_counts_only_and_no_streak():
+    """길이가 넘칠 때 줄이는 순서 — 칸마다 **더 줄어든다**. 극단 목록은 끝내 개수만 남고(`N곳`), 마지막은 연속 줄도 없다."""
+    F = dg.collect(_long_payload(name_len=6))
+    bodies = [dg.body_text(F, cap, st) for cap, st in dg.TRIM_LADDER]
+    assert all(a > b for a, b in zip(map(len, bodies), map(len, bodies[1:]))), [len(b) for b in bodies]
+    for body in bodies[3:]:                                    # 개수만 남은 칸들
+        ext = next(ln for ln in body.splitlines() if ln.startswith("- 기관") and "상단:" in ln)
+        assert re.search(r"상단: \d+곳 / 하단: \d+곳", ext), ext
+    assert "연속" in bodies[0] and "연속" not in bodies[-1]
+
+    pages = [dg.card_html(F, cap, st) for cap, st in dg.CARD_LADDER]
+    assert all(a > b for a, b in zip(map(len, pages), map(len, pages[1:]))), [len(p) for p in pages]
+    assert re.search(r"상단: \d+곳 <span", pages[-1]) and "연속" not in pages[-1]
+
+
+# ── PNG 경로 — 브라우저 없이 `main` 의 사다리·실패 처리를 돈다(찍는 함수만 바꿔 끼운다). 실제 찍기는 위 Playwright 검사.
+
+def _png_dir(tmp_path: Path) -> Path:
+    (tmp_path / "payload.json").write_text(json.dumps(_long_payload(name_len=6), ensure_ascii=False), encoding="utf-8")
+    return tmp_path
+
+
+def test_png_ladder_shoots_the_next_smaller_card_after_an_overflow(tmp_path, monkeypatch, capsys):
+    """넘치면 다음 판으로 다시 찍는다 — 찍힌 판이 폴더에 남고, 넘친 판의 PNG 는 없다."""
+    shot = []
+
+    def fake(html_path, png_path):
+        shot.append(html_path.read_text("utf-8"))
+        if len(shot) < 3:
+            raise dg.CardOverflow("넘친다")
+        png_path.write_bytes(b"png")
+
+    monkeypatch.setattr(dg, "render_png", fake)
+    assert dg.main(["--dir", str(_png_dir(tmp_path)), "--png", "require"]) == 0
+    F, _t, pages = dg.build(_long_payload(name_len=6))
+    assert shot == pages and len(shot) == len(dg.CARD_LADDER)
+    assert (tmp_path / "digest_card.html").read_text("utf-8") == pages[-1]
+    assert (tmp_path / "digest.png").read_bytes() == b"png"
+    assert json.loads((tmp_path / "digest.json").read_text("utf-8"))["png"] == "digest.png"
+    err = capsys.readouterr().err
+    assert "극단 목록 1개·연속 줄 nosector" in err and "극단 목록 0개·연속 줄 none" in err
+
+
+def test_png_gives_up_when_every_rung_overflows(tmp_path, monkeypatch):
+    """끝까지 넘치면 auto 는 글을 남기고 PNG 없이, require 는 아무것도 안 남기고 실패한다."""
+    def over(html_path, png_path):
+        png_path.write_bytes(b"truncated")
+        raise dg.CardOverflow("넘친다")
+
+    monkeypatch.setattr(dg, "render_png", over)
+    d = _png_dir(tmp_path)
+    assert dg.main(["--dir", str(d), "--png", "auto"]) == 0
+    assert not (d / "digest.png").exists() and (d / "digest.md").exists()
+    assert json.loads((d / "digest.json").read_text("utf-8"))["png"] is None
+    assert dg.main(["--dir", str(d), "--png", "require"]) == 1
+    assert not any((d / n).exists() for n in dg.OUTPUTS)
+
+
+def test_png_without_playwright_skips_or_fails_by_mode(tmp_path, monkeypatch):
+    def missing(html_path, png_path):
+        raise ImportError("playwright")
+
+    monkeypatch.setattr(dg, "render_png", missing)
+    d = _png_dir(tmp_path)
+    assert dg.main(["--dir", str(d), "--png", "auto"]) == 0
+    assert (d / "digest.md").exists() and json.loads((d / "digest.json").read_text("utf-8"))["png"] is None
+    assert dg.main(["--dir", str(d), "--png", "require"]) == 1
+    assert not any((d / n).exists() for n in dg.OUTPUTS)
+
+
+def test_png_skip_never_calls_the_browser(tmp_path, monkeypatch):
+    """찍기 예외는 ``main`` 이 삼키므로(카드만 실패) 예외가 아니라 호출 자체를 센다."""
+    calls = []
+    monkeypatch.setattr(dg, "render_png", lambda *a: calls.append(a))
+    assert dg.main(["--dir", str(_png_dir(tmp_path)), "--png", "skip"]) == 0
+    assert calls == []

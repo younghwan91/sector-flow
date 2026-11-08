@@ -401,3 +401,10 @@ def test_pre_listing_value_of_a_new_listing_is_not_used(tmp_path):
     _ledger(con2, [(2024, "11011", "2024-12-31", "2024-12-31", 9_000_000, "20250320000001")])
     D.apply_history(con2, ["012170"])
     assert con2.execute("SELECT count(*) FROM shares_provenance WHERE source='dart'").fetchone() == (1,)
+
+
+def test_two_points_moved_to_the_same_day_keep_one():
+    """같은 병합을 사이에 둔 두 분기 점이 같은 날로 옮겨지면 한 행만 남는다(키가 (종목, 날짜)다)."""
+    pts = [("2026-03-31", 18_907_130), ("2026-06-30", 18_907_130)]
+    got = D.align_to_listing(pts, [("2026-11-08", 18_907_000)], MERGER)
+    assert [r[0] for r in got] == ["2026-07-03"] and got[0][2] == "dart_moved"

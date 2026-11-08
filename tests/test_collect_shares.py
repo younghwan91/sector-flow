@@ -9,7 +9,7 @@ import pandas as pd
 import pytest
 
 from sectorflow.collect import write
-from sectorflow.collect.shares import seed_rows
+from sectorflow.collect.shares import _share_event, seed_rows
 from sectorflow.storage import market_cap_asof_bulk
 
 CUR = 1_000_000
@@ -49,3 +49,12 @@ def test_seed_round_trips_through_market_cap_asof(tmp_path, day, want_shares):
     assert cap.iloc[0] == pytest.approx(1000 * want_shares, rel=1e-9)
     prov = dict(con.execute("SELECT date, source FROM shares_provenance").fetchall())
     assert prov == {SEED: "seed", SNAP: "kiwoom"}
+
+
+@pytest.mark.parametrize("tp,rt,want", [
+    ("16", 1.0, True), ("8", -50.0, True), ("16", 0.0, False), ("16", None, False), ("16", -100.0, False),
+    ("4", -1.2, False), ("x", 50.0, False),
+])
+def test_share_event_counts_only_real_share_count_changes(tp, rt, want):
+    """배율이 0·결측·−100% 이하이면 주식수 이벤트가 아니다(``log1p`` 가 0 이거나 터진다). 1% 는 진짜 이벤트다."""
+    assert _share_event(tp, rt) is want
