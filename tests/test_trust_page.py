@@ -1,6 +1,7 @@
 """검증·품질 페이지(`scripts/trust_page.py`) — 픽스처 리포트 루트에서 만들어 내용을 본다."""
 from __future__ import annotations
 
+import html
 import http.client
 import importlib.util
 import os
@@ -80,6 +81,13 @@ def root(tmp_path):
         REBUILT_txt="2026-11-08 10:00 현재 코드(abc)·확정 데이터로 다시 만듦; 원본은 /x/.archive/2026-11-06.1\n")
     crash = LAYERS.format(d="2026-11-09") + "Traceback (most recent call last):\nTypeError: boom\n"
     day("2026-11-09", **base, VERIFY_txt=crash, VERIFY_FAILED_txt=crash)
+    # VERIFY.txt 없이 VERIFY_FAILED.txt 만 남은 폴더 — 실패 이름에 HTML 이 섞여 있다(이스케이프 확인).
+    day("2026-11-10", **base, VERIFY_FAILED_txt=LAYERS.format(d="2026-11-10")
+        + "\n검사 9건 · 실패 1건\n실패 목록: E/<b>굵게</b> 열\n")
+    # 문서 주장 구분 이전 형식의 요약 + CLAIMS.txt — 건수는 CLAIMS.txt 에서 읽는다.
+    day("2026-11-11", **base, VERIFY_txt=_pass("2026-11-11", n=5), CLAIMS_txt="문서 주장 어긋남\n\n- G/x\n- G/y\n- G/z\n")
+    day("2026-11-12", INCOMPLETE_txt="완전성 관문 — 기준일 2026-11-12 · 기준 직전 5거래일 중앙값 · 문턱 97%\n"
+                                     "  [FAIL] 2026-11-12 시장 목록이 비었다 — 비교할 수 없다\n")
     (r / ".archive" / "2026-11-05-provisional").mkdir(parents=True)
     (r / "2026-11-10.building.77").mkdir()
     (r / "cron.log").write_text(
@@ -105,7 +113,17 @@ def _row(page, d):
 
 
 def _text(page):
-    return re.sub(r"<[^>]+>", " ", re.sub(r"<style>.*?</style>", "", page, flags=re.S))
+    return html.unescape(re.sub(r"<[^>]+>", " ", re.sub(r"<style>.*?</style>", "", page, flags=re.S)))
+
+
+def _tiles(page):
+    return {k: int(n) for n, k in re.findall(r'<div class="tile"><b>(\d+)</b><span>([^<]+)</span>', page)}
+
+
+def _qrow(page, qid):
+    m = re.search(rf'<tr data-qid="{re.escape(qid)}">(.*?)</tr>', page, re.S)
+    assert m, f"질문 {qid} 행이 없다"
+    return _text(m.group(1))
 
 
 def test_each_report_folder_gets_its_state_verify_gate_and_final_diff(page):
@@ -131,27 +149,70 @@ def test_each_report_folder_gets_its_state_verify_gate_and_final_diff(page):
 
 def test_failure_reasons_and_tiles_count_what_happened(page):
     assert "G/도움말·한계의 동시성 범위가 오늘 실측을 덮는가" in page
-    tiles = dict((k, int(n)) for n, k in re.findall(r'<div class="tile"><b>(\d+)</b><span>([^<]+)</span>', page))
-    assert tiles["기준일 폴더"] == 6
-    assert tiles["자기 검증 실패"] == 2           # 11-02 실패 · 11-09 검사기 중단
-    assert tiles["자기 검증 통과"] == 3
-    assert tiles["통과 · 문서 주장 어긋남"] == 1
-    assert tiles["수집 미완(안 만듦)"] == 1
+    tiles = _tiles(page)
+    assert tiles["기준일 폴더"] == 9
+    assert tiles["자기 검증 실패"] == 3           # 11-02 실패 · 11-09 검사기 중단 · 11-10 VERIFY_FAILED 만
+    assert tiles["자기 검증 통과"] == 4           # 11-03·11-11 은 문서 주장 어긋남이 있는 통과
+    assert tiles["통과 · 문서 주장 어긋남"] == 2
+    assert tiles["수집 미완(안 만듦)"] == 2
     assert tiles["재구성"] == 1 and tiles["확정"] == 1
 
 
-def test_unfavorable_results_and_limitations_are_on_the_page(page):
-    """불리한 결과를 뺀 페이지는 이 페이지의 존재 이유를 잃는다."""
+#: 질문 id → 판정 칸에 있어야 할 말과 설명에 있어야 할 말. 행을 지우거나 판정을 유리하게 고치면 빨개진다.
+EXPECTED_ROWS = {
+    "Q3d-sector": ("증거 없음", "배제하지 못한다"),
+    "Q3d-G": ("판정 불가", "중앙 2"),
+    "x": ("사실상 섹터 20일 반전", "0.82~0.93"),
+    "S1-S3": ("증거 없음", "여섯 칸 모두 탈락"),
+    "K1": ("쓸 수 있는 형태는 못 보임", "K1>0"),
+    "K2-K3": ("미확인 · 탈락", "K3 는 발견에서 탈락"),
+    "untested": ("검정된 적 없음", "종목 선정"),
+    "Q1": ("불합격", "미해명 16셀"),
+    "Q2": ("둘은 남김", "그때 남긴 것"),
+    "Q3a": ("G 불합격", "62.5%"),
+    "Q3b": ("코스닥 불안정", "코스닥 71%"),
+    "Q3c": ("약함", "42%"),
+}
+#: K1 의 단서 — 하나라도 빠지면 확인된 음의 IC 가 쓸 수 있는 것처럼 읽힌다.
+K1_CAVEATS = ("역효과", "확인 구간 IC 는 증거 없음", "왕복 비용을 빼면 발견 구간에서 진다", "공매도 없는 계좌에서 실현할 수 없다",
+              "단기 반전", "생존편향")
+LIMITS = {"approx", "session", "survivorship", "labels", "inst-detail", "provisional", "weak-defs", "untested",
+          "declared-checks"}
+
+
+def test_every_unfavorable_result_row_is_on_the_page_with_its_verdict(page):
+    """불리한 결과를 뺀 페이지는 이 페이지의 존재 이유를 잃는다 — 질문마다 행과 판정을 본다."""
+    assert set(re.findall(r'<tr data-qid="([^"]+)"', page)) == set(EXPECTED_ROWS)
+    for qid, (verdict, why) in EXPECTED_ROWS.items():
+        row = _qrow(page, qid)
+        assert verdict in row and why in row, (qid, verdict, why)
+    k1 = _qrow(page, "K1")
+    for c in K1_CAVEATS:
+        assert c in k1, c
+
+
+def test_every_limitation_is_on_the_page(page):
+    # 속성이 더 붙으면(hidden 등) 안 보이는 항목이다 — 정확히 이 꼴만 센다.
+    assert set(re.findall(r'<li data-limit="([^"]+)">', page)) == LIMITS
     t = _text(page)
-    for must in ("증거 없음", "판정 불가", "사실상 섹터 20일 반전", "쓸 수 있는 형태는 못 보임",
-                 "역효과", "불합격", "코스닥 불안정", "G 불합격"):
+    for must in ("순매수 금액은 근사다", "애프터마켓 포함 통합값", "2026-09-14", "생존편향", "섹터 라벨은 지금의 분류다",
+                 "중앙 2", "검정된 적 없는 값"):
         assert must in t, must
-    for must in ("순매수 금액은 근사다", "애프터마켓 포함 통합값", "2026-09-14", "생존편향",
-                 "섹터 라벨은 지금의 분류다"):
-        assert must in t, must
-    for commit in ("bd27017", "6ca326a", "b702dc4"):
-        assert commit in page
-    assert "docs/formulas.md" in page and "docs/validation/2026-11-08-results.md" in page
+
+
+def test_preregistration_wording_claims_only_commit_order_and_prints_gaps(page):
+    """커밋 시각은 '결과 문서보다 먼저 커밋' 만 보여준다 — 분석 전 고정의 증명처럼 쓰지 않고 간격을 적는다."""
+    t = _text(page)
+    assert "그 순서뿐이다" in t and "증명은 아니다" in t
+    assert "커밋 시각이 그 순서를 보여준다" not in t
+    if tp.git_info("6ca326a") is None:
+        pytest.skip("연구 커밋이 없다(얕은 클론)")
+    assert "간격 10분" in _qrow(page, "Q3d-sector")
+    assert re.search(r"간격이 \d+~\d+분이라", t)
+    for r in tp.VALIDATION + tp.CHECKS:
+        for _label, pre, res in r["links"]:
+            if pre:
+                assert f"/blob/{pre[1]}/{pre[0]}" in page and f"/blob/{res[1]}/{res[0]}" in page
 
 
 def test_no_banned_words_no_signed_returns_no_leaked_log(page):
@@ -209,7 +270,9 @@ def test_preregistration_commits_are_real_and_precede_their_results():
     """사전등록 해시 = 그 파일을 처음 넣은 커밋이고, 결과 커밋의 조상이며, 시각도 앞선다."""
     if _git("rev-parse", "--git-dir").returncode != 0:
         pytest.skip("git 저장소가 아니다")
-    for *_, (ppath, ph), (rpath, rh) in tp.VALIDATION + tp.CHECKS:
+    pairs = {(pre, res) for r in tp.VALIDATION + tp.CHECKS for _l, pre, res in r["links"] if pre}
+    assert pairs
+    for (ppath, ph), (rpath, rh) in pairs:
         if _git("cat-file", "-e", f"{ph}^{{commit}}").returncode or _git("cat-file", "-e", f"{rh}^{{commit}}").returncode:
             pytest.skip("얕은 클론이라 연구 커밋이 없다")
         added = _git("log", "--diff-filter=A", "--format=%h", "--abbrev=7", "--", ppath).stdout.split()
@@ -228,3 +291,34 @@ def test_parse_verify_reads_both_summary_formats_and_a_crash():
     assert new["claims"] == 1 and new["fails"] == 0 and new["complete"]
     crash = tp.parse_verify("  [OK  ] A · x\n  [FAIL] A · y\nTraceback\n")
     assert crash["complete"] is False and crash["checks"] == 2 and crash["fails"] == 1
+
+
+def test_window_limits_strip_table_and_tiles(root):
+    page = tp.render(str(root), window=3)
+    assert len(re.findall(r'<span class="cell ', page)) - 5 == 3     # 범례 칸 5개
+    assert len(re.findall(r"<tr><td>\d{4}-\d{2}-\d{2}</td>", page)) == 3
+    assert _tiles(page)["기준일 폴더"] == 3 and "최근 3개 기준일" in page
+    assert "<tr><td>2026-11-02</td>" not in page and 'title="2026-11-02' not in page
+
+
+def test_verify_failed_only_and_claims_txt_fallbacks(page):
+    r10 = _row(page, "2026-11-10")
+    assert "실패 1" in r10 and "VERIFY_FAILED.txt" in r10
+    r11 = _row(page, "2026-11-11")
+    assert "3건" in r11 and '<span class="cell claim" title="2026-11-11' in page
+
+
+def test_names_from_the_data_are_escaped(page):
+    assert "<b>굵게</b>" not in page and "&lt;b&gt;굵게&lt;/b&gt;" in page
+
+
+def test_gate_with_no_markets_at_all_is_shown_as_blocked(page):
+    r12 = _row(page, "2026-11-12")
+    assert "막힘" in r12 and "시장 목록이 비었다" in r12
+
+
+def test_no_report_folder_means_no_page_rather_than_an_unserved_root_file(tmp_path):
+    empty = tmp_path / "reports"
+    empty.mkdir()
+    assert tp.main(["--root", str(empty)]) == 1
+    assert not (empty / "trust.html").exists()

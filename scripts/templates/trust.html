@@ -39,6 +39,7 @@ table.days th:first-child{background:#f1f3f7;z-index:2}
 .tag.bad{background:#fde2e2;color:#9b1c1c;font-weight:600}
 .v-none{color:#92400e;font-weight:600} .v-bad{color:#9b1c1c;font-weight:600} .v-mixed{color:#5b21b6;font-weight:600}
 .v-ok{color:#166534;font-weight:600}
+.qid{font-size:11px;color:var(--mute);font-family:ui-monospace,monospace} .gap{font-size:12px;color:#92400e;white-space:nowrap}
 table.val td:first-child{min-width:12em} table.val td.verdict{min-width:9em}
 ul.tight{margin:6px 0;padding-left:20px} ul.tight li{margin:3px 0}
 .reasons li{font-size:13.5px}
@@ -55,7 +56,7 @@ table.val td[data-label]::before{content:attr(data-label);display:block;font-siz
 <p class="dim"><a href="/">← 리포트 목록</a></p>
 <h1>검증·품질</h1>
 <p class="lede">이 리포트가 매일 무엇을 검사하고 어디서 걸렸는지, 그리고 지표를 앞날 수익률에 대해 검정한 결과를 그대로 싣는다.
-불리한 결과도 뺀 것이 없다. 이 페이지는 리포트 폴더의 기록에서 기계적으로 만든다 — 손으로 고른 날이 없다.</p>
+불리한 결과를 빼지 않는다. ③·④ 는 요약이고 숫자 전부와 방법은 링크한 문서에 있다. ① 은 리포트 폴더의 기록에서 기계적으로 만든다 — 손으로 고른 날이 없다.</p>
 <p class="dim">기준 폴더 {{asof}} · 만든 시각 {{generated}} KST · 대상 폴더 {{n_days}}개</p>
 <nav class="toc"><a href="#quality">① 일일 파이프라인 품질</a><a href="#method">② 방법</a><a href="#validation">③ 검증 결과</a><a href="#limits">④ 알려진 한계</a></nav>
 
@@ -78,7 +79,8 @@ table.val td[data-label]::before{content:attr(data-label);display:block;font-siz
 <b>재구성</b> = 지난 기준일을 나중 코드·확정 데이터로 다시 만든 날(<code>REBUILT.txt</code>) — 그날 저녁 게시본이 아니다.</li>
 <li><b>자기 검증</b> = 그 폴더의 <code>VERIFY.txt</code> 요약(통과 검사 / 전체 검사). 검사 수는 검사가 늘면서 날마다 다르다. 실패한 리포트도 게시했고 화면·HTML 이 ⚠ 로 표시했다.</li>
 <li><b>문서 주장</b> = 도움말·한계 절이 인용하는 실측 주장이 그날 데이터와 어긋난 수. 수치 결함이 아니다. 이 구분이 생기기 전에는 같은 어긋남이 검증 실패로 집계됐다 — 위 기록은 그때 기록 그대로다.</li>
-<li><b>완전성 관문</b> = 만들기 전에 시장별 수급·시총 종목수가 직전 5거래일 중앙값의 97% 이상인지 본 결과. 칸의 % 는 시장·항목 중 가장 낮은 비율이다. 관문 출력은 크론 로그와 <code>INCOMPLETE.txt</code> 에만 남아 그 밖의 날은 “기록 없음” 이다.</li>
+<li><b>완전성 관문</b> = 만들기 전에 시장별 수급·시총 종목수가 직전 5거래일 중앙값의 97% 이상인지 본 결과. 칸의 % 는 시장·항목 중 가장 낮은 비율이다. 관문 출력은 크론 로그(<code>cron.log</code>)와 <code>INCOMPLETE.txt</code> 에만 남아 그 밖의 날은 “기록 없음” 이다.
+크론 로그에서는 그 기준일에 마지막으로 찍힌 관문을 싣는다 — 손으로 돌린 실행·재구성은 로그에 없거나 다른 값을 냈을 수 있다.</li>
 <li><b>잠정→확정 변경</b> = 확정 모드가 바꿔 끼운 잠정본 대비, 반올림을 넘게 바뀐 머리 숫자(시장·섹터 × 주체 × 1일·5일 순매수)의 칸 수. 이 비교가 생기기 전 확정본은 “기록 없음” 이다.</li>
 </ul>
 
@@ -91,15 +93,18 @@ table.val td[data-label]::before{content:attr(data-label);display:block;font-siz
 <li><b>만든 뒤 — 자기 검증.</b> 저장한 리포트를 그 자리에서 다시 읽어 검사한다. 층은 다음과 같다(최신 <code>VERIFY.txt</code> 기준):{{layers}}
 F 층은 DB 원자료에서 값을 따로 다시 만들어 리포트와 대조한다.</li>
 <li><b>잠정 → 확정.</b> 18:10 리포트는 그날 잠정치다. 다음날 08:20 확정치가 확인되면 같은 기준일을 다시 만들고 바뀐 머리 숫자를 <code>FINAL.txt</code> 에 적는다. 잠정본은 보관한다.</li>
-<li><b>지표 검정.</b> 질문·합격선·표본을 결과를 보기 전에 커밋(사전등록)하고, 발견 구간과 확인 구간을 나누며, 결과 표본을 DB 에서 독립으로 다시 계산하고 회의적 리뷰를 거친 뒤 적는다.
-아래 ③ 의 커밋 시각이 그 순서를 보여준다. 기술 통계이지 매매 판단이 아니다.</li>
+<li><b>지표 검정.</b> 질문·합격선·표본을 적은 사전등록 문서를 결과 문서보다 먼저 커밋했다. <b>커밋 시각이 보여주는 것은 그 순서뿐이다</b> —
+사전등록과 결과 커밋 사이 간격이 {{gaps}}이라 분석 전에 고정됐다는 증명은 아니다(연구마다 간격을 ③ 에 적었다).
+수급 쓸모 연구는 발견(2018~2022)·확인(2023~) 구간을 나눴고, 앞날 관계 재검(Q3d)은 전·후반 같은 부호를 기준으로 썼다.
+결과 표본은 DB 에서 따로 다시 계산해 대조하고 회의적 리뷰를 거친 뒤 적었다. 기술 통계이지 매매 판단이 아니다.</li>
 </ul>
 <p class="dim">정의·문서(사설 저장소 — 권한이 있어야 열린다):</p>
 {{docs}}
 </div>
 
 <h2 id="validation">③ 검증 결과 — 지표가 앞날 수익률에 대해 무엇을 말하나</h2>
-<p class="dim">모두 2026-11-08 연구다. “증거 없음” 은 “관계 없음” 이 아니라 그 표본으로 보지 못했다는 뜻이다. 판정 칸은 사전등록 규칙을 그대로 적용한 결과다.</p>
+<p class="dim">모두 2026-11-08 연구다. “증거 없음” 은 “관계 없음” 이 아니라 그 표본으로 보지 못했다는 뜻이다. 판정 칸은 사전등록 규칙을 그대로 적용한 결과다.
+커밋 시각은 사전등록 문서가 결과 문서보다 먼저 커밋됐다는 것만 보여준다. 링크는 그 커밋 시점의 문서다.</p>
 <div class="scroll"><table class="val">
 <thead><tr><th>질문</th><th>판정</th><th>무엇을 봤나 · 왜</th><th>사전등록 → 결과</th></tr></thead>
 <tbody>{{validation}}</tbody></table></div>
@@ -110,16 +115,19 @@ F 층은 DB 원자료에서 값을 따로 다시 만들어 리포트와 대조�
 
 <h2 id="limits">④ 알려진 한계</h2>
 <div class="card"><ul class="tight">
-<li><b>순매수 금액은 근사다.</b> DB 는 주체별 순매매 <b>수량</b>만 준다. 금액은 수량 × 그날 종가로 복원한다(참값은 체결가 가중).
+<li data-limit="approx"><b>순매수 금액은 근사다.</b> DB 는 주체별 순매매 <b>수량</b>만 준다. 금액은 수량 × 그날 종가로 복원한다(참값은 체결가 가중).
 방향과 상대 크기를 보는 값이다. 섹터 단위 검정에서 거래소는 안정했고 코스닥은 48일 중 71% 만 상대차 중앙 5% 이내였다.</li>
-<li><b>2026-09-14 이후 종가는 애프터마켓 포함 통합값이다.</b> 종가·수익률은 전일 20:00 → 당일 20:00 기준이라 KRX 지수(정규장 15:30)와 같은 날 갈린다.
+<li data-limit="session"><b>2026-09-14 이후 종가는 애프터마켓 포함 통합값이다.</b> 종가·수익률은 전일 20:00 → 당일 20:00 기준이라 KRX 지수(정규장 15:30)와 같은 날 갈린다.
 09-14 이전 날이 섞인 긴 구간은 그 날들만 정규장 종가다.</li>
-<li><b>연구의 생존편향.</b> 검정은 현재 상장 종목만으로 했다(상장폐지 종목은 지표와 앞날 수익률 양쪽에서 빠진다). 종목 투신+연기금 결과에서는
+<li data-limit="survivorship"><b>연구의 생존편향.</b> 검정은 현재 상장 종목만으로 했다(상장폐지 종목은 지표와 앞날 수익률 양쪽에서 빠진다). 종목 투신+연기금 결과에서는
 이 편향이 결론 쪽으로 작용할 수 있고 크기는 잴 수 없다.</li>
-<li><b>섹터 라벨은 지금의 분류다.</b> 섹터는 벤더 분류(<code>stocks.sector</code>, KRX 업종이 아니다)의 현재 값이고 이력이 없다. 지난 날의 리포트·재구성·연구 모두 현재 라벨로 묶는다.</li>
-<li><b>기관 합계 ≠ 기관 세부 6개의 합.</b> 화면의 기관 열은 벤더가 주는 합계다. 260일 실측으로 행의 8.9% 에서 둘이 다르다.</li>
-<li><b>잠정치.</b> 확정 모드가 생기기 전 리포트와 확정치를 확인하지 못한 날은 잠정치 그대로다. 선정 점수(G)는 잠정치에 흔들린다는 것이 확인됐다.</li>
-<li><b>검사는 선언한 것만 본다.</b> 자기 검증이 통과했다는 것은 적어 둔 검사가 통과했다는 뜻이다. 적지 않은 결함에 대해서는 아무 말도 하지 않는다.</li>
+<li data-limit="labels"><b>섹터 라벨은 지금의 분류다.</b> 섹터는 벤더 분류(<code>stocks.sector</code>, KRX 업종이 아니다)의 현재 값이고 이력이 없다. 지난 날의 리포트·재구성·연구 모두 현재 라벨로 묶는다.</li>
+<li data-limit="inst-detail"><b>기관 합계 ≠ 기관 세부 6개의 합.</b> 화면의 기관 열은 벤더가 주는 합계다. 260일 실측으로 행의 8.9% 에서 둘이 다르다.</li>
+<li data-limit="provisional"><b>잠정치.</b> 확정 모드가 생기기 전 리포트와 확정치를 확인하지 못한 날은 잠정치 그대로다. 선정 점수(G)는 잠정치에 흔들린다는 것이 확인됐다.</li>
+<li data-limit="weak-defs"><b>통계적으로 약한 정의.</b> G 의 순위 모집단은 날짜당 2~7개(중앙 2)이고, 모집단 크기가 다른 창의 G 를 종합에서 그대로 평균한다.
+ẍ 의 조각 길이는 6/6/8 인데 Δ=6 으로 나눈다. 강성 k 의 t 는 등분산 표준오차(표본 22~27섹터)이고 |t|&lt;2 인 날이 많다(③ Q3c).</li>
+<li data-limit="untested"><b>검정된 적 없는 값이 화면에 있다.</b> 포텐셜 U · 풀림 ẍ · dW/dt · 1년%ile · 추이, 종목 선정 · 곱은 앞날 수익률에 대해 검정한 적이 없다.</li>
+<li data-limit="declared-checks"><b>검사는 선언한 것만 본다.</b> 자기 검증이 통과했다는 것은 적어 둔 검사가 통과했다는 뜻이다. 적지 않은 결함에 대해서는 아무 말도 하지 않는다.</li>
 </ul></div>
 
 <footer>이 페이지는 <code>scripts/trust_page.py</code> 가 리포트 폴더의 <code>VERIFY.txt</code>·<code>VERIFY_FAILED.txt</code>·<code>CLAIMS.txt</code>·<code>FINAL.txt</code>·<code>REBUILT.txt</code>·<code>INCOMPLETE.txt</code> 와 크론 로그의 관문 줄에서 만든다.

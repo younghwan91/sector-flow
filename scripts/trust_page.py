@@ -11,14 +11,16 @@
    최근 :data:`WINDOW` 개 기준일을 한 줄 띠와 표로.
 2. **방법** — 관문·자기 검증 층(최신 ``VERIFY.txt`` 에서 읽는다)·확정 모드·사전등록, ``docs/`` 링크.
 3. **검증 결과** — :data:`VALIDATION`·:data:`CHECKS`. 불리한 결과(증거 없음·판정 불가·쓸 수 없음·불합격)를 뺀 것이 없다.
-   사전등록 커밋이 결과 커밋보다 앞선다는 것은 ``tests/test_trust_page.py`` 가 git 으로 확인한다.
+   사전등록 커밋이 결과 커밋보다 앞선다는 것은 ``tests/test_trust_page.py`` 가 git 으로 확인한다. 페이지는 그 순서와
+   간격만 말한다 — 커밋 시각은 '분석 전에 고정' 의 증명이 아니다.
 4. **알려진 한계** — 템플릿에 고정.
 
 수익률·성과 숫자는 싣지 않는다. :data:`BANNED` 의 말이 페이지에 들어가면(예: 검사 이름에 섞여 들어오면) 쓰지 않고 2 로 끝난다.
 
 **어디에 쓰나.** 웹(``serve_reports.py``)은 기준일 폴더 안의 허용 목록 파일만 내보낸다. 그래서 기본 출력은
 ``<root>/latest/trust.html`` 이고 ``/latest/trust.html`` 로 열린다(그날 폴더의 ``/<기준일>/trust.html`` 로 넘긴다).
-폴더를 바꿔 끼우면 사라지므로 리포트를 만든 **뒤에** 다시 돌린다.
+폴더를 바꿔 끼우면 사라지므로 리포트를 만든 **뒤에** 다시 돌린다. 리포트 폴더가 하나도 없으면
+쓰지 않고 1 로 끝난다(루트에 쓰면 웹이 내보내지 않는다).
 
 **배치에 붙이는 법(운영 담당이 ``daily_report.sh`` 끝, ``exit "$VERIFY_RC"`` 바로 앞에 넣는다)** — 실패해도
 리포트 결과(종료코드)를 바꾸지 않는다::
@@ -49,7 +51,7 @@ DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 WINDOW = 60
 #: 이 말이 페이지에 있으면 쓰지 않는다 — 관측 페이지가 매매 권유처럼 읽히면 안 된다.
 BANNED = ("추천", "매수 신호", "급등", "수익 보장", "적중")
-DOCS_BASE = "https://github.com/younghwan91/sector-flow/blob/main/"
+REPO_URL = "https://github.com/younghwan91/sector-flow"
 
 SUMMARY_RE = re.compile(r"^검사 (\d+)건 · 실패 (\d+)건(?: · 문서 주장 어긋남 (\d+)건)?\s*$", re.M)
 FAIL_LIST_RE = re.compile(r"^실패 목록: (.+)$", re.M)
@@ -57,6 +59,8 @@ MARK_RE = re.compile(r"^\s*\[(OK  |FAIL|OK   |CLAIM)\] ", re.M)
 LAYER_RE = re.compile(r"^([A-Z][0-9]?)\. (.+)$", re.M)
 GATE_HEAD_RE = re.compile(r"^완전성 관문 — 기준일 (\d{4}-\d{2}-\d{2})")
 GATE_LINE_RE = re.compile(r"^\s+\[(PASS|FAIL)\] ([^:]+): (.*)$")
+#: 시장 목록이 통째로 빈 날 — ``evaluate`` 가 시장 이름 없이 ``[FAIL] <기준일> 시장 목록이 비었다`` 를 낸다.
+GATE_EMPTY_RE = re.compile(r"^\s+\[FAIL\] (\d{4}-\d{2}-\d{2}) (.+)$")
 GATE_PASS_RE = re.compile(r"수급 (\d+)/(\d+) · 시총 (\d+)/(\d+)")
 FINAL_MKT_RE = re.compile(r"^시장 합계: (\d+)칸 중 (\d+)칸 바뀜", re.M)
 FINAL_SEC_RE = re.compile(r"^섹터 칸: (\d+)칸 중 (\d+)칸 바뀜", re.M)
@@ -91,6 +95,10 @@ def parse_gate(text: str) -> dict[str, list[dict]]:
         h = GATE_HEAD_RE.match(line)
         if h:
             cur = out[h.group(1)] = []
+            continue
+        e = GATE_EMPTY_RE.match(line) if cur is not None else None
+        if e:
+            cur.append({"market": "전체", "ok": False, "text": e.group(2).strip(), "min": None})
             continue
         g = GATE_LINE_RE.match(line) if cur is not None else None
         if not g:
@@ -226,60 +234,101 @@ PREREG_USE = "docs/validation/2026-11-08-prereg-usefulness.md"
 RESULTS = "docs/validation/2026-11-08-results.md"
 RESULTS_USE = "docs/validation/2026-11-08-usefulness-results.md"
 
-#: (질문, 판정, 판정 등급, 설명, (사전등록 파일, 커밋), (결과 파일, 커밋))
+#: 행 하나 = 질문 하나. ``id`` 는 페이지의 ``data-qid`` 이고 테스트가 행마다 이 값으로 찾는다(행을 지우면 빨개진다).
+#: ``links`` = [(연구 이름, (사전등록 파일, 커밋) 또는 None, (결과 파일, 커밋 또는 None))] — None 커밋은 지금 HEAD 의 문서.
 #: 등급: none = 증거 없음 · bad = 불합격·쓸 수 없음 · mixed = 판정 불가·조건부 · ok = 통과
+Q3D = ("Q3d 재검", (PREREG_Q3D, "6ca326a"), (RESULTS, "8385ae1"))
+Q123 = ("지표 검증 Q1~Q3", (PREREG, "bd27017"), (RESULTS, "dae572f"))
+USE = ("수급 쓸모", (PREREG_USE, "b702dc4"), (RESULTS_USE, "cd9c4a2"))
+FORMULAS = ("근거 수준 표", None, ("docs/formulas.md", None))
+
 VALIDATION = [
-    ("섹터 임펄스·가속·x(20일)의 앞날 관계 — h5·h20, 6칸", "증거 없음", "none",
-     "6칸 모두 사전등록 기준(널 p&lt;0.05 + 전·후반 같은 부호)에 못 미쳤다. h5 는 |IC| 약 0.035 이상을 대략 배제하지만 "
-     "h20 은 0.05~0.08 아래를 배제하지 못한다 — 있어도 이 표본으로는 못 본다. 결함을 고친 정의로 다시 쟀고 첫 실행도 같은 결론이었다.",
-     (PREREG_Q3D, "6ca326a"), (RESULTS, "8385ae1")),
-    ("선정 점수 G의 앞날 관계 — h5·h20", "판정 불가", "mixed",
-     "관문 통과 섹터가 5개 이상인 날이 h5 82일·h20 19일뿐이라 검정력이 없다. 잠정치에도 흔들린다(아래 Q3a 불합격). "
-     "화면은 G 를 “검증 안 된 탐색 점수” 로 적는다.",
-     (PREREG_Q3D, "6ca326a"), (RESULTS, "8385ae1")),
-    ("미실현 x 는 무엇을 재나", "사실상 섹터 20일 반전", "mixed",
-     "x 와 −Δv(같은 구간 섹터 수익률의 반대)의 순위상관이 0.82~0.93 이다. h20 의 약한 신호도 수급이 아니라 과거 20일 수익률만으로 "
-     "같게 나오고, 8칸 다중검정 기준(t≈2.7)에 못 미친다.",
-     (PREREG_Q3D, "6ca326a"), (RESULTS, "8385ae1")),
-    ("섹터 수급(투신+연기금·외국인 20일, 기관 60일)의 앞날 관계 — 6칸", "증거 없음", "none",
-     "발견 구간(2018~2022)에서 여섯 칸 모두 탈락해 확인 단계로 가지 못했다. 화면의 주 단위인 섹터 수급은 앞날 수익률에 대한 증거가 없다.",
-     (PREREG_USE, "b702dc4"), (RESULTS_USE, "cd9c4a2")),
-    ("종목 투신+연기금 20일 순매수 ÷ 시총 — 섹터 안 순위(K1)", "음(−)의 순위 정보 확인 · 쓸 수 있는 형태는 못 보임", "bad",
-     "섹터 안 순위 IC 의 부호가 음으로 확인됐다(확인 구간 t≈−6, 9개 연도 같은 부호). 그러나 순매수 상위를 피하는 쓰임은 확인 구간에서 "
-     "역효과였고, 정보가 순매도 쪽에 몰리는 모양이 발견 구간과 달랐으며, 절반가량은 단기 반전과 겹치고, 생존편향이 결론 쪽으로 부풀렸을 수 있다. "
-     "화면의 종목 선정 축(큰 순매수를 좋게 본다)은 이 부호와 반대다.",
-     (PREREG_USE, "b702dc4"), (RESULTS_USE, "cd9c4a2")),
-    ("종목 기관 합계(K2)·외국인(K3) 20일", "미확인 · 탈락", "none",
-     "K2 는 발견에서 통과했으나 확인 구간에서 유의수준(0.0125)을 넘지 못했다. K3 는 발견에서 탈락했다.",
-     (PREREG_USE, "b702dc4"), (RESULTS_USE, "cd9c4a2")),
+    {"id": "Q3d-sector", "q": "섹터 임펄스·가속·x(20일)의 앞날 관계 — h5·h20, 6칸", "verdict": "증거 없음", "cls": "none",
+     "why": "6칸 모두 사전등록 기준(널 p&lt;0.05 + 전·후반 같은 부호)에 못 미쳤다. h5 는 |IC| 약 0.035 이상을 대략 배제하지만 "
+            "h20 은 0.05~0.08 아래를 배제하지 못한다 — 있어도 이 표본으로는 못 본다. 결함을 고친 정의로 다시 쟀고 첫 실행도 같은 결론이었다.",
+     "links": [Q3D]},
+    {"id": "Q3d-G", "q": "선정 점수 G의 앞날 관계 — h5·h20", "verdict": "판정 불가", "cls": "mixed",
+     "why": "관문 통과 섹터가 5개 이상인 날이 h5 82일·h20 19일뿐이라 검정력이 없다. 순위를 매기는 모집단이 날짜당 2~7개(중앙 2)라 "
+            "2개인 날은 순위가 0 아니면 1 이다. 잠정치에도 흔들린다(아래 Q3a 불합격). 화면은 G 를 “검증 안 된 탐색 점수” 로 적는다.",
+     "links": [Q3D, Q123]},
+    {"id": "x", "q": "미실현 x 는 무엇을 재나", "verdict": "사실상 섹터 20일 반전", "cls": "mixed",
+     "why": "x 와 −Δv(같은 구간 섹터 수익률의 반대)의 순위상관이 0.82~0.93 이다(Q3c). 앞날 관계에서 h20 의 약한 신호도 수급이 아니라 "
+            "과거 20일 수익률만으로 같게 나오고, 8칸 다중검정 기준(t≈2.7)에 못 미친다(Q3d 재검).",
+     "links": [Q123, Q3D]},
+    {"id": "S1-S3", "q": "섹터 수급(S1 투신+연기금·S2 외국인 20일, S3 기관 60일)의 앞날 관계 — 6칸", "verdict": "증거 없음",
+     "cls": "none",
+     "why": "발견 구간(2018~2022)에서 여섯 칸 모두 탈락해 확인 단계로 가지 못했다. 화면의 주 단위인 섹터 수급은 앞날 수익률에 대한 증거가 없다.",
+     "links": [USE]},
+    {"id": "K1", "q": "종목 투신+연기금 20일 순매수 ÷ 시총 — 섹터 안 순위(K1)",
+     "verdict": "음(−)의 순위 정보 확인 · 쓸 수 있는 형태는 못 보임", "cls": "bad",
+     "why": "섹터 안 순위 IC 의 부호가 음으로 확인됐다(확인 구간 t≈−6, 9개 연도 같은 부호). 그러나 쓸 수 있는 형태는 하나도 보이지 않았다: "
+            "순매수 상위를 피하는 쓰임은 확인 구간에서 역효과였다. 순매수(K1&gt;0) 종목만 보면 확인 구간 IC 는 증거 없음이다. "
+            "순매도 상위만 사는 쓰임은 왕복 비용을 빼면 발견 구간에서 진다. 5분위 차는 롱숏 숫자라 공매도 없는 계좌에서 실현할 수 없다. "
+            "정보가 순매도 쪽에 몰리는 모양이 발견 구간과 달랐고, 절반가량은 단기 반전과 겹치며, 생존편향이 결론 쪽으로 부풀렸을 수 있다. "
+            "화면의 종목 선정 축(큰 순매수를 좋게 본다)은 이 부호와 반대다.",
+     "links": [USE]},
+    {"id": "K2-K3", "q": "종목 기관 합계(K2)·외국인(K3) 20일", "verdict": "미확인 · 탈락", "cls": "none",
+     "why": "K2 는 발견에서 통과했으나 확인 구간에서 유의수준(0.0125)을 넘지 못했다. K3 는 발견에서 탈락했다.",
+     "links": [USE]},
+    {"id": "untested", "q": "포텐셜 U · 풀림 ẍ · dW/dt · 1년%ile · 추이, 종목 선정 · 곱", "verdict": "검정된 적 없음", "cls": "none",
+     "why": "앞날 수익률에 대해 따로 검정한 적이 없다. U 는 |x| 의 단조 변환이고 ẍ 는 G 의 입력이다. 종목 선정의 투신+연기금 축은 "
+            "K1 의 부호와 반대 방향으로 점수를 준다.",
+     "links": [FORMULAS]},
 ]
 
 CHECKS = [
-    ("Q1 데이터 — 게시본 값 = DB 재계산", "불합격(원인 설명됨)", "bad",
-     "11-06 셀 99.735% 일치(합격선 99.9%). 넘는 셀은 전부 기준일 잠정치였다. 과거 게시본 셋은 그 뒤 주식수 정정으로 불합격, "
-     "미해명 16셀(최대 0.026%p). 표본 15건 손검산은 15/15 일치.",
-     (PREREG, "bd27017"), (RESULTS, "dae572f")),
-    ("Q2 계산 — 문서 정의만으로 다시 계산", "불합격 → 같은 날 고침", "bad",
-     "문서가 코드와 달랐고 버그가 나왔다: 통과 섹터가 하나면 G 가 사라짐, 섹터 수익률을 이어 쓸 수 없는 등락률로 만듦, "
-     "시총을 수정주가 × 늦은 주식수로 만듦. 세 결함을 고치고 검사·변이를 붙였다.",
-     (PREREG, "bd27017"), (RESULTS, "dae572f")),
-    ("Q3a 잠정치 민감도 — 게시본 vs 확정치", "가속 통과 · G 불합격", "bad",
-     "가속 순위 ρ 중앙 0.999. G 는 세 시장 통과 62.5%(합격선 90%). 그래서 다음날 08:20 확정 모드를 만들었다.",
-     (PREREG, "bd27017"), (RESULTS, "dae572f")),
-    ("Q3b 금액 근사(수량 × 종가)", "거래소 통과 · 코스닥 불안정", "mixed",
-     "48일 중 상대차 중앙 5% 이내: 거래소 100%, 전체 98%, 코스닥 71%.",
-     (PREREG, "bd27017"), (RESULTS, "dae572f")),
+    {"id": "Q1", "q": "Q1 데이터 — 게시본 값 = DB 재계산", "verdict": "불합격(원인 설명됨)", "cls": "bad",
+     "why": "11-06 셀 99.735% 일치(합격선 99.9%). 넘는 셀은 전부 기준일 잠정치였다. 과거 게시본 셋은 그 뒤 주식수 정정으로 불합격, "
+            "미해명 16셀(최대 0.026%p). 표본 15건 손검산은 15/15 일치.",
+     "links": [Q123]},
+    {"id": "Q2", "q": "Q2 계산 — 문서 정의만으로 다시 계산", "verdict": "불합격 → 결함 셋은 같은 날 고침 · 둘은 남김", "cls": "bad",
+     "why": "문서가 코드와 달랐고 결함이 나왔다. 같은 날 고친 것: 통과 섹터가 하나면 G 가 사라짐, 섹터 수익률을 이어 쓸 수 없는 등락률로 만듦, "
+            "시총을 수정주가 × 늦은 주식수로 만듦(검사·변이를 붙였다). 그때 남긴 것: PDF 문서의 G 식이 관문을 적지 않음(지금 정본은 "
+            "<code>docs/formulas.md</code>), 시장에 없는 섹터의 가속이 결측이 아니라 0.0(화면은 이미 걸러 영향 없음).",
+     "links": [Q123]},
+    {"id": "Q3a", "q": "Q3a 잠정치 민감도 — 게시본 vs 확정치", "verdict": "가속 통과 · G 불합격", "cls": "bad",
+     "why": "가속 순위 ρ 중앙 0.999. G 는 세 시장 통과 62.5%(합격선 90%). 그래서 다음날 08:20 확정 모드를 만들었다.",
+     "links": [Q123]},
+    {"id": "Q3b", "q": "Q3b 금액 근사(수량 × 종가)", "verdict": "거래소 통과 · 코스닥 불안정", "cls": "mixed",
+     "why": "48일 중 상대차 중앙 5% 이내: 거래소 100%, 전체 98%, 코스닥 71%.",
+     "links": [Q123]},
+    {"id": "Q3c", "q": "Q3c 강성 k 추정 안정성", "verdict": "약함(기술 통계)", "cls": "mixed",
+     "why": "k 의 |t|&lt;2 비율이 20일·전체에서 42%(겹침)·47%(비겹침), 코스닥은 60~70% 다. t 는 등분산 표준오차, 표본 22~27섹터. "
+            "k 가 얇은 섹터에 크게 흔들리던 것은 같은 날 적합 표본에서 10종목 미만 섹터를 빼 고쳤다.",
+     "links": [Q123]},
 ]
 
 
-def git_time(commit: str, repo: str = REPO) -> str | None:
-    """커밋 시각(KST, 분까지). git 이 없거나 해시가 없으면 None — 페이지는 해시만 싣는다."""
+def git_info(commit: str, repo: str = REPO) -> tuple[str, int] | None:
+    """(커밋 시각 KST 분까지, epoch). git 이 없거나 해시가 없으면 None — 페이지는 해시만 싣는다."""
     try:
-        out = subprocess.run(["git", "-C", repo, "log", "-1", "--format=%ad", "--date=format-local:%Y-%m-%d %H:%M",
-                              commit], capture_output=True, text=True, timeout=10, env={**os.environ, "TZ": "Asia/Seoul"})
+        out = subprocess.run(["git", "-C", repo, "log", "-1", "--format=%ct", commit],
+                             capture_output=True, text=True, timeout=10)
     except (OSError, subprocess.SubprocessError):
         return None
-    return (out.stdout.strip() or None) if out.returncode == 0 else None
+    if out.returncode != 0 or not out.stdout.strip():
+        return None
+    ts = int(out.stdout.strip())
+    return datetime.fromtimestamp(ts, KST).strftime("%Y-%m-%d %H:%M"), ts
+
+
+def git_head(repo: str = REPO) -> str:
+    """docs 목록 링크의 기준 — 지금 체크아웃의 커밋. 모르면 main."""
+    try:
+        out = subprocess.run(["git", "-C", repo, "rev-parse", "--short=7", "HEAD"], capture_output=True, text=True,
+                             timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return "main"
+    return out.stdout.strip() if out.returncode == 0 and out.stdout.strip() else "main"
+
+
+def prereg_gaps(info: dict) -> list[int]:
+    """사전등록 커밋 → 결과 커밋 간격[분], 연구마다."""
+    gaps = []
+    for _label, pre, res in {lk[0]: lk for r in VALIDATION + CHECKS for lk in r["links"]}.values():
+        if pre and res[1] and info.get(pre[1]) and info.get(res[1]):
+            gaps.append(round((info[res[1]][1] - info[pre[1]][1]) / 60))
+    return gaps
 
 
 # ─────────────────────────────────────────────── 그리기
@@ -410,25 +459,40 @@ def days_table_html(days: list[dict]) -> str:
     return "".join(rows)
 
 
-def _commit_cell(prereg: tuple[str, str], result: tuple[str, str], docs_base: str, times: dict) -> str:
-    def one(label, path, h):
-        t = times.get(h)
-        return (f'{label} <a href="{E(docs_base + path)}"><code>{h}</code></a>'
-                + (f' <span class="dim">{t}</span>' if t else ""))
-    return one("사전등록", *prereg) + "<br>→ " + one("결과", *result)
+def _blob(repo_url: str, ref: str, path: str) -> str:
+    return f"{repo_url}/blob/{ref}/{path}"
 
 
-def validation_rows(rows, docs_base: str, times: dict, why_label: str = "무엇을 봤나 · 왜") -> str:
+def _links_cell(links, repo_url: str, head: str, info: dict) -> str:
+    """연구마다 사전등록 → 결과 커밋과 그 간격. 링크는 그 커밋 시점의 문서다."""
+    parts = []
+    for label, pre, res in links:
+        rpath, rh = res
+        if pre is None:
+            parts.append(f'{E(label)} · 사전등록 없음 — 검정한 적 없다 · 출처 '
+                         f'<a href="{E(_blob(repo_url, rh or head, rpath))}"><code>{E(rpath)}</code></a>')
+            continue
+        ppath, ph = pre
+        pi, ri = info.get(ph), info.get(rh)
+        gap = f' <span class="gap">간격 {round((ri[1] - pi[1]) / 60)}분</span>' if pi and ri else ""
+        parts.append(f'{E(label)} · 사전등록 <a href="{E(_blob(repo_url, ph, ppath))}"><code>{ph}</code></a>'
+                     + (f' <span class="dim">{pi[0]}</span>' if pi else "")
+                     + f' → 결과 <a href="{E(_blob(repo_url, rh, rpath))}"><code>{rh}</code></a>'
+                     + (f' <span class="dim">{ri[0]}</span>' if ri else "") + gap)
+    return "<br>".join(parts)
+
+
+def validation_rows(rows, repo_url: str, head: str, info: dict, why_label: str = "무엇을 봤나 · 왜") -> str:
     out = []
-    for q, verdict, cls, why, prereg, result in rows:
-        out.append(f"<tr><td><b>{E(q)}</b></td>"
-                   f"<td class=\"verdict {VERDICT_CLS[cls]}\" data-label=\"판정\">{E(verdict)}</td>"
-                   f"<td data-label=\"{why_label}\">{why}</td>"
-                   f"<td data-label=\"사전등록 → 결과\">{_commit_cell(prereg, result, docs_base, times)}</td></tr>")
+    for r in rows:
+        out.append(f"<tr data-qid=\"{E(r['id'])}\"><td><b>{E(r['q'])}</b> <span class=\"qid\">{E(r['id'])}</span></td>"
+                   f"<td class=\"verdict {VERDICT_CLS[r['cls']]}\" data-label=\"판정\">{E(r['verdict'])}</td>"
+                   f"<td data-label=\"{why_label}\">{r['why']}</td>"
+                   f"<td data-label=\"사전등록 → 결과\">{_links_cell(r['links'], repo_url, head, info)}</td></tr>")
     return "".join(out)
 
 
-def docs_html(docs_base: str, repo: str = REPO) -> str:
+def docs_html(repo_url: str, head: str, repo: str = REPO) -> str:
     items = [("docs/formulas.md", "화면 값의 수식 정의 — 정본, 지표마다 근거 수준")]
     vdir = os.path.join(repo, "docs", "validation")
     try:
@@ -440,7 +504,7 @@ def docs_html(docs_base: str, repo: str = REPO) -> str:
         title = first[0].lstrip("# ").strip() if first else n
         items.append((f"docs/validation/{n}", title))
     return '<ul class="tight">' + "".join(
-        f'<li><a href="{E(docs_base + p)}"><code>{E(p)}</code></a> — {E(t)}</li>' for p, t in items) + "</ul>"
+        f'<li><a href="{E(_blob(repo_url, head, p))}"><code>{E(p)}</code></a> — {E(t)}</li>' for p, t in items) + "</ul>"
 
 
 def layers_html(layers: list[tuple[str, str]]) -> str:
@@ -449,14 +513,16 @@ def layers_html(layers: list[tuple[str, str]]) -> str:
     return '<ul class="tight">' + "".join(f"<li><b>{E(k)}</b> {E(t)}</li>" for k, t in layers) + "</ul>"
 
 
-def render(root: str, now: datetime | None = None, docs_base: str = DOCS_BASE, repo: str = REPO,
+def render(root: str, now: datetime | None = None, repo_url: str = REPO_URL, repo: str = REPO,
            window: int = WINDOW) -> str:
     now = now or datetime.now(KST)
     all_days = scan(root)
     days = all_days[-window:]
     latest = latest_dir(root)
-    commits = {h for *_, p, r in VALIDATION + CHECKS for h in (p[1], r[1])}
-    times = {h: git_time(h, repo) for h in commits}
+    commits = {h for r in VALIDATION + CHECKS for _l, pre, res in r["links"] for h in ((pre or (0, None))[1], res[1]) if h}
+    info = {h: git_info(h, repo) for h in commits}
+    head = git_head(repo)
+    gaps = prereg_gaps(info)
     slots = {
         "asof": E(latest or "없음"),
         "generated": now.astimezone(KST).strftime("%Y-%m-%d %H:%M"),
@@ -467,9 +533,10 @@ def render(root: str, now: datetime | None = None, docs_base: str = DOCS_BASE, r
         "fail_reasons": fail_reasons_html(days),
         "days_table": days_table_html(days) or '<tr><td colspan="7">리포트 폴더가 없다</td></tr>',
         "layers": layers_html(verify_layers(root, latest)),
-        "docs": docs_html(docs_base, repo),
-        "validation": validation_rows(VALIDATION, docs_base, times),
-        "checks": validation_rows(CHECKS, docs_base, times, "내용 · 조치"),
+        "docs": docs_html(repo_url, head, repo),
+        "gaps": (f"{min(gaps)}~{max(gaps)}분" if len(set(gaps)) > 1 else f"{gaps[0]}분") if gaps else "알 수 없음(git 없음)",
+        "validation": validation_rows(VALIDATION, repo_url, head, info),
+        "checks": validation_rows(CHECKS, repo_url, head, info, "내용 · 조치"),
     }
     with open(TEMPLATE, encoding="utf-8") as f:
         page = f.read()
@@ -485,24 +552,29 @@ def banned_hits(page: str) -> list[str]:
     return [w for w in BANNED if w in page]
 
 
-def default_out(root: str) -> str:
+def default_out(root: str) -> str | None:
+    """latest 폴더 안. 리포트 폴더가 하나도 없으면 None — 루트에 쓰면 웹이 내보내지 않는다."""
     d = latest_dir(root)
-    return os.path.join(root, d, "trust.html") if d else os.path.join(root, "trust.html")
+    return os.path.join(root, d, "trust.html") if d else None
 
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--root", default=os.path.join(REPO, "reports"), help="리포트 폴더(읽기만 한다)")
     ap.add_argument("--out", help="쓸 파일(기본: <root>/latest/trust.html)")
-    ap.add_argument("--docs-base", default=DOCS_BASE, help="docs/ 링크 앞부분")
+    ap.add_argument("--repo-url", default=REPO_URL, help="docs 링크의 저장소 주소(링크는 그 커밋의 blob)")
     a = ap.parse_args(argv)
     root = os.path.abspath(a.root)
-    page = render(root, docs_base=a.docs_base)
+    out = a.out or default_out(root)
+    if out is None:
+        print(f"{root} 에 리포트 폴더가 없다 — 쓸 곳이 없다(루트에 쓰면 웹이 내보내지 않는다). --out 으로 정하라.",
+              file=sys.stderr)
+        return 1
+    page = render(root, repo_url=a.repo_url)
     hits = banned_hits(page)
     if hits:
         print(f"페이지에 쓰지 않을 말이 들어갔다 {hits} — 쓰지 않는다. 출처(검사 이름 등)를 고쳐라.", file=sys.stderr)
         return 2
-    out = a.out or default_out(root)
     tmp = f"{out}.tmp.{os.getpid()}"
     with open(tmp, "w", encoding="utf-8") as f:
         f.write(page)

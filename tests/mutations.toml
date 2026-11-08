@@ -6062,10 +6062,10 @@ replace = """    elif False:
 [[mutation]]
 id = "trust-unfavorable-caveat-dropped"
 why = "K1 의 '쓸 수 있는 형태는 못 보임' 을 빼면 확인된 음의 IC 만 남아 유리하게 읽힌다 — 불리한 결과를 덜어내는 편집"
-guards = ["tests/test_trust_page.py::test_unfavorable_results_and_limitations_are_on_the_page"]
+guards = ["tests/test_trust_page.py::test_every_unfavorable_result_row_is_on_the_page_with_its_verdict"]
 file = "scripts/trust_page.py"
-find = "\"음(−)의 순위 정보 확인 · 쓸 수 있는 형태는 못 보임\", \"bad\","
-replace = "\"음(−)의 순위 정보 확인\", \"ok\","
+find = "     \"verdict\": \"음(−)의 순위 정보 확인 · 쓸 수 있는 형태는 못 보임\", \"cls\": \"bad\","
+replace = "     \"verdict\": \"음(−)의 순위 정보 확인\", \"cls\": \"ok\","
 
 [[mutation]]
 id = "trust-prereg-hash-not-the-prereg"
@@ -6073,10 +6073,8 @@ why = """사전등록 칸에 그 파일을 넣은 커밋이 아닌 해시(원 �
 순서만 보는 검사는 통과한다 — 해시가 그 사전등록 파일을 처음 넣은 커밋인지 본다."""
 guards = ["tests/test_trust_page.py::test_preregistration_commits_are_real_and_precede_their_results"]
 file = "scripts/trust_page.py"
-find = """     (PREREG_Q3D, "6ca326a"), (RESULTS, "8385ae1")),
-    ("선정 점수 G"""
-replace = """     (PREREG_Q3D, "bd27017"), (RESULTS, "8385ae1")),
-    ("선정 점수 G"""
+find = 'Q3D = ("Q3d 재검", (PREREG_Q3D, "6ca326a"), (RESULTS, "8385ae1"))'
+replace = 'Q3D = ("Q3d 재검", (PREREG_Q3D, "bd27017"), (RESULTS, "8385ae1"))'
 
 [[mutation]]
 id = "trust-page-not-in-web-allow-list"
@@ -6086,3 +6084,91 @@ file = "scripts/serve_reports.py"
 find = """    "trust.html": "text/html; charset=utf-8",  # 검증·품질 — scripts/trust_page.py 가 latest 폴더에 쓴다
 """
 replace = ""
+
+[[mutation]]
+id = "trust-k1-caveat-sentence-dropped"
+why = "K1 의 단서 한 문장(순매도 상위만 사면 발견 구간에서 비용에 진다)을 덜어낸다 — 판정 칸은 그대로라 판정만 보는 검사는 못 잡는다"
+guards = ["tests/test_trust_page.py::test_every_unfavorable_result_row_is_on_the_page_with_its_verdict"]
+file = "scripts/trust_page.py"
+find = "순매도 상위만 사는 쓰임은 왕복 비용을 빼면 발견 구간에서 진다. "
+replace = ""
+
+[[mutation]]
+id = "trust-last-row-of-each-table-dropped"
+why = "표마다 마지막 행(검정된 적 없음 · Q3c)이 조용히 빠진다 — 행 수를 세지 않고 문구만 보면 다른 행의 말에 묻힌다"
+guards = ["tests/test_trust_page.py::test_every_unfavorable_result_row_is_on_the_page_with_its_verdict"]
+file = "scripts/trust_page.py"
+find = "    for r in rows:\n        out.append(f\"<tr data-qid="
+replace = "    for r in rows[:-1]:\n        out.append(f\"<tr data-qid="
+
+[[mutation]]
+id = "trust-limitation-dropped"
+why = "한계 절에서 '검정된 적 없는 값' 항목이 빠진다 — 한계는 템플릿 고정 문구라 생성 코드 검사로는 안 보인다"
+guards = ["tests/test_trust_page.py::test_every_limitation_is_on_the_page"]
+file = "scripts/templates/trust.html"
+find = "<li data-limit=\"untested\">"
+replace = "<li data-limit=\"untested\" hidden>"
+
+[[mutation]]
+id = "trust-prereg-order-overclaimed"
+why = "커밋 시각이 '분석 전 고정' 을 증명하는 것처럼 쓴다 — 사전등록과 결과 커밋 간격은 5~13분이고, 시각이 보여주는 것은 문서 순서뿐이다"
+guards = ["tests/test_trust_page.py::test_preregistration_wording_claims_only_commit_order_and_prints_gaps"]
+file = "scripts/templates/trust.html"
+find = "<b>커밋 시각이 보여주는 것은 그 순서뿐이다</b>"
+replace = "커밋 시각이 그 순서를 보여준다"
+
+[[mutation]]
+id = "trust-prereg-gap-hidden"
+why = "연구마다 사전등록 → 결과 커밋 간격을 안 적는다 — 짧은 간격이 독자에게 안 보인다"
+guards = ["tests/test_trust_page.py::test_preregistration_wording_claims_only_commit_order_and_prints_gaps"]
+file = "scripts/trust_page.py"
+find = "        gap = f' <span class=\"gap\">간격 {round((ri[1] - pi[1]) / 60)}분</span>' if pi and ri else \"\""
+replace = "        gap = \"\""
+
+[[mutation]]
+id = "trust-window-ignored"
+why = "최근 60개로 자르지 않고 전 폴더를 싣는다 — 제목의 '최근 N개' 와 띠·표·타일 수가 어긋난다"
+guards = ["tests/test_trust_page.py::test_window_limits_strip_table_and_tiles"]
+file = "scripts/trust_page.py"
+find = "    days = all_days[-window:]"
+replace = "    days = all_days"
+
+[[mutation]]
+id = "trust-verify-failed-only-folder-unread"
+why = "VERIFY.txt 없이 VERIFY_FAILED.txt 만 있는 폴더를 '검증 기록 없음' 으로 그린다 — 실패가 사라진다"
+guards = ["tests/test_trust_page.py::test_verify_failed_only_and_claims_txt_fallbacks"]
+file = "scripts/trust_page.py"
+find = "    if vtxt is None and has[\"VERIFY_FAILED.txt\"]:"
+replace = "    if False:"
+
+[[mutation]]
+id = "trust-claims-txt-ignored"
+why = "요약 줄에 문서 주장 건수가 없는 옛 형식에서 CLAIMS.txt 를 안 읽는다 — 어긋남이 0 으로 보인다"
+guards = ["tests/test_trust_page.py::test_verify_failed_only_and_claims_txt_fallbacks"]
+file = "scripts/trust_page.py"
+find = "        if has[\"CLAIMS.txt\"] and not v[\"claims\"]:"
+replace = "        if False:"
+
+[[mutation]]
+id = "trust-fail-name-unescaped"
+why = "검사 이름을 이스케이프하지 않고 싣는다 — 이름에 섞인 꺾쇠가 페이지 구조를 바꾼다"
+guards = ["tests/test_trust_page.py::test_names_from_the_data_are_escaped"]
+file = "scripts/trust_page.py"
+find = "f\"<li><b>{n}회</b> · {E(k)} "
+replace = "f\"<li><b>{n}회</b> · {k} "
+
+[[mutation]]
+id = "trust-gate-empty-market-line-dropped"
+why = "시장 목록이 통째로 빈 날의 관문 줄(시장 이름이 없다)을 못 읽는다 — 그날 관문이 '기록 없음' 으로 보인다"
+guards = ["tests/test_trust_page.py::test_gate_with_no_markets_at_all_is_shown_as_blocked"]
+file = "scripts/trust_page.py"
+find = "        if e:\n            cur.append("
+replace = "        if False:\n            cur.append("
+
+[[mutation]]
+id = "trust-out-falls-back-to-unserved-root"
+why = "리포트 폴더가 없을 때 루트에 trust.html 을 쓴다 — 웹은 루트 파일을 내보내지 않아 조용히 아무도 못 본다"
+guards = ["tests/test_trust_page.py::test_no_report_folder_means_no_page_rather_than_an_unserved_root_file"]
+file = "scripts/trust_page.py"
+find = "    return os.path.join(root, d, \"trust.html\") if d else None"
+replace = "    return os.path.join(root, d, \"trust.html\") if d else os.path.join(root, \"trust.html\")"
