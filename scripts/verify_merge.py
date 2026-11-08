@@ -1025,7 +1025,7 @@ def col3(c):
     """
     return c[0], c[1], c[2]
 
-def check_block(tag, lines, width, cols, nhead, rows, want_of):
+def check_block(tag, lines, width, cols, nhead, rows, want_of, state=None):
     for i, ln in enumerate(lines):
         if cell_starts(ln)[-1] != width:
             bad.append(f"{tag} 행{i} 표시폭 {cell_starts(ln)[-1]} != {width}: "
@@ -1038,7 +1038,7 @@ def check_block(tag, lines, width, cols, nhead, rows, want_of):
         if span is None or span[0] + w > width:
             continue
         # 종목 목록 헤더는 창·주체마다 짧은 증거 표지를 단다(`name_head`, 3차 리뷰 D2-M1) — 화면이 그리는 글자로 본다.
-        shown = V.name_head(name, st) if tag.endswith(" 종목") and hasattr(V, "name_head") else name
+        shown = V.name_head(name, state) if state is not None and hasattr(V, "name_head") else name
         if slice_cells(head, *span) != V.pad(shown, w, right):
             bad.append(f"{tag} 헤더 '{shown}' 이 자기 칸에 없다")
     spans = {c[0]: V.col_span(cols, c[0]) for c in cols}
@@ -1181,7 +1181,7 @@ for width in widths:
                             ncols = V.fit_names(width) if hasattr(V, "fit_names") else V._fit(V.names_cols(), width)
                             names = st.names()
                             check_block(tag + " 종목", nl, width, ncols, nh,
-                                        names, want)
+                                        names, want, st)
 
 # 탐색 모드(`e`) — G·선정 열이 끼는 배치. 기본 모드보다 열이 많아 위치가 다 밀린다.
 # 조합을 다 돌면 분 단위가 두 배가 되므로 폭 둘·정렬 하나만 본다.
@@ -1205,7 +1205,7 @@ if hasattr(st, "explore"):
                     continue
                 nl, nh = V.names_lines(st, width)
                 check_block(tag + " 종목", nl, width, V.fit_names(width, True), nh,
-                            st.names(), want)
+                            st.names(), want, st)
     st.explore = False
 
 for line in bad[:40]:
