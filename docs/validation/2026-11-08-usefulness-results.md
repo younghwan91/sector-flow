@@ -53,4 +53,4 @@ K1 은 9개 연도 모두 음, 거래소·코스닥 둘 다 음(코스닥이 약
 - haiku-verifier 15건(종목 9 · 섹터 6, 순매수·시총·앞날 수익률 전 필드) DB 독립 재계산 전부 일치.
 - 섹터 앞날 수익률은 Q3d 재검 `fwd.csv` 와 11,637행 최대 0.006%p, 섹터 종목 수는 리포트 `n_all` 과 전부 일치.
 - quant-reviewer: CRITICAL 0, MAJOR 4(위 1~4, 해석·문구) 반영. 발견 판정 파일을 확인 전에 쓰고 확인 단계가 그 부호를 읽는다(`confirm.py`).
-- 구현 선택·재현 스크립트는 세션 스크래치(`scratchpad/usefulness/`)에 있었다. 판정에 쓴 숫자는 이 문서에 옮겼다.
+- 재현 스크립트(리뷰 재계산 포함)는 [`research/validation/usefulness/`](../../research/validation/usefulness/). 판정에 쓴 숫자는 이 문서에 옮겼다.
