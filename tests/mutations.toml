@@ -6212,11 +6212,17 @@ replace = "return bool(bits) and"
 
 [[mutation]]
 id = "byo-events-double-counted"
-why = "수정·무수정 응답이 같은 이벤트를 둘 다 실어 기업행동이 두 번 들어가고 시드가 두 배로 틀린다(Phase 1 실측 버그)"
+why = """수정·무수정 응답이 같은 이벤트를 둘 다 실어 기업행동이 두 번 들어가고 시드가 두 배로 틀린다(Phase 1 실측 버그).
+중복 제거가 두 겹(run.py 의 날짜 기준 dedup · write.replace_events)이라 한 곳만 빼면 다른 곳이 막는다 — 둘 다 빼야 재현된다."""
 guards = ["tests/test_collect_backfill.py::test_backfill_fills_every_table_the_report_reads"]
+[[mutation.edits]]
 file = "src/sectorflow/collect/write.py"
 find = "(\"code\", \"date\", \"upd_stkpc_tp\", \"upd_rt\"), list(seen.values()))"
 replace = "(\"code\", \"date\", \"upd_stkpc_tp\", \"upd_rt\"), rows)"
+[[mutation.edits]]
+file = "src/sectorflow/collect/run.py"
+find = "                events = list({(r[0], r[1]): r for r in events}.values())\n"
+replace = ""
 
 [[mutation]]
 id = "byo-sector-filter-ignored"
