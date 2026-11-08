@@ -314,6 +314,7 @@ def test_help_covers_every_rendered_column(data):
         for width in (80, 120, 160, 200):
             lines, _thin, _nh = table_lines(st, width, 20)
             for h in lines[0].split():
+                h = _re.sub(r"\[(무|불가|반전|음)\]$", "", h)   # 증거 표지는 열 이름이 아니다(`table_head`)
                 if not h or h in documented:
                     continue
                 if _re.fullmatch(r"\d+일\[G\]", h):     # 종합의 창별 G — "N일G" 로 설명
@@ -325,7 +326,7 @@ def test_help_covers_every_rendered_column(data):
     for wi in range(len(WINDOWS)):
         st.wi = wi
         for width in (80, 120, 160, 200):
-            rendered |= set(table_lines(st, width, 20)[0][0].split())
+            rendered |= {_re.sub(r"\[(무|불가|반전|음)\]$", "", h) for h in table_lines(st, width, 20)[0][0].split()}
     stale = set(HELP_PENDING) - rendered
     assert not stale, f"HELP_PENDING 에 안 그려지는 열이 남았다: {sorted(stale)}"
 
@@ -566,6 +567,7 @@ def test_every_sort_key_names_a_column_that_exists(data):
 
 
 def test_sort_highlight_points_at_the_right_header(data):
+    from sectorflow.tui.flow_view import table_head
     st = State(data)
     checked = 0
     for width in (80, 100, 132, 150, 170):
@@ -598,7 +600,7 @@ def test_sort_highlight_points_at_the_right_header(data):
                     f"폭{width}·창{w}: {header!r} 이 화면에 있는데 하이라이트가 "
                     f"없다 — SORT_COL 배선이 끊겼나")
                 right = next(c.right for c in cols if c.header == header)
-                assert _slice(head_line, *span) == pad(header, span[1], right), (
+                assert _slice(head_line, *span) == pad(table_head(header, st), span[1], right), (
                     f"폭{width}·창{w}: 하이라이트가 {header!r} 칸을 안 가리킨다")
                 checked += 1
     assert checked > 50, f"실제로 확인한 조합이 {checked}개뿐 — 검사가 헛돈다"
@@ -3444,7 +3446,8 @@ def test_drilldown_badges_follow_the_tested_scope_per_window_and_actor(data):
         assert name_head("순매수[억]", st) == "순매수[억]" + amt, (w, a)
         assert name_head("시총대비[%p]", st) == "시총대비[%p]" + share, (w, a)
         assert name_head(COL_INVTRT, st) == COL_INVTRT + "[측]" and name_head(COL_PENFND, st) == COL_PENFND + "[측]"
-        head = names_lines(st, 400)[0][1]
+        lines, nhead = names_lines(st, 400)
+        head = lines[nhead - 1]
         assert "순매수[억]" + amt in head and "시총대비[%p]" + share in head, head
     # 표지가 붙어도 헤더가 열 폭 안에 든다(`pad` 가 자르면 `[무` 처럼 반쪽 표지가 남는다).
     from sectorflow.tui.flow_view import NAME_EV_COLS, cell_len, names_cols
@@ -3483,7 +3486,8 @@ def test_first_screen_states_what_it_does_not_judge(data):
     text = "\n".join(banner_lines(st, 160))
     assert "눌림인지 전환인지는 판정하지 않는다" in text, text
     narrow = banner_lines(st, view_width(80))
-    assert "섹터 수급의 앞날 관계는 검정함 — 증거 없음" in narrow[-1], narrow[-1]
+    # 무엇을 검정했고(섹터 20·60일) 무엇을 안 했는가(1일·%ile) — 어느 하나만 적으면 범위를 넘겨 말한다.
+    assert "섹터 20·60일" in narrow[-1] and "%ile 은 앞날 검정 안 함" in narrow[-1], narrow[-1]
     assert any("판정하지 않는다" in ln for ln in narrow)
     d = dict(data)
     d.pop("change", None)

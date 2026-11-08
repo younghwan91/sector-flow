@@ -980,7 +980,7 @@ def layer_e(D: dict) -> None:
                 rows = st.rows()
                 for ri in ({0, len(rows) // 2, len(rows) - 1} if rows else set()):
                     st.row = ri
-                    nl, _ = FV.names_lines(st, width)
+                    nl, nhead = FV.names_lines(st, width)
                     for ln in nl:
                         if FV.cell_len(ln) != width:
                             bad_w.append(f"종목 {term}/{FV.WINDOWS[wi]}/{st.market} "
@@ -990,7 +990,7 @@ def layer_e(D: dict) -> None:
                     # 검사와 화면이 갈리면 화면이 맞는데 검사가 빨개진다.
                     ncols = FV.fit_names(width)
                     nwid = [c.width for c in ncols]
-                    for ln, t in zip(nl[2:], st.names()):
+                    for ln, t in zip(nl[nhead:], st.names()):
                         for i, c in enumerate(ncols):
                             if c.header in TEXT_COLS:
                                 continue
@@ -1182,7 +1182,11 @@ def layer_g(P: dict, D: dict) -> None:
                     rabs = sum(abs(sum(a[i] for a in d4)) for i in range(w))
                     ag = sum(abs(x) for x in d4[ai])
                     tag = f"{mk}/{W}/{LV.ACTORS[ai][0]}/{s}"
-                    r = rows[s]
+                    # 이 시장에 종목이 없는 섹터는 행이 아니다(`+0` 행으로 뜨던 자리) — 종목이 있는데 행이 없으면 틀렸다.
+                    r = rows.get(s)
+                    if r is None:
+                        pairs.append((f"{tag}/행이 있어야 하는데 없다", float(sum(int((P.get("n_by_sector") or {}).get(m, {}).get(s) or 0) for m in mkts)), 0.0))
+                        continue
                     for k in AK:
                         pairs.append((f"{tag}/{k}", r[k], exp[k]))
                     pairs.append((f"{tag}/잔여", r["resid"], -sum(exp.values())))
@@ -2020,7 +2024,7 @@ def _f_today_context(P: dict, cur, ph: str, meta: dict, px: dict, cap_at) -> Non
 #: producer 가 되돌아보기를 잘못 잡았을 때 검증도 같은 값으로 따라간다.
 VT_LOOKBACK = 260
 VT_MIN_LIVE = 0.25
-VT_DETAIL = ("invtrt", "penfnd_etc")
+VT_DETAIL = ("fnnc_invt", "invtrt", "penfnd_etc")
 
 
 def _vt_series(P: dict, mks: list, sec: str, key: str):
@@ -2123,7 +2127,7 @@ def layer_t(P: dict, folder: "str | None" = None) -> None:
     bad_m, bad_mp, bad_mr = [], [], []
     for mk, mks in mkeys:
         M = (T.get("market") or {}).get(mk) or {}
-        for a in ("inst", "forgn", "indiv", "etc", "invtrt", "penfnd_etc", "invpen", "tv"):
+        for a in ("inst", "forgn", "indiv", "etc", "fnnc_invt", "invtrt", "penfnd_etc", "invpen", "tv"):
             ser = [0.0] * n
             for s in secs:
                 one = _vt_series(P, mks, s, a)
@@ -2259,6 +2263,8 @@ def layer_t(P: dict, folder: "str | None" = None) -> None:
     _vt_final_vs_provisional(P, folder)
     _vt_revision_check(P, folder)
     _vt_streak_check(P)
+    _vt_day_change_check(P)
+    _vt_concentration_check(P)
     _vt_krx_truth(P, folder)
 
 
@@ -2771,6 +2777,122 @@ def _vt_streak_check(P: dict) -> None:
     chk("T", "연속 순매매 — 시장·주체별 최장 섹터 재계산", not bad_l, "; ".join(bad_l[:2]))
 
 
+# ─────────────────────────────────────────────── T. 하루 단위 변화·거래대금 집중 — 일별 배열·종목 값에서 다시 센다
+
+#: 정의를 producer 상수에서 읽지 않는다(그쪽이 틀리면 검증도 따라간다).
+VT_DAY_HI, VT_DAY_LO = 95, 5
+VT_DAY_FLIP_SHARE = 0.02
+VT_DAY_ACTORS = ("inst", "invpen", "forgn", "indiv", "etc")
+VT_CONC_SHARE = 0.20
+VT_CONC_TOP = 2
+#: 부호 줄·집중 줄의 금액 허용오차 — 일별 값이 소수 2자리, 종목 값이 소수 1자리다.
+VT_DAY_TOL = 0.006
+
+
+def _vt_visible(p: float) -> int:
+    return int(math.floor(round(p, 1) + 0.5 + 1e-9))
+
+
+def _vt_extreme_days(ser: list, hi: bool) -> int:
+    """그날까지의 일별 값으로 날마다 다시 잰 %ile 이 같은 쪽 극단인 연속 일수 — 앞에서 전부 세고 끝에서 읽는다."""
+    run = 0
+    for i in range(1, len(ser)):                     # 마지막 칸이 오늘
+        p = _vt_pct(ser[:i + 1])
+        ok = p is not None and (_vt_visible(p) >= VT_DAY_HI if hi else _vt_visible(p) <= VT_DAY_LO)
+        run = run + 1 if ok else 0
+    return run
+
+
+def _vt_day_change_check(P: dict) -> None:
+    """``today.day_change`` — 극단 지속 일수와 어제와 부호가 바뀐 섹터를 일별 배열에서 다시 센다."""
+    DC = (P.get("today") or {}).get("day_change")
+    chk("T", "하루 단위 변화 블록(today.day_change)이 있는가", isinstance(DC, dict))
+    if not isinstance(DC, dict):
+        return
+    dates, nb = P["dates"], P.get("n_by_sector") or {}
+    chk("T", "하루 단위 변화 — 비교한 날 = 페이로드 끝에서 둘째 날",
+        DC.get("prev_date") == (dates[-2] if len(dates) > 1 else None), f"{DC.get('prev_date')}")
+    bad_e, bad_f, n_e, n_f = [], [], 0, 0
+    for mk, mks in [("전체", list(P["markets"]))] + [(m, [m]) for m in P["markets"]]:
+        present = [s for s in P["sectors"] if any(nb.get(m, {}).get(s) for m in mks)]
+        for a in VT_DAY_ACTORS:
+            sers = {s: x for s in present if (x := _vt_series(P, mks, s, a)) is not None}
+            ext = ((DC.get("extreme") or {}).get(mk) or {}).get(a) or {}
+            for side, hi in (("hi", True), ("lo", False)):
+                got = ext.get(side) or {}
+                # 끝이 극단인 칸만 긴 재계산을 한다 — 앞에서 다 세면 칸마다 260번 정렬이다.
+                want = {s: _vt_extreme_days(x, hi) for s, x in sers.items()
+                        if (p := _vt_pct(x)) is not None and (_vt_visible(p) >= VT_DAY_HI if hi else _vt_visible(p) <= VT_DAY_LO)}
+                n_e += len(want)
+                if got != want:
+                    diff = sorted(k for k in set(got) | set(want) if got.get(k) != want.get(k))[:2]
+                    bad_e.append(f"{mk}/{a}/{side} {[(k, got.get(k), want.get(k)) for k in diff]}")
+            if len(dates) < 2:
+                continue
+            g_now, g_prev = sum(abs(x[-1]) for x in sers.values()), sum(abs(x[-2]) for x in sers.values())
+            want_f = sorted(((s, x[-2], x[-1]) for s, x in sers.items()
+                             if s != "(미분류)" and sum(int(nb.get(m, {}).get(s) or 0) for m in mks) >= VT_STREAK_MIN
+                             and ((x[-1] > 0 > x[-2]) or (x[-1] < 0 < x[-2]))
+                             and abs(x[-1]) >= VT_DAY_FLIP_SHARE * g_now and abs(x[-2]) >= VT_DAY_FLIP_SHARE * g_prev),
+                            key=lambda t: (-abs(t[2]), t[0]))
+            got_f = ((DC.get("flips") or {}).get(mk) or {}).get(a) or []
+            n_f += len(want_f)
+            if ([f.get("sector") for f in got_f] != [t[0] for t in want_f]
+                    or any(abs(f["prev"] - t[1]) > VT_DAY_TOL or abs(f["now"] - t[2]) > VT_DAY_TOL
+                           for f, t in zip(got_f, want_f))):
+                bad_f.append(f"{mk}/{a} {[f.get('sector') for f in got_f][:3]} vs {[t[0] for t in want_f][:3]}")
+    chk("T", "하루 단위 변화 — 극단 지속 일수 재계산(날마다 그날까지의 분포)", not bad_e,
+        f"{n_e}칸 · {len(bad_e)}건  " + "; ".join(bad_e[:2]))
+    chk("T", "하루 단위 변화 — 어제와 부호가 바뀐 섹터 재계산(크기 문턱·얇은 섹터 제외)", not bad_f,
+        f"{n_f}칸 · {len(bad_f)}건  " + "; ".join(bad_f[:2]))
+
+
+def _vt_concentration_check(P: dict) -> None:
+    """``today.concentration`` — 거래대금 집중을 종목 1일 값과 일별 배열에서 다시 센다."""
+    C = (P.get("today") or {}).get("concentration")
+    chk("T", "거래대금 집중 블록(today.concentration)이 있는가", isinstance(C, dict))
+    if not isinstance(C, dict):
+        return
+    nb = P.get("n_by_sector") or {}
+    bad, n_rows = [], 0
+    for mk, mks in [("전체", list(P["markets"]))] + [(m, [m]) for m in P["markets"]]:
+        by_sec: dict = {}
+        for code, nm in (P.get("names") or {}).items():
+            w = (nm.get("win") or {}).get("1")
+            if w and nm.get("market") in mks and w.get("tv"):
+                by_sec.setdefault(nm.get("sector"), []).append((str(code), w))
+        tv = {s: x[-1] for s in P["sectors"] if any(nb.get(m, {}).get(s) for m in mks)
+              and (x := _vt_series(P, mks, s, "tv"))}
+        total = sum(tv.values())
+        want = sorted((s for s, v in tv.items()
+                       if s != "(미분류)" and sum(int(nb.get(m, {}).get(s) or 0) for m in mks) >= VT_STREAK_MIN
+                       and total and v >= VT_CONC_SHARE * total and by_sec.get(s)), key=lambda s: (-tv[s], s))
+        got = (C.get("markets") or {}).get(mk) or []
+        if [r.get("sector") for r in got] != want:
+            bad.append(f"{mk} 섹터 {[r.get('sector') for r in got]} vs {want}")
+            continue
+        for r in got:
+            n_rows += 1
+            s = r["sector"]
+            top = sorted(by_sec[s], key=lambda t: (-t[1]["tv"], t[0]))[:VT_CONC_TOP]
+            if [t.get("code") for t in r.get("top") or []] != [c for c, _w in top]:
+                bad.append(f"{mk}/{s} 상위 {r.get('top')} vs {[c for c, _w in top]}")
+                continue
+            share = sum(w["tv"] for _c, w in top) / tv[s] * 100.0
+            if abs((r.get("top_share_pct") or 0.0) - share) > 0.051:
+                bad.append(f"{mk}/{s} 상위 몫 {r.get('top_share_pct')} vs {share:.2f}")
+            if abs((r.get("market_share_pct") or 0.0) - tv[s] / total * 100.0) > 0.051:
+                bad.append(f"{mk}/{s} 시장 몫 {r.get('market_share_pct')}")
+            for a in VT_DAY_ACTORS:
+                ser = _vt_series(P, mks, s, a)
+                exp = (ser[-1] if ser else 0.0) - sum(
+                    ((w.get("invtrt") or 0.0) + (w.get("penfnd_etc") or 0.0)) if a == "invpen" else (w.get(a) or 0.0)
+                    for _c, w in top)
+                if abs(((r.get("rest") or {}).get(a) or 0.0) - exp) > 0.051 + VT_DAY_TOL:
+                    bad.append(f"{mk}/{s}/{a} 제외 값 {(r.get('rest') or {}).get(a)} vs {exp:.2f}")
+    chk("T", "거래대금 집중 — 섹터·상위 종목·몫·제외 값 재계산", not bad, f"{n_rows}줄  " + "; ".join(bad[:2]))
+
+
 #: KRX 공식 대조의 분모 게이트 — producer(krx_truth.GAP_MIN_TV_SHARE)를 읽지 않고 따로 적는다.
 VT_KRX_MIN_TV_SHARE = 0.002
 #: 페이로드 주체 → krx_truth.json 원시 행(공표 투자자구분) — 역시 독립 사본.
@@ -2902,7 +3024,7 @@ function table(){ const t=document.getElementById("tbl"); const [thead,tbody]=t.
     rows:(tbody?tbody.children:[]).map(tr=>({sector:tr.dataset.sector, thin:tr.className==="thin",
       cells:Object.fromEntries(tr.children.map(td=>[td.dataset.k, td.textContent]))}))}; }
 function today(){ return document.getElementById("t-grid").children.map(c=>({id:c.id||null, title:txt(c.children[0]),
-  lines:c.children.slice(1).map(l=>({cls:l.className, actor:(l.dataset||{}).actor, side:(l.dataset||{}).side,
+  lines:c.children.slice(1).map(l=>({cls:l.className, actor:(l.dataset||{}).actor, side:(l.dataset||{}).side, kind:(l.dataset||{}).kind,
     market:(l.dataset||{}).market, text:l.textContent,
     items:(l.children||[]).filter(x=>x.className==="it").map(x=>x.textContent)}))})); }
 const out={wins:WINS, mkts:MKTS, views:[], today:{}};
@@ -3138,7 +3260,7 @@ def layer_w(D: dict, P: dict, folder: str) -> None:
         want = {}
         for r in rows:
             s = r["sector"]
-            want[s] = {"sector": s, "n_all": "—" if r.get("n_all") is None else str(r["n_all"]),
+            want[s] = {"sector": s + ("~" if r.get("thin") else ""), "n_all": "—" if r.get("n_all") is None else str(r["n_all"]),
                        "inst": _w_A(r.get("inst")), "accel": _w_P(r.get("accel")), "pct": _w_PI(r.get("pct")),
                        "ret": _w_P(r.get("ret")), "trust5": _w_A(t5.get(s)), "trustw": _w_A(tw.get(s)),
                        "forgn": _w_A(r.get("forgn")), "indiv": _w_A(r.get("indiv")), "etc": _w_A(r.get("etc")),
@@ -3280,6 +3402,34 @@ def layer_w(D: dict, P: dict, folder: str) -> None:
             if (rl.strip() if rl else None) != (web[0] if web else None):
                 bad_sk.append(f"{m} 수정 폭 웹 {web[:1]} vs TUI {rl!r}")
         chk("W", "'오늘' 패널 연속 순매매·잠정 수정 폭 = TUI 첫 화면 글자", not bad_sk, "; ".join(bad_sk[:3]))
+        # 기관 세부·어제와 부호가 바뀐 섹터·거래대금 집중 — TUI 첫 화면과 같은 글자인가.
+        bad_day = []
+        for m in out["mkts"]:
+            cards = {c["id"]: c for c in out["today"].get(m) or [] if c["id"]}
+            want = FV.market_detail_items(D, m)
+            got = [ln.get("items") for ln in (cards.get("t-net") or {}).get("lines", []) if ln.get("kind") == "detail"]
+            if (want is None) != (not got) or (want is not None and got[0] != [_w_minus(w) for w in want]):
+                bad_day.append(f"{m} 기관 세부 웹 {got[:1]} vs TUI {want}")
+            acts = [a for a, _ko in FV.banner_actors(D, m)]
+            lines = [ln for ln in (cards.get("t-day") or {}).get("lines", []) if ln.get("actor")]
+            if FV.day_flip_items(D, m, acts[0]) is None:
+                if cards.get("t-day"):
+                    bad_day.append(f"{m} 옛 리포트인데 부호 줄이 있다")
+            elif [ln["actor"] for ln in lines] != acts:
+                bad_day.append(f"{m} 부호 줄 주체 {[ln['actor'] for ln in lines]} vs {acts}")
+            else:
+                for ln in lines:
+                    # 화살표 뒤의 음수 부호는 `_w_minus` 가 못 본다(숫자 앞이 공백·괄호가 아니다) — 화살표를 먼저 바꿔 띄워 본다.
+                    tui = [_w_minus(w.replace(FV.TREND_ARROW, "→ ")).replace("→ ", "→")
+                           for w in FV.day_flip_items(D, m, ln["actor"])]
+                    if ln["items"] != tui:
+                        bad_day.append(f"{m}/{ln['actor']} 부호 웹 {ln['items'][:2]} vs TUI {tui[:2]}")
+            tui = FV.concentration_items(D, m) or []
+            card = cards.get("t-conc")
+            got = ((card or {}).get("lines") or [{}])[0].get("items") if card else []
+            if got != [_w_minus(w) for w in tui]:
+                bad_day.append(f"{m} 집중 웹 {got[:2]} vs TUI {tui[:2]}")
+        chk("W", "'오늘' 패널 기관 세부·부호 바뀜·거래대금 집중 = TUI 첫 화면 글자", not bad_day, "; ".join(bad_day[:3]))
 
     # 뷰어 1일 종목 목록
     vpath = os.path.join(folder, "viewer.html")
@@ -3378,7 +3528,7 @@ def _w_viewer_full(D: dict, P: dict, node: str, vpath: str, FV) -> None:
         if "head" not in v:
             continue
         # 전체 표 — 열 머리·표지(섹터 `evidence_at`), 칸 = 페이로드, 금액 칸 = TUI 블록.
-        want_head = ["섹터", "기관", "외국인", "개인", "기타법인", "기관 가속 %p", "거래대금", "시가총액"]
+        want_head = ["섹터", "기관", "외국인", "개인", "기타법인", "기관 가속 %p", "거래대금", "시총"]
         if [h["h"] for h in v["head"]] != want_head:
             bad_c.append(f"{tag} 머리 {[h['h'] for h in v['head']]}")
             continue
