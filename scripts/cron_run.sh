@@ -8,7 +8,7 @@
 #
 # 75 는 경고다 — error 가 아니라 warn. 뜻은 스크립트마다 다르고 본문(꼬리)이 말한다:
 #   daily_report.sh   오늘 기준일 수집 미완 · 확정치 미확인(08:20) · 다른 실행과 겹침
-#   freshness_check.sh 오늘 수급이 없다(휴장일이 아니면 수집 실패) · 알림 웹훅 미설정
+#   freshness_check.sh 장이 열렸는데 수급이 없다 · 전 거래일 미확정 · 알림 웹훅 미설정·죽음
 # 124 는 크론 줄의 timeout 이 끊은 것이다.
 # 알림 구현은 복사하지 않고 quant-airflow 것을 쓴다. 없는 체크아웃에서는 로그에만 남는다.
 set -u
@@ -21,11 +21,21 @@ shift
 [ "${1:-}" = "--" ] && shift
 [ $# -gt 0 ] || { echo "cron_run.sh: 명령이 없다 — cron_run.sh <이름> -- <명령...>" >&2; exit 2; }
 
-tmp="$(mktemp)"
-trap 'rm -f "$tmp"' EXIT
+# 꼬리를 담을 임시 파일은 **디스크(reports/)에 먼저** 만든다. /tmp 는 사용자 할당량이 걸린 tmpfs 라 다른 세션이
+# 채우면 mktemp 가 실패하거나(→ 예전엔 `tail: cannot open ''` 로 본문이 빈 알림), 빈 파일은 만들어지고 쓰기만
+# 조용히 실패한다(2026-11-08 크론 리허설). 둘 다 안 되면 출력은 그대로 흘리고 알림 본문에 그 사실을 적는다.
+# KILL 로 끝나 trap 이 못 지운 지난 꼬리 파일(하루 넘은 것)은 여기서 쓸어 낸다.
+find "$REPO/reports" -maxdepth 1 -name '.cron_run.*' -mtime +0 -delete 2>/dev/null || true
+tmp="$(mktemp -p "$REPO/reports" .cron_run.XXXXXX 2>/dev/null || mktemp 2>/dev/null || true)"
+trap '[ -n "$tmp" ] && rm -f "$tmp"' EXIT
 
-"$@" 2>&1 | tee "$tmp"
-rc=${PIPESTATUS[0]}
+if [ -n "$tmp" ]; then
+    "$@" 2>&1 | tee "$tmp"
+    rc=${PIPESTATUS[0]}
+else
+    "$@" 2>&1
+    rc=$?
+fi
 
 if [ "$rc" -ne 0 ]; then
     if [ "$rc" -eq 75 ]; then
@@ -36,7 +46,12 @@ if [ "$rc" -ne 0 ]; then
         level=error title="$name 실패 (rc=$rc)"
     fi
     if [ -x "$ALERT" ]; then
-        tail -n 30 "$tmp" | "$ALERT" "$level" "$title"
+        if [ -n "$tmp" ] && [ -s "$tmp" ]; then
+            tail -n 30 "$tmp" | "$ALERT" "$level" "$title"
+        else
+            echo "출력 꼬리가 없다 — 임시 파일을 못 만들었거나(reports/·/tmp 용량을 보라: df -h /tmp; du -sh /tmp/* 2>/dev/null | sort -h | tail) 명령이 아무것도 안 찍었다. 전체는 크론 로그(reports/*.log)에 있다." \
+                | "$ALERT" "$level" "$title"
+        fi
     else
         echo "[cron_run] 알림 통로 없음($ALERT) — $title"
     fi

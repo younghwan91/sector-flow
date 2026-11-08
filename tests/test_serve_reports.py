@@ -67,6 +67,18 @@ def test_only_the_report_pages_are_served(get, path):
     assert b"DB" not in body
 
 
+def test_healthz_checks_the_reports_can_be_shown(get, root, monkeypatch):
+    """대답만 보는 /healthz 는 루트가 사라지거나 목록이 죽어도 200 이라 serve.sh 가 그대로 둔다."""
+    assert get("/healthz")[0] == 200
+    monkeypatch.setattr(srv, "index_html", lambda r: 1 / 0)
+    status, _, body = get("/healthz")
+    assert status == 503 and b"ZeroDivisionError" in body
+    monkeypatch.undo()
+    shutil.rmtree(root)
+    status, _, body = get("/healthz")
+    assert status == 503 and b"FileNotFoundError" in body
+
+
 def test_latest_redirects_to_the_dated_page(get):
     status, h, _ = get("/latest/viewer.html")
     assert status == 302 and h["Location"] == "/2026-11-06/viewer.html"
@@ -279,8 +291,18 @@ def web(tmp_path):
                 continue
 
 
-def _serve_sh(r: Path, port: int) -> subprocess.Popen:
-    env = {**os.environ, "SECTOR_FLOW_HOST": "127.0.0.1", "SECTOR_FLOW_PORT": str(port)}
+def _alert_stub(r: Path) -> tuple[Path, Path]:
+    """가짜 alert.sh — 받은 (수준|제목)과 본문을 파일에 적는다. 진짜 채널로는 안 간다."""
+    log = r / "alert.log"
+    stub = r / "alert.sh"
+    stub.write_text(f'#!/bin/sh\necho "$1|$2" >> "{log}"\ncat >> "{log}"\n')
+    stub.chmod(0o755)
+    return stub, log
+
+
+def _serve_sh(r: Path, port: int, alert: Path | None = None) -> subprocess.Popen:
+    env = {**os.environ, "SECTOR_FLOW_HOST": "127.0.0.1", "SECTOR_FLOW_PORT": str(port),
+           "SECTOR_FLOW_ALERT": str(alert or r / "없는-alert.sh")}
     return subprocess.Popen(["/bin/bash", str(r / "scripts" / "serve.sh")], env=env, text=True,
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
 
@@ -316,7 +338,8 @@ def test_serve_sh_restarts_a_server_that_stops_answering(web):
     assert _until(pidfile.exists, 10)
     hung_pid = int(pidfile.read_text())
 
-    p = _serve_sh(r, port)
+    stub, alert_log = _alert_stub(r)
+    p = _serve_sh(r, port, stub)
     procs.append(p)
     assert _until(lambda: _healthy(port), 40), "멈춘 서버를 그대로 뒀다"
     assert hung.wait(timeout=10) is not None
@@ -324,18 +347,97 @@ def test_serve_sh_restarts_a_server_that_stops_answering(web):
     os.kill(int(pidfile.read_text()), signal.SIGTERM)
     out, _ = p.communicate(timeout=15)
     assert "대답하지 않는다" in out
+    # 끈 서버의 크론 줄은 TERM 이면 0(알림 없음)·KILL 이면 137(이유 없는 꼬리)이다 — serve.sh 가 이유를 담아 한 번 알린다.
+    alert = alert_log.read_text() if alert_log.exists() else ""
+    assert alert.count("재시작") == 1, alert
+    assert f"pid {hung_pid}" in alert and "대답하지 않는다" in alert and "curl" in alert, alert
+
+
+UNHEALTHY = """
+import http.server, os, sys
+class H(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        b = b"unhealthy - FileNotFoundError: reports gone\\n"
+        self.send_response(503)
+        self.send_header("Content-Length", str(len(b)))
+        self.end_headers()
+        self.wfile.write(b)
+    def log_message(self, *a):
+        pass
+s = http.server.HTTPServer(("127.0.0.1", int(sys.argv[1])), H)
+open(sys.argv[2], "w").write(str(os.getpid()))
+s.serve_forever()
+"""
+
+
+def _start_unhealthy(r: Path, port: int, procs: list) -> int:
+    (r / "sick").mkdir(exist_ok=True)
+    (r / "sick" / "serve_reports.py").write_text(UNHEALTHY)
+    pidfile = r / "reports" / ".serve.pid"
+    pidfile.unlink(missing_ok=True)
+    sick = subprocess.Popen(["flock", str(r / "reports" / ".serve.lock"), sys.executable,
+                             str(r / "sick" / "serve_reports.py"), str(port), str(pidfile)],
+                            start_new_session=True)
+    procs.append(sick)
+    assert _until(pidfile.exists, 10) and _until(lambda: _status(port) == 503, 10)
+    return int(pidfile.read_text())
+
+
+def _status(port: int) -> int | None:
+    try:
+        c = http.client.HTTPConnection("127.0.0.1", port, timeout=1)
+        c.request("GET", "/healthz")
+        return c.getresponse().status
+    except OSError:
+        return None
+
+
+def test_serve_sh_names_a_503_and_resets_the_streak_once_healthy(web):
+    """503(리포트를 못 보여 준다)은 무응답과 다른 일이다 — 알림이 그 이유(본문)를 싣는다. 건강해지면 연속 횟수를 지운다."""
+    r, port, procs = web
+    sick_pid = _start_unhealthy(r, port, procs)
+    stub, alert_log = _alert_stub(r)
+    p = _serve_sh(r, port, stub)
+    procs.append(p)
+    assert _until(lambda: _healthy(port), 40)
+    alert = alert_log.read_text()
+    assert f"pid {sick_pid}" in alert and "HTTP 503" in alert and "reports gone" in alert, alert
+    assert "대답하지 않는다" not in alert, "503 을 무응답이라 불렀다"
+    assert (r / "reports" / ".serve.restarts").read_text().strip() == "1"
+    again = subprocess.run(["/bin/bash", str(r / "scripts" / "serve.sh")], capture_output=True, text=True,
+                           timeout=30, env={**os.environ, "SECTOR_FLOW_HOST": "127.0.0.1",
+                                            "SECTOR_FLOW_PORT": str(port), "SECTOR_FLOW_ALERT": str(stub)})
+    assert again.returncode == 0 and not (r / "reports" / ".serve.restarts").exists()
+
+
+@pytest.mark.parametrize(("before", "alerts"), [(1, False), (11, True)])
+def test_serve_sh_restart_alerts_once_an_hour_not_every_five_minutes(web, before, alerts):
+    """다시 띄워도 503 이 이어지면 5분마다 재시작한다 — 알림까지 5분마다면 하루 288건이다(연속 첫 회와 12회마다)."""
+    r, port, procs = web
+    _start_unhealthy(r, port, procs)
+    (r / "reports" / ".serve.restarts").write_text(str(before))
+    stub, alert_log = _alert_stub(r)
+    p = _serve_sh(r, port, stub)
+    procs.append(p)
+    assert _until(lambda: _healthy(port), 40)
+    assert (r / "reports" / ".serve.restarts").read_text().strip() == str(before + 1)
+    assert alert_log.exists() == alerts, alert_log.read_text() if alert_log.exists() else ""
+    if alerts:
+        assert f"연속 {before + 1}회" in alert_log.read_text()
 
 
 def test_serve_sh_leaves_a_healthy_server_alone(web):
     """대답하는 서버를 5분마다 죽였다 살리면 그 틈의 요청이 끊긴다."""
     r, port, procs = web
-    first = _serve_sh(r, port)
+    stub, alert_log = _alert_stub(r)
+    first = _serve_sh(r, port, stub)
     procs.append(first)
     assert _until(lambda: _healthy(port), 20)
     pid = (r / "reports" / ".serve.pid").read_text()
     again = subprocess.run(["/bin/bash", str(r / "scripts" / "serve.sh")], capture_output=True, text=True,
                            timeout=30, env={**os.environ, "SECTOR_FLOW_HOST": "127.0.0.1",
-                                            "SECTOR_FLOW_PORT": str(port)})
+                                            "SECTOR_FLOW_PORT": str(port), "SECTOR_FLOW_ALERT": str(stub)})
     assert again.returncode == 0, again.stdout + again.stderr
+    assert not alert_log.exists(), "건강한 서버에 재시작 알림을 보냈다"
     assert first.poll() is None and (r / "reports" / ".serve.pid").read_text() == pid
     assert _healthy(port)

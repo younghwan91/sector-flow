@@ -13,6 +13,7 @@ import sqlite3
 import stat
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -224,14 +225,14 @@ def test_empty_table_is_not_a_reference_date(repo):
 
 # ── cron_run.sh ──────────────────────────────────────────────────────────
 
-def _cron_run(repo: Path, tmp_path: Path, *cmd: str):
+def _cron_run(repo: Path, tmp_path: Path, *cmd: str, **env: str):
     log = tmp_path / "alert.log"
     stub = tmp_path / "alert.sh"
     stub.write_text(f'#!/bin/sh\necho "$1|$2" >> "{log}"\ncat >> "{log}"\n')
     stub.chmod(stub.stat().st_mode | stat.S_IEXEC)
     p = subprocess.run([str(repo / "scripts" / "cron_run.sh"), "rpt", "--", *cmd],
                        capture_output=True, text=True, timeout=30,
-                       env={**os.environ, "SECTOR_FLOW_ALERT": str(stub)})
+                       env={**os.environ, "SECTOR_FLOW_ALERT": str(stub), **env})
     return p, (log.read_text() if log.exists() else "")
 
 
@@ -258,6 +259,55 @@ def test_cron_run_names_a_timeout(repo, tmp_path):
     p, alert = _cron_run(repo, tmp_path, "sh", "-c", "exit 124")
     assert p.returncode == 124
     assert alert.startswith("error|") and "시간 초과" in alert
+
+
+def test_cron_run_keeps_the_tail_when_tmp_is_unusable(repo, tmp_path):
+    """/tmp(사용자 할당량 tmpfs)가 차면 mktemp 가 죽어 알림 본문이 비었다(`tail: cannot open ''`) — 꼬리는 디스크에 둔다."""
+    (repo / "reports").mkdir(exist_ok=True)
+    p, alert = _cron_run(repo, tmp_path, "sh", "-c", "echo 터졌다 >&2; exit 3", TMPDIR=str(tmp_path / "없는-tmp"))
+    assert p.returncode == 3
+    assert alert.startswith("error|rpt 실패 (rc=3)") and "터졌다" in alert, alert
+    assert not list((repo / "reports").glob(".cron_run.*")), "임시 파일을 안 지웠다"
+
+
+def test_cron_run_says_why_the_tail_is_missing(repo, tmp_path):
+    """임시 파일을 어디에도 못 만들면 출력은 그대로 흘리고, 빈 본문 대신 그 사실을 알린다."""
+    p, alert = _cron_run(repo, tmp_path, "sh", "-c", "echo 터졌다; exit 3", TMPDIR=str(tmp_path / "없는-tmp"))
+    assert p.returncode == 3 and "터졌다" in p.stdout
+    assert alert.startswith("error|rpt 실패 (rc=3)") and "임시 파일을 못 만들었" in alert, alert
+
+
+def _stale_and_fresh(d: Path, prefix: str) -> tuple[Path, Path]:
+    d.mkdir(parents=True, exist_ok=True)
+    old, new = d / f"{prefix}old123", d / f"{prefix}new456"
+    old.write_text("x")
+    new.write_text("x")
+    two_days_ago = time.time() - 2 * 86400
+    os.utime(old, (two_days_ago, two_days_ago))
+    return old, new
+
+
+def test_cron_run_sweeps_tail_files_left_by_a_kill(repo, tmp_path):
+    """KILL 로 끝난 크론은 trap 이 못 돈다 — 하루 넘은 꼬리 파일은 다음 실행이 지운다(돌고 있는 실행의 것은 둔다)."""
+    old, new = _stale_and_fresh(repo / "reports", ".cron_run.")
+    _cron_run(repo, tmp_path, "sh", "-c", "true")
+    assert not old.exists() and new.exists()
+
+
+def test_report_sweeps_stale_asof_err_files(repo):
+    _seed(repo.parent / "db.sqlite", today_kosdaq=50)
+    old, new = _stale_and_fresh(repo / "reports", ".asof_err.")
+    assert _run(repo).returncode == 0
+    assert not old.exists() and new.exists()
+
+
+def test_report_is_built_when_tmp_is_unusable(repo):
+    """daily_report.sh 의 임시 파일도 디스크에 — /tmp 가 차도 리포트가 나온다."""
+    _seed(repo.parent / "db.sqlite", today_kosdaq=50)
+    p = _run(repo, TMPDIR=str(repo.parent / "없는-tmp"))
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert (repo / "reports" / TODAY / "numbers.html").is_file()
+    assert not list((repo / "reports").glob(".asof_err.*")), "임시 파일을 안 지웠다"
 
 
 def test_cron_run_survives_missing_alert_channel(repo, tmp_path):
@@ -367,6 +417,19 @@ def test_db_failure_explains_itself_and_hides_the_password(repo):
     p = _run(repo)
     assert p.returncode == 1
     assert "DB 에서 기준일을 못 읽었다" in p.stderr
+    assert "s3cret" not in p.stderr + p.stdout
+
+
+def test_db_failure_shows_the_exception_not_just_uv_hints(repo):
+    """uv 가 예외 뒤에 힌트 줄을 붙이면 꼬리 3줄에는 힌트만 남았다(모의 실행) — 알림 본문이 원인을 못 말한다."""
+    (repo.parent / "uv").write_text(
+        "#!/bin/sh\ncat >/dev/null\n"
+        "echo 'Traceback (most recent call last):' >&2\n"
+        "echo 'psycopg2.OperationalError: connection to postgresql://u:s3cret@10.0.0.1/x failed' >&2\n"
+        "for i in 1 2 3 4; do echo \"hint: uv 힌트 $i\" >&2; done\nexit 1\n")
+    p = _run(repo)
+    assert p.returncode == 1
+    assert "OperationalError" in p.stderr, p.stderr
     assert "s3cret" not in p.stderr + p.stdout
 
 

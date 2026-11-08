@@ -1201,7 +1201,7 @@ id = "db-error-shows-password"
 why = "libpq 가 되읊은 접속 문자열의 비밀번호가 알림으로 나간다"
 guards = ["tests/test_daily_report_flow.py::test_db_failure_explains_itself_and_hides_the_password"]
 file = "scripts/daily_report.sh"
-find = """  tail -n 3 "$ASOF_ERR" | sed -E 's#://[^@ ]*@#://***@#g' >&2"""
+find = """  tail -n 10 "$ASOF_ERR" | sed -E 's#://[^@ ]*@#://***@#g' >&2"""
 replace = """  echo "$KR_QUANT_DB" >&2"""
 
 [[mutation]]
@@ -1943,8 +1943,8 @@ why = "알림 웹훅이 비어 모든 알림이 로그에만 남는데 아무도
 guards = ["tests/test_freshness_check.py::test_empty_webhook_warns",
           "tests/test_freshness_check.py::test_cron_path_warns_about_the_webhook_even_when_fresh"]
 file = "scripts/freshness_check.py"
-find = """    if (webhook or "").strip():"""
-replace = """    if True:"""
+find = """    if not (webhook or "").strip():"""
+replace = """    if False:"""
 
 [[mutation]]
 id = "fresh-error-masked-by-warning"
@@ -1975,8 +1975,8 @@ id = "web-healthy-server-killed"
 why = "대답하는 서버를 5분마다 죽였다 살려 그 틈의 요청이 끊긴다"
 guards = ["tests/test_serve_reports.py::test_serve_sh_leaves_a_healthy_server_alone"]
 file = "scripts/serve.sh"
-find = """     || curl -fsS -m 5 -o /dev/null "http://$HOST:$PORT/healthz" 2>/dev/null; then"""
-replace = """     || false; then"""
+find = """  if [ "$CODE" = "200" ]; then"""
+replace = """  if false; then"""
 
 [[mutation]]
 id = "web-server-writes-no-pid"
@@ -2005,10 +2005,11 @@ replace = "            if False:"
 [[mutation]]
 id = "webhook-set-still-warns"
 why = "웹훅을 넣은 뒤에도 매일 경고가 가면 경고를 안 읽게 된다"
-guards = ["tests/test_freshness_check.py::test_set_webhook_is_silent"]
+guards = ["tests/test_freshness_check.py::test_live_webhook_passes",
+          "tests/test_freshness_check.py::test_cron_path_clean_day_passes_and_pings_the_heartbeat"]
 file = "scripts/freshness_check.py"
-find = """        return 0, []"""
-replace = """        return WARN, []"""
+find = """        return 0, ["[알림 통로] OK — 웹훅이 살아 있다(GET 200)"]"""
+replace = """        return WARN, ["[알림 통로] OK — 웹훅이 살아 있다(GET 200)"]"""
 
 # ── 오늘(1일·1년 백분위·시장 합계·직전 대비·잠정→확정) — tests/test_payload_today.py ──
 
@@ -2852,3 +2853,261 @@ guards = ["tests/test_docs_refs.py::test_line_only_refs_do_not_grow"]
 file = "docs/formulas.md"
 find = "## 근거 수준 — 먼저 읽을 것\n"
 replace = "## 근거 수준 — 먼저 읽을 것\n\n`scripts/sector_flow.py:1`\n"
+
+# ── ops-r2 (2026-11-08 운영 2차 검토 D4): 웹훅을 alert.sh 처럼 읽고 살아 있나 · 전 거래일 확정 · 휴장 · 하트비트 ──
+
+[[mutation]]
+id = "webhook-presence-only"
+why = "주소가 있기만 하면 통과한다 — 채널에서 지운 웹훅도 OK 라 알림이 [alert.py] failed 로 사라져도 아무도 모른다"
+guards = ["tests/test_freshness_check.py::test_dead_webhook_warns",
+          "tests/test_freshness_check.py::test_cron_path_dead_webhook_warns"]
+file = "scripts/freshness_check.py"
+find = '''    status, body, why = probe_fn(webhook.strip())'''
+replace = '''    status, body, why = 200, b"{}", ""'''
+
+[[mutation]]
+id = "webhook-dead-called-fine"
+why = "401·404(폐기·틀린 웹훅)를 정상으로 본다"
+guards = ["tests/test_freshness_check.py::test_dead_webhook_warns",
+          "tests/test_freshness_check.py::test_cron_path_dead_webhook_warns"]
+file = "scripts/freshness_check.py"
+find = """    if status in (401, 404):
+        return WARN, ["""
+replace = """    if status in (401, 404):
+        return 0, ["""
+
+[[mutation]]
+id = "webhook-read-from-sourced-env"
+why = "_env.sh 가 불러온 .env(이 레포 .env 포함)의 값을 본다 — alert.sh 는 그 값을 못 읽는데 점검은 '있다' 고 한다"
+guards = ["tests/test_freshness_check.py::test_cron_env_wins_even_when_empty",
+          "tests/test_freshness_check.py::test_cron_path_does_not_count_a_webhook_alert_sh_cannot_see"]
+file = "scripts/freshness_check.py"
+find = """        return environ.get(CRON_ENV_PREFIX + key)"""
+replace = """        return environ.get(key)"""
+
+[[mutation]]
+id = "webhook-reader-accepts-export"
+why = "`export ALERT_WEBHOOK_URL=` 줄을 읽는다 — alert.sh 의 grep '^KEY=' 는 그 줄을 못 본다"
+guards = ["tests/test_freshness_check.py::test_env_file_is_read_like_alert_sh",
+          "tests/test_freshness_check.py::test_matches_alert_sh_env_get_byte_for_byte",
+          "tests/test_freshness_check.py::test_cron_path_does_not_count_a_webhook_alert_sh_cannot_see"]
+file = "scripts/freshness_check.py"
+find = '''    hits = [line for line in text.split("\n") if line.startswith(prefix)]'''
+replace = '''    hits = [line.removeprefix("export ") for line in text.split("\n") if line.removeprefix("export ").startswith(prefix)]'''
+
+[[mutation]]
+id = "heartbeat-on-a-failed-check"
+why = "점검이 실패한 날에도 하트비트를 보내면 외부 감시가 영영 조용하다"
+guards = ["tests/test_freshness_check.py::test_heartbeat_pings_only_a_clean_check"]
+file = "scripts/freshness_check.py"
+find = """    if not ok:
+        return ["[하트비트] 안 보낸다"""
+replace = """    if False:
+        return ["[하트비트] 안 보낸다"""
+
+[[mutation]]
+id = "heartbeat-never-sent"
+why = "HEARTBEAT_URL 을 넣어도 핑이 안 가 외부 감시가 매일 경보를 낸다"
+guards = ["tests/test_freshness_check.py::test_cron_path_clean_day_passes_and_pings_the_heartbeat"]
+file = "scripts/freshness_check.py"
+find = """    lines += heartbeat(alert_value("HEARTBEAT_URL", os.environ, alert_sh), rc == 0)"""
+replace = """    lines += heartbeat("", rc == 0)"""
+
+[[mutation]]
+id = "prev-day-final-unchecked"
+why = "08:20 확정 모드를 놓친 날을 아무도 안 본다 — 다음 거래일 수집이 들어오면 그 날은 영영 잠정이다"
+guards = ["tests/test_freshness_check.py::test_cron_path_previous_day_not_final_warns"]
+file = "scripts/freshness_check.py"
+find = """            prc, plines = check_prev_final(Path(a.root), prev)"""
+replace = """            prc, plines = 0, []"""
+
+[[mutation]]
+id = "prev-day-provisional-counts-as-final"
+why = "잠정 리포트만 있는 전 거래일을 확정으로 본다"
+guards = ["tests/test_freshness_check.py::test_previous_day_without_final_warns"]
+file = "scripts/freshness_check.py"
+find = """    if (d / "FINAL.txt").is_file() or (d / "REBUILT.txt").is_file():"""
+replace = """    if (d / "numbers.html").is_file() or (d / "REBUILT.txt").is_file():"""
+
+[[mutation]]
+id = "holiday-not-recognized"
+why = "수급도 틱도 없는 평일 휴장마다 '수집 실패' 경고 — 연 10번 울리면 경고를 안 읽게 된다"
+guards = ["tests/test_freshness_check.py::test_weekday_holiday_is_quiet",
+          "tests/test_freshness_check.py::test_cron_path_holiday_without_ticks_is_quiet"]
+file = "scripts/freshness_check.py"
+find = """    elif rows_today == 0 and market_open is False:"""
+replace = """    elif False:"""
+
+[[mutation]]
+id = "holiday-swallows-collection-failure"
+why = "수급이 빈 날을 전부 휴장으로 본다 — 장이 열렸는데(틱 있음) 수집이 실패한 날이 조용해진다"
+guards = ["tests/test_freshness_check.py::test_open_market_without_rows_still_warns",
+          "tests/test_freshness_check.py::test_no_rows_on_a_weekday_is_a_warning",
+          "tests/test_freshness_check.py::test_cron_path_holiday_without_ticks_is_quiet"]
+file = "scripts/freshness_check.py"
+find = """    elif rows_today == 0 and market_open is False:"""
+replace = """    elif rows_today == 0:"""
+
+[[mutation]]
+id = "holiday-ticks-never-read"
+why = "틱 표를 안 읽으면 휴장 판정이 죽는다 — 판정 함수 시험만으로는 DB 쪽이 끊긴 것을 못 본다"
+guards = ["tests/test_freshness_check.py::test_cron_path_holiday_without_ticks_is_quiet"]
+file = "scripts/freshness_check.py"
+find = """                market_open = bool(cur.fetchone()[0])"""
+replace = """                market_open = None"""
+
+[[mutation]]
+id = "finalize-window-ignored"
+why = "기준일 뒤에 끝났기만 하면 확정으로 본다 — 창(달력 3일)이 그 날을 안 덮은 실행(놓친 날·재구성)도 확정이라 적는다"
+guards = ["tests/test_finalize_done.py::test_a_later_run_whose_window_misses_the_day_is_not_its_finalize",
+          "tests/test_finalize_done.py::test_the_covering_run_is_judged_not_the_newest",
+          "tests/test_finalize_done.py::test_window_edge_is_inclusive"]
+file = "scripts/finalize_done.py"
+find = """        if any(day < run_day(p) - timedelta(days=WINDOW_DAYS) for p in logs):"""
+replace = """        if False:"""
+
+[[mutation]]
+id = "finalize-window-counted-in-kst"
+why = "창을 KST 날짜로 센다 — 수집기의 date.today() 는 UTC 컨테이너라 하루 늦게 세어 창 첫날(휴장 뒤 금요일)을 놓친다"
+guards = ["tests/test_finalize_done.py::test_window_edge_is_inclusive",
+          "tests/test_finalize_done.py::test_run_day_falls_back_to_file_time_without_a_stamp"]
+file = "scripts/finalize_done.py"
+find = """    return started.astimezone(COLLECTOR_TZ).date()"""
+replace = """    return started.astimezone(KST).date()"""
+
+[[mutation]]
+id = "healthz-only-proves-the-process-answers"
+why = "/healthz 가 대답만 하면 200 — 리포트 루트가 사라지거나 목록이 죽어도 serve.sh 가 '건강하다' 며 그대로 둔다"
+guards = ["tests/test_serve_reports.py::test_healthz_checks_the_reports_can_be_shown"]
+file = "scripts/serve_reports.py"
+find = """            os.listdir(self.root)
+            index_html(self.root)"""
+replace = """            pass"""
+
+[[mutation]]
+id = "db-error-tail-cut-to-hints"
+why = "꼬리 3줄이면 uv 힌트만 남고 예외가 잘려 알림 본문이 원인을 못 말한다"
+guards = ["tests/test_daily_report_flow.py::test_db_failure_shows_the_exception_not_just_uv_hints"]
+file = "scripts/daily_report.sh"
+find = """  tail -n 10 "$ASOF_ERR" | sed"""
+replace = """  tail -n 3 "$ASOF_ERR" | sed"""
+
+# ── ops-r2 리허설(2026-11-08): /tmp 할당량 tmpfs 가 찬 날 · 웹 재시작 알림 ──
+
+[[mutation]]
+id = "cron-run-tail-only-in-tmp"
+why = "꼬리 임시 파일을 /tmp 에만 만든다 — 할당량 tmpfs 가 차면 알림 본문이 빈다(2026-11-08 리허설: tail: cannot open '')"
+guards = ["tests/test_daily_report_flow.py::test_cron_run_keeps_the_tail_when_tmp_is_unusable"]
+file = "scripts/cron_run.sh"
+find = """tmp="$(mktemp -p "$REPO/reports" .cron_run.XXXXXX 2>/dev/null || mktemp 2>/dev/null || true)\""""
+replace = """tmp="$(mktemp 2>/dev/null || true)\""""
+
+[[mutation]]
+id = "cron-run-empty-body-unexplained"
+why = "임시 파일을 못 만든 날 빈 본문(또는 tail 오류)만 간다 — 받는 사람이 무엇을 볼지 모른다"
+guards = ["tests/test_daily_report_flow.py::test_cron_run_says_why_the_tail_is_missing"]
+file = "scripts/cron_run.sh"
+find = """        if [ -n "$tmp" ] && [ -s "$tmp" ]; then"""
+replace = """        if true; then"""
+
+[[mutation]]
+id = "report-asof-err-in-tmp"
+why = "daily_report.sh 의 임시 파일을 /tmp 에 만든다 — /tmp 가 차면 리포트가 rc=1 로 죽는다"
+guards = ["tests/test_daily_report_flow.py::test_report_is_built_when_tmp_is_unusable"]
+file = "scripts/daily_report.sh"
+find = """ASOF_ERR="$(mktemp -p "$OUT_ROOT" .asof_err.XXXXXX)" || {"""
+replace = """ASOF_ERR="$(mktemp)" || {"""
+
+[[mutation]]
+id = "web-restart-not-alerted"
+why = "멈춘 서버를 끄고 다시 띄워도 이유를 담은 알림이 없다 — TERM 으로 끝난 서버의 크론 줄은 0 이라 아무 알림도 안 간다"
+guards = ["tests/test_serve_reports.py::test_serve_sh_restarts_a_server_that_stops_answering"]
+file = "scripts/serve.sh"
+find = """  if [ -x "$ALERT" ] && { [ "$N" -eq 1 ] || [ $((N % RESTART_ALERT_EVERY)) -eq 0 ]; }; then"""
+replace = """  if false; then"""
+
+# ── ops-r2 독립 리뷰(2026-11-08): 주소 누출 · 재시작 알림 폭주 · 남은 임시 파일 · 빠진 변이 ──
+
+[[mutation]]
+id = "probe-request-outside-try"
+why = "주소 꼴이 틀리면(스킴 없음) Request 가 try 밖에서 던져 트레이스백이 웹훅 주소를 통째로 cron_run 꼬리 → Discord 로 보낸다"
+guards = ["tests/test_freshness_check.py::test_unreachable_webhook_warns_without_printing_the_url"]
+file = "scripts/freshness_check.py"
+find = """    try:
+        req = urllib.request.Request(url, headers={"User-Agent": _UA}, method="GET")"""
+replace = """    req = urllib.request.Request(url, headers={"User-Agent": _UA}, method="GET")
+    try:"""
+
+[[mutation]]
+id = "probe-why-echoes-the-url"
+why = "실패 이유에 str(e) 를 싣는다 — ValueError·InvalidURL 이 주소나 그 경로(토큰)를 되읊고, 공백에서 잘린 조각이라 replace 로도 못 가린다"
+guards = ["tests/test_freshness_check.py::test_unreachable_webhook_warns_without_printing_the_url",
+          "tests/test_freshness_check.py::test_bad_url_in_heartbeat_does_not_crash_or_leak"]
+file = "scripts/freshness_check.py"
+find = """        return None, b"", _why(e)"""
+replace = """        return None, b"", f"{type(e).__name__}: {e}".replace(url, "***")"""
+
+[[mutation]]
+id = "webhook-reader-first-line-wins"
+why = ".env 에 같은 키가 두 번 있으면 alert.sh(tail -n 1)는 마지막 줄을 쓰는데 점검은 첫 줄을 본다"
+guards = ["tests/test_freshness_check.py::test_last_line_wins_like_tail"]
+file = "scripts/freshness_check.py"
+find = """    value = hits[-1][len(prefix):]"""
+replace = """    value = hits[0][len(prefix):]"""
+
+[[mutation]]
+id = "webhook-html-200-taken-as-alive"
+why = "로그인 페이지·리다이렉트처럼 200 HTML 로 답하는 주소를 살아 있는 웹훅으로 본다 — POST 는 거기서 사라진다"
+guards = ["tests/test_freshness_check.py::test_webhook_answering_html_is_not_taken_as_discord"]
+file = "scripts/freshness_check.py"
+find = """            json.loads(body.decode("utf-8", "replace"))"""
+replace = """            pass"""
+
+[[mutation]]
+id = "prev-day-rebuilt-not-counted"
+why = "재구성(REBUILT.txt)한 전 거래일을 미확정이라 매일 경고한다"
+guards = ["tests/test_freshness_check.py::test_rebuilt_previous_day_counts_as_final"]
+file = "scripts/freshness_check.py"
+find = """    if (d / "FINAL.txt").is_file() or (d / "REBUILT.txt").is_file():"""
+replace = """    if (d / "FINAL.txt").is_file():"""
+
+[[mutation]]
+id = "web-restart-alerts-every-five-minutes"
+why = "503 이 이어지면 5분마다 재시작하며 알림도 5분마다 — 하루 288건이면 알림을 안 읽게 된다"
+guards = ["tests/test_serve_reports.py::test_serve_sh_restart_alerts_once_an_hour_not_every_five_minutes"]
+file = "scripts/serve.sh"
+find = """  if [ -x "$ALERT" ] && { [ "$N" -eq 1 ] || [ $((N % RESTART_ALERT_EVERY)) -eq 0 ]; }; then"""
+replace = """  if [ -x "$ALERT" ]; then"""
+
+[[mutation]]
+id = "web-503-called-no-answer"
+why = "/healthz 503(리포트를 못 보여 준다)을 무응답이라 부른다 — 다시 띄워도 안 낫는 원인(본문)을 알림이 안 싣는다"
+guards = ["tests/test_serve_reports.py::test_serve_sh_names_a_503_and_resets_the_streak_once_healthy"]
+file = "scripts/serve.sh"
+find = """  if [[ "$CODE" =~ ^[1-9][0-9][0-9]$ ]]; then"""
+replace = """  if false; then"""
+
+[[mutation]]
+id = "web-restart-streak-never-reset"
+why = "건강해져도 연속 횟수를 안 지우면 다음 사고의 첫 재시작이 알림 없이 지나간다"
+guards = ["tests/test_serve_reports.py::test_serve_sh_names_a_503_and_resets_the_streak_once_healthy"]
+file = "scripts/serve.sh"
+find = """    rm -f "$RESTARTS"
+    exit 0"""
+replace = """    exit 0"""
+
+[[mutation]]
+id = "cron-run-stale-tails-kept"
+why = "KILL 로 끝난 크론의 꼬리 파일이 reports/ 에 영영 쌓인다"
+guards = ["tests/test_daily_report_flow.py::test_cron_run_sweeps_tail_files_left_by_a_kill"]
+file = "scripts/cron_run.sh"
+find = """find "$REPO/reports" -maxdepth 1 -name '.cron_run.*' -mtime +0 -delete 2>/dev/null || true"""
+replace = """true"""
+
+[[mutation]]
+id = "report-stale-asof-err-kept"
+why = "KILL 로 끝난 배치의 DB 오류 파일(접속 문자열이 실릴 수 있다)이 reports/ 에 영영 남는다"
+guards = ["tests/test_daily_report_flow.py::test_report_sweeps_stale_asof_err_files"]
+file = "scripts/daily_report.sh"
+find = """find "$OUT_ROOT" -maxdepth 1 -name '.asof_err.*' -mtime +0 -delete 2>/dev/null || true"""
+replace = """true"""

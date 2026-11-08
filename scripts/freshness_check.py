@@ -7,24 +7,45 @@ daily_report.sh 는 **제가 돈 날**만 알린다. 크론 줄이 빠졌거나,
 
 * 오늘 ``supply_demand`` 행이 있는데 ``reports/latest`` 가 오늘이 아니다 → **1(오류)**. 데이터는 왔는데 리포트가
   안 걸렸다. 오늘 폴더에 남은 표시(INCOMPLETE·VERIFY_FAILED)가 있으면 같이 적는다.
-* 평일인데 오늘 행이 하나도 없다 → **75(경고)**. 휴장일이 아니면 수집이 실패했다. 달력이 없어 휴장과 못 가른다.
-* ``ALERT_WEBHOOK_URL`` 이 비었다 → **75(경고)**, 다른 결과와 같이(주말·DB 실패여도 본다). 비어 있으면 quant-airflow ``alert.sh`` 가
-  경고·오류를 로그에만 남겨 위의 모든 알림이 아무에게도 안 간다. 하루 한 번(이 크론) 시끄럽게 말한다.
+* 평일인데 오늘 행이 하나도 없다 → 휴장과 수집 실패를 같은 DB 의 장중 틱(``ticks``, scalp-it 이 장중에 쌓는다)으로
+  가른다 — quant-airflow ``scripts/daily_health_check.sh`` 와 같은 규약이다. 틱도 없으면 **휴장으로 보고 0**,
+  틱이 있으면(장이 열렸다) **75(경고)** — 수집 실패다. 틱 표가 없거나 못 읽으면 못 가르니 75 에 "휴장일이면 무시".
+  2026-09~11 실측: 평일 휴장 4일(09-24·25·10-05·10-09)은 수급·틱 모두 0, 거래일 중 틱이 빈 날이 하루(10-28,
+  scalp-it 정지) 있었다 — 틱 없음은 휴장의 증거가 아니라서 수급이 **있는** 날엔 틱을 보지 않는다.
+  남는 구멍: scalp-it 과 수집이 같은 거래일에 함께 죽으면 휴장으로 보인다(daily_collection 실패는 Airflow 가 따로 알린다).
+* 전 거래일 폴더에 ``FINAL.txt``(또는 재구성 표시 ``REBUILT.txt``)가 없다 → **75(경고)**. 그날 아침 08:20 확정 모드가
+  안 돌았거나 확정을 확인 못 한 채 지나갔다. 다음 거래일 수집이 들어오면 08:20 은 그 날을 다시 안 보므로 그날 저녁에 알린다.
+* 알림 통로 — quant-airflow ``alert.sh`` 가 **실제로 읽을 값**을 같은 방식으로 읽는다(:func:`alert_value`). 비었으면 75,
+  있으면 GET 한 번(5초, 메시지는 안 보낸다 — Discord 웹훅은 GET 에 200 + JSON 으로 답한다)으로 살아 있나 본다.
+  401·404 는 폐기됐거나 틀린 주소다. 주말·DB 실패여도 본다. 주소는 어디에도 찍지 않는다.
+* 하트비트(죽은 사람 스위치) — ``HEARTBEAT_URL``(웹훅과 같은 방식으로 읽는다)이 있으면 **모두 0 으로 끝난 날에만** GET 한 번.
+  외부 감시(healthchecks.io 등)가 정해진 시각에 이 핑을 못 받으면 알린다 — 이 머신·크론·알림 통로가 통째로 죽은 날도
+  잡힌다. 없으면 한 줄 적고 넘어간다(주소만 넣으면 동작한다). 핑 실패는 종료코드를 바꾸지 않는다 — 그 알림은 외부 감시의 몫이다.
 
 여러 개가 겹치면 더 심한 쪽(1 > 75 > 0)으로 끝난다. DB 접속 실패는 1.
 """
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import sys
+import urllib.error
+import urllib.request
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 KST = timezone(timedelta(hours=9))
 REPO = Path(__file__).resolve().parent.parent
 WARN = 75
+#: 웹훅·하트비트 GET 상한(초).
+PROBE_TIMEOUT = 5
+_UA = "sector-flow-freshness/1"   # Discord(Cloudflare)는 urllib 기본 UA 를 막는다 — alert.py 도 제 UA 를 단다
+#: freshness_check.sh 가 ``_env.sh`` 로 .env 를 불러오기 **전의** 크론 환경을 넘기는 접두. 이 표시가 있으면
+#: 지금 환경(.env 가 섞였다)이 아니라 그 사본을 본다 — alert.sh 는 .env 를 불러온 환경에서 돌지 않는다.
+CRON_ENV_MARK = "SF_CRON_ENV"
+CRON_ENV_PREFIX = "SF_CRON_"
 
 
 def worse(a: int, b: int) -> int:
@@ -40,8 +61,11 @@ def latest_date(root: Path) -> str | None:
     return link.resolve().name
 
 
-def judge(root: Path, today: str, rows_today: int) -> tuple[int, list[str]]:
-    """(종료코드, 찍을 줄). DB 를 안 보는 순수 판정 — 시험이 이걸 직접 부른다."""
+def judge(root: Path, today: str, rows_today: int, *, market_open: bool | None = None) -> tuple[int, list[str]]:
+    """(종료코드, 찍을 줄). DB 를 안 보는 순수 판정 — 시험이 이걸 직접 부른다.
+
+    ``market_open`` 은 오늘 장중 틱이 있었나(None = 모른다). 수급이 빈 날에만 쓴다.
+    """
     rc, out = 0, []
     latest = latest_date(root)
     if rows_today > 0 and latest != today:
@@ -54,23 +78,148 @@ def judge(root: Path, today: str, rows_today: int) -> tuple[int, list[str]]:
             if (d / mark).is_file():
                 out.append(f"    {d / mark}: {why}")
         out.append("    reports/cron.log 의 오늘 18:10·19:10 줄을 보고, 고친 뒤 손으로: scripts/daily_report.sh")
+    elif rows_today == 0 and market_open is False:
+        out.append(f"[신선도] {today} 휴장으로 본다 — 수급도 장중 틱(ticks)도 없다. 볼 것 없다")
     elif rows_today == 0:
         rc = worse(rc, WARN)
-        out.append(f"⚠️ [신선도] 평일인데 오늘({today}) supply_demand 가 비었다 — 휴장일이 아니면 수집이 "
-                   f"실패했다. quant-airflow daily_collection 을 확인하라.")
+        if market_open:
+            out.append(f"⚠️ [신선도] 오늘({today}) 장중 틱은 있는데(장이 열렸다) supply_demand 가 비었다 — 수집이 "
+                       f"실패했다. quant-airflow daily_collection 을 확인하라.")
+        else:
+            out.append(f"⚠️ [신선도] 평일인데 오늘({today}) supply_demand 가 비었다 — 휴장일이면 무시. 아니면 수집이 "
+                       f"실패했다(장중 틱 표를 못 읽어 못 가른다). quant-airflow daily_collection 을 확인하라.")
     else:
         out.append(f"[신선도] OK — 오늘({today}) 수급 {rows_today:,}행, latest = {latest}")
     return rc, out
 
 
-def check_webhook(webhook: str | None) -> tuple[int, list[str]]:
-    if (webhook or "").strip():
+def check_prev_final(root: Path, prev: str | None) -> tuple[int, list[str]]:
+    """전 거래일이 확정치로 다시 만들어졌나(``FINAL.txt``·재구성 ``REBUILT.txt``)."""
+    if not prev:
         return 0, []
-    return WARN, ["⚠️ [알림 통로] ALERT_WEBHOOK_URL 이 비었다 — 경고·오류가 로그에만 남고 아무에게도 안 간다. "
-                  "quant-airflow/.env 에 웹훅 주소를 넣어라."]
+    d = root / prev
+    if (d / "FINAL.txt").is_file() or (d / "REBUILT.txt").is_file():
+        return 0, [f"[확정] 전 거래일({prev}) 확정 리포트 있음"]
+    if (d / "numbers.html").is_file():
+        state = "잠정 리포트만 있다"
+    elif (d / "INCOMPLETE.txt").is_file():
+        state = "리포트가 없다(INCOMPLETE.txt — 수집 미완으로 안 만들었다)"
+    else:
+        state = "리포트 폴더가 없다"
+    return WARN, [f"⚠️ [확정] 전 거래일({prev})이 확정되지 않았다 — {state}(FINAL.txt 없음). 08:20 확정 모드가 "
+                  "안 돌았거나 daily_finalize 를 확인하지 못했다.",
+                  f"    reports/cron.log 의 08:20 줄과 `uv run python scripts/finalize_done.py --asof {prev}` 를 본다. "
+                  "다음 거래일 수집이 들어와 08:20 은 이 날을 다시 안 본다 — 지난 기준일 재구성으로 다시 만든다(README §3.1)."]
 
 
-def rows_on(db: str, day: str) -> int:
+# ── 알림 통로 — quant-airflow scripts/alert.sh 가 읽는 그대로 ─────────────────────
+
+def alert_sh_path(environ) -> Path:
+    """cron_run.sh 가 부르는 alert.sh — ``SECTOR_FLOW_ALERT`` 또는 옆자리 quant-airflow."""
+    return Path(cron_env("SECTOR_FLOW_ALERT", environ) or REPO.parent / "quant-airflow" / "scripts" / "alert.sh")
+
+
+def cron_env(key: str, environ) -> str | None:
+    """크론 환경에서 ``key`` 의 값(정의 안 됐으면 None). freshness_check.sh 를 거쳤으면 .env 를 불러오기 전의 사본."""
+    if environ.get(CRON_ENV_MARK):
+        return environ.get(CRON_ENV_PREFIX + key)
+    return environ.get(key)
+
+
+def env_file_value(path: Path, key: str) -> str:
+    """alert.sh 의 ``env_get`` — ``grep "^KEY=" | tail -n 1 | cut -d= -f2- | sed`` (양끝 따옴표 하나씩 뗀다).
+
+    ``export KEY=…``·``KEY = …`` 줄은 grep 에 안 걸린다 — alert.sh 가 못 보는 값을 여기서도 못 본다.
+    파일이 없으면 빈 값(grep 이 조용히 실패한다).
+    """
+    prefix = f"{key}="
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+    hits = [line for line in text.split("\n") if line.startswith(prefix)]
+    if not hits:
+        return ""
+    value = hits[-1][len(prefix):]
+    value = re.sub(r"""^["']""", "", value)
+    return re.sub(r"""["']$""", "", value)
+
+
+def alert_value(key: str, environ, alert_sh: Path) -> str:
+    """alert.sh 가 ``key`` 로 쓸 값. 크론 환경에 **정의돼 있으면**(빈 값 포함) 그것, 아니면 alert.sh 옆 ``.env``.
+
+    alert.py 가 ``.strip()`` 하므로 여기서도 벗긴다.
+    """
+    v = cron_env(key, environ)
+    if v is None:
+        v = env_file_value(alert_sh.parent.parent / ".env", key)
+    return v.strip()
+
+
+def _why(e: BaseException) -> str:
+    """실패 이유 — 예외 **종류와 errno 만**. ``str(e)`` 는 절대 안 쓴다: 주소 꼴 오류(ValueError ``unknown url type``,
+    InvalidURL ``can't contain control characters``)는 주소나 그 경로(=웹훅 토큰)를 그대로 되읊고, 공백 등으로
+    잘린 조각이라 ``replace(url, …)`` 로도 못 가린다. 이 줄은 cron_run 꼬리 → alert.sh → Discord 로 나간다."""
+    inner = getattr(e, "reason", None)
+    inner = inner if isinstance(inner, BaseException) else None
+    parts = [type(e).__name__] + ([type(inner).__name__] if inner else [])
+    eno = getattr(inner or e, "errno", None)
+    if isinstance(eno, int):
+        parts.append(f"errno {eno}")
+    return " ".join(parts)
+
+
+def probe(url: str, timeout: float = PROBE_TIMEOUT) -> tuple[int | None, bytes, str]:
+    """GET 한 번 — (HTTP 상태 또는 None, 본문 앞부분, 실패 이유). 요청 만들기부터 try 안이다 — 주소 꼴이 틀려
+    Request 가 던지면 트레이스백이 주소를 통째로 찍는다."""
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": _UA}, method="GET")
+        with urllib.request.urlopen(req, timeout=timeout) as r:  # noqa: S310 — 운영자가 넣은 주소다
+            return r.status, r.read(65536), ""
+    except urllib.error.HTTPError as e:
+        return e.code, b"", ""
+    except Exception as e:  # noqa: BLE001 — 접속·시간 초과·주소 꼴 무엇이든 "닿지 못했다"
+        return None, b"", _why(e)
+
+
+def check_webhook(webhook: str | None, *, probe_fn=probe) -> tuple[int, list[str]]:
+    if not (webhook or "").strip():
+        return WARN, ["⚠️ [알림 통로] ALERT_WEBHOOK_URL 이 비었다 — 경고·오류가 로그에만 남고 아무에게도 안 간다. "
+                      "~/git/quant-airflow/.env 에 `ALERT_WEBHOOK_URL=<주소>` 줄로 넣어라(alert.sh 는 그 꼴의 줄만 읽는다 — "
+                      "`export` 를 붙이거나 이 레포 .env 에 넣으면 못 본다)."]
+    status, body, why = probe_fn(webhook.strip())
+    if status == 200:
+        try:
+            json.loads(body.decode("utf-8", "replace"))
+        except ValueError:
+            return WARN, ["⚠️ [알림 통로] 웹훅 주소가 200 으로 답했지만 JSON 이 아니다 — Discord 웹훅 주소가 맞는지 보라."]
+        return 0, ["[알림 통로] OK — 웹훅이 살아 있다(GET 200)"]
+    if status in (401, 404):
+        return WARN, [f"⚠️ [알림 통로] 웹훅이 폐기됐거나 틀렸다(HTTP {status}) — 알림이 전달되지 않는다"
+                      "([alert.py] failed). 채널에서 웹훅을 새로 만들어 ~/git/quant-airflow/.env 의 ALERT_WEBHOOK_URL= 을 바꿔라."]
+    if status is not None:
+        return WARN, [f"⚠️ [알림 통로] 웹훅이 HTTP {status} 로 답했다 — 알림이 전달되지 않을 수 있다. "
+                      "~/logs/quant-airflow/alerts.log 의 [alert.py] failed 를 보라."]
+    return WARN, [f"⚠️ [알림 통로] 웹훅에 {PROBE_TIMEOUT}초 안에 닿지 못했다({why}) — 네트워크가 잠깐 끊겼을 수 있다. "
+                  "이어지면 알림도 안 간다."]
+
+
+def heartbeat(url: str, ok: bool, *, probe_fn=probe) -> list[str]:
+    """죽은 사람 스위치 — 점검이 모두 0 인 날에만 핑. 종료코드는 바꾸지 않는다."""
+    if not url:
+        return ["[하트비트] HEARTBEAT_URL 없음 — 외부 감시가 꺼져 있다(주소만 넣으면 동작한다, README §3.1)"]
+    if not ok:
+        return ["[하트비트] 안 보낸다 — 점검이 깨끗하지 않다(외부 감시가 핑이 빈 것을 알린다)"]
+    status, _, why = probe_fn(url)
+    if status is not None and 200 <= status < 300:
+        return ["[하트비트] 보냈다"]
+    return [f"[하트비트] 못 보냈다({f'HTTP {status}' if status is not None else why}) — 외부 감시가 알릴 것이다"]
+
+
+# ── DB ────────────────────────────────────────────────────────────────────────
+
+def db_facts(db: str, day: str) -> tuple[int, str | None, bool | None]:
+    """(오늘 수급 행 수, 오늘 전 마지막 수급일, 오늘 장중 틱이 있었나 — 수급이 있으면·못 읽으면 None)."""
     from sectorflow.storage import _is_pg, connect  # noqa: PLC0415 — 순수 판정 시험은 DB 없이 돈다
 
     con = connect(db)
@@ -78,7 +227,26 @@ def rows_on(db: str, day: str) -> int:
         cur = con.cursor()
         ph = "%s" if _is_pg(con) else "?"
         cur.execute(f"SELECT count(*) FROM supply_demand WHERE date = {ph}", (day,))  # noqa: S608
-        return int(cur.fetchone()[0])
+        rows = int(cur.fetchone()[0])
+        cur.execute(f"SELECT max(date) FROM supply_demand WHERE date < {ph}", (day,))  # noqa: S608
+        prev = cur.fetchone()[0]
+        prev = None if prev is None else str(prev)[:10]
+        market_open = None
+        if rows == 0:
+            if _is_pg(con):
+                # 틱 표는 크다(하이퍼테이블). 범위 조회라 평소 ms 지만, 걸려도 점검 전체(크론 10분)를 잡지 않게.
+                cur.execute("SET LOCAL statement_timeout = '15s'")
+            # 틱은 scalp-it 이 장중에 쌓는다(quant-airflow daily_health_check 와 같은 휴장 판정). 표가 없으면 모른다.
+            # ticks.ts 는 시간대 없는 timestamp 로 KST 벽시계(09:00~15:20)를 담는다 — timestamptz 로 비교하면 세션 시간대(UTC)
+            # 만큼 밀려 휴장일에 전날 장중 틱이 걸린다(2026-10-09 로 확인).
+            nxt = (date.fromisoformat(day) + timedelta(days=1)).isoformat()
+            try:
+                cur.execute(f"SELECT EXISTS (SELECT 1 FROM ticks WHERE ts >= {ph} AND ts < {ph})",  # noqa: S608
+                            (f"{day} 00:00:00", f"{nxt} 00:00:00"))
+                market_open = bool(cur.fetchone()[0])
+            except Exception:  # noqa: BLE001 — 틱 표가 없는 DB(시험·분석용 사본)
+                market_open = None
+        return rows, prev, market_open
     finally:
         con.close()
 
@@ -97,17 +265,26 @@ def main(argv: list[str] | None = None) -> int:
     else:
         try:
             from sectorflow.storage import db_default  # noqa: PLC0415
-            n = rows_on(a.db or os.environ.get("KR_QUANT_DB") or str(db_default()), today)
+            n, prev, market_open = db_facts(a.db or os.environ.get("KR_QUANT_DB") or str(db_default()), today)
         except Exception as e:  # noqa: BLE001 — 무엇이든 접속·조회 실패다
             # libpq 가 접속 문자열을 되읊을 수 있어 비밀번호 자리는 가린다.
             msg = re.sub(r"://[^@ ]*@", "://***@", f"{type(e).__name__}: {e}".strip())
             rc, lines = 1, [f"⚠️ [신선도] DB 에서 오늘 수급을 못 셌다 — {msg}"]
         else:
-            rc, lines = judge(Path(a.root), today, n)
+            rc, lines = judge(Path(a.root), today, n, market_open=market_open)
+            prc, plines = check_prev_final(Path(a.root), prev)
+            rc, lines = worse(rc, prc), lines + plines
     # 알림 통로는 무슨 일이 있어도 본다 — 위가 실패한 날일수록 알림이 가야 한다.
-    wrc, wlines = check_webhook(os.environ.get("ALERT_WEBHOOK_URL"))
-    print("\n".join(lines + wlines))
-    return worse(rc, wrc)
+    alert_sh = alert_sh_path(os.environ)
+    if os.access(alert_sh, os.X_OK):
+        wrc, wlines = check_webhook(alert_value("ALERT_WEBHOOK_URL", os.environ, alert_sh))
+    else:
+        wrc, wlines = WARN, [f"⚠️ [알림 통로] alert.sh 가 없다({alert_sh}) — cron_run.sh 가 모든 알림을 로그에만 남긴다."]
+    rc = worse(rc, wrc)
+    lines += wlines
+    lines += heartbeat(alert_value("HEARTBEAT_URL", os.environ, alert_sh), rc == 0)
+    print("\n".join(lines))
+    return rc
 
 
 if __name__ == "__main__":
