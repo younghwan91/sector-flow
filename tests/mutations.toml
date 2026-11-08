@@ -7403,14 +7403,6 @@ find = "        return _changed(verified)"
 replace = "        return _changed(\"HEAD~1\")"
 
 [[mutation]]
-id = "ci-plan-trusts-a-non-ancestor"
-why = "강제 푸시로 갈라진 옛 초록과 견준다 — 지금 트리와 무관한 초록이 건너뛰기의 근거가 된다"
-guards = ["tests/test_ci_plan.py::test_unknown_base_runs_everything"]
-file = "scripts/ci_plan.py"
-find = "        if _git(\"merge-base\", \"--is-ancestor\", verified, \"HEAD\") is None:"
-replace = "        if False:"
-
-[[mutation]]
 id = "ci-plan-empty-diff-is-docs"
 why = "바뀐 파일이 없을 때(재실행) 문서로 본다 — 변이를 돌리려고 다시 돌린 실행이 아무것도 안 돈다"
 guards = ["tests/test_ci_plan.py::test_unknown_base_runs_everything"]

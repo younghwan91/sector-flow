@@ -77,7 +77,7 @@ def test_docs_commit_on_top_of_a_verified_tree_skips(repo):
 
 
 def test_unknown_base_runs_everything(repo):
-    """모르면 전체 — 초록 기록 없음·gh 실패(빈 값)·조상이 아닌 초록(강제 푸시)·재실행(변경 없음)·다른 이벤트."""
+    """모르면 전체 — 초록 기록 없음·gh 실패(빈 값)·없는 커밋·갈라진 초록(강제 푸시)·재실행(변경 없음)·다른 이벤트."""
     _commit(repo, "README.md")
     assert _kind("push", verified="") == "code"
     assert _kind("push", verified="0" * 40) == "code"
@@ -87,7 +87,7 @@ def test_unknown_base_runs_everything(repo):
     _git(repo, "checkout", "-q", "-b", "side", "HEAD~1")
     side = _commit(repo, "src/side.py")
     _git(repo, "checkout", "-q", "main")
-    assert _kind("push", verified=side) == "code"                # 조상이 아니면 그 초록은 이 트리와 무관하다
+    assert _kind("push", verified=side) == "code"                # 갈라진 초록과는 코드 트리가 달라 전체다
     assert CP.plan("push", None)["kind"] == "code"
 
 

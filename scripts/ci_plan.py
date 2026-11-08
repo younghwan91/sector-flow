@@ -11,7 +11,7 @@
   ``docs`` 다. 귀납: 초록 실행의 코드 트리는 전체 검증을 받았거나, 받은 트리와 같다. 그래서 머리가 초록이면 머리의
   코드는 전체 변이를 지났다. 커밋이 빨갛거나 끊겼으면 다음 문서 커밋도 전체를 돈다.
 
-모르면 전체다 — 기준을 못 찾거나, 조상이 아니거나, 바뀐 파일이 비었으면(같은 커밋의 재실행) ``code``.
+모르면 전체다 — 기준을 못 찾거나, 바뀐 파일이 비었으면(같은 커밋의 재실행) ``code``.
 """
 from __future__ import annotations
 
@@ -48,9 +48,7 @@ def changed_since(event: str, base_ref: str, verified: str) -> set[str] | None:
         out = _git("merge-base", base_ref, "HEAD")
         return _changed(out.strip()) if out else None
     if event == "push" and verified:
-        if _git("merge-base", "--is-ancestor", verified, "HEAD") is None:
-            return None                           # 강제 푸시 등 — 그 초록은 지금 트리의 조상이 아니다
-        return _changed(verified)
+        return _changed(verified)                 # 트리를 견주므로 조상 여부는 안 본다 — 없는 커밋이면 실패해 None 이다
     return None
 
 
