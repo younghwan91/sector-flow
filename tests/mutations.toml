@@ -2453,3 +2453,163 @@ guards = ["tests/test_tui_flow_view.py::test_name_sort_highlight_matches_columns
 file = "src/sectorflow/tui/flow_view.py"
 find = "    return col_span(names_cols(st.explore), header) if header else None"
 replace = "    return col_span(names_cols(), header) if header else None"
+
+# ── 2026-11-08 리뷰: 검증기 깊이 — producer 버그를 끝에서 끝까지 잡는가 ─────────────
+# 아래 producer 변이는 합성 sqlite → sector_flow → sector_numbers → verify_report --db-check 를
+# 실제로 돌려(tests/test_pipeline_e2e.py) **이름이 정해진 검증 검사**가 빨개지는지 본다. 예전엔
+# 검증기의 수치 층이 producer 버그를 잡는다는 증거가 없었다.
+
+[[mutation]]
+id = "flow-is-quantity-not-amount"
+why = "순매매 수량에 종가를 안 곱하면 임펄스가 금액이 아니라 주식 수다 — 파생층은 그 위에서 일관돼 A·D 가 초록이다"
+guards = ["tests/test_pipeline_e2e.py::test_pipeline_db_recount_matches_flows"]
+file = "scripts/sector_flow.py"
+find = """        df[short] = df[raw].astype(float) * df["close"] / EOK"""
+replace = """        df[short] = df[raw].astype(float) / EOK"""
+
+[[mutation]]
+id = "sector-return-equal-weighted"
+why = "섹터 일별 수익률을 전일 시총 가중이 아니라 등가중으로 내면 소형주가 섹터 수익률을 끈다"
+guards = ["tests/test_pipeline_e2e.py::test_pipeline_db_recount_matches_returns_and_weights"]
+file = "scripts/sector_flow.py"
+find = """        ret[m][s][di[d]] = round(float((g["ret"] * g["cap_lag"]).sum() / w) if w else 0.0, 3)"""
+replace = """        ret[m][s][di[d]] = round(float(g["ret"].mean()) if w else 0.0, 3)"""
+
+[[mutation]]
+id = "cap-drops-share-event-factor"
+why = "주식수 스냅샷 뒤 병합 배율을 안 곱하면 늦은 스냅샷 구간(078130 모양)의 시총·가중이 10배다"
+guards = ["tests/test_pipeline_e2e.py::test_pipeline_db_recount_matches_returns_and_weights"]
+file = "src/sectorflow/storage.py"
+find = """    market_cap = (merged["close"] * sh * merged["factor"]).to_numpy()"""
+replace = """    market_cap = (merged["close"] * sh).to_numpy()"""
+
+[[mutation]]
+id = "xddot-sign-flipped"
+why = "ẍ 의 부호 반전을 빼면 '풀리기 시작' 이 '조여지는 중' 이 되고 G 관문이 반대로 걸린다 — A·A2 는 그 값 위에서 일관"
+guards = ["tests/test_pipeline_e2e.py::test_pipeline_derived_columns_are_recomputed"]
+file = "scripts/sector_numbers.py"
+find = """                    r["xddot"] = -(xv[2] - 2 * xv[1] + xv[0]) / (cut ** 2)"""
+replace = """                    r["xddot"] = (xv[2] - 2 * xv[1] + xv[0]) / (cut ** 2)"""
+
+[[mutation]]
+id = "window-return-summed-not-compounded"
+why = "구간 수익률을 기하가 아니라 산술로 누적하면 120일에서 크게 벌어진다(+10%·−10% → 0 vs −1%)"
+guards = ["tests/test_pipeline_e2e.py::test_pipeline_derived_columns_are_recomputed"]
+file = "scripts/sector_numbers.py"
+find = """        acc *= 1 + (num / den if den else 0.0) / 100.0"""
+replace = """        acc += (num / den if den else 0.0) / 100.0"""
+
+[[mutation]]
+id = "pct1y-counts-ties-as-below"
+why = "1년 백분위에서 동률을 아래로 세면 조용한(0 이 많은) 섹터가 전부 100 이 된다"
+guards = ["tests/test_pipeline_e2e.py::test_pipeline_derived_columns_are_recomputed"]
+file = "scripts/sector_numbers.py"
+find = """    below = sum(1 for s in sums if s < cur)"""
+replace = """    below = sum(1 for s in sums if s <= cur)"""
+
+[[mutation]]
+id = "power-sign-flipped"
+why = "dW/dt 를 앞−뒤로 내면 정렬되기 시작하는 섹터가 음수로 보인다"
+guards = ["tests/test_pipeline_e2e.py::test_pipeline_derived_columns_are_recomputed"]
+file = "scripts/sector_numbers.py"
+find = """    return (out[1] - out[0]) / max(1, (i1 - mid))"""
+replace = """    return (out[0] - out[1]) / max(1, (i1 - mid))"""
+
+[[mutation]]
+id = "xddot-pieces-unequal"
+why = "셋째 조각이 나머지 날을 떠안으면(20일 → 6·6·8) Δ=6 으로 나눈 2차 차분이 셋째 조각 쪽으로 기운다"
+guards = ["tests/test_verifier_depth.py::test_release_pieces_have_equal_length_and_end_today",
+          "tests/test_pipeline_e2e.py::test_pipeline_derived_columns_are_recomputed"]
+file = "scripts/sector_numbers.py"
+find = """    s0 = i1 - 3 * cut + 1                      # 가장 오래된 n % 3 일을 버린다"""
+replace = """    s0 = i0"""
+
+[[mutation]]
+id = "block-t-miscomputed"
+why = "k 옆의 t 가 틀려도 예전 A 층은 재적합의 t 를 버려서(`_t`) 아무도 몰랐다"
+guards = ["tests/test_pipeline_e2e.py::test_pipeline_derived_columns_are_recomputed"]
+file = "scripts/sector_numbers.py"
+find = """                tstat = slope / se if se else float("nan")"""
+replace = """                tstat = slope * se if se else float("nan")"""
+
+[[mutation]]
+id = "accel-zero-when-cap-missing"
+why = "시총이 없는 칸의 가속도를 0.0 으로 내면 '유입 없음' 으로 읽히고 정렬에서도 가운데에 낀다"
+guards = ["tests/test_verifier_depth.py::test_accel_is_missing_not_zero_when_the_cap_is_missing",
+          "tests/test_pipeline_e2e.py::test_pipeline_derived_columns_are_recomputed"]
+file = "scripts/sector_numbers.py"
+find = """        "accel": (inst / cap * 100) if cap else None,"""
+replace = """        "accel": (inst / cap * 100) if cap else 0.0,"""
+
+[[mutation]]
+id = "combined-star-on-any-pass"
+why = "종합 `*` 가 '판정된 모든 창 통과' 가 아니라 '한 창이라도 통과' 가 된다(예전 seen == pass_n)"
+guards = ["tests/test_verifier_depth.py::test_combined_star_means_passed_every_judged_window",
+          "tests/test_pipeline_e2e.py::test_pipeline_combined_mark_means_every_judged_window"]
+file = "scripts/sector_numbers.py"
+find = """            a["G_pass"] = a["seen"] > 0 and a["pass_n"] == a["seen"]"""
+replace = """            a["G_pass"] = a["pass_n"] > 0"""
+
+[[mutation]]
+id = "verifier-misses-combined-star"
+why = "종합 `*` 가 한 창만 통과한 줄에 붙어도 검증이 모른다"
+guards = ["tests/test_verifier_depth.py::test_verifier_flags_a_combined_star_on_a_partial_passer"]
+file = "scripts/verify_report.py"
+find = """            if (r.get("seen"), r.get("pass_n"), bool(r.get("G_pass"))) != (seen, passed, want):"""
+replace = """            if False:"""
+
+[[mutation]]
+id = "verifier-rank-ignores-ties"
+why = "검증기가 동률을 중간순위로 안 매기면 producer 의 맞는 G 를 틀렸다고 한다(또는 틀린 G 를 맞다고)"
+guards = ["tests/test_verifier_depth.py::test_verifier_ranks_ties_by_midrank_like_the_producer"]
+file = "scripts/verify_report.py"
+find = """                o[i] = (below + (ties - 1) / 2.0) / (len(vals) - 1)"""
+replace = """                o[i] = below / (len(vals) - 1)"""
+
+[[mutation]]
+id = "claim-counts-as-failure"
+why = "도움말의 실측 인용이 낡은 것을 수치 실패로 세면 숫자가 멀쩡한 리포트가 VERIFY_FAILED 다(10-13·10-29)"
+guards = ["tests/test_verifier_depth.py::test_a_doc_claim_mismatch_is_not_a_failure_and_lands_in_claims_txt"]
+file = "scripts/verify_report.py"
+find = """        CLAIMS.append(f"{layer}/{name}" + (f"   {detail}" if detail else ""))"""
+replace = """        FAILS.append(f"{layer}/{name}")"""
+
+[[mutation]]
+id = "db-compare-passes-when-empty"
+why = "비교한 쌍이 0 이어도 F 층이 '0/0 불일치' 로 초록이다 — 본 것이 없는데 DB 를 대조한 것처럼 읽힌다"
+guards = ["tests/test_pipeline_e2e.py::test_db_layer_fails_when_nothing_was_compared"]
+file = "scripts/verify_report.py"
+find = """        chk("F", name, not bad and live >= max(1, min_n),"""
+replace = """        chk("F", name, not bad,"""
+
+[[mutation]]
+id = "trade-value-unit-band-off"
+why = "거래대금 단위 검사가 배율을 안 보면 원·백만원 착오(10³ 배)가 지나간다"
+guards = ["tests/test_pipeline_e2e.py::test_trade_value_unit_check_ignores_close_vs_vwap_gaps_but_catches_unit_errors"]
+file = "scripts/verify_report.py"
+find = """        ratio is not None and lo <= ratio <= hi,"""
+replace = """        ratio is not None,"""
+
+[[mutation]]
+id = "scroll-check-demands-minus-one"
+why = "목록이 한 화면에 다 들어가는 날(섹터가 적다) ↑ 가 0 에 머무는 것을 실패라 한다"
+guards = ["tests/test_pipeline_e2e.py::test_pipeline_report_verifies_with_no_failures"]
+file = "scripts/verify_report.py"
+find = """        if getattr(mo, attr) != max(v0 - 1, 0):"""
+replace = """        if getattr(mo, attr) != v0 - 1:"""
+
+[[mutation]]
+id = "verify-names-the-temp-build-dir"
+why = "VERIFY.txt 첫 줄이 옮긴 뒤 사라지는 `.building.NNN` 을 가리킨다"
+guards = ["tests/test_pipeline_e2e.py::test_pipeline_report_verifies_with_no_failures"]
+file = "scripts/verify_report.py"
+find = """    print(f"검증 대상: {re.sub(r'[.]building[.][0-9]+/?$', '', d.rstrip('/'))}")"""
+replace = """    print(f"검증 대상: {d}")"""
+
+[[mutation]]
+id = "e2e-fixture-goes-blind"
+why = "씨앗이 바뀌어 관문 통과·종합 줄이 안 생기면 G·종합 * 검사가 빈 목록 위에서 초록이다(씨앗 4 가 그 모양)"
+guards = ["tests/test_pipeline_e2e.py::test_fixture_plants_what_it_claims"]
+file = "tests/test_pipeline_e2e.py"
+find = "SEED = 6"
+replace = "SEED = 4"

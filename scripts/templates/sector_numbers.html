@@ -236,7 +236,7 @@ function renderCombined(){
     // 통과 구간을 G 옆에 같이 적는다 — 1/2 통과의 종합 G 가 2/2 통과보다 높게 뜰 수 있다.
     x.append(el("td","num"+(r.G_pass?" pos":""), r.G==null?"—":r.G.toFixed(2)+" ("+(r.pass_n||0)+"/"+C.windows.length+")"));
     C.windows.forEach(w=>x.append(el("td","num", r.per[w]==null?"—":r.per[w].toFixed(2))));
-    // 분모는 섞은 창 수다. `seen` 은 "G 가 나온 창" 이라 언제나 pass_n 과 같다.
+    // 분모는 섞은 창 수다. `seen` 은 관문을 판정할 수 있었던 창 수라(얇거나 ẍ 가 없으면 빠진다) 분모가 아니다.
     const pn=r.pass_n||0, sn=C.windows.length;
     x.append(el("td","num"+(pn>0?" pos":""), sn?pn+"/"+sn:"—"));
     tb.append(x);
