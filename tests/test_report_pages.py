@@ -234,6 +234,39 @@ def test_web_evidence_badges_match_the_tui(tpl):
         assert EVIDENCE.get(k) == badge, f"{tpl}: {k} 표지가 TUI({EVIDENCE.get(k)})와 다르다({badge})"
 
 
+def _const(tpl: str, name: str):
+    html = (REPO / "scripts" / "templates" / tpl).read_text("utf-8")
+    m = re.search(r"const " + name + r"=(\{.*?\});", html)
+    return json.loads(m.group(1)) if m else None
+
+
+def test_web_evidence_scope_is_the_tuis():
+    """검정 범위 표(`EV_TESTED`·`EV_TESTED_SCORE`)와 범위 말 — 수치표가 TUI 와 같은 표·같은 글자를 쓴다(리뷰 M2)."""
+    sys.path.insert(0, str(REPO / "src"))
+    from sectorflow.tui import flow_view as FV
+    want = {a: {k: list(w) for k, w in v.items()} for a, v in FV.EV_TESTED.items()}
+    assert _const("sector_numbers.html", "EV_TESTED") == want
+    assert _const("sector_numbers.html", "EV_TESTED_SCORE") == {k: list(v) for k, v in FV.EV_TESTED_SCORE.items()}
+    html = (REPO / "scripts" / "templates" / "sector_numbers.html").read_text("utf-8")
+    for text in (FV.MARKET_NOTE, FV.EV_TRUST_NOTE, "앞날 검정은 "):
+        assert text in html, text
+
+
+def test_viewer_evidence_scope_is_the_same_table():
+    """뷰어(sector_flow.html)도 같은 `EV_TESTED` 와 같은 범위 말을 쓴다 — 세 화면이 같은 열에 같은 범위를 말한다.
+
+    뷰어 쪽 표는 viewer-ledger-r2 에서 들어온다. 그 전의 뷰어(표 없음)에서는 건너뛴다 — 들어온 뒤로는 늘 돈다.
+    """
+    sys.path.insert(0, str(REPO / "src"))
+    from sectorflow.tui import flow_view as FV
+    got = _const("sector_flow.html", "EV_TESTED")
+    if got is None:
+        pytest.skip("뷰어에 EV_TESTED 가 아직 없다(viewer-ledger-r2 머지 전)")
+    assert got == {a: {k: list(w) for k, w in v.items()} for a, v in FV.EV_TESTED.items()}
+    html = (REPO / "scripts" / "templates" / "sector_flow.html").read_text("utf-8")
+    assert f'"[측정] · {FV.MARKET_NOTE}"' in html and '"[측정] · 앞날 검정은 "' in html
+
+
 def test_numbers_page_defaults_to_flow_and_hides_g_behind_the_exploration_label():
     """수치표의 기본 정렬은 가속이고, G 와 종합 G 는 탐색 표지가 달린 접힌 칸 안에 있다.
 
@@ -342,7 +375,7 @@ def test_numbers_today_panel_says_what_the_terminal_banner_says(tmp_path):
     joined = "\n".join(texts)
     for want in ("기관 상위", "투신+연기금 하위", "기관 ≥95", "기관 ≤5", "들어옴 건설", "나감 보험",
                  "변동 없음", "(97)", "+123", "−33", "−6.02%", "+4.00%", "−4.37%", "+5.50%",
-                 "전일 20:00→당일 20:00", "정규장", "가 +350→−50"):
+                 "전일 20:00→당일 수집 시각", "정규장", "가 +350→−50", "(잠정) 기관 ≥95"):
         assert want in joined, f"오늘 패널에 {want!r} 가 없다"
     # 상위·하위 순서 — TUI 와 같은 금액 순
     i = texts.index("기관 상위")
@@ -355,6 +388,7 @@ def test_numbers_today_panel_says_what_the_terminal_banner_says(tmp_path):
 def test_numbers_today_panel_lists_the_provisional_to_final_changes(tmp_path):
     texts = "\n".join(_page("sector_numbers.html", _today_numbers(final=True), tmp_path))
     assert "잠정→확정 변경: 1칸 / 300칸" in texts
+    assert "전일 20:00→당일 20:00" in texts and "(잠정) 기관" not in texts
     assert "거래소/건설 기관 1일 +10.00 → +12.50 (+2.50)" in texts
 
 
@@ -395,3 +429,35 @@ def test_viewer_one_day_preset_lists_stocks_with_trust_and_pension(tmp_path):
     texts = _page("sector_flow.html", p, tmp_path)
     assert "1거래일 · 2종목" in texts and "담은종목" in texts
     assert "투신 " in texts and "연기금 " in texts and "+7" in texts and "−3" in texts
+
+
+@node
+def test_numbers_today_panel_adds_the_dominant_actor_revision_size_and_base_status(tmp_path):
+    """리뷰 2차 — 최대 순매매 주체(외국인 −28,336억)·잠정 수정 폭·직전 리포트의 지위(잠정·검증 실패)·20일 누적 기준."""
+    D = _today_numbers()
+    for m in D["today"]["market"].values():
+        m["net"] = dict(m["net"], forgn={"v": -28336.0, "pct": 17.0})
+    D["revision_stats"] = {"n_dates": 4, "rel_median_pct": 7.5, "flips": 2, "n_cells": 200}
+    D["change"]["prev_verify_failed"] = True
+    joined = "\n".join(_page("sector_numbers.html", D, tmp_path))
+    for want in ("외국인(최대 순매매 주체) 상위", "외국인(최대 순매매 주체) 하위", "(잠정) 외국인(최대 순매매 주체) ≥95",
+                 "최근 4일 잠정→확정: 섹터 칸 중앙 8%, 부호 뒤집힘 2회",
+                 "직전 리포트(2026-10-30·잠정·검증 실패) 대비 — 20일 누적 기준"):
+        assert want in joined, f"오늘 패널에 {want!r} 가 없다"
+
+
+def test_numbers_page_states_no_dated_numbers_in_its_notes():
+    """리뷰 11 — 템플릿에 특정일 숫자(11-06 −4.37% vs −6.02%, "2%p 넘게")를 박지 않는다."""
+    html = (REPO / "scripts" / "templates" / "sector_numbers.html").read_text("utf-8")
+    for bad in ("11-06", "−4.37", "2%p 넘게", "미반응"):
+        assert bad not in html, bad
+
+
+@node
+def test_numbers_today_panel_counts_the_unclassified_members(tmp_path):
+    """(미분류)가 남아 있으면 오늘 패널이 그 수를 적는다 — 섹터가 아니라 마스터 결함이라는 말과 함께."""
+    D = _today_numbers()
+    D["n_by_sector"] = {"거래소": {"(미분류)": 3}, "코스닥": {"(미분류)": 2}}
+    assert any("(미분류) 5종목" in t for t in _page("sector_numbers.html", D, tmp_path))
+    D["n_by_sector"] = {"거래소": {"금융": 9}}
+    assert not any("(미분류)" in t and "종목" in t for t in _page("sector_numbers.html", D, tmp_path))

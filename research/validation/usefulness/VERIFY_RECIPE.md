@@ -15,6 +15,7 @@ Common:
     shares = latest shares_outstanding_history.shares_outstanding with date <= t (date s), times PRODUCT of 1/(1+upd_rt/100)
       over corporate_actions of that code with s < date <= t, (upd_stkpc_tp::int & 88) != 0, upd_rt not null, != 0, > -100.
 - Sector = stocks.sector (NULL/'' -> '(미분류)'), stocks.market IN ('거래소','코스닥'), both markets together.
+  (Pre-override labels: the four banks the report now maps to '금융' — 024110·323410·279570·006220 — were in '(미분류)' here.)
 
 Stock row (K): 
 - K1 numerator = sum over d in W20(t) of net buy of (invtrt + penfnd_etc); K2 = institution; K3 = foreign_.

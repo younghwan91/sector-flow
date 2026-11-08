@@ -111,6 +111,8 @@ details.explore .xnote{margin:0; padding:10px 15px; font-size:11.5px; color:var(
 /* 한 항목(이름·금액·%ile)은 한 덩어리로 줄바꿈한다 — 폰에서 금액만 다음 줄로 떨어지면 다른 섹터의 값으로 읽힌다. */
 .tline .it{white-space:nowrap}
 .tnote{font-size:11px; color:var(--ink-3)}
+.tline .stk{color:var(--ink-2); font-size:11px; margin-left:2px; white-space:normal}  /* 종목 꼬리표는 폰에서 줄바꿈해도 된다 — 섹터·금액·%ile 덩어리만 붙어 있으면 된다 */
+.tline.rev{color:var(--ink-2); font-size:12px}
 .chip.warn{border-color:#ffda6a; background:#fff3cd; color:#664d03}
 .tcard details summary{cursor:pointer; font-size:12px; color:var(--focus)}
 .tcard details ul{margin:6px 0 0; padding-left:16px; font-size:11.5px; max-height:260px; overflow:auto}
@@ -148,8 +150,8 @@ details.explore .xnote{margin:0; padding:10px 15px; font-size:11.5px; color:var(
   </section>
 
   <details class="explore" id="explore">
-    <summary>탐색 — 검정 결과 앞날 증거 없음(G 판정 불가) · 열면 G 열과 종합 G 표가 보인다</summary>
-    <p class="xnote"><b>G</b> 는 관문(얇지 않고 a&gt;0·x&gt;0·ẍ&gt;0)을 통과한 섹터끼리의 순위 평균이다. 관문 통과가 날마다 2~7개라 앞날 관계를 판정할 검정력이 없다(판정 불가). <b>종합 G</b> 는 섞은 창 가운데 <b>통과한 창만</b>의 평균이라 1/2 통과가 2/2 통과보다 위에 올 수 있다 — 옆의 통과 구간(n/m)을 같이 보라.</p>
+    <summary>탐색 — 검정 결과 앞날 증거 없음(G 판정 불가) · 열면 G·예상Δv·미실현·풀림(x 계열) 열과 종합 G 표가 보인다</summary>
+    <p class="xnote"><b>G</b> 는 관문(얇지 않고 a&gt;0·x&gt;0·ẍ&gt;0)을 통과한 섹터끼리의 순위 평균이다. 관문 통과가 날마다 2~7개라 앞날 관계를 판정할 검정력이 없다(판정 불가). <b>x 계열</b>(예상Δv·미실현·dW/dt·풀림속도·풀림가속)은 G 의 입력이고 x 는 섹터 20일 수익률 반전과 ρ 0.82~0.93 이다 — 앞날 증거 없음. 종목 화면의 선정점수는 투신+연기금을 "많이 살수록 좋다" 로 세는데 그 축의 순위 정보는 검정 부호와 <b>반대</b>(음)다. <b>종합 G</b> 는 섞은 창 가운데 <b>통과한 창만</b>의 평균이라 1/2 통과가 2/2 통과보다 위에 올 수 있다 — 옆의 통과 구간(n/m)을 같이 보라.</p>
     <section class="panel" style="border:0;border-radius:0">
       <h2 id="cttl">종합 G <small>통과한 창만의 G 평균 · 통과 구간 = 세 조건을 다 만족한 창 수 / 섞은 창 수</small></h2>
       <div class="tw"><table id="ctbl"></table></div>
@@ -159,38 +161,72 @@ details.explore .xnote{margin:0; padding:10px 15px; font-size:11.5px; color:var(
   <div class="notes">
     <p><b>__BASIS__</b>. 키움 KRX 코드(접미사 없음) 응답이라 시장 전체 체결이 아니라 KRX 몫이다(근거 docs/formulas.md §1.0).</p>
     <p><b>임펄스</b> = 구간 누적 기관 순매수(수량 × 그날 종가). <b>가속</b> = 임펄스 ÷ 구간말 섹터 시총 × 100 [%p]. <b>수익률</b> = 그 섹터 <b>자체 바구니</b>(자금흐름·시총과 같은 종목집합)의 구간 수익률 — <b>전일</b> 시총 가중 일별 수익률의 기하누적이다. KRX 업종지수가 아니다: 구성종목이 달라 분자·분모·수익률이 서로 다른 바구니가 되고, 실측으로 부동산 20일이 지수 +6.0% vs 자체 +74.9% 였다.</p>
-    <p><b>수익률 "~20시" = 전일 20:00 → 당일 20:00 (애프터마켓 포함 통합 종가).</b> 2026-09-14 부터 일별 종가가 KRX 애프터마켓(16:00~20:00)까지 포함한 통합값이라 이 페이지의 모든 수익률은 정규장(15:30) 종가 기준이 아니다. 그래서 KRX 지수(정규장)와 같은 날 갈린다 — 11-06 거래소 자체 바구니 −4.37% vs 코스피 −6.02%(정규장 종가로 다시 재면 0.01%p 안에서 맞는다). 맨 위 "오늘" 패널은 둘을 나란히 적는다.</p>
-    <p><b>오늘 %ile</b> = 그날 순매수가 오늘 포함 최근 1년(260거래일) <b>일별</b> 값 중 몇 등[0~100], 동률은 중간순위 — 0(또는 미보고)인 날이 75% 를 넘는 줄은 —. <b>금액 근사 오차</b> = 그날 Σ|4주체 순매수 수량|×종가 와 ×VWAP(거래대금÷거래량)의 차이 ÷ VWAP 쪽 — 5% 를 넘는 시장에만 칩을 띄운다(지표 검증 Q3b: 코스닥 섹터 단위는 48일 중 71% 만 5% 이내).</p>
+    <p><b>수익률의 시각.</b> 2026-09-14 부터 일별 종가가 KRX 애프터마켓(16:00~20:00)까지 포함한 통합값이다. <b>확정</b> 리포트의 하루 수익률은 전일 20:00 → 당일 20:00 이고, <b>잠정</b> 리포트(18:10)의 마지막 날은 전일 20:00 → 당일 <b>수집 시각</b>(애프터마켓 진행 중) 스냅숏이라 확정 때 바뀐다. 정규장(15:30) 종가가 아니므로 KRX 지수(정규장)와 같은 날 크게 갈릴 수 있다 — 맨 위 "오늘" 패널은 둘을 나란히 적는다.</p>
+    <p><b>마감·잠정 / 마감·확정.</b> 잠정 = 17시 수집 창 뒤 그날 잠정값으로 만든 리포트. 확정 = 다음날 아침 확정치(daily_finalize)를 확인하고 다시 만든 리포트. 잠정 리포트의 "오늘" 패널은 최근 확정일들의 잠정→확정 수정 폭(1일 섹터 칸 |확정−잠정|÷|확정| 중앙값, 부호 뒤집힘 수 — (시장, 주체) 안에서 Σ|확정값| 의 2% 이상인 칸만)을 적고, %ile 극단 목록에 (잠정) 표지를 단다.</p>
+    <p><b>오늘 %ile</b> = 그날 순매수가 오늘 포함 최근 1년(260거래일) <b>일별</b> 값 중 몇 등[0~100], 동률은 중간순위 — 0(또는 미보고)인 날이 75% 를 넘는 줄은 —. 표시는 반올림(0.5 는 위로 — 터미널 화면과 같은 규칙). <b>최대 순매매 주체</b> = 그날 시장 |순매수| 가 가장 큰 주체 — 기관·투신+연기금이 아니면 그 주체의 상위·하위 3 과 극단을 덧붙인다. 섹터 옆 [ ] 는 그 주체의 그날 상위 종목이다.</p>
+    <p><b>왜 네이버·KRX 의 주체별 순매수 금액과 다른가.</b> DB 는 주체별 순매수 <b>수량</b>만 준다 — 이 페이지의 금액은 수량 × 그날 종가 근사이고, 참값(체결가 합)에 가까운 것은 VWAP 환산이다. <b>금액 근사 오차</b> = 그날 Σ|4주체 순매수 수량|×종가 와 ×VWAP(거래대금÷거래량)의 차이 ÷ VWAP 쪽 — 시장 합계는 종목 간 오차가 상쇄되지만 섹터 칸은 덜 상쇄된다. 시장이나 섹터 칸(그 시장의 2% 이상 섹터 중 최대)이 5% 를 넘으면 칩을 띄운다.</p>
+    <p><b>(미분류)</b> = 벤더 마스터(<span class="num">stocks.sector</span>)에 섹터가 빈 종목. 은행 넷(기업은행·카카오뱅크·케이뱅크·제주은행)은 KRX 업종(금융)으로 덮었다(<span class="num">sectorflow/sector_override.py</span>). 남은 수는 "오늘" 패널에 적는다.</p>
     <p><b>순매수 금액은 종가 환산 근사다</b> — DB 는 수량만 준다. 참값은 VWAP 가중이다.</p>
     <p><b>0 은 "관망"이 아니라 "0 또는 미보고"</b>다. <b>종목</b> 열은 그 (시장,섹터)에서 <b>이 구간에 거래된</b> 종목 수 — 벤더 마스터(<span class="num">stocks</span>)에는 수급 보고가 두 달 전에 끊긴 이름이 남아 있어, 그걸 세면 표의 수가 실제보다 많아진다.</p>
     <p><b>종목이 10개 미만인 섹터는 회색으로 죽였고 G 순위 산정에서도 뺐으며, 어떤 열로 정렬해도 맨 아래에 둔다</b>(분모가 작아 가속이 쉽게 튄다). 벤더 분류(<span class="num">stocks.sector</span>)가 좁아 부동산 3 · 출판/매체복제 2 · 제조 8 처럼 사실상 단일종목인 라벨이 있다 — 부동산은 자이에스앤디가 시총의 80%다. 부동산업 회사들은 실제로 <b>금융</b>(한국토지신탁·한국자산신탁·리츠)과 <b>건설</b>(HDC현대산업개발·동원개발 등)에 흩어져 있다. 그런 행의 x·ẍ·G 는 섹터가 아니라 개별 종목 이야기다.</p>
-    <p><b>미실현 x</b> = 예상Δv − 실제Δv. 적합선(k·가속 + 절편) 대비 덜 오른 폭(+)·더 오른 폭(−)이다. <b>x 는 섹터 20일 수익률 반전(−Δv)과 순위상관 ρ 0.82~0.93</b>(2026-11-08 실측)이라 사실상 "많이 빠진 순" 이다. 앞날 관계도 검정함 — 증거 없음.</p>
-    <p><b>풀림 속도 ẋ · 풀림 가속도 ẍ</b> — 구간을 셋으로 갈라 조각별 x 를 구하고 중앙차분한 값(<span class="num">ẋ = −(x₃−x₁)/2Δ</span>, <span class="num">ẍ = −(x₃−2x₂+x₁)/Δ²</span>). 부호를 뒤집어 x 가 줄어드는 쪽을 양수로 적는다. 2차 차분이라 조각이 6~7일인 짧은 창에서는 값이 크게 흔들린다. 앞날 검정은 하지 않았다.</p>
-    <p><b>일률 dW/dt</b> — 구간을 반으로 갈라 <span class="num">W = 가속 × 수익률</span> 의 전·후반 차를 거래일로 나눈 값. 차분이라 k 절편 편향이 상쇄된다. 앞날 검정은 하지 않았다.</p>
-    <p><b>포텐셜</b> <span class="num">U = ½·k·x²</span>. <span class="num">예상Δv = k·가속 + 절편</span>, k 는 그 블록 횡단면에서 추정한 기울기다. k 는 추정치라 헤더에 t 를 같이 띄운다 — <b>|t| &lt; 2 인 블록에서는 예상Δv 가 사실상 절편(그 구간 평균)이고 가속이 기여하지 않는다.</b></p>
-    <p><b>이전 "미반응" 잔차 열은 내렸다(2026-08-27).</b> 자금흐름은 <span class="num">stocks.sector</span> 바구니에서, 수익률은 KRX 업종지수에서 쟀는데 두 바구니의 구성종목이 다르다. 그리고 설령 같았어도 그 지표는 정보를 담지 않았다 — 잔차와 −수익률의 순위상관이 중앙값 0.94(20일 0.99), R² 0.02~0.15 로 사실상 "많이 빠진 순"의 재포장이었다.</p>
+    <p><b>투신+연기금 5일 · 창</b> = 그 섹터 종목들의 투신+연기금 순매수 합 — 최근 5일과 이 창. 기관 안에서 방향성이 있는 둘이다. 금액이라 앞날 검정을 하지 않았다 — [측정] · ÷시총 기준으로만 검정(S1).</p>
+    <p><b>1일 탭</b> = 기준일 하루의 사실(순매수·1년%ile·수익률·거래대금·종목수). 가속·x 계열·G 는 하루치에서 정의되지 않아 —. 시가총액은 구간말 값이라 창과 무관하다.</p>
+    <p><b>탐색 영역에서만:</b> <b>미실현 x</b> = 예상Δv − 실제Δv(<span class="num">예상Δv = k·가속 + 절편</span>, k 는 그 블록 횡단면 기울기 — |t| &lt; 2 이면 예상Δv 는 사실상 절편). x 는 섹터 20일 수익률 반전(−Δv)과 순위상관 ρ 0.82~0.93(2026-11-08 실측)이라 사실상 "많이 빠진 순" 이다. <b>풀림 속도 ẋ · 풀림 가속 ẍ</b> — 구간을 셋으로 갈라 조각별 x 를 구하고 중앙차분한 값(<span class="num">ẋ = −(x₃−x₁)/2Δ</span>, <span class="num">ẍ = −(x₃−2x₂+x₁)/Δ²</span>). <b>dW/dt</b> — <span class="num">W = 가속 × 수익률</span> 의 전·후반 차 ÷ 거래일. 포텐셜(½kx²)은 |x| 의 단조 변환이라 내렸다. 모두 앞날 증거 없음.</p>
     <p><b>시총이 작은 섹터는 가속이 쉽게 튄다</b> — 임펄스와 시총을 같이 보라. 빨강 = 순매수, 파랑 = 순매도(국내 관행).</p>
   </div>
 </div>
 
 <script>
 const D = __DATA__;
-const WINS = [...new Set(Object.keys(D.blocks).map(k=>+k.split("|")[0]))].sort((a,b)=>a-b);
+const T=D.today||null;
+const BLOCK_WINS = [...new Set(Object.keys(D.blocks).map(k=>+k.split("|")[0]))].sort((a,b)=>a-b);
+// 1일 창 — `today` 에서 행을 만든다(파생값은 —). 옛 리포트(today 없음)에는 없다. TUI `w`·`1` 과 같은 자리.
+const WINS = (T&&T.sectors ? [1] : []).concat(BLOCK_WINS);
 const MKTS = [...new Set(Object.keys(D.blocks).map(k=>k.split("|")[1]))];
 let win = WINS.includes(20) ? 20 : WINS[0], mkt = "전체";
-// 기본 정렬은 가속 — G 는 탐색 표지 아래에만 있다(검정 결과 판정 불가).
+// 기본 정렬은 가속 — G·x 계열은 탐색 표지 아래에만 있다(검정 결과 판정 불가·앞날 증거 없음).
 let sortKey = "accel", sortDir = -1;
-const EXP_KEYS = new Set(["G"]);
+const EXP_KEYS = new Set(["G","exp","x","P","xdot","xddot"]);
 /** 증거 수준 — TUI(`flow_view.EVIDENCE`)와 **같은 표**다. 검사가 둘을 대조한다. */
-const EV={"accel":"[앞날 증거 없음]","inst":"[앞날 증거 없음]","forgn":"[앞날 증거 없음]","indiv":"[측정]","etc":"[측정]","x":"[≈섹터 20일 반전: x]","G":"[판정 불가: G]","exp":"[측정]","U":"[측정]","P":"[측정]","xdot":"[측정]","xddot":"[측정]","ret":"[측정]","tv":"[측정]","cap":"[측정]","n_all":"[측정]","pct":"[측정]","gap":"[측정]","krx":"[측정]"};
+const EV={"accel":"[앞날 증거 없음]","trust":"[측정]","inst":"[앞날 증거 없음]","forgn":"[앞날 증거 없음]","indiv":"[측정]","etc":"[측정]","x":"[≈섹터 20일 반전: x]","G":"[판정 불가: G]","exp":"[측정]","U":"[측정]","P":"[측정]","xdot":"[측정]","xddot":"[측정]","ret":"[측정]","tv":"[측정]","cap":"[측정]","n_all":"[측정]","pct":"[측정]","gap":"[측정]","krx":"[측정]"};
+/** 표지가 말하는 **검정 범위** — (주체, 값의 종류)별로 검정한 창 길이(거래일). `share` = 순매수 ÷ 섹터 시총(가속),
+ *  `amt` = 순매수 금액(임펄스). 검정은 전부 `전체` 시장·10종목 미만 섹터 제외: 기관 가속 20일·기관 임펄스 20일(Q3d),
+ *  외국인 20일·기관 60일(÷ 섹터 시총만, S2·S3). TUI `flow_view.EV_TESTED`·뷰어 `EV_TESTED` 와 **같은 표**다(검사가 대조).
+ *  밖이면 [측정] 과 범위("앞날 검정은 20일만"·"전체 시장만 검정"), 1일 탭에서 값이 없는 열은 표지 없음. */
+const EV_TESTED={"inst":{"share":[20,60],"amt":[20]},"forgn":{"share":[20]}};
+const EV_TESTED_SCORE={"x":[20],"G":[20]};
+const EV_MARKET="전체", MARKET_NOTE="[측정] · 전체 시장만 검정", EV_TRUST_NOTE="[측정] · ÷시총 기준으로만 검정(S1)";
+const ONE_DAY_BLANK=new Set(["accel","x","xddot","xdot","P","G","exp","U"]);
+function scopeNote(days){ return "[측정] · 앞날 검정은 "+days.join("·")+"일만"; }
+/** 이 표의 열 → 증거 키·주체. 이 표의 금액 열은 그 주체의 것이고 가속은 기관이다. */
+const COL_EV={"inst":["inst","inst"],"accel":["accel","inst"],"forgn":["forgn","forgn"],"trust5":["trust"],"trustw":["trust"]};
+function evAt(k,w,m){
+  const [ek,actor]=COL_EV[k]||[k,"inst"];
+  if(w===1&&ONE_DAY_BLANK.has(ek)) return null;
+  const base=EV[ek]; if(base==null) return null;
+  if(ek==="trust") return EV_TRUST_NOTE;
+  let t;
+  if(EV_TESTED_SCORE[ek]) t=EV_TESTED_SCORE[ek];
+  else if(ek==="accel"||["inst","forgn","indiv","etc"].includes(ek)){
+    if(base==="[측정]") return base;
+    t=(EV_TESTED[ek==="accel"?actor:ek]||{})[ek==="accel"?"share":"amt"];
+    if(!t) return "[측정]";
+  } else return base;
+  if(!t.includes(w)) return scopeNote(t);
+  return m===EV_MARKET?base:MARKET_NOTE;
+}
 const expOpen=()=>document.getElementById("explore").open;
 
 const el=(t,c,x)=>{const e=document.createElement(t); if(c)e.className=c; if(x!=null)e.textContent=x; return e;};
 const cls=n=>n>=0?"pos":"neg";
 const sg=n=>(n>=0?"+":"−");
-const A=n=>n==null?"—":sg(n)+Math.abs(n).toLocaleString("ko-KR",{maximumFractionDigits:0});
-const P=n=>n==null?"—":sg(n)+Math.abs(n).toFixed(2);
-const N0=n=>n==null?"—":Math.round(n).toLocaleString("ko-KR");
+/** 반올림 — 0.5 는 0 에서 먼 쪽. TUI `flow_view.rhu` 와 **같은 IEEE 연산**이다(파이썬 .0f 는 은행가 반올림이었다). */
+const RHU=(v,nd=0)=>{const m=10**nd, q=Math.floor(Math.abs(v)*m+0.5+1e-9)/m; return v>=0?q:-q;};
+const A=n=>n==null?"—":sg(n)+Math.abs(RHU(n)).toLocaleString("ko-KR",{maximumFractionDigits:0});
+const P=n=>n==null?"—":sg(n)+Math.abs(RHU(n,2)).toFixed(2);
+const N0=n=>n==null?"—":RHU(n).toLocaleString("ko-KR");
+const PI=p=>p==null?"—":String(RHU(p));
+const F3=v=>v==null?"—":sg(v)+Math.abs(RHU(v,3)).toFixed(3);
 
 // 맨 앞은 **기준일**이다. 페이로드 전체 범위(1년)를 먼저 적으면 그게 이 숫자들의 날짜로 읽힌다.
 document.getElementById("asof").textContent = "기준일 "+D.asof;
@@ -200,11 +236,14 @@ document.getElementById("chip").append(chip);
 // 칩의 뜻은 **글로** 적는다 — title 에만 두면 폰에서는 볼 길이 없다.
 document.getElementById("chipnote").textContent = D.final
   ? "확정: 다음날 아침 확정치(daily_finalize)를 확인한 뒤 다시 만든 리포트다."
-  : D.finalized ? "잠정: 수집 창(17시) 뒤 그날 잠정값으로 만든 리포트다. 다음날 아침 확정치로 다시 만든다."
+  : D.finalized ? "잠정: 수집 창(17시) 뒤 그날 잠정값(수집 시각 스냅숏 — 애프터마켓은 20시까지 돈다)으로 만든 리포트다. 다음날 아침 확정치로 다시 만든다."
   : "미확정: 17시 이전이라 부분 데이터일 수 있다.";
 // 받은 폴더·멈춘 배치를 오늘 것으로 읽지 않게. 문턱은 화면(`STALE_DAYS`)과 같다.
 const age=Math.floor((Date.now()-Date.parse(D.asof+"T00:00:00+09:00"))/864e5);
 if(age>=4) document.getElementById("chip").append(el("span","chip","⚠ "+age+"일 지난 리포트"));
+/** 수익률 라벨 — 확정이면 ~20:00, 잠정·장중이면 마지막 날이 수집 시각 스냅숏(TUI `ret_label`). */
+const RET_LABEL = D.final ? "전일 20:00→당일 20:00 (애프터마켓 포함 통합 종가)" : "전일 20:00→당일 수집 시각 (애프터마켓 진행 중)";
+const RET_SHORT = D.final ? "~20시" : "~수집시각 잠정";
 
 function seg(id,opts,get,set){
   const box=document.getElementById(id);
@@ -217,21 +256,22 @@ seg("seg-mkt", MKTS.map(m=>[m,m]), ()=>mkt, v=>{mkt=v; render();});
 seg("seg-mkt-t", MKTS.map(m=>[m,m]), ()=>mkt, v=>{mkt=v; render();});
 
 /* ---------- 오늘 — TUI 첫 화면(`flow_view.banner_lines`)과 같은 사실을 같은 순서로 ---------- */
-const T=D.today||null;
 const TODAY_ACT=[["inst","기관"],["invpen","투신+연기금"]];
 const ACT4=[["inst","기관"],["forgn","외국인"],["indiv","개인"],["etc","기타법인"]];
-const PCT_HI=95, PCT_LO=5;
-const pc=p=>p==null?"(—)":"("+Math.round(p)+")";
-const R2=v=>v==null?"—":(v>=0?"+":"−")+Math.abs(v).toFixed(2)+"%";
+const PCT_HI=95, PCT_LO=5, FLIP_MIN_SHARE=0.02, BANNER_STOCKS=2;
+const pc=p=>p==null?"(—)":"("+RHU(p)+")";
+const R2=v=>v==null?"—":(v>=0?"+":"−")+Math.abs(RHU(v,2)).toFixed(2)+"%";
+const mkOf=m=>m==="전체"?MKTS.filter(x=>x!=="전체"):[m];
 /** 한 줄: 라벨 + 항목들(금액 부호색). 비면 "없음" 이라 적는다 — 검사했는데 없는 것과 안 본 것이 달라야 한다. */
 function tline(label, items, empty){
   const p=el("div","tline"); p.append(el("span","lab2",label));
   if(!items.length){ p.append(el("span","dim",empty||"없음")); return p; }
   items.forEach((it,i)=>{ if(i) p.append(el("span","sep"," · "));
     if(typeof it==="string"){ p.append(el("span","it",it)); return; }
-    const [name,v,pct]=it, w=el("span","it"); w.append(el("span",null,name+" "));
+    const [name,v,pct,stocks]=it, w=el("span","it"); w.append(el("span",null,name+" "));
     w.append(el("span","num "+cls(v),A(v)));
     if(pct!==undefined) w.append(el("span","pc num",pc(pct)));
+    if(stocks&&stocks.length) w.append(el("span","stk","["+stocks.map(([n,x])=>n+" "+A(x)).join("·")+"]"));
     p.append(w); });
   return p;
 }
@@ -240,75 +280,133 @@ function card(title){ const c=el("div","tcard"); c.append(el("h3",null,title)); 
 function todayRank(m,a){
   const S=(T.sectors||{})[m]||{};
   return Object.entries(S).map(([s,v])=>[s,(v[a]||{}).v,(v[a]||{}).pct]).filter(t=>t[1]!=null)
-    .sort((x,y)=>(y[1]-x[1])||x[0].localeCompare(y[0]));
+    .sort((x,y)=>(y[1]-x[1])||(x[0]<y[0]?-1:x[0]>y[0]?1:0));
 }
-/** 최근 5일 부호가 직전 15일(=20일−5일)과 반대인 섹터 — TUI `reversal_flags`(기관)와 같다. */
+/** 그날의 최대 순매매 주체 — 시장 |순매수| 가 가장 큰 4주체. 기관·투신+연기금에 없으면 덧붙인다(TUI `banner_actors`). */
+function bannerActors(m){
+  const net=((T.market||{})[m]||{}).net||{};
+  let best=null;
+  ACT4.forEach(([k,ko])=>{ const v=(net[k]||{}).v; if(v==null) return;
+    const t=[Math.abs(v),k,ko]; if(!best||t[0]>best[0]||(t[0]===best[0]&&(t[1]>best[1]))) best=t; });
+  const out=TODAY_ACT.slice();
+  if(best&&!out.some(([k])=>k===best[1])) out.push([best[1],best[2]+"(최대 순매매 주체)"]);
+  return out;
+}
+/** 섹터 → [(종목명, 그날 순매수)] 금액 큰 순 — names[code].win["1"](TUI `day_stocks`). */
+function dayStocks(m,a){
+  const mk=new Set(mkOf(m)), out={};
+  Object.values(D.names||{}).forEach(nm=>{ if(!mk.has(nm.market)) return; const w=(nm.win||{})["1"]; if(!w) return;
+    let v;
+    if(a==="invpen"){ if(w.invtrt==null&&w.penfnd_etc==null) return; v=(w.invtrt||0)+(w.penfnd_etc||0); }
+    else { v=w[a]; if(v==null) return; }
+    (out[nm.sector]=out[nm.sector]||[]).push([nm.name||"—",v]); });
+  Object.values(out).forEach(arr=>arr.sort((x,y)=>(y[1]-x[1])||(x[0]<y[0]?-1:x[0]>y[0]?1:0)));
+  return out;
+}
+const stockTag=(arr,side)=>!arr?[]:(side==="buy"?arr.filter(t=>t[1]>0).slice(0,BANNER_STOCKS):arr.slice().reverse().filter(t=>t[1]<0).slice(0,BANNER_STOCKS));
+function absentRow(r){ return r.n_all===0 && !r.cap; }
+/** 최근 5일 부호가 직전 15일(=20일−5일)과 반대인 섹터 — TUI `reversal_flags`(기관)와 같다. 5일 |금액| ≥ 목록의 2%. */
 function flips(m){
   const b20=(D.blocks["20|"+m]||{}).rows||[], b5=(D.blocks["5|"+m]||{}).rows||[];
-  const five=Object.fromEntries(b5.map(r=>[r.sector,r]));
-  const out=[];
+  const five=Object.fromEntries(b5.filter(r=>!absentRow(r)).map(r=>[r.sector,r]));
+  const cand=[];
   b20.filter(r=>!absentRow(r)).forEach(r=>{ const s=five[r.sector]; if(!s||r.inst==null||s.inst==null) return;
-    const prior=r.inst-s.inst; if(prior*s.inst<0) out.push([r.sector+(r.thin?"~":""),prior,s.inst]); });
-  return out.sort((a,b)=>Math.abs(b[2])-Math.abs(a[2]));
+    cand.push([r.sector+(r.thin?"~":""),r.inst-s.inst,s.inst]); });
+  const tot=cand.reduce((a,c)=>a+Math.abs(c[2]),0);
+  return cand.filter(([,p,f])=>p*f<0&&Math.abs(f)>=FLIP_MIN_SHARE*tot).sort((a,b)=>Math.abs(b[2])-Math.abs(a[2]));
 }
+const KO=Object.assign({inst:"기관",invtrt:"투신",penfnd_etc:"연기금",invpen:"투신+연기금",forgn:"외국인",indiv:"개인",etc:"기타법인"},(T&&T.actors)||{});
 function renderToday(){
   document.getElementById("seg-mkt-t")._sync();
   const g=document.getElementById("t-grid"); g.replaceChildren();
   if(!T){ const c=card("오늘"); c.append(el("div","tline","이 리포트에는 '오늘' 블록이 없다(옛 형식) — 다시 만들면 생긴다.")); g.append(c); return; }
+  const prov=!D.final;
   document.getElementById("t-sub").textContent=T.date+" 하루 · "+mkt+" · 사실만(추천 아님)";
-  const mk=mkt==="전체"?MKTS.filter(m=>m!=="전체"):[mkt];
-  // 1. 수익률 — 자체 바구니(~20시 통합 종가) | KRX 지수(정규장)
-  const c1=card("수익률 1일 · 20일 — 자체 바구니(전일 20:00→당일 20:00, 애프터마켓 포함 통합 종가) | KRX 지수(정규장 15:30)");
+  const mk=mkOf(mkt);
+  // 1. 수익률 — 자체 바구니 | KRX 지수(정규장)
+  const c1=card("수익률 1일 · 20일 — 자체 바구니("+RET_LABEL+") | KRX 지수(정규장 15:30)");
+  c1.id="t-ret";
   mk.forEach(m=>{ const own=((T.market||{})[m]||{}).ret||{}, k=(T.krx_index||{})[m]||{}, kr=k.ret||{};
     const p=el("div","tline"), a=el("span","it"), b=el("span","it");
+    p.dataset.market=m;
     a.append(el("span","lab2",m),el("span","num "+cls(own["1"]||0),R2(own["1"])),el("span","sep"," · "),el("span","num "+cls(own["20"]||0),R2(own["20"])));
     b.append(el("span","sep"," | KRX "+(k.name||"지수 없음")+"(정규장) "),el("span","num "+cls(kr["1"]||0),R2(kr["1"])),el("span","sep"," · "),el("span","num "+cls(kr["20"]||0),R2(kr["20"])));
-    p.append(a,b); c1.append(p); });
-  c1.append(el("div","tnote","두 값은 세션이 달라 같은 날 2%p 넘게 갈릴 수 있다 — 아래 설명. 증거 "+EV.krx));
+    p.append(a,document.createTextNode(" "),b); c1.append(p); });   // 두 덩어리 사이에 줄바꿈 자리 — 폰(390px)에서 KRX 쪽이 다음 줄로
+  c1.append(el("div","tnote","두 값은 세션이 달라(정규장 15:30 vs "+(D.final?"애프터마켓 포함 20:00":"수집 시각")+") 같은 날 크게 갈릴 수 있다 — 아래 설명. 증거 "+EV.krx));
   g.append(c1);
-  // 2. 시장 순매수 4주체 + 1년%ile, 금액 근사 오차 칩
+  // 2. 시장 순매수 4주체 + 1년%ile, 금액 근사 오차 칩, (미분류), 잠정 수정 폭
   const M=((T.market||{})[mkt]||{}).net||{};
   const c2=card("오늘 "+mkt+" 순매수 [억 (1년%ile)]");
+  c2.id="t-net";
   c2.append(tline("", ACT4.map(([k,ko])=>[ko,(M[k]||{}).v,(M[k]||{}).pct])));
   const warn=T.approx_gap_warn??5;
-  (mkt==="전체"?["전체",...mk]:mk).forEach(m=>{ const gp=((T.market||{})[m]||{}).approx_gap;
-    if(gp&&gp.pct!=null&&gp.pct>warn){ const w=el("span","chip warn","⚠ 금액 근사 오차 큼("+m+" "+gp.pct.toFixed(1)+"%)");
-      w.title="종가 환산 vs VWAP 환산 차이 — 아래 설명"; c2.append(w); } });
-  c2.append(el("div","tnote","%ile = 그날 값의 1년 일별 분포 안 순위. 증거 "+EV.pct+" · 금액 근사 "+EV.gap));
+  (mkt==="전체"?["전체",...mk]:mk).forEach(m=>{ const gp=((T.market||{})[m]||{}).approx_gap; if(!gp||gp.pct==null) return;
+    if(gp.pct>warn){ const w=el("span","chip warn","⚠ 금액 근사 오차 큼("+m+" "+RHU(gp.pct,1).toFixed(1)+"%)");
+      w.title="종가 환산 vs VWAP 환산 차이 — 아래 설명"; c2.append(w); }
+    const sm=gp.sector_max;
+    if(sm&&sm.pct!=null&&sm.pct>warn&&m!=="전체"){ c2.append(el("span","chip warn","⚠ 금액 근사 오차: "+m+" 섹터 최대 "+sm.sector+" "+RHU(sm.pct,1).toFixed(1)+"%")); } });
+  const unc=mk.reduce((a,m)=>a+(+(((D.n_by_sector||{})[m]||{})["(미분류)"])||0),0);
+  if(unc) c2.append(el("div","tnote","※ (미분류) "+unc+"종목 — 벤더 마스터에 섹터가 빈 종목이다(섹터가 아니다). 은행 넷은 금융으로 덮었다."));
+  const RS=D.revision_stats;
+  if(prov&&RS){ const rl=el("div","tline rev");
+    rl.textContent=(RS.n_dates&&RS.rel_median_pct!=null)
+      ?"최근 "+RS.n_dates+"일 잠정→확정: 섹터 칸 중앙 "+RHU(RS.rel_median_pct)+"%, 부호 뒤집힘 "+(RS.flips||0)+"회 (1일 칸 "+(RS.n_cells||0)+"개)"
+      :"잠정→확정 수정 폭: 아직 확정 기록이 없다 — 확정 리포트가 쌓이면 여기 적는다";
+    c2.append(rl); }
+  c2.append(el("div","tnote","%ile = 그날 값의 1년 일별 분포 안 순위. 증거 "+EV.pct+" · 금액 = 수량×종가 근사 "+EV.gap));
   g.append(c2);
-  // 3. 섹터 상위·하위 3 (기관 · 투신+연기금)
-  const c3=card("오늘 섹터 순매수 [억 (1년%ile)] — "+mkt+" · 금액 순");
-  TODAY_ACT.forEach(([a,ko])=>{ const r=todayRank(mkt,a);
-    c3.append(tline(ko+" 상위",r.slice(0,3)), tline(ko+" 하위",r.slice().reverse().slice(0,3))); });
+  // 3. 섹터 상위·하위 3 (기관 · 투신+연기금 · 그날의 최대 순매매 주체) + 그 주체의 그날 종목
+  const acts=bannerActors(mkt);
+  const c3=card("오늘 섹터 순매수 [억 (1년%ile)] — "+mkt+" · 금액 순 · [ ] = 그 주체의 그날 종목");
+  c3.id="t-rank";
+  acts.forEach(([a,ko])=>{ const r=todayRank(mkt,a), st=dayStocks(mkt,a);
+    const top=tline(ko+" 상위",r.slice(0,3).map(([s,v,p])=>[s,v,p,stockTag(st[s],"buy")]));
+    const bot=tline(ko+" 하위",r.slice().reverse().slice(0,3).map(([s,v,p])=>[s,v,p,stockTag(st[s],"sell")]));
+    top.dataset.actor=a; top.dataset.side="top"; bot.dataset.actor=a; bot.dataset.side="bottom";
+    c3.append(top,bot); });
+  c3.append(el("div","tnote","1일 탭(아래 표)·뷰어의 1일 기간에서 그 섹터의 그날 전 종목을 본다."));
   g.append(c3);
   // 4. 1년%ile 극단
-  const c4=card("오늘 1년%ile 극단 — ≥"+PCT_HI+" · ≤"+PCT_LO);
-  TODAY_ACT.forEach(([a,ko])=>{ const r=todayRank(mkt,a).filter(t=>t[2]!=null);
-    const hi=r.filter(t=>t[2]>=PCT_HI).sort((x,y)=>(y[2]-x[2])||x[0].localeCompare(y[0])).map(t=>t[0]+" "+Math.round(t[2]));
-    const lo=r.filter(t=>t[2]<=PCT_LO).sort((x,y)=>(x[2]-y[2])||x[0].localeCompare(y[0])).map(t=>t[0]+" "+Math.round(t[2]));
-    c4.append(tline(ko+" ≥"+PCT_HI,hi), tline(ko+" ≤"+PCT_LO,lo)); });
+  const c4=card((prov?"(잠정) ":"")+"오늘 1년%ile 극단 — ≥"+PCT_HI+" · ≤"+PCT_LO);
+  c4.id="t-ext";
+  acts.forEach(([a,ko])=>{ const r=todayRank(mkt,a).filter(t=>t[2]!=null);
+    const hi=r.filter(t=>t[2]>=PCT_HI).sort((x,y)=>(y[2]-x[2])||(x[0]<y[0]?-1:1)).map(t=>t[0]+" "+RHU(t[2]));
+    const lo=r.filter(t=>t[2]<=PCT_LO).sort((x,y)=>(x[2]-y[2])||(x[0]<y[0]?-1:1)).map(t=>t[0]+" "+RHU(t[2]));
+    const h=tline((prov?"(잠정) ":"")+ko+" ≥"+PCT_HI,hi), l=tline((prov?"(잠정) ":"")+ko+" ≤"+PCT_LO,lo);
+    h.dataset.actor=a; h.dataset.side="hi"; l.dataset.actor=a; l.dataset.side="lo";
+    c4.append(h,l); });
   g.append(c4);
-  // 5. 직전 리포트 대비 20일 상위5 들고 남
+  // 5. 직전 리포트 대비 20일 상위5 들고 남 — 직전이 잠정·검증 실패였으면 적는다
   const C=D.change;
-  const c5=card(C?"직전 리포트("+C.prev_date+") 대비 — "+C.window+"일 순매수 상위"+C.top_n+" 섹터의 들고 남":"직전 리포트 대비");
+  const pst=C?((C.prev_final?"확정":"잠정")+(C.prev_verify_failed?"·검증 실패":"")):"";
+  const c5=card(C?"직전 리포트("+C.prev_date+"·"+pst+") 대비 — "+C.window+"일 누적 기준 순매수 상위"+C.top_n+" 섹터의 들고 남":"직전 리포트 대비");
   if(!C) c5.append(el("div","tline","비교 없음 — "+(D.change_reason||"비교 못 함")));
   else TODAY_ACT.forEach(([a,ko])=>{ const t=((C.top||{})[mkt]||{})[a]||{};
     if(t.entered==null||t.exited==null){ c5.append(el("div","tline",ko+": 비교 없음 — 직전 리포트에 이 시장이 없다")); return; }
     c5.append(tline(ko+":",[...t.entered.map(s=>"들어옴 "+s),...t.exited.map(s=>"나감 "+s)],"변동 없음")); });
+  if(C) c5.append(el("div","tnote","20일 이동 창이다 — 오늘 하루가 아니라 들어온 날·빠진 날이 같이 움직인다."));
   g.append(c5);
   // 6. 부호 반전(기관 최근 5일 vs 직전 15일) — 판정 불가 라벨
-  const c6=card("기관 최근 5일 부호가 직전 15일과 반대 [억, 직전15일→최근5일]");
+  const c6=card("기관 최근 5일 부호가 직전 15일과 반대 [억, 직전15일→최근5일, 5일 |금액| ≥ 목록의 2%]");
   c6.append(tline("",flips(mkt).map(([s,p,f])=>s+" "+A(p)+"→"+A(f))));
   c6.append(el("div","tnote","눌림인지 전환인지는 판정하지 않는다 — 리포트에는 구간 수익률뿐이다."));
   g.append(c6);
-  // 7. 잠정 → 확정
+  // 7. 잠정 → 확정 — 큰 칸 셋과 극단 목록의 들고 남은 바로, 전체 목록은 펼쳐서
   if(D.final){
     const F=D.final_diff, c7=card("잠정 → 확정 변경");
+    c7.id="t-final";
     if(!F){ c7.append(el("div","tline","비교 없음: "+(D.final_diff_reason||"이유 없음"))); }
     else{
       c7.append(el("div","tline","잠정→확정 변경: "+F.n_changed+"칸 / "+F.n_cells+"칸 (±"+F.tol+"억 초과, 1·5일 순매수)"));
-      const KO=Object.assign({inst:"기관",invtrt:"투신",penfnd_etc:"연기금",invpen:"투신+연기금",forgn:"외국인",indiv:"개인",etc:"기타법인"},T.actors||{});
-      const f2=v=>v==null?"—":(v>=0?"+":"−")+Math.abs(v).toFixed(2);
+      const top=(F.changed||[]).filter(r=>r.win===1&&r.diff!=null).slice(0,3)
+        .map(r=>r.market+"/"+r.sector+" "+(KO[r.actor]||r.actor)+" "+A(r.old)+"→"+A(r.new));
+      c7.append(tline("큰 변경(1일):",top));
+      const ch=(F.extremes_change||{})[mkt]||{}, moves=[];
+      acts.forEach(([a,ko])=>{ const c=ch[a]||{}, k=ko.split("(")[0];
+        [["hi_in","≥"+PCT_HI+" 들어옴"],["hi_out","≥"+PCT_HI+" 나감"],["lo_in","≤"+PCT_LO+" 들어옴"],["lo_out","≤"+PCT_LO+" 나감"]]
+          .forEach(([key,what])=>(c[key]||[]).forEach(s=>moves.push(k+" "+what+" "+s))); });
+      c7.append(tline("극단 목록 변화:",moves));
+      const f2=v=>v==null?"—":(v>=0?"+":"−")+Math.abs(RHU(v,2)).toFixed(2);
       const det=el("details"); det.append(el("summary",null,"바뀐 칸 목록 — 큰 순"));
       const ul=el("ul");
       (F.market_totals||[]).filter(t=>t.diff==null||Math.abs(t.diff)>F.tol).forEach(t=>
@@ -321,16 +419,41 @@ function renderToday(){
   }
 }
 
+/** 섹터 → 투신+연기금 순매수 합(그 창, 종목 값의 합) — 값이 하나도 없는 섹터는 결측(TUI `_sector_trusted`). */
+function trusted(m,w){
+  const mk=new Set(mkOf(m)), out={};
+  Object.values(D.names||{}).forEach(nm=>{ if(!mk.has(nm.market)) return; const x=(nm.win||{})[String(w)]||{};
+    if(x.invtrt==null&&x.penfnd_etc==null) return;
+    out[nm.sector]=(out[nm.sector]||0)+(x.invtrt||0)+(x.penfnd_etc||0); });
+  return out;
+}
+/** 1일 창의 행 — `today.sectors[시장]` 을 블록 행 모양으로(TUI `State._today_rows`). 가속·x 계열은 —. */
+function todayRows(m){
+  const S=((T||{}).sectors||{})[m]||{}, mk=new Set(mkOf(m));
+  const cap5=Object.fromEntries(((D.blocks["5|"+m]||{}).rows||[]).map(r=>[r.sector,r.cap]));
+  const cnt={}, top={};
+  Object.values(D.names||{}).forEach(nm=>{ if(!mk.has(nm.market)) return; const w=(nm.win||{})["1"]; if(!w) return;
+    cnt[nm.sector]=(cnt[nm.sector]||0)+1; if(w.inst!=null) (top[nm.sector]=top[nm.sector]||[]).push({name:nm.name,inst:w.inst}); });
+  return Object.entries(S).map(([s,v])=>{
+    const t=(top[s]||[]).sort((a,b)=>b.inst-a.inst);
+    return {sector:s, n_all:cnt[s]||0, thin:(cnt[s]||0)<10, inst:(v.inst||{}).v, forgn:(v.forgn||{}).v, indiv:(v.indiv||{}).v,
+      etc:(v.etc||{}).v, tv:v.tv, ret:v.ret, cap:cap5[s], accel:null, pct1y:{inst:(v.inst||{}).pct},
+      G:null, G_pass:false, exp:null, x:null, P:null, xdot:null, xddot:null, top:{buy:t.slice(0,3)}};
+  });
+}
+
 const COLS=[
   ["sector","섹터","l"],
   ["n_all","종목수","n"],
-  ["G","G","n"],
   ["inst","기관 임펄스","n"],
   ["accel","가속 %p","n"],
-  ["ret","수익률 % ~20시","n"],
+  ["pct","1년 %ile","n"],
+  ["ret","수익률 %","n"],
+  ["trust5","투신+연기금 5일","n"],
+  ["trustw","투신+연기금 창","n"],
+  ["G","G","n"],
   ["exp","예상 Δv %","n"],
   ["x","미실현 %p","n"],
-  ["U","포텐셜 ½kx²","n"],
   ["P","dW/dt","n"],
   ["xdot","풀림속도 ẋ","n"],
   ["xddot","풀림가속 ẍ","n"],
@@ -349,10 +472,6 @@ function noCombined(t){
   tb.append(tr); t.append(tb);
 }
 
-/** 그 시장에 종목이 하나도 없는 섹터 행(예: 코스닥 보험). 순매수·시총이 0 이라
- *  `+0.00` 이 찍혀 "조용한 섹터" 로 읽혔다. 화면(`absent_row`)과 같은 기준이다. */
-function absentRow(r){ return r.n_all===0 && !r.cap; }
-
 function renderCombined(){
   const C=D.combined&&D.combined[mkt];
   const t=document.getElementById("ctbl"); t.replaceChildren();
@@ -368,8 +487,8 @@ function renderCombined(){
     x.append(el("td","l",r.sector));
     x.append(el("td","num",r.n_all));
     // 통과 구간을 G 옆에 같이 적는다 — 1/2 통과의 종합 G 가 2/2 통과보다 높게 뜰 수 있다.
-    x.append(el("td","num"+(r.G_pass?" pos":""), r.G==null?"—":r.G.toFixed(2)+" ("+(r.pass_n||0)+"/"+C.windows.length+")"));
-    C.windows.forEach(w=>x.append(el("td","num", r.per[w]==null?"—":r.per[w].toFixed(2))));
+    x.append(el("td","num"+(r.G_pass?" pos":""), r.G==null?"—":RHU(r.G,2).toFixed(2)+" ("+(r.pass_n||0)+"/"+C.windows.length+")"));
+    C.windows.forEach(w=>x.append(el("td","num", r.per[w]==null?"—":RHU(r.per[w],2).toFixed(2))));
     // 분모는 섞은 창 수다. `seen` 은 관문을 판정할 수 있었던 창 수라(얇거나 ẍ 가 없으면 빠진다) 분모가 아니다.
     const pn=r.pass_n||0, sn=C.windows.length;
     x.append(el("td","num"+(pn>0?" pos":""), sn?pn+"/"+sn:"—"));
@@ -383,26 +502,36 @@ function render(){
   renderCombined();
   document.getElementById("seg-win")._sync();
   document.getElementById("seg-mkt")._sync();
-  const B = D.blocks[win+"|"+mkt];
+  const one = win===1;
+  const B = one ? {from:T.date, to:T.date, rows:todayRows(mkt)} : D.blocks[win+"|"+mkt];
   if(!B){ document.getElementById("tbl").replaceChildren(); return; }
-  document.getElementById("rangeinfo").textContent = B.from+" ~ "+B.to+" · k="+B.k+" (t="+B.t+") · 절편 "+B.b+"%";
-  document.getElementById("ttl").firstChild.textContent = "섹터별 — "+mkt+" · 최근 "+win+"거래일 ";
+  document.getElementById("rangeinfo").textContent = one
+    ? T.date+" 하루 · 1년%ile=일별 값의 분포 · 가속·x 계열은 하루치에서 정의되지 않아 —"
+    : B.from+" ~ "+B.to+" · k="+B.k+" (t="+B.t+") · 절편 "+B.b+"%";
+  document.getElementById("ttl").firstChild.textContent = "섹터별 — "+mkt+" · "+(one?"1일(기준일 하루) ":"최근 "+win+"거래일 ");
 
   if(!expOpen()&&EXP_KEYS.has(sortKey)){ sortKey="accel"; sortDir=-1; }
-  const rows=B.rows.filter(r=>!absentRow(r)).sort((a,b)=>{
+  const t5=trusted(mkt,5), tw=trusted(mkt,win);
+  const rows=B.rows.filter(r=>!absentRow(r)).map(r=>Object.assign({},r,{pct:(r.pct1y||{}).inst,trust5:t5[r.sector],trustw:tw[r.sector]}));
+  let key=sortKey;
+  if(!rows.some(r=>r[key]!=null)) key=["accel","inst","ret"].find(k=>rows.some(r=>r[k]!=null))||key;
+  rows.sort((a,b)=>{
     // 얇은 섹터(10종목 미만)는 어느 정렬에서도 맨 아래 — 화면(`State.rows`)과 같은 규칙.
     if(!!a.thin!==!!b.thin) return a.thin?1:-1;
-    const x=a[sortKey], y=b[sortKey];
+    const x=a[key], y=b[key];
     if(x==null) return 1; if(y==null) return -1;
-    if(typeof x==="string") return sortDir*x.localeCompare(y);
+    if(typeof x==="string") return sortDir*(x<y?-1:x>y?1:0);
     return sortDir*(x-y);
   });
 
   const t=document.getElementById("tbl"); t.replaceChildren();
   const thead=el("thead"), tr=el("tr");
-  COLS.filter(([k])=>expOpen()||!EXP_KEYS.has(k)).forEach(([k,label,kind])=>{
+  const shown=COLS.filter(([k])=>expOpen()||!EXP_KEYS.has(k));
+  shown.forEach(([k,label,kind])=>{
     const th=el("th",kind==="l"?"l":null,label);
-    if(EV[k]){ th.title=EV[k]+" — 아래 증거 범례"; th.append(el("br"),el("span","ev",EV[k])); }
+    th.dataset.k=k;
+    const ev=k==="trustw"||k==="trust5"||EV[k]?evAt(k,win,mkt):null;
+    if(ev){ th.title=ev+" — 아래 증거 범례"; const [b0,...rest]=ev.split(" · "); th.append(el("br"),el("span","ev",b0)); if(rest.length) th.append(el("br"),el("span","ev evs",rest.join(" · "))); }
     if(k!=="drv"){ th.addEventListener("click",()=>{
       if(sortKey===k) sortDir=-sortDir; else {sortKey=k; sortDir=(k==="sector")?1:-1;}
       render(); }); }
@@ -414,49 +543,52 @@ function render(){
   const tb=el("tbody");
   rows.forEach(r=>{
     const x=el("tr");
+    x.dataset.sector=r.sector;
     if(r.thin) x.className="thin";
-    x.append(el("td","l",r.sector));
-    x.append(el("td","num", r.n_all==null?"—":r.n_all));
-    const gt=el("td","num"+(r.G_pass?" pos":""), r.G==null?"—":r.G.toFixed(2)+(r.G_pass?" ●":""));
-    if(r.G_pass) gt.title="세 조건 통과: a>0 · x>0 · ẍ>0";
-    if(expOpen()) x.append(gt);
-    x.append(el("td","num "+cls(r.inst), A(r.inst)));
-    x.append(el("td","num "+cls(r.accel), P(r.accel)));
-    x.append(el("td","num "+(r.ret==null?"dim":cls(r.ret)), P(r.ret)));
-    x.append(el("td","num "+(r.exp==null?"dim":cls(r.exp)), P(r.exp)));
-    x.append(el("td","num "+(r.x==null?"dim":cls(r.x)), P(r.x)));
-    x.append(el("td","num", r.U==null?"—":r.U.toFixed(2)));
-    x.append(el("td","num "+(r.P==null?"dim":cls(r.P)), r.P==null?"—":(r.P>=0?"+":"−")+Math.abs(r.P).toFixed(3)));
-    const f3=v=>v==null?"—":(v>=0?"+":"−")+Math.abs(v).toFixed(3);
-    x.append(el("td","num "+(r.xdot==null?"dim":cls(r.xdot)), f3(r.xdot)));
-    x.append(el("td","num "+(r.xddot==null?"dim":cls(r.xddot)), f3(r.xddot)));
-    x.append(el("td","num "+cls(r.forgn), A(r.forgn)));
-    x.append(el("td","num "+cls(r.indiv), A(r.indiv)));
-    x.append(el("td","num "+cls(r.etc), A(r.etc)));
-    x.append(el("td","num", N0(r.tv)));
-    x.append(el("td","num", N0(r.cap)));
-    const d=el("td","drv l");
-    const parts=r.top.buy.filter(b=>b.inst>0);
-    if(!parts.length){ d.textContent="—"; }
-    else parts.forEach((b,i)=>{
-      if(i) d.append(document.createTextNode(" · "));
-      d.append(el("b",null,b.name));
-      // 정렬이 **금액** 순이므로 금액을 보인다. 시총대비(%p)를 보이면 표시값과
-      // 순서가 어긋나 보인다(현대 +1.34%p 가 대우 +1.40%p 위에 오는 식) —
-      // TUI 가 이미 같은 자리에서 고친 것이다(flow_view.detail_lines).
-      d.append(document.createTextNode(" "+A(b.inst)+"억"));
-    });
-    x.append(d);
+    const cell={
+      sector:()=>el("td","l",r.sector),
+      n_all:()=>el("td","num", r.n_all==null?"—":String(r.n_all)),
+      G:()=>{ const gt=el("td","num"+(r.G_pass?" pos":""), r.G==null?"—":RHU(r.G,2).toFixed(2)+(r.G_pass?" ●":""));
+        if(r.G_pass) gt.title="세 조건 통과: a>0 · x>0 · ẍ>0"; return gt; },
+      inst:()=>el("td","num "+cls(r.inst), A(r.inst)),
+      accel:()=>el("td","num "+(r.accel==null?"dim":cls(r.accel)), P(r.accel)),
+      pct:()=>el("td","num", PI(r.pct)),
+      ret:()=>el("td","num "+(r.ret==null?"dim":cls(r.ret)), P(r.ret)),
+      trust5:()=>el("td","num "+(r.trust5==null?"dim":cls(r.trust5)), A(r.trust5)),
+      trustw:()=>el("td","num "+(r.trustw==null?"dim":cls(r.trustw)), A(r.trustw)),
+      exp:()=>el("td","num "+(r.exp==null?"dim":cls(r.exp)), P(r.exp)),
+      x:()=>el("td","num "+(r.x==null?"dim":cls(r.x)), P(r.x)),
+      P:()=>el("td","num "+(r.P==null?"dim":cls(r.P)), F3(r.P)),
+      xdot:()=>el("td","num "+(r.xdot==null?"dim":cls(r.xdot)), F3(r.xdot)),
+      xddot:()=>el("td","num "+(r.xddot==null?"dim":cls(r.xddot)), F3(r.xddot)),
+      forgn:()=>el("td","num "+cls(r.forgn), A(r.forgn)),
+      indiv:()=>el("td","num "+cls(r.indiv), A(r.indiv)),
+      etc:()=>el("td","num "+cls(r.etc), A(r.etc)),
+      tv:()=>el("td","num", N0(r.tv)),
+      cap:()=>el("td","num", N0(r.cap)),
+      drv:()=>{ const d=el("td","drv l");
+        const parts=((r.top||{}).buy||[]).filter(b=>b.inst>0);
+        if(!parts.length){ d.textContent="—"; return d; }
+        parts.forEach((b,i)=>{
+          if(i) d.append(document.createTextNode(" · "));
+          d.append(el("b",null,b.name));
+          // 정렬이 **금액** 순이므로 금액을 보인다(TUI flow_view.detail_lines 와 같은 자리).
+          d.append(document.createTextNode(" "+A(b.inst)+"억"));
+        });
+        return d; },
+    };
+    shown.forEach(([k])=>{ const c=cell[k](); c.dataset.k=k; x.append(c); });
     tb.append(x);
   });
   t.append(tb);
 }
 document.getElementById("legend-ev").replaceChildren(...[
-  ["[측정]","지금·지난 구간을 잰 값. 앞날을 주장하지 않는다(앞날 검정 안 함)"],
-  ["[앞날 증거 없음]","섹터 앞날 5·20일 수익률과의 순위 관계를 검정함 — 증거 없음"],
-  ["[판정 불가: G]","관문 통과 섹터가 날마다 2~7개라 검정력이 없다"],
-  ["[≈섹터 20일 반전: x]","x 는 섹터 20일 수익률 반전과 ρ 0.82~0.93"],
+  ["[측정] [측]","지금·지난 구간을 잰 값. 앞날을 주장하지 않는다(앞날 검정 안 함)"],
+  ["[앞날 증거 없음] [무]","섹터 앞날 5·20일 수익률과의 순위 관계를 검정함 — 증거 없음. 검정한 것: 가속(순매수÷섹터 시총) 기관 20·60일·외국인 20일, 기관 임펄스 20일, x·G 20일 — 전부 전체 시장(10종목 미만 제외). 그 밖의 창은 같은 열이라도 [측정] · 앞날 검정은 N일만, 거래소·코스닥은 [측정] · 전체 시장만 검정, 투신+연기금(금액)은 [측정] · ÷시총 기준으로만 검정(S1). 1일 탭에서 값이 없는 열은 표지가 없다"],
+  ["[판정 불가: G] [불가]","관문 통과 섹터가 날마다 2~7개라 검정력이 없다(전체·20일만 검정)"],
+  ["[≈섹터 20일 반전: x] [반전]","x 는 섹터 20일 수익률 반전과 ρ 0.82~0.93"],
 ].map(([b,t])=>{const p=el("span"); p.append(el("b",null,b),document.createTextNode(" "+t)); return p;}));
 document.getElementById("explore").addEventListener("toggle",render);
 render();
 </script>
+

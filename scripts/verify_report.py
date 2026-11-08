@@ -13,6 +13,7 @@
   G. 원장   — ``sw-ledger`` 화면의 값·그림, 그리고 flow 와 같은 수를 말하는가
   H. 화면·키 — **듣는 키와 화면에 적힌 키**가 같은가(값이 아니라 조작을 본다)
   T. 오늘   — 1일 값·1년 백분위·시장 합계·직전 리포트 대비를 일별 배열에서 다시 센다
+  W. 웹     — numbers.html·viewer.html 을 node 로 **그려** 칸의 글자를 페이로드·TUI 와 맞춘다
 
 A~D 는 전부 *파일 안의 값끼리* 정합한지만 본다. 그래서 producer 가 임펄스를
 통째로 잘못 계산해도(수량을 금액으로 착각, `flu_rt` 의 bp 단위를 놓침 — 둘 다
@@ -1400,10 +1401,15 @@ def layer_c(D: dict, html: str) -> None:
             html, re.S)
         return len(re.findall(r"x\.append\(", m.group(1))) if m else -1
 
+    # 본표는 헤더와 셀을 **같은 목록**(`shown`)에서 만든다 — 열 키마다 셀 함수(`cell={k:()=>…}`)가 있어야 한다.
+    # 하나라도 빠지면 그 열에서 TypeError 로 표가 반쯤 그려진다. 그려진 DOM 은 W 층이 본다.
     cols = re.search(r"const COLS=\[(.*?)\];", html, re.S)
-    n_cols = len(re.findall(r'^\s*\["', cols.group(1), re.M)) if cols else -1
-    chk("C", "본표: 열 정의 수 = 셀 append 수", n_cols == _cells("tbl"),
-        f"COLS {n_cols} vs 셀 {_cells('tbl')}")
+    col_keys = re.findall(r'^\s*\["(\w+)"', cols.group(1), re.M) if cols else []
+    body = re.search(r'getElementById\("tbl"\)(.*?)\n\s*t\.append\(tb\)', html, re.S)
+    cell_keys = re.findall(r"^\s*(\w+):\(\)=>", body.group(1), re.M) if body else []
+    chk("C", "본표: 열 정의 키 = 셀 함수 키", bool(col_keys) and sorted(col_keys) == sorted(cell_keys),
+        f"COLS {len(col_keys)} vs 셀 {len(cell_keys)}  빠짐 {sorted(set(col_keys) - set(cell_keys))}"
+        f" 남음 {sorted(set(cell_keys) - set(col_keys))}")
 
     # 종합 표는 열 수가 창 수만큼 가변이다. 고정 셀과 루프 셀을 나눠 센 뒤,
     # 헤더 배열의 고정 항목 수(섹터·종목·종합G + 통과창)와 맞는지 본다.
@@ -1478,7 +1484,9 @@ def layer_f(P: dict, db: str | None) -> None:
     dates = P["dates"]
     d0, d1 = dates[0], dates[-1]
     n = len(dates)
-    SEC = "coalesce(nullif(st.sector,''),'(미분류)')"
+    # 섹터 덮어쓰기는 producer 와 **같은 표**다(sectorflow/sector_override.py) — 표는 사실이지 계산이 아니다.
+    from sectorflow.sector_override import sector_sql
+    SEC = sector_sql("st.code", "st.sector")
     SRC = f"s.source={ph} AND s.date BETWEEN {ph} AND {ph}"
     args = ("kiwoom", d0, d1)
 
@@ -1780,7 +1788,141 @@ def layer_f(P: dict, db: str | None) -> None:
     claim("F", "한계 §7: 빠진 **종목 수**는 코스닥이 많은가",
         out.get("코스닥", (0,))[0] > out.get("거래소", (0,))[0],
         f"코스닥 {out.get('코스닥', (0,))[0]}종목 vs 거래소 {out.get('거래소', (0,))[0]}종목")
+    _f_today_context(P, cur, ph, meta, px, cap_at)
+    # 섹터 덮어쓰기는 마스터가 비었을 때만 쓴다. 마스터가 채워졌으면 표의 그 줄은 이제 할 일이 없다 — 경고(CLAIM)로 알린다.
+    from sectorflow.sector_override import SECTOR_OVERRIDE
+    codes = sorted(SECTOR_OVERRIDE)
+    if codes:
+        cur.execute(f"SELECT code, sector FROM stocks WHERE code IN ({','.join([ph] * len(codes))})", codes)
+        filled = {c: s for c, s in cur.fetchall() if (s or "").strip()}
+        claim("F", "섹터 덮어쓰기 표의 종목이 마스터에서 아직 비어 있는가(채워졌으면 표에서 지운다)", not filled,
+              "; ".join(f"{c} 마스터 '{s}' (표 '{SECTOR_OVERRIDE[c]}')" for c, s in sorted(filled.items())))
     con.close()
+
+
+#: KRX 종합지수 코드 — producer 상수를 읽지 않고 여기 적는다.
+VF_KRX = (("거래소", "001"), ("코스닥", "101"))
+#: 정규장 종가로 다시 잰 자체 바구니 vs KRX 지수 — 허용 차이[%p]. 바구니에 우선주가 들어 있고(코스피는 보통주)
+#: 상장·폐지 시점이 달라 0 은 아니다. 실측 11-03~11-05: 0.01~0.04%p.
+VF_REGULAR_TOL = 0.1
+
+
+def _f_today_context(P: dict, cur, ph: str, meta: dict, px: dict, cap_at) -> None:
+    """F 층의 '오늘' 맥락 — KRX 지수 수익률·금액 근사 오차를 DB 에서 다시 재고(리뷰 7), 확정 모드면
+    전 거래일의 자체 바구니를 **정규장 종가**(``regular_close``)로 다시 재어 KRX 지수와 맞춘다(리뷰 12, 외부 참값).
+    """
+    T = P.get("today") or {}
+    dates = P["dates"]
+    if not T:
+        print("       (오늘 블록이 없는 옛 리포트 — KRX 지수·근사 오차 대조는 건너뛴다)")
+        return
+    # ── KRX 지수 1·20일 수익률 ──
+    want = []
+    for m, code in VF_KRX:
+        if m not in P["markets"]:
+            continue
+        need = [dates[-1]] + [dates[-1 - w] for w in (1, 20) if w < len(dates)]
+        cur.execute(f"SELECT date, close FROM sector_index WHERE code={ph} AND date IN ({','.join([ph] * len(need))})",
+                    (code, *need))
+        px_i = {str(d): float(v) for d, v in cur.fetchall() if v}
+        got = (((T.get("krx_index") or {}).get(m) or {}).get("ret")) or {}
+        for w in (1, 20):
+            base = px_i.get(dates[-1 - w]) if w < len(dates) else None
+            c0 = px_i.get(dates[-1])
+            exp = (c0 / base - 1.0) * 100.0 if c0 and base else None
+            want.append((f"{m}/{w}일", got.get(str(w)), exp))
+    bad = [f"{lab} {g} vs {e}" for lab, g, e in want
+           if (g is None) != (e is None) or (g is not None and abs(g - e) > 0.0011)]
+    chk("F", "KRX 지수 1·20일 수익률 = sector_index 재계산(없는 날은 결측)", not bad and bool(want),
+        f"{len(want)}칸  " + "; ".join(bad[:2]))
+
+    # ── 금액 근사 오차 — 종가 환산 vs VWAP 환산, n = 4주체 |순매수 수량| 합 ──
+    d1 = dates[-1]
+    cur.execute(f"SELECT code, volume, trade_value, source FROM daily_bars WHERE date={ph}", (d1,))
+    bars: dict = {}
+    for c, vol, tv, src in cur.fetchall():
+        if c in bars and src != "kiwoom":
+            continue
+        bars[c] = (float(vol or 0), float(tv or 0))
+    cur.execute(f"SELECT s.code, abs(s.close), abs(coalesce(s.individual,0))+abs(coalesce(s.foreign_,0))"
+                f"+abs(coalesce(s.institution,0))+abs(coalesce(s.etc_corp,0)) "
+                f"FROM supply_demand s JOIN stocks st ON st.code=s.code WHERE s.source='kiwoom' AND s.date={ph}", (d1,))
+    acc: dict = {}
+    for c, close, n in cur.fetchall():
+        if c not in meta or close is None:
+            continue
+        m, sec = meta[c]
+        vol, tv = bars.get(c, (0.0, 0.0))
+        for key in (("전체", None), (m, None), (m, sec)):
+            a = acc.setdefault(key, [0.0, 0.0])
+            if vol > 0 and tv > 0:
+                a[0] += float(n) * float(close)
+                a[1] += float(n) * tv * 1e6 / vol
+    bad, n_cmp = [], 0
+    for mkey in ["전체", *P["markets"]]:
+        g = (((T.get("market") or {}).get(mkey) or {}).get("approx_gap")) or {}
+        c, v = acc.get((mkey, None), (0.0, 0.0))
+        exp = abs(c - v) / v * 100.0 if v else None
+        n_cmp += 1
+        if (g.get("pct") is None) != (exp is None) or (exp is not None and abs(g["pct"] - exp) > 0.011):
+            bad.append(f"{mkey} {g.get('pct')} vs {exp}")
+        sm = g.get("sector_max")
+        if mkey != "전체" and v and "sector_max" in g:
+            secs = [(abs(cs - vs) / vs * 100.0, s) for (mm, s), (cs, vs) in acc.items()
+                    if mm == mkey and s is not None and vs > 0 and vs >= 0.02 * v]
+            top = max(secs) if secs else None
+            if (sm is None) != (top is None) or (top and (sm["sector"] != top[1] or abs(sm["pct"] - top[0]) > 0.011)):
+                bad.append(f"{mkey} 섹터 최대 {sm} vs {top}")
+    chk("F", "금액 근사 오차(시장·섹터 최대) = DB 재계산", not bad and n_cmp > 0, "; ".join(bad[:2]))
+
+    # ── 외부 참값: 전 거래일 자체 바구니(정규장 종가) ≈ KRX 지수 ──
+    if not P.get("final"):
+        print("       (잠정 리포트 — 정규장 종가 대조는 확정 모드에서만)")
+        return
+    if len(dates) < 3:
+        print("       SKIP 정규장 종가 대조 — 거래일이 셋 미만")
+        return
+    t1, t2 = dates[-2], dates[-3]
+    cur.execute(f"SELECT code, date, close, src FROM regular_close WHERE date IN ({ph},{ph})", (t1, t2))
+    rc: dict = {}
+    srcs: dict = {}
+    for c, d, cl, src in cur.fetchall():
+        rc[(c, str(d))] = float(cl) if cl is not None else None
+        if str(d) == t1:
+            srcs[src] = srcs.get(src, 0) + 1
+    ready = sum(v for k, v in srcs.items() if k in ("identity", "sd_close"))
+    total = sum(srcs.values())
+    if not total or ready < 0.9 * total:
+        # 준비 안 됨은 실패가 아니다 — 다음날 수급이 들어와야 채워지는 뷰다. 사유를 남긴다.
+        print(f"       SKIP 정규장 종가 대조 — {t1} regular_close 준비 안 됨({srcs})")
+        return
+    num: dict = {}
+    den: dict = {}
+    for c, (m, _sec) in meta.items():
+        a, b = rc.get((c, t1)), rc.get((c, t2))
+        if not a or not b:
+            continue
+        w = cap_at(c, t2, px.get((c, t2)))
+        if not w:
+            continue
+        num[m] = num.get(m, 0.0) + w * (a / b - 1.0) * 100.0
+        den[m] = den.get(m, 0.0) + w
+    rows, bad = [], []
+    for m, code in VF_KRX:
+        if m not in P["markets"] or not den.get(m):
+            continue
+        cur.execute(f"SELECT date, close FROM sector_index WHERE code={ph} AND date IN ({ph},{ph})", (code, t1, t2))
+        ix = {str(d): float(v) for d, v in cur.fetchall() if v}
+        if t1 not in ix or t2 not in ix:
+            bad.append(f"{m} 지수 {t1}/{t2} 없음")
+            continue
+        own = num[m] / den[m]
+        krx = (ix[t1] / ix[t2] - 1.0) * 100.0
+        rows.append(f"{m} 바구니 {own:+.3f}% vs 지수 {krx:+.3f}%")
+        if abs(own - krx) > VF_REGULAR_TOL:
+            bad.append(f"{m} {own:+.3f} vs {krx:+.3f}")
+    chk("F", f"외부 참값: {t1} 자체 바구니(정규장 종가) ≈ KRX 지수 ±{VF_REGULAR_TOL}%p",
+        not bad and bool(rows), " · ".join(rows) + ("  " + "; ".join(bad) if bad else ""))
 
 
 
@@ -1963,8 +2105,10 @@ def layer_t(P: dict, folder: "str | None" = None) -> None:
     chk("T", "직전 대비 키가 있는가", "change" in P)
     if C is None:
         chk("T", "직전 대비가 비었으면 이유가 있는가", bool(why), f"{why}")
-        chk("T", "직전 리포트가 옆에 있는데 대비가 비지 않았는가", old is None,
-            f"{prev_date} 있음" if old else "")
+        # 섹터 덮어쓰기가 바뀐 첫날은 비교하지 않는 것이 맞다(같은 섹터가 다른 종목 집합이다).
+        fp = lambda q: ((q or {}).get("sector_override") or {}).get("fp") or "none"   # noqa: E731
+        chk("T", "직전 리포트가 옆에 있는데 대비가 비지 않았는가(덮어쓰기 지문이 같을 때)",
+            old is None or fp(old) != fp(P), f"{prev_date} 있음 · 지문 {fp(old)}→{fp(P)}" if old else "")
     else:
         chk("T", "직전 대비의 직전일 = 페이로드 바로 앞 거래일(미래 아님)",
             C.get("prev_date") == prev_date and prev_date < dates[-1], f"{C.get('prev_date')}")
@@ -2026,6 +2170,393 @@ def layer_t(P: dict, folder: "str | None" = None) -> None:
             f"{len(bad_f)}건  " + "; ".join(bad_f[:2]))
 
 
+# ─────────────────────────────────────────────── W. 웹 — 그려진 페이지의 숫자
+#
+# E 층은 TUI 가 **그린 글자**를 본다. 웹은 그동안 데이터(D)만 봤고 페이지를 그려 보지 않았다 — 템플릿이
+# 다른 열을 그리거나 반올림을 달리 해도(파이썬 96.5→96 vs JS 97, 2026-11-08 리뷰 M6) 매일 초록이었다.
+# 여기서는 numbers.html 과 viewer.html 의 스크립트를 node 로 **실제로 돌려** 최소 DOM 에 그리게 하고,
+# 그 칸의 글자를 페이로드 값(표시 규칙대로 반올림)과 TUI 가 같은 칸에 그리는 글자에 맞춘다.
+
+#: 최소 DOM — 요소 트리·글자·dataset·이벤트만. 브라우저 API 를 흉내 내지 않는다(쓰는 것만).
+_W_HARNESS = r"""
+const fs=require("fs"), vm=require("vm");
+const [page, probe] = [process.argv[2], process.argv[3]];
+class Txt{constructor(t){this.nodeType=3;this._t=String(t);} get textContent(){return this._t;} set textContent(v){this._t=String(v);} get children(){return [];}}
+class El{
+  constructor(tag){this.tagName=String(tag).toUpperCase();this.children=[];this.attrs={};this.dataset={};this.style={};
+    this.className="";this.listeners={};this.open=false;this.title="";this.id="";this.value="";this.type="";
+    this.classList={add(){},remove(){},toggle(){},contains(){return false;}};}
+  _n(n){return (typeof n==="string"||typeof n==="number")?new Txt(n):n;}
+  append(...ns){for(const n of ns)this.children.push(this._n(n));}
+  appendChild(n){this.append(n);return n;}
+  prepend(...ns){this.children.unshift(...ns.map(n=>this._n(n)));}
+  replaceChildren(...ns){this.children=[];this.append(...ns);}
+  get firstChild(){if(!this.children.length)this.children.push(new Txt(""));return this.children[0];}
+  get textContent(){return this.children.map(c=>c.textContent).join("");}
+  set textContent(v){this.children=[new Txt(v==null?"":v)];}
+  set innerHTML(v){this.children=[new Txt(String(v).replace(/<[^>]*>/g,""))];}
+  get innerHTML(){return this.textContent;}
+  setAttribute(k,v){this.attrs[k]=String(v);} getAttribute(k){return k in this.attrs?this.attrs[k]:null;}
+  setAttributeNS(_n,k,v){this.attrs[k]=String(v);} removeAttribute(k){delete this.attrs[k];}
+  addEventListener(ev,fn){(this.listeners[ev]=this.listeners[ev]||[]).push(fn);} removeEventListener(){}
+  querySelector(){return null;} querySelectorAll(){return [];}
+  getBoundingClientRect(){return {left:0,top:0,width:100,height:20,right:100,bottom:20};}
+  get offsetWidth(){return 100;} get offsetHeight(){return 20;} get clientWidth(){return 1000;}
+  focus(){} blur(){} scrollIntoView(){}
+}
+const ids={};
+const document={
+  getElementById(id){ if(!ids[id]){const e=new El("div"); e.id=id; ids[id]=e;} return ids[id]; },
+  createElement(t){return new El(t);}, createElementNS(_ns,t){return new El(t);},
+  createTextNode(t){return new Txt(t);}, addEventListener(){}, documentElement:new El("html"), body:new El("body"),
+};
+const ctx={document,console,Math,Date,JSON,Set,Map,Object,Array,Number,String,Boolean,Symbol,Intl,
+  Option:function(l,v){const e=new El("option"); e.textContent=l; e.value=v; return e;},
+  innerWidth:1440,innerHeight:900,addEventListener(){},matchMedia(){return {matches:false,addEventListener(){}};},
+  requestAnimationFrame(f){f();},setTimeout(f){f();}};
+ctx.window=ctx;
+vm.createContext(ctx);
+const src=fs.readFileSync(page,"utf8");
+const m=src.match(/<script>([\s\S]*)<\/script>/);
+vm.runInContext(m[1],ctx);
+const D=(x)=>x;
+ctx.__ids=ids;
+ctx.__dump=function dump(e){ if(!e) return null; if(e.nodeType===3) return {t:e.textContent};
+  return {tag:e.tagName.toLowerCase(), id:e.id||undefined, cls:e.className||undefined,
+    data:Object.keys(e.dataset).length?e.dataset:undefined, kids:e.children.map(dump)}; };
+ctx.__out=(o)=>process.stdout.write(JSON.stringify(o));
+vm.runInContext(fs.readFileSync(probe,"utf8"),ctx);
+"""
+
+#: numbers.html — 창 × 시장 × 탐색(닫힘·열림)마다 본표, 시장마다 '오늘' 패널을 떠 온다.
+_W_PROBE_NUMBERS = r"""
+const txt=e=>e?e.textContent:null;
+function table(){ const t=document.getElementById("tbl"); const [thead,tbody]=t.children;
+  if(!thead) return null;
+  const ths=thead.children[0].children;
+  return {head:ths.map(th=>th.dataset.k), ev:ths.map(th=>{const s=th.children.filter(c=>(c.className||"").split(" ")[0]==="ev"); return s.length?s.map(x=>x.textContent).join(" · "):null;}),
+    rows:(tbody?tbody.children:[]).map(tr=>({sector:tr.dataset.sector, thin:tr.className==="thin",
+      cells:Object.fromEntries(tr.children.map(td=>[td.dataset.k, td.textContent]))}))}; }
+function today(){ return document.getElementById("t-grid").children.map(c=>({id:c.id||null, title:txt(c.children[0]),
+  lines:c.children.slice(1).map(l=>({cls:l.className, actor:(l.dataset||{}).actor, side:(l.dataset||{}).side,
+    market:(l.dataset||{}).market, text:l.textContent,
+    items:(l.children||[]).filter(x=>x.className==="it").map(x=>x.textContent)}))})); }
+const out={wins:WINS, mkts:MKTS, views:[], today:{}};
+for(const ex of [false,true]){
+  document.getElementById("explore").open=ex;
+  for(const w of WINS) for(const m of MKTS){ win=w; mkt=m; render();
+    out.views.push({explore:ex, win:w, mkt:m, table:table()});
+    if(!ex && w===WINS[0]) out.today[m]=today(); } }
+__out(out);
+"""
+
+#: viewer.html — 1일 기간에서 섹터마다 순매수·순매도 상위 종목 목록.
+_W_PROBE_VIEWER = r"""
+i1=NDATE-1; i0=NDATE-1; market="전체"; actor="inst"; render();
+const out={secs:{}};
+for(const s of __SECS){ picked=s; renderNames();
+  const grab=id=>document.getElementById(id).children.map(li=>{ const nm=li.children[0]||{children:[]};
+    return {name:(nm.children[0]||{}).textContent, sub:((nm.children||[]).find(c=>c.className==="sub2")||{}).textContent||null,
+            amt:(li.children[1]||{}).textContent}; });
+  out.secs[s]={buy:grab("lst-buy"), sell:grab("lst-sell")}; }
+__out(out);
+"""
+
+
+def _w_node() -> "str | None":
+    import shutil
+    return shutil.which("node") or ("/usr/bin/node" if os.path.exists("/usr/bin/node") else None)
+
+
+def _w_run(node: str, page: str, probe: str) -> dict:
+    import subprocess
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        h, pr = os.path.join(td, "h.js"), os.path.join(td, "probe.js")
+        open(h, "w", encoding="utf-8").write(_W_HARNESS)
+        open(pr, "w", encoding="utf-8").write(probe)
+        p = subprocess.run([node, h, page, pr], capture_output=True, text=True, timeout=300)
+    if p.returncode != 0:
+        raise RuntimeError(p.stderr.strip().splitlines()[-1] if p.stderr.strip() else f"node rc={p.returncode}")
+    return json.loads(p.stdout)
+
+
+def _w_rhu(v: float, nd: int = 0) -> float:
+    """표시 반올림 — 0.5 는 0 에서 먼 쪽. **producer 함수를 부르지 않고** 여기 다시 적는다."""
+    m = 10 ** nd
+    q = math.floor(abs(v) * m + 0.5 + 1e-9) / m
+    return q if v >= 0 else -q
+
+
+def _w_A(v) -> str:
+    return "—" if v is None else ("+" if v >= 0 else "−") + f"{abs(_w_rhu(v)):,.0f}"
+
+
+def _w_P(v, nd: int = 2) -> str:
+    return "—" if v is None else ("+" if v >= 0 else "−") + f"{abs(_w_rhu(v, nd)):.{nd}f}"
+
+
+def _w_N0(v) -> str:
+    return "—" if v is None else f"{_w_rhu(v):,.0f}"
+
+
+def _w_PI(p) -> str:
+    return "—" if p is None else str(int(_w_rhu(p)))
+
+
+def _w_pc(p) -> str:
+    return "(—)" if p is None else f"({int(_w_rhu(p))})"
+
+
+def _w_trusted(P: dict, mks: list, win: str) -> dict:
+    out: dict = {}
+    for nm in (P.get("names") or {}).values():
+        if nm.get("market") not in mks:
+            continue
+        w = (nm.get("win") or {}).get(win) or {}
+        if w.get("invtrt") is None and w.get("penfnd_etc") is None:
+            continue
+        out[nm["sector"]] = out.get(nm["sector"], 0.0) + (w.get("invtrt") or 0.0) + (w.get("penfnd_etc") or 0.0)
+    return out
+
+
+def _w_day_stocks(P: dict, mks: list, actor: str) -> dict:
+    out: dict = {}
+    for nm in (P.get("names") or {}).values():
+        if nm.get("market") not in mks:
+            continue
+        w = (nm.get("win") or {}).get("1")
+        if not w:
+            continue
+        if actor == "invpen":
+            if w.get("invtrt") is None and w.get("penfnd_etc") is None:
+                continue
+            v = (w.get("invtrt") or 0.0) + (w.get("penfnd_etc") or 0.0)
+        elif w.get(actor) is None:
+            continue
+        else:
+            v = w[actor]
+        out.setdefault(nm["sector"], []).append((nm.get("name") or "—", v))
+    for arr in out.values():
+        arr.sort(key=lambda t: (-t[1], t[0]))
+    return out
+
+
+#: 웹 본표의 열 키 — 기본과 탐색(x 계열·G). **템플릿을 읽지 않고** 여기 적는다(명세).
+W_COLS_DEFAULT = ("sector", "n_all", "inst", "accel", "pct", "ret", "trust5", "trustw",
+                  "forgn", "indiv", "etc", "tv", "cap", "drv")
+W_COLS_EXPLORE = ("G", "exp", "x", "P", "xdot", "xddot")
+
+
+def layer_w(D: dict, P: dict, folder: str) -> None:
+    """W. **웹 화면** — numbers.html(본표·'오늘' 패널)과 viewer.html(1일 종목 목록)을 node 로 그려 대조한다."""
+    print("\nW. 웹 — 그려진 페이지의 숫자가 페이로드·TUI 와 같은가")
+    node = _w_node()
+    # node 가 없는 것은 **환경** 실패다(코드 결함이 아니다) — 이름에 그렇게 적는다. 그래도 그려 보지 않은 채 초록을 내지 않는다.
+    chk("W", "환경 — node 가 있는가(웹 페이지를 그려 본다)", node is not None,
+        node or "환경 실패(코드 결함 아님): PATH·/usr/bin 에 node 가 없다 — 웹 대조를 못 했다")
+    if not node:
+        return
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
+    from sectorflow.tui import flow_view as FV
+    out = _w_run(node, os.path.join(folder, "numbers.html"), _W_PROBE_NUMBERS)
+    T = D.get("today") or {}
+    mk_all = [m for m in out["mkts"] if m != "전체"]
+
+    def mkof(m):
+        return mk_all if m == "전체" else [m]
+    chk("W", "1일 탭이 있는가(오늘 블록이 있는 리포트)", (1 in out["wins"]) == bool(T.get("sectors")),
+        f"탭 {out['wins']}")
+
+    bad_head, bad_cell, bad_order, bad_ev, bad_tui, n_cells = [], [], [], [], [], 0
+    for v in out["views"]:
+        w, m, ex, tb = v["win"], v["mkt"], v["explore"], v["table"]
+        if tb is None:
+            bad_head.append(f"{w}|{m} 표가 비었다")
+            continue
+        want_head = list(W_COLS_DEFAULT[:8]) + (list(W_COLS_EXPLORE) if ex else []) + list(W_COLS_DEFAULT[8:])
+        if tb["head"] != want_head:
+            bad_head.append(f"{w}|{m}|탐색{int(ex)} {tb['head']}")
+            continue
+        mks = mkof(m)
+        t5, tw = _w_trusted(P, mks, "5"), _w_trusted(P, mks, str(w))
+        if w == 1:
+            S = (T.get("sectors") or {}).get(m) or {}
+            cap5 = {r["sector"]: r.get("cap") for r in (D["blocks"].get(f"5|{m}") or {}).get("rows", [])}
+            cnt: dict = {}
+            for nm in (P.get("names") or {}).values():
+                if nm.get("market") in mks and "1" in (nm.get("win") or {}):
+                    cnt[nm["sector"]] = cnt.get(nm["sector"], 0) + 1
+            rows = []
+            for s, x in S.items():
+                r = {"sector": s, "n_all": cnt.get(s, 0), "thin": cnt.get(s, 0) < 10, "cap": cap5.get(s),
+                     "ret": x.get("ret"), "tv": x.get("tv"), "accel": None, "pct": (x.get("inst") or {}).get("pct")}
+                for a in ("inst", "forgn", "indiv", "etc"):
+                    r[a] = (x.get(a) or {}).get("v")
+                rows.append(r)
+        else:
+            rows = [dict(r, pct=(r.get("pct1y") or {}).get("inst")) for r in D["blocks"][f"{w}|{m}"]["rows"]]
+        rows = [r for r in rows if not (r.get("n_all") == 0 and not r.get("cap"))]
+        want = {}
+        for r in rows:
+            s = r["sector"]
+            want[s] = {"sector": s, "n_all": "—" if r.get("n_all") is None else str(r["n_all"]),
+                       "inst": _w_A(r.get("inst")), "accel": _w_P(r.get("accel")), "pct": _w_PI(r.get("pct")),
+                       "ret": _w_P(r.get("ret")), "trust5": _w_A(t5.get(s)), "trustw": _w_A(tw.get(s)),
+                       "forgn": _w_A(r.get("forgn")), "indiv": _w_A(r.get("indiv")), "etc": _w_A(r.get("etc")),
+                       "tv": _w_N0(r.get("tv")), "cap": _w_N0(r.get("cap"))}
+            if ex:
+                want[s].update(x=_w_P(r.get("x")), exp=_w_P(r.get("exp")), P=_w_P(r.get("P"), 3),
+                               xdot=_w_P(r.get("xdot"), 3), xddot=_w_P(r.get("xddot"), 3))
+        got = {r["sector"]: r for r in tb["rows"]}
+        if set(got) != set(want):
+            bad_cell.append(f"{w}|{m} 섹터 집합 남음 {sorted(set(got) - set(want))[:2]} 빠짐 {sorted(set(want) - set(got))[:2]}")
+        for s in set(got) & set(want):
+            for k, val in want[s].items():
+                n_cells += 1
+                if got[s]["cells"].get(k) != val:
+                    bad_cell.append(f"{w}|{m}|{s}|{k} 웹 {got[s]['cells'].get(k)!r} vs {val!r}")
+        # 순서 — 기본 정렬 가속 내림차순(값 없으면 기관 임펄스), 얇은 섹터는 맨 아래.
+        key = "accel" if any(r.get("accel") is not None for r in rows) else "inst"
+        order = sorted(rows, key=lambda r: (bool(r.get("thin")), r.get(key) is None, -(r.get(key) or 0.0)))
+        seq = [r["sector"] for r in tb["rows"]]
+        exp_seq = [r["sector"] for r in order]
+        if [s for s in seq if s in want] != exp_seq and len({r.get(key) for r in rows}) == len(rows):
+            bad_order.append(f"{w}|{m}")
+        # 증거 표지 — TUI(evidence_at)와 같은가. 이 표의 금액 열은 기관 기준이다.
+        evk = {"inst": ("inst", "inst", None), "accel": ("accel", "inst", None), "forgn": ("forgn", "forgn", None),
+               "trust5": ("trust", "invpen", "5"), "trustw": ("trust", "invpen", None)}
+        for k, e in zip(tb["head"], tb["ev"]):
+            ek, actor, fix = evk.get(k, (k, "inst", None))
+            ev = FV.evidence_at(ek, fix or str(w), actor, m) if ek in FV.EVIDENCE else None
+            want_ev = None if ev is None else ev[0] + (f" · {ev[1]}" if ev[1] else "")
+            if e != want_ev:
+                bad_ev.append(f"{w}|{m}|{k} 웹 {e} vs TUI {want_ev}")
+        # TUI 가 같은 칸에 그리는 글자(리뷰 M6) — 반올림 규칙이 하나인가.
+        if str(w) in FV.WINDOWS and not ex:
+            st = FV.State(D)
+            st.wi, st.mi, st.ai = FV.WINDOWS.index(str(w)), st.markets.index(m), 0
+            cols = {c.header: c for c in FV.table_cols(st, 400)}
+            pairs = (("1년[%ile]", "pct"), ("임펄스[억]", "inst"), ("가속[%p]", "accel"), ("수익률[%]", "ret"),
+                     ("투신+연기금5일[억]", "trust5"), ("투신+연기금[억]", "trustw"), ("종목[수]", "n_all"))
+            for r in st.rows():
+                g = got.get(r["sector"])
+                if not g:
+                    continue
+                for hdr, k in pairs:
+                    tui = cols[hdr].fn(r, st).strip().replace("-", "−") if hdr in cols else None
+                    web = g["cells"].get(k)
+                    if tui is not None and web is not None and tui != web and not (tui == "—" and web == "—"):
+                        bad_tui.append(f"{w}|{m}|{r['sector']}|{hdr} TUI {tui!r} vs 웹 {web!r}")
+    chk("W", "본표 열 = 명세(기본·탐색)", not bad_head, "; ".join(bad_head[:2]))
+    chk("W", "본표 칸 = 페이로드 값(표시 반올림)", not bad_cell and n_cells > 0,
+        f"{len(bad_cell)}/{n_cells}  " + "; ".join(bad_cell[:3]))
+    chk("W", "본표 순서 = 가속 내림차순·얇은 섹터 맨 아래", not bad_order, ", ".join(bad_order[:3]))
+    chk("W", "본표 증거 표지 = TUI 의 표지(창·주체 범위)", not bad_ev, "; ".join(bad_ev[:3]))
+    chk("W", "본표 칸 = TUI 가 같은 칸에 그리는 글자", not bad_tui, "; ".join(bad_tui[:3]))
+
+    # '오늘' 패널
+    if T.get("sectors"):
+        bad_t, bad_tt = [], []
+        for m in out["mkts"]:
+            cards = {c["id"]: c for c in out["today"].get(m) or [] if c["id"]}
+            net = ((T.get("market") or {}).get(m) or {}).get("net") or {}
+            want_net = [f"{ko} {_w_A((net.get(k) or {}).get('v'))}{_w_pc((net.get(k) or {}).get('pct'))}"
+                        for k, ko in (("inst", "기관"), ("forgn", "외국인"), ("indiv", "개인"), ("etc", "기타법인"))]
+            got_net = (cards.get("t-net") or {"lines": [{}]})["lines"][0].get("items")
+            if got_net != want_net:
+                bad_t.append(f"{m} 순매수 {got_net} vs {want_net}")
+            # TUI 첫 화면과 같은 말인가 — 주체 목록(최대 순매매 주체 포함)·상위/하위·극단.
+            st = FV.State(D)
+            st.mi = st.markets.index(m)
+            acts = FV.banner_actors(D, m)
+            rank = [ln for ln in (cards.get("t-rank") or {}).get("lines", []) if ln.get("actor")]
+            if [ln["actor"] for ln in rank if ln["side"] == "top"] != [a for a, _ in acts]:
+                bad_tt.append(f"{m} 주체 {[ln['actor'] for ln in rank if ln['side'] == 'top']} vs TUI {[a for a, _ in acts]}")
+            for ln in rank:
+                a, side = ln["actor"], ln["side"]
+                S = ((T.get("sectors") or {}).get(m)) or {}
+                lst = sorted(((s, (x.get(a) or {}).get("v"), (x.get(a) or {}).get("pct")) for s, x in S.items()
+                              if (x.get(a) or {}).get("v") is not None), key=lambda t: (-t[1], t[0]))
+                pick = lst[:3] if side == "top" else lst[::-1][:3]
+                stocks = _w_day_stocks(P, mkof(m), a)
+                want_items = []
+                for s, v, p in pick:
+                    arr = stocks.get(s) or []
+                    tag = ([t for t in arr if t[1] > 0][:2] if side == "top" else [t for t in arr[::-1] if t[1] < 0][:2])
+                    want_items.append(f"{s} {_w_A(v)}{_w_pc(p)}"
+                                      + ("[" + "·".join(f"{n} {_w_A(x)}" for n, x in tag) + "]" if tag else ""))
+                if ln["items"] != want_items:
+                    bad_t.append(f"{m}/{a}/{side} {ln['items'][:1]} vs {want_items[:1]}")
+                tui_items = [f"{s} {FV.fmt_amt(v)}{FV._pct_tag(p)}" for s, v, p in pick]
+                if [i.split("[")[0] for i in ln["items"]] != [t.replace("-", "−") for t in tui_items]:
+                    bad_tt.append(f"{m}/{a}/{side} 웹 {ln['items'][:1]} vs TUI {tui_items[:1]}")
+                # 종목 꼬리표 — 웹은 이름을 다 쓰고 TUI 는 10칸에서 자른다. 웹 꼬리표를 TUI 규칙으로 잘라 같은지 본다.
+                tstocks = FV.day_stocks(D, mkof(m), a)
+                for item, (s, _v, _p) in zip(ln["items"], pick):
+                    web_tag = item[item.find("[") + 1:item.rfind("]")] if "[" in item else ""
+                    clipped = "·".join(f"{FV.clip(n, 10)} {x}" for n, x in
+                                       (t.rsplit(" ", 1) for t in web_tag.split("·") if t)) if web_tag else ""
+                    tui_tag = FV._stock_tag(tstocks.get(s) or [], "buy" if side == "top" else "sell", 2)
+                    if (f"[{clipped}]" if clipped else "") != tui_tag.replace("-", "−"):
+                        bad_tt.append(f"{m}/{a}/{side}/{s} 종목 웹 {web_tag!r} vs TUI {tui_tag!r}")
+                        break
+            for ln in (cards.get("t-ext") or {}).get("lines", []):
+                if not ln.get("actor"):
+                    continue
+                hi, lo = FV.today_extremes(D, m, ln["actor"])
+                if ln["items"] != (hi if ln["side"] == "hi" else lo):
+                    bad_tt.append(f"{m}/{ln['actor']}/{ln['side']} 웹 {ln['items'][:2]} vs TUI {(hi if ln['side'] == 'hi' else lo)[:2]}")
+            if not D.get("final") and "(잠정)" not in ((cards.get("t-ext") or {}).get("title") or ""):
+                bad_t.append(f"{m} 잠정 리포트인데 극단 목록에 (잠정) 표지가 없다")
+            for ln in (cards.get("t-ret") or {}).get("lines", []):
+                mm = ln.get("market")
+                if not mm:
+                    continue
+                own = ((T.get("market") or {}).get(mm) or {}).get("ret") or {}
+                kr = (((T.get("krx_index") or {}).get(mm) or {}).get("ret")) or {}
+                # 글자 토큰을 순서대로 꺼내 정확히 맞춘다 — 부분 문자열로 보면 "−4.37%" 가 "−14.37%" 안에서도 찾아진다.
+                toks = re.findall(r"[+−]\d[\d,]*\.\d{2}%|—", ln["text"])
+                want_t = ["—" if v is None else _w_P(v) + "%"
+                          for v in (own.get("1"), own.get("20"), kr.get("1"), kr.get("20"))]
+                if toks != want_t:
+                    bad_t.append(f"{m}/{mm} 수익률 {toks} vs {want_t}")
+        chk("W", "'오늘' 패널 = 페이로드(시장 4주체·상위/하위+종목·수익률·잠정 표지)", not bad_t, "; ".join(bad_t[:3]))
+        chk("W", "'오늘' 패널 = TUI 첫 화면(주체·상위/하위·%ile 극단 글자)", not bad_tt, "; ".join(bad_tt[:3]))
+
+    # 뷰어 1일 종목 목록
+    vpath = os.path.join(folder, "viewer.html")
+    if os.path.isfile(vpath) and T.get("sectors"):
+        S1 = (T.get("sectors") or {}).get("전체") or {}
+        secs = sorted(S1, key=lambda s: -abs((S1[s].get("inst") or {}).get("v") or 0.0))[:6]
+        vo = _w_run(node, vpath, f"const __SECS={json.dumps(secs, ensure_ascii=False)};\n" + _W_PROBE_VIEWER)
+        bad_v, n_v = [], 0
+        for s in secs:
+            rows = []
+            for code, nm in (P.get("names") or {}).items():
+                w = (nm.get("win") or {}).get("1")
+                if nm.get("sector") != s or not w or w.get("inst") is None:
+                    continue
+                rows.append((nm.get("name"), w["inst"], w.get("invtrt"), w.get("penfnd_etc")))
+            rows.sort(key=lambda t: -t[1])
+            buy = [t for t in rows if t[1] > 0][:6]
+            sell = [t for t in rows if t[1] < 0][::-1][:6]
+            for side, want in (("buy", buy), ("sell", sell)):
+                got = (vo["secs"].get(s) or {}).get(side) or []
+                if not want:
+                    continue
+                n_v += len(want)
+                if [g["amt"] for g in got] != [_w_A(v) + "억" for _n, v, _i, _p in want]:
+                    bad_v.append(f"{s}/{side} {[g['amt'] for g in got][:2]} vs {[_w_A(v) + '억' for _n, v, _i, _p in want][:2]}")
+                for g, (n, _v, iv, pf) in zip(got, want):
+                    if not (g.get("name") or "").startswith(n or "") or \
+                            f"투신 {'—' if iv is None else _w_A(iv)} · 연기금 {'—' if pf is None else _w_A(pf)}억" != g.get("sub"):
+                        bad_v.append(f"{s}/{side} {g.get('name')} {g.get('sub')}")
+                        break
+        chk("W", "뷰어 1일 종목 목록 = names.win['1'](금액·투신·연기금)", not bad_v and n_v > 0,
+            f"{len(secs)}섹터 {n_v}종목  " + "; ".join(bad_v[:2]))
+
+
 # ─────────────────────────────────────────────── H. 화면·키
 #
 # A~G 는 **값**을 본다. 이 층은 값이 아니라 "화면과 키가 실제로 그렇게 동작하는가"
@@ -2070,7 +2601,7 @@ def _advertised(text: str) -> set:
             part = part.strip()
             if part in _KEY_WORDS:
                 out.update(_KEY_WORDS[part])
-            elif len(part) == 1 and part.isascii() and (part.isalpha() or part == "?"):
+            elif len(part) == 1 and part.isascii() and (part.isalnum() or part == "?"):
                 out.add(part)
     return out
 
@@ -2078,7 +2609,7 @@ def _advertised(text: str) -> set:
 def _key_ints():
     import curses
     d = {c: ord(c) for c in
-         "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ?"}
+         "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ?1"}
     d.update({"KEY_UP": curses.KEY_UP, "KEY_DOWN": curses.KEY_DOWN,
               "KEY_LEFT": curses.KEY_LEFT, "KEY_RIGHT": curses.KEY_RIGHT,
               "KEY_PPAGE": curses.KEY_PPAGE, "KEY_NPAGE": curses.KEY_NPAGE,
@@ -2231,7 +2762,7 @@ def layer_h(D: dict, P: dict) -> None:
 
     KEYS = _key_ints()
     FF = ("wi", "mi", "ai", "si", "nsi", "row", "drow", "arow", "hrow",
-          "drill", "allv", "help", "rev", "nrev", "explore")
+          "drill", "allv", "help", "rev", "nrev", "explore", "banner")
     LF = ("wi", "mi", "ai", "si", "vi", "row", "crow", "hrow", "help_row", "help",
           "detrend")
 
@@ -2888,6 +3419,7 @@ def main() -> int:
     go("G", layer_g, payload, D)
     go("H", layer_h, D, payload)
     go("T", layer_t, payload, d)
+    go("W", layer_w, D, payload, d)
     if a.db_check and a.db:
         go("F", layer_f, payload, a.db)
 
