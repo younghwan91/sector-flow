@@ -5376,7 +5376,7 @@ guards = ["tests/test_web_render.py::test_web_layer_is_green_on_a_rebuilt_day_ou
 file = "src/sectorflow/tui/flow_view.py"
 find = '''    마감 값(확정, 또는 창 밖 재구성 ``finalize_unverified``)이면 None — 웹 ``CLOSED`` 와 같은 기준이다.
     """
-    if d.get("final") or d.get("finalize_unverified"):'''
+    if d.get("finalize_unverified") or d.get("final"):'''
 replace = '''    마감 값(확정, 또는 창 밖 재구성 ``finalize_unverified``)이면 None — 웹 ``CLOSED`` 와 같은 기준이다.
     """
     if d.get("final"):'''

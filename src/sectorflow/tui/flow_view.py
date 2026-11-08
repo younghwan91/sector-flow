@@ -1422,7 +1422,7 @@ def revision_tiers(d: dict) -> "list[str] | None":
     긴 것부터 짧은 것 순의 후보 — 좁은 화면에서 칸 수부터 줄이고, 시드 출처(`revision_stats.seed`)는 끝까지 남긴다.
     마감 값(확정, 또는 창 밖 재구성 ``finalize_unverified``)이면 None — 웹 ``CLOSED`` 와 같은 기준이다.
     """
-    if d.get("final") or d.get("finalize_unverified"):
+    if d.get("finalize_unverified") or d.get("final"):
         return None
     R = d.get("revision_stats")
     if not isinstance(R, dict):
