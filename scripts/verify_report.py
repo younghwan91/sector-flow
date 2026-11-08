@@ -3341,7 +3341,7 @@ def layer_h(D: dict, P: dict) -> None:
 
 
 #: main 이 도는 층 — ``--layers`` 가 고를 수 있는 이름. 층을 더하면 여기에도 적는다(모르는 이름은 거부).
-LAYERS = ("A", "A3", "B", "C", "D", "E", "G", "H", "T", "F")
+LAYERS = ("A", "A3", "B", "C", "D", "E", "G", "H", "T", "W", "F")
 
 
 def run_layer(layer: str, fn, *args) -> None:

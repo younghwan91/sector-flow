@@ -255,13 +255,12 @@ def test_web_evidence_scope_is_the_tuis():
 def test_viewer_evidence_scope_is_the_same_table():
     """뷰어(sector_flow.html)도 같은 `EV_TESTED` 와 같은 범위 말을 쓴다 — 세 화면이 같은 열에 같은 범위를 말한다.
 
-    뷰어 쪽 표는 viewer-ledger-r2 에서 들어온다. 그 전의 뷰어(표 없음)에서는 건너뛴다 — 들어온 뒤로는 늘 돈다.
+    주입: 한 화면의 표나 범위 말을 바꾸면 실패한다.
     """
     sys.path.insert(0, str(REPO / "src"))
     from sectorflow.tui import flow_view as FV
     got = _const("sector_flow.html", "EV_TESTED")
-    if got is None:
-        pytest.skip("뷰어에 EV_TESTED 가 아직 없다(viewer-ledger-r2 머지 전)")
+    assert got is not None, "뷰어에 EV_TESTED 가 없다"
     assert got == {a: {k: list(w) for k, w in v.items()} for a, v in FV.EV_TESTED.items()}
     html = (REPO / "scripts" / "templates" / "sector_flow.html").read_text("utf-8")
     assert f'"[측정] · {FV.MARKET_NOTE}"' in html and '"[측정] · 앞날 검정은 "' in html
