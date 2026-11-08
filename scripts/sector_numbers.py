@@ -17,6 +17,8 @@ import subprocess
 import sys
 import tempfile
 
+from sectorflow.basis import BASIS_SLOT, DATA_BASIS
+
 WINDOWS = ((5, "5일"), (20, "20일"), (60, "60일"), (120, "120일"))
 # 종목 목록은 **절대 순매수 금액** 순이다.
 #
@@ -517,7 +519,8 @@ def main():
     with open(os.path.join(here, "templates", "sector_numbers.html"), encoding="utf-8") as f:
         html = f.read()
     with open(a.html, "w", encoding="utf-8") as f:
-        f.write(html.replace("__DATA__", json.dumps(data, ensure_ascii=False).replace("</", "<\\/")))
+        f.write(html.replace("__DATA__", json.dumps(data, ensure_ascii=False).replace("</", "<\\/"))
+                .replace(BASIS_SLOT, DATA_BASIS))
     print(f"wrote {a.html}  (asof {data['asof']}, blocks {len(data['blocks'])})")
 
 

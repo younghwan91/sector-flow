@@ -1421,7 +1421,7 @@ def layer_c(D: dict, html: str) -> None:
         chk("C", "종합표: 고정 헤더 = 고정 셀", n_hdr_fixed == fixed,
             f"헤더 고정 {n_hdr_fixed} · 셀 고정 {fixed}")
         chk("C", "종합표: 창 루프 정확히 1개", len(loop) == 1, f"창 {wins}개")
-    chk("C", "템플릿 자리표시자 없음", "__DATA__" not in html)
+    chk("C", "템플릿 자리표시자 없음", "__DATA__" not in html and "__BASIS__" not in html)
 
     for key, B in D["blocks"].items():
         rows = B["rows"]

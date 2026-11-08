@@ -32,6 +32,7 @@ from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 
+from sectorflow.basis import BASIS_SLOT, DATA_BASIS
 from sectorflow.storage import (
     _is_pg,
     connect, db_default, market_cap_asof_bulk, read_supply_demand, recent_dates)
@@ -835,7 +836,7 @@ def main():
         with open(tpl, encoding="utf-8") as f:
             html = f.read()
         with open(a.html, "w", encoding="utf-8") as f:
-            f.write(html.replace("__DATA__", script_json(payload)))
+            f.write(html.replace("__DATA__", script_json(payload)).replace(BASIS_SLOT, DATA_BASIS))
         print(f"wrote {a.html}  (재사용: {a.from_json})")
         return
 
@@ -875,7 +876,7 @@ def main():
         with open(tpl, encoding="utf-8") as f:
             html = f.read()
         with open(a.html, "w", encoding="utf-8") as f:
-            f.write(html.replace("__DATA__", script_json(payload)))
+            f.write(html.replace("__DATA__", script_json(payload)).replace(BASIS_SLOT, DATA_BASIS))
         print(f"wrote {a.html}  ({dates[0]} ~ {dates[-1]}, {len(dates)}거래일, "
               f"{payload['n_names']}종목, 마감후={payload['finalized']})")
         return
