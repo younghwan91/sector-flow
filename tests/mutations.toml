@@ -2195,3 +2195,19 @@ guards = ["tests/test_payload_today.py::test_final_diff_without_a_provisional_re
 file = "scripts/verify_report.py"
 find = """            "final_diff" in P and (P["final_diff"] is not None or bool(P.get("final_diff_reason"))))"""
 replace = """            True)"""
+
+[[mutation]]
+id = "reports-root-from-any-folder"
+why = "리포트 폴더 밖에서 만든 페이로드가 엉뚱한 옆 폴더를 '직전 리포트' 로 읽는다"
+guards = ["tests/test_payload_today.py::test_reports_root_is_only_inferred_from_a_dated_folder"]
+file = "scripts/sector_flow.py"
+find = """    return os.path.dirname(d) if _DATE_DIR.fullmatch(os.path.basename(d)) else None"""
+replace = """    return os.path.dirname(d)"""
+
+[[mutation]]
+id = "final-diff-txt-not-written"
+why = "확정 모드가 final_diff.txt 를 안 남기면 FINAL.txt 에 바뀐 값이 안 붙는다"
+guards = ["tests/test_payload_today.py::test_main_writes_final_diff_next_to_the_payload"]
+file = "scripts/sector_flow.py"
+find = """        if a.json or a.html:"""
+replace = """        if False:"""
