@@ -144,7 +144,7 @@ def finalize_done(logs_root: str, asof: str) -> tuple[bool, str]:
             return False, f"{os.path.basename(run)} 의 {task} 가 성공으로 끝나지 않았다({path})"
         problem = fail_problem(text) if task in FAIL_TASKS else None
         if problem:
-            return False, f"{os.path.basename(run)} 의 {task}: {problem}({path})"
+            return False, f"{os.path.basename(run)} 의 {task} 는 수집 실패가 문턱을 넘었거나 완료 줄이 없다: {problem}({path})"
     return True, f"{os.path.basename(run)} {ended:%F %T} 확정 완료({', '.join(TASKS)})"
 
 

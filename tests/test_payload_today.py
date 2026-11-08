@@ -400,6 +400,7 @@ def test_main_writes_final_diff_next_to_the_payload(tmp_path, monkeypatch):
     monkeypatch.setattr(sf, "index_returns", lambda *a, **k: {m: {} for m in SECTORS})
     monkeypatch.setattr(sf, "sector_cap_monthly", lambda *a: {})
     monkeypatch.setattr(sf, "market_context", lambda con, d, P: None)
+    monkeypatch.setattr(sf, "rights_pending", lambda con, codes, asof: {})
     build = tmp_path / f"{dates[-1]}.building.9"
     build.mkdir()
     out = build / "payload.json"
