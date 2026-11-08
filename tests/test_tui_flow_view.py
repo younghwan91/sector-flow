@@ -2550,14 +2550,15 @@ def test_banner_market_net_is_the_payload_today_total(data):
 
 
 def test_banner_today_top_bottom_are_by_amount_with_their_percentile(data):
-    """상위·하위 3 은 **오늘 금액** 순이고 각자의 1년%ile 을 단다 — 점수 순이 아니다."""
+    """상위·하위 3 은 **오늘 금액** 순이고 각자의 1년%ile 과 그 섹터의 그날 수익률(리뷰 3차 D3-m1)을 단다 — 점수 순이 아니다."""
     lines = banner_lines(State(data), 160)
     top = next(ln for ln in lines if "   기관 상위" in ln)
     bot = next(ln for ln in lines if "   기관 하위" in ln)
     import re
     plain = [re.sub(r"\[[^]]*\]", "", ln) for ln in (top, bot)]       # 종목 꼬리표를 떼고 순서를 본다
-    assert "전기/전자 +100(99) · 건설 +40(69) · 부동산 -20(39)" in plain[0], top
-    assert "IT 서비스 -80(9) · 부동산 -20(39) · 건설 +40(69)" in plain[1], bot
+    # 수익률은 픽스처에서 섹터마다 다르다(−1.5 + i) — 다른 섹터의 값을 달면 여기서 갈린다.
+    assert "전기/전자 +100(99) -1.50% · 건설 +40(69) -0.50% · 부동산 -20(39) +0.50%" in plain[0], top
+    assert "IT 서비스 -80(9) +1.50% · 부동산 -20(39) +0.50% · 건설 +40(69) -0.50%" in plain[1], bot
     tr = next(ln for ln in lines if "투신+연기금 상위" in ln)
     assert tr.index("IT 서비스 +8") < tr.index("부동산 +3"), tr
 

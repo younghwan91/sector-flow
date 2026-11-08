@@ -42,23 +42,43 @@ jobs:
         continue-on-error: true
         timeout-minutes: 60
         run: |
+          set -o pipefail   # 기본 bash 는 pipefail 이 꺼져 있어 | tee 가 자기 검증의 실패 종료코드를 삼킨다
           git config --global user.email "selftest@example.invalid"
           git config --global user.name "selftest"
           uv run --no-sync python scripts/verify_merge.py --self-test 2>&1 | tee selftest.log
+      # 웹 스모크 — 진짜 Chromium 으로 수치표·뷰어를 폭 1440·390 에서 연다(콘솔 오류·가로 넘침·'오늘' 패널).
+      # PR CI 에는 브라우저가 없어 tests/test_web_smoke.py 의 브라우저 검사가 건너뛴다 — 여기서는 REQUIRED 로 건너뛰지 않는다.
+      # 배포를 막지 않는다(위와 같은 이유) — 실패하면 아래 이슈에 같이 적힌다. tee 가 종료코드를 삼키지 않게 pipefail.
+      - name: Web smoke (Playwright Chromium)
+        id: smoke
+        if: steps.install.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 15
+        env:
+          SF_WEB_SMOKE_REQUIRED: "1"
+        run: |
+          set -o pipefail
+          uv run --no-sync --with playwright python -m playwright install --with-deps chromium
+          uv run --no-sync --with playwright pytest -q tests/test_web_smoke.py 2>&1 | tee smoke.log
       # 이슈를 못 열어도(권한·API) 잡은 빨개지지 않는다 — 그때는 실행 로그의 경고로만 남는다.
       - name: Open an issue on failure
-        if: steps.uv.outcome != 'success' || steps.install.outcome != 'success' || steps.st.outcome != 'success'
+        if: steps.uv.outcome != 'success' || steps.install.outcome != 'success' || steps.st.outcome != 'success' || steps.smoke.outcome == 'failure'
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           {
-            echo "주간 \`verify_merge.py --self-test\` 가 기대와 다르게 끝났다(설치 ${{ steps.install.outcome }} · 자기 검증 ${{ steps.st.outcome }}) — 머지 하네스의 판정을 믿을 수 없는 상태다."
+            echo "주간 \`verify_merge.py --self-test\` 가 기대와 다르게 끝났다(설치 ${{ steps.install.outcome }} · 자기 검증 ${{ steps.st.outcome }} · 웹 스모크 ${{ steps.smoke.outcome }}) — 머지 하네스의 판정을 믿을 수 없는 상태다."
             echo
             echo "실행: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             echo
             echo '```'
             tail -n 60 selftest.log 2>/dev/null || echo "(로그 없음)"
+            echo '```'
+            echo
+            echo '웹 스모크(tests/test_web_smoke.py):'
+            echo '```'
+            tail -n 30 smoke.log 2>/dev/null || echo "(로그 없음)"
             echo '```'
           } > body.md
           gh issue create --title "하네스 자기 검증 실패 ($(date -u +%F))" --body-file body.md \

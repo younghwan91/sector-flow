@@ -352,13 +352,16 @@ def test_trade_value_unit_check_ignores_close_vs_vwap_gaps_but_catches_unit_erro
 def test_rendered_pages_carry_the_data_basis(report):
     """배치와 같은 명령으로 지은 두 페이지에 자료 범위 표지가 **갈려 들어갔나**(자리표시가 남지 않았나).
 
-    주입: ``sector_numbers.py``·``sector_flow.py`` 가 ``BASIS_SLOT`` 을 안 갈면 실패한다.
+    주입: ``sector_numbers.py``·``sector_flow.py`` 가 ``BASIS_SLOT`` 을 안 갈면 실패한다. 수치표 '오늘' 패널 머리의
+    짧은 칩(``BASIS_SHORT_SLOT``)을 안 갈아도 실패한다.
     """
-    from sectorflow.basis import BASIS_SLOT, DATA_BASIS
+    from sectorflow.basis import BASIS_SHORT_SLOT, BASIS_SLOT, DATA_BASIS, DATA_BASIS_SHORT
 
     for page in ("viewer.html", "numbers.html"):
         html = (report["dir"] / page).read_text("utf-8")
         assert DATA_BASIS in html and BASIS_SLOT not in html, f"{page} 에 자료 범위 표지가 없다"
+    html = (report["dir"] / "numbers.html").read_text("utf-8")
+    assert DATA_BASIS_SHORT in html and BASIS_SHORT_SLOT not in html, "수치표 '오늘' 패널에 자료 범위 칩이 없다"
 
 
 def test_db_path_viewer_carries_the_data_basis(tmp_path, report):

@@ -15,6 +15,8 @@ daily_report.sh 는 **제가 돈 날**만 알린다. 크론 줄이 빠졌거나,
   남는 구멍: scalp-it 과 수집이 같은 거래일에 함께 죽으면 휴장으로 보인다(daily_collection 실패는 Airflow 가 따로 알린다).
 * 전 거래일 폴더에 ``FINAL.txt``(또는 재구성 표시 ``REBUILT.txt``)가 없다 → **75(경고)**. 그날 아침 08:20 확정 모드가
   안 돌았거나 확정을 확인 못 한 채 지나갔다. 다음 거래일 수집이 들어오면 08:20 은 그 날을 다시 안 보므로 그날 저녁에 알린다.
+* 전 거래일 확정 검증(``VERIFY.txt``)이 외부 참값(정규장 종가 바구니 ≈ KRX 지수) 대조를 **연달아 3번** 건너뛰었다(``[WARN]``
+  외부 참값 연속 SKIP) → **75(경고)**. 한 번 건너뛴 것은 한 줄로만 적는다(다음날 수급이 들어와야 채워지는 뷰라 흔하다).
 * 알림 통로 — quant-airflow ``alert.sh`` 가 **실제로 읽을 값**을 같은 방식으로 읽는다(:func:`alert_value`). 비었으면 75,
   있으면 GET 한 번(5초, 메시지는 안 보낸다 — Discord 웹훅은 GET 에 200 + JSON 으로 답한다)으로 살아 있나 본다.
   401·404 는 폐기됐거나 틀린 주소다. 주말·DB 실패여도 본다. 주소는 어디에도 찍지 않는다.
@@ -118,6 +120,29 @@ def check_prev_final(root: Path, prev: str | None) -> tuple[int, list[str]]:
                   "안 돌았거나 daily_finalize 를 확인하지 못했다.",
                   f"    reports/cron.log 의 08:20 줄과 `uv run python scripts/finalize_done.py --asof {prev}` 를 본다. "
                   "다음 거래일 수집이 들어와 08:20 은 이 날을 다시 안 본다 — 지난 기준일 재구성으로 다시 만든다(README §3.1)."]
+
+
+#: verify_report.py 가 VERIFY.txt 에 남기는 표지 — **같은 글**이어야 한다(``tests/test_freshness_check.py`` 가 맞춘다).
+SKIP_MARK = "SKIP 정규장 종가 대조"
+SKIP_STREAK_MARK = "외부 참값 연속 SKIP"
+
+
+def check_external_truth(root: Path, prev: str | None) -> tuple[int, list[str]]:
+    """전 거래일 확정 검증이 외부 참값 대조를 했나 — 연속 SKIP 경고(``[WARN]``)가 있으면 75, 한 번 SKIP 은 한 줄."""
+    if not prev:
+        return 0, []
+    try:
+        text = (root / prev / "VERIFY.txt").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return 0, []
+    hit = next((ln.strip() for ln in text.splitlines() if "[WARN]" in ln and SKIP_STREAK_MARK in ln), None)
+    if hit:
+        return WARN, [f"⚠️ [외부 참값] 전 거래일({prev}) 확정 검증: {hit}",
+                      f"    {root / prev / 'VERIFY.txt'} 의 '{SKIP_MARK}' 사유를 보라 — 바구니 ≈ KRX 지수 대조가 며칠째 안 돌았다."]
+    if SKIP_MARK in text:
+        return 0, [f"[외부 참값] 전 거래일({prev}) 확정 검증이 정규장 종가 대조를 건너뛰었다(SKIP) — "
+                   "3번 이어지면 경고한다"]
+    return 0, []
 
 
 # ── 알림 통로 — quant-airflow scripts/alert.sh 가 읽는 그대로 ─────────────────────
@@ -282,6 +307,8 @@ def main(argv: list[str] | None = None) -> int:
             rc, lines = judge(Path(a.root), today, n, market_open=market_open)
             prc, plines = check_prev_final(Path(a.root), prev)
             rc, lines = worse(rc, prc), lines + plines
+            xrc, xlines = check_external_truth(Path(a.root), prev)
+            rc, lines = worse(rc, xrc), lines + xlines
     data_rc = rc
     # 알림 통로는 무슨 일이 있어도 본다 — 위가 실패한 날일수록 알림이 가야 한다.
     alert_sh = alert_sh_path(os.environ)

@@ -131,6 +131,7 @@ details.explore .xnote{margin:0; padding:10px 15px; font-size:11.5px; color:var(
   <section class="panel today" id="today" aria-labelledby="t-ttl">
     <div class="thead">
       <h2 id="t-ttl">오늘 <small id="t-sub"></small></h2>
+      <span class="chip" id="t-basis" title="키움 KRX 코드 응답 — 넥스트레이드 체결은 없다. 아래 설명">__BASIS_SHORT__</span>
       <div class="seg" id="seg-mkt-t" role="group" aria-label="오늘 패널 시장"></div>
     </div>
     <div class="tgrid" id="t-grid"></div>
@@ -272,9 +273,10 @@ function tline(label, items, empty){
   if(!items.length){ p.append(el("span","dim",empty||"없음")); return p; }
   items.forEach((it,i)=>{ if(i) p.append(el("span","sep"," · "));
     if(typeof it==="string"){ p.append(el("span","it",it)); return; }
-    const [name,v,pct,stocks]=it, w=el("span","it"); w.append(el("span",null,name+" "));
+    const [name,v,pct,stocks,ret]=it, w=el("span","it"); w.append(el("span",null,name+" "));
     w.append(el("span","num "+cls(v),A(v)));
     if(pct!==undefined) w.append(el("span","pc num",pc(pct)));
+    if(ret!==undefined) w.append(el("span","num "+cls(ret||0)," "+R2(ret)));   // 섹터 그날 수익률 — TUI `_ranked_line` 과 같은 반올림
     if(stocks&&stocks.length) w.append(el("span","stk","["+stocks.map(([n,x])=>n+" "+A(x)).join("·")+"]"));
     p.append(w); });
   return p;
@@ -361,11 +363,12 @@ function renderToday(){
   g.append(c2);
   // 3. 섹터 상위·하위 3 (기관 · 투신+연기금 · 그날의 최대 순매매 주체) + 그 주체의 그날 종목
   const acts=bannerActors(mkt);
-  const c3=card("오늘 섹터 순매수 [억 (1년%ile)] — "+mkt+" · 금액 순 · [ ] = 그 주체의 그날 종목");
+  const c3=card("오늘 섹터 순매수 [억 (1년%ile)] 1일 수익률[%] — "+mkt+" · 금액 순 · [ ] = 그 주체의 그날 종목");
   c3.id="t-rank";
+  const SR=(T.sectors||{})[mkt]||{}, sret=s=>(SR[s]||{}).ret??null;
   acts.forEach(([a,ko])=>{ const r=todayRank(mkt,a), st=dayStocks(mkt,a);
-    const top=tline(ko+" 상위",r.slice(0,3).map(([s,v,p])=>[s,v,p,stockTag(st[s],"buy")]));
-    const bot=tline(ko+" 하위",r.slice().reverse().slice(0,3).map(([s,v,p])=>[s,v,p,stockTag(st[s],"sell")]));
+    const top=tline(ko+" 상위",r.slice(0,3).map(([s,v,p])=>[s,v,p,stockTag(st[s],"buy"),sret(s)]));
+    const bot=tline(ko+" 하위",r.slice().reverse().slice(0,3).map(([s,v,p])=>[s,v,p,stockTag(st[s],"sell"),sret(s)]));
     top.dataset.actor=a; top.dataset.side="top"; bot.dataset.actor=a; bot.dataset.side="bottom";
     c3.append(top,bot); });
   c3.append(el("div","tnote","1일 탭(아래 표)·뷰어의 1일 기간에서 그 섹터의 그날 전 종목을 본다."));

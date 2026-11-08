@@ -2595,8 +2595,8 @@ id = "banner-shows-exploration-scores"
 why = "첫 화면 배너에 탐색 점수(G 통과)가 다시 들어온다 — 검정 결과 앞날 증거가 없는 점수가 첫 화면을 차지한다"
 guards = ["tests/test_tui_flow_view.py::test_banner_states_facts_not_picks"]
 file = "src/sectorflow/tui/flow_view.py"
-find = "        f\" 오늘 섹터 순매수[억(1년%ile)] — {mk} · 금액 순 · [ ] = 그 주체의 그날 종목(1 키로 1일 창)\","
-replace = "        f\" G 통과 오늘 섹터 순매수[억(1년%ile)] — {mk} · 금액 순 · [ ] = 그 주체의 그날 종목(1 키로 1일 창)\","
+find = "        f\" 오늘 섹터 순매수[억(1년%ile)] 1일 수익률[%] — {mk} · 금액 순 · [ ] = 그 주체의 그날 종목(1 키로 1일 창)\","
+replace = "        f\" G 통과 오늘 섹터 순매수[억(1년%ile)] 1일 수익률[%] — {mk} · 금액 순 · [ ] = 그 주체의 그날 종목(1 키로 1일 창)\","
 
 [[mutation]]
 id = "banner-net-not-from-today"
@@ -2619,8 +2619,8 @@ id = "banner-today-bottom-is-top"
 why = "오늘 하위 3 이 상위 3 과 같은 목록이 된다 — 첫 화면에서 판 쪽이 사라진다"
 guards = ["tests/test_tui_flow_view.py::test_banner_today_top_bottom_are_by_amount_with_their_percentile"]
 file = "src/sectorflow/tui/flow_view.py"
-find = "        ranked_lines.append(_ranked_line(f\"   {ko} 하위: \", ranked[::-1][:3], stocks, \"sell\", width))"
-replace = "        ranked_lines.append(_ranked_line(f\"   {ko} 하위: \", ranked[:3], stocks, \"sell\", width))"
+find = "        ranked_lines.append(_ranked_line(f\"   {ko} 하위: \", ranked[::-1][:3], stocks, \"sell\", width, rets))"
+replace = "        ranked_lines.append(_ranked_line(f\"   {ko} 하위: \", ranked[:3], stocks, \"sell\", width, rets))"
 
 [[mutation]]
 id = "today-extremes-exclude-threshold"
@@ -2739,8 +2739,8 @@ id = "web-today-bottom-is-top"
 why = "웹 오늘 패널의 하위 3 이 상위 3 과 같다 — TUI 첫 화면과 다른 목록이다"
 guards = ["tests/test_report_pages.py::test_numbers_today_panel_says_what_the_terminal_banner_says"]
 file = "scripts/templates/sector_numbers.html"
-find = "    const bot=tline(ko+\" 하위\",r.slice().reverse().slice(0,3).map(([s,v,p])=>[s,v,p,stockTag(st[s],\"sell\")]));"
-replace = "    const bot=tline(ko+\" 하위\",r.slice(0,3).map(([s,v,p])=>[s,v,p,stockTag(st[s],\"sell\")]));"
+find = "    const bot=tline(ko+\" 하위\",r.slice().reverse().slice(0,3).map(([s,v,p])=>[s,v,p,stockTag(st[s],\"sell\"),sret(s)]));"
+replace = "    const bot=tline(ko+\" 하위\",r.slice(0,3).map(([s,v,p])=>[s,v,p,stockTag(st[s],\"sell\"),sret(s)]));"
 
 [[mutation]]
 id = "web-final-diff-no-list"
@@ -4921,3 +4921,215 @@ guards = ["tests/test_finalize_done.py::test_no_test_reads_the_machine_timezone"
 file = "tests/test_daily_report_flow.py"
 find = "    return datetime.strptime(when, \"%Y-%m-%d %H:%M\").replace(tzinfo=timezone(timedelta(hours=9))).timestamp()"
 replace = "    import time\n    return time.mktime(time.strptime(when, \"%Y-%m-%d %H:%M\"))"
+
+# ── r3: 첫 화면 자료 범위 칩·섹터 그날 수익률, 외부 참값 연속 SKIP 경고, 웹 스모크(Chromium) ──
+
+[[mutation]]
+id = "first-screen-drops-basis-line"
+why = "TUI 첫 화면에서 자료 범위(KRX 단독·NXT 제외) 줄이 빠져 도움말 끝까지 내려가야 보인다"
+guards = ["tests/test_data_basis.py::test_first_screen_states_the_data_basis_right_under_the_title"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "    lines = [_banner_title(d, width), basis_line(width)]"
+replace = "    lines = [_banner_title(d, width)]"
+
+[[mutation]]
+id = "numbers-today-header-drops-basis-chip"
+why = "웹 '오늘' 패널 머리에서 자료 범위 칩이 빠진다 — notes 를 펼쳐야만 KRX 몫이라는 걸 안다"
+guards = ["tests/test_data_basis.py::test_numbers_today_panel_header_carries_the_short_basis_chip"]
+file = "scripts/templates/sector_numbers.html"
+find = "      <span class=\"chip\" id=\"t-basis\" title=\"키움 KRX 코드 응답 — 넥스트레이드 체결은 없다. 아래 설명\">__BASIS_SHORT__</span>\n"
+replace = ""
+
+[[mutation]]
+id = "numbers-render-leaves-basis-short-slot"
+why = "수치표가 짧은 칩 자리표시를 안 갈아 '오늘' 패널에 __BASIS_SHORT__ 가 그대로 찍힌다"
+guards = ["tests/test_pipeline_e2e.py::test_rendered_pages_carry_the_data_basis"]
+file = "scripts/sector_numbers.py"
+find = "                .replace(BASIS_SHORT_SLOT, DATA_BASIS_SHORT)\n"
+replace = ""
+
+[[mutation]]
+id = "first-screen-sector-return-dropped"
+why = "첫 화면 상위·하위 섹터 옆 그날 수익률이 — 로 빠진다(페이로드를 안 읽는다)"
+guards = ["tests/test_tui_flow_view.py::test_banner_today_top_bottom_are_by_amount_with_their_percentile",
+          "tests/test_web_render.py::test_today_sector_items_carry_the_same_day_return_on_web_and_terminal"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "    rets = sector_day_ret(d, mk)"
+replace = "    rets = {}"
+
+[[mutation]]
+id = "first-screen-sector-return-half-even"
+why = "TUI 가 섹터 수익률을 파이썬 기본 반올림(이진 잔차 그대로)으로 그려 1.005 가 화면 +1.00% · 웹 +1.01% 로 갈린다"
+guards = ["tests/test_web_render.py::test_today_sector_items_carry_the_same_day_return_on_web_and_terminal"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "{_fmt_ret(rets.get(s))}{_stock_tag("
+replace = "{'—' if rets.get(s) is None else format(rets[s], '+.2f') + '%'}{_stock_tag("
+
+[[mutation]]
+id = "web-today-sector-return-tofixed"
+why = "웹 '오늘' 패널이 섹터 수익률을 RHU 없이 toFixed(2) 로 그려 1.005 가 웹 +1.00% · 화면 +1.01% 로 갈린다"
+guards = ["tests/test_web_render.py::test_today_sector_items_carry_the_same_day_return_on_web_and_terminal"]
+file = "scripts/templates/sector_numbers.html"
+find = "w.append(el(\"span\",\"num \"+cls(ret||0),\" \"+R2(ret)));"
+replace = "w.append(el(\"span\",\"num \"+cls(ret||0),\" \"+(ret==null?\"—\":(ret>=0?\"+\":\"−\")+Math.abs(ret).toFixed(2)+\"%\")));"
+
+[[mutation]]
+id = "web-today-sector-return-dropped"
+why = "웹 '오늘' 패널만 섹터 수익률을 빠뜨린다 — 같은 리포트를 두 화면이 다르게 말한다"
+guards = ["tests/test_web_render.py::test_today_sector_items_carry_the_same_day_return_on_web_and_terminal"]
+file = "scripts/templates/sector_numbers.html"
+find = "    if(ret!==undefined) w.append("
+replace = "    if(false) w.append("
+
+[[mutation]]
+id = "external-skip-streak-never-warns"
+why = "외부 참값 대조가 며칠째 SKIP 해도 아무 말이 없다 — 예전 그대로 조용히 건너뛴다"
+guards = ["tests/test_web_render.py::test_third_consecutive_external_truth_skip_warns_but_does_not_fail"]
+file = "scripts/verify_report.py"
+find = "    if streak >= VF_SKIP_WARN:"
+replace = "    if False:"
+
+[[mutation]]
+id = "external-skip-streak-is-a-failure"
+why = "연속 SKIP 을 실패로 올려 숫자에 결함이 없는 리포트가 VERIFY_FAILED 가 된다"
+guards = ["tests/test_web_render.py::test_third_consecutive_external_truth_skip_warns_but_does_not_fail"]
+file = "scripts/verify_report.py"
+find = "        warn(\"F\", msg, \"정규장 종가"
+replace = "        chk(\"F\", msg, False, \"정규장 종가"
+
+[[mutation]]
+id = "external-skip-warns-on-the-second"
+why = "두 번째 SKIP 에 경고한다 — 하루 늦게 채워지는 뷰라 흔한 일로 매일 경고가 울린다"
+guards = ["tests/test_web_render.py::test_third_consecutive_external_truth_skip_warns_but_does_not_fail"]
+file = "scripts/verify_report.py"
+find = "VF_SKIP_WARN = 3"
+replace = "VF_SKIP_WARN = 2"
+
+[[mutation]]
+id = "external-skip-streak-ignores-a-run-day"
+why = "대조를 한 날에서 멈추지 않아 띄엄띄엄한 SKIP 을 연속으로 센다"
+guards = ["tests/test_web_render.py::test_external_truth_skip_streak_counts_back_through_sibling_reports"]
+file = "scripts/verify_report.py"
+find = "        elif \"외부 참값:\" in text:\n            break"
+replace = "        elif False:\n            break"
+
+[[mutation]]
+id = "external-skip-streak-counts-later-days"
+why = "검증 중인 기준일보다 뒤 폴더까지 센다(지난 기준일 재구성 때 미래의 SKIP 이 섞인다)"
+guards = ["tests/test_web_render.py::test_external_truth_skip_streak_counts_back_through_sibling_reports"]
+file = "scripts/verify_report.py"
+find = "if _DAY_DIR.fullmatch(x) and x < asof"
+replace = "if _DAY_DIR.fullmatch(x)"
+
+[[mutation]]
+id = "freshness-misses-skip-streak-warn"
+why = "전 거래일 VERIFY 의 연속 SKIP 경고를 신선도 점검이 못 본다 — 경고가 VERIFY.txt 안에만 남는다"
+guards = ["tests/test_freshness_check.py::test_previous_day_external_truth_skip_streak_warns_and_a_single_skip_is_a_note"]
+file = "scripts/freshness_check.py"
+find = "    if hit:\n        return WARN,"
+replace = "    if False:\n        return WARN,"
+
+[[mutation]]
+id = "freshness-warns-on-a-single-skip"
+why = "한 번의 SKIP(흔하다)에도 75 로 알린다 — 경고가 매일 울려 무시된다"
+guards = ["tests/test_freshness_check.py::test_previous_day_external_truth_skip_streak_warns_and_a_single_skip_is_a_note"]
+file = "scripts/freshness_check.py"
+find = "        return 0, [f\"[외부 참값] 전 거래일({prev}) 확정 검증이 정규장 종가 대조를 건너뛰었다(SKIP) — \""
+replace = "        return WARN, [f\"[외부 참값] 전 거래일({prev}) 확정 검증이 정규장 종가 대조를 건너뛰었다(SKIP) — \""
+
+[[mutation]]
+id = "freshness-main-skips-external-truth"
+why = "점검 함수는 있는데 크론 경로(main)가 안 부른다"
+guards = ["tests/test_freshness_check.py::test_cron_path_flags_a_previous_day_external_truth_skip_streak"]
+file = "scripts/freshness_check.py"
+find = "            xrc, xlines = check_external_truth(Path(a.root), prev)"
+replace = "            xrc, xlines = 0, []"
+
+[[mutation]]
+id = "freshness-skip-mark-drifts"
+why = "verify_report 와 다른 글을 찾아 연속 SKIP 경고를 영영 못 본다"
+guards = ["tests/test_freshness_check.py::test_freshness_looks_for_the_same_marks_verify_report_writes"]
+file = "scripts/freshness_check.py"
+find = "SKIP_STREAK_MARK = \"외부 참값 연속 SKIP\""
+replace = "SKIP_STREAK_MARK = \"외부 참값 연속 건너뜀\""
+
+[[mutation]]
+id = "web-smoke-ignores-overflow"
+why = "폰 390 에서 문서가 옆으로 밀려도 스모크가 초록이다"
+guards = ["tests/test_web_smoke.py::test_judge_flags_console_errors_page_overflow_and_a_missing_today_panel"]
+file = "scripts/web_smoke.py"
+find = "    if facts.get(\"scroll_w\", 0) > facts.get(\"inner_w\", 0) + OVERFLOW_SLACK:"
+replace = "    if False:"
+
+[[mutation]]
+id = "web-smoke-ignores-console-errors"
+why = "브라우저 콘솔 오류가 나도 스모크가 초록이다"
+guards = ["tests/test_web_smoke.py::test_judge_flags_console_errors_page_overflow_and_a_missing_today_panel"]
+file = "scripts/web_smoke.py"
+find = "    out = [f\"{tag} 콘솔 오류: {m}\" for m in facts.get(\"console\") or []]"
+replace = "    out = []"
+
+[[mutation]]
+id = "web-smoke-ignores-today-panel"
+why = "'오늘' 패널이 안 그려져도(스크립트가 중간에 죽어도) 스모크가 초록이다"
+guards = ["tests/test_web_smoke.py::test_judge_flags_console_errors_page_overflow_and_a_missing_today_panel"]
+file = "scripts/web_smoke.py"
+find = "    if page == \"numbers.html\":"
+replace = "    if False:"
+
+[[mutation]]
+id = "selftest-web-smoke-may-skip"
+why = "주간 잡의 웹 스모크가 REQUIRED 없이 돌아 Playwright 가 안 깔려도 건너뛰고 초록이다"
+guards = ["tests/test_ci_workflow.py::test_weekly_selftest_runs_the_browser_smoke_strictly_without_blocking"]
+file = ".github/workflows/harness-selftest.yml"
+find = "          SF_WEB_SMOKE_REQUIRED: \"1\""
+replace = "          SF_WEB_SMOKE_REQUIRED: \"0\""
+
+[[mutation]]
+id = "web-smoke-counts-console-warnings"
+why = "콘솔 경고·로그까지 오류로 세어 멀쩡한 페이지가 스모크에서 빨갛다"
+guards = ["tests/test_web_smoke.py::test_smoke_judges_every_page_at_every_width_and_keeps_only_console_errors"]
+file = "scripts/web_smoke.py"
+find = "c.append(m.text) if m.type == \"error\" else None"
+replace = "c.append(m.text)"
+
+[[mutation]]
+id = "web-smoke-lets-external-requests-through"
+why = "외부 글꼴 요청을 안 막아 네트워크 사정이 콘솔 오류로 섞인다"
+guards = ["tests/test_web_smoke.py::test_smoke_judges_every_page_at_every_width_and_keeps_only_console_errors"]
+file = "scripts/web_smoke.py"
+find = "                    ctx.route(\"http*://**\","
+replace = "                    (lambda *a: None)(\"http*://**\","
+
+[[mutation]]
+id = "web-smoke-exits-zero-on-problems"
+why = "문제가 있는데 종료코드 0 — 주간 워크플로의 스모크 스텝이 초록이다"
+guards = ["tests/test_web_smoke.py::test_smoke_exit_codes_and_the_chromium_fallback"]
+file = "scripts/web_smoke.py"
+find = "    return 1 if problems else 0"
+replace = "    return 0"
+
+[[mutation]]
+id = "web-smoke-no-chromium-fallback"
+why = "Playwright 기본 Chromium 이 없을 때 깔려 있는 다른 Chromium 을 안 써서 로컬에서 못 돈다"
+guards = ["tests/test_web_smoke.py::test_smoke_exit_codes_and_the_chromium_fallback"]
+file = "scripts/web_smoke.py"
+find = "            return p.chromium.launch(executable_path=exe)"
+replace = "            return p.chromium.launch()"
+
+[[mutation]]
+id = "selftest-tee-swallows-failure"
+why = "주간 자기 검증의 | tee 가 pipefail 없이 돌아 실패가 초록 스텝으로 끝나고 이슈도 안 열린다"
+guards = ["tests/test_ci_workflow.py::test_every_tee_step_in_our_workflows_sets_pipefail"]
+file = ".github/workflows/harness-selftest.yml"
+find = "          set -o pipefail   # 기본 bash 는 pipefail 이 꺼져 있어 | tee 가 자기 검증의 실패 종료코드를 삼킨다\n"
+replace = ""
+
+[[mutation]]
+id = "smoke-tee-swallows-failure"
+why = "웹 스모크의 | tee 가 pipefail 없이 돌아 Chromium 검사 실패가 초록 스텝으로 끝난다"
+guards = ["tests/test_ci_workflow.py::test_every_tee_step_in_our_workflows_sets_pipefail",
+          "tests/test_ci_workflow.py::test_weekly_selftest_runs_the_browser_smoke_strictly_without_blocking"]
+file = ".github/workflows/harness-selftest.yml"
+find = "          set -o pipefail\n          uv run --no-sync --with playwright python -m playwright install"
+replace = "          uv run --no-sync --with playwright python -m playwright install"

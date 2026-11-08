@@ -89,6 +89,20 @@ def claim(layer: str, name: str, ok: bool, detail: str = "") -> None:
         CLAIMS.append(f"{layer}/{name}" + (f"   {detail}" if detail else ""))
 
 
+#: 경고 — 실패도 문서 주장도 아니다(:func:`warn`). VERIFY_FAILED 를 만들지 않는다.
+WARNS: list[str] = []
+
+
+def warn(layer: str, name: str, detail: str = "") -> None:
+    """값은 맞지만 사람이 봐야 할 상태 — 예: 외부 참값 대조가 며칠째 SKIP 했다(:func:`_external_skip`).
+
+    검사 수에 넣지 않고 종료코드를 바꾸지 않는다. VERIFY.txt 에 ``[WARN]`` 줄과 끝의 경고 요약으로 남고,
+    ``freshness_check.py`` 가 전 거래일 VERIFY.txt 에서 그 줄을 찾아 알린다.
+    """
+    print(f"  [WARN] {layer} · {name}" + (f"   {detail}" if detail else ""))
+    WARNS.append(f"{layer}/{name}")
+
+
 def ols(xs, ys):
     """절편 포함 단순회귀 — (기울기, 절편, t, R²)."""
     n = len(xs)
@@ -1821,6 +1835,58 @@ VF_KRX = (("거래소", "001"), ("코스닥", "101"))
 VF_REGULAR_TOL = 0.1
 
 
+#: 외부 참값(정규장 종가 대조)을 **연달아** SKIP 한 확정 리포트가 이 수에 이르면 WARN(실패 아님). 한 번의 SKIP 은
+#: 정상이다(다음날 수급이 들어와야 채워지는 뷰) — 이어지면 대조가 며칠째 안 돈 것인데 예전엔 아무 말이 없었다(리뷰 3차 D1-m3).
+VF_SKIP_WARN = 3
+#: 연속 SKIP 을 셀 때 거슬러 보는 옆 기준일 폴더 수(이 리포트 제외).
+VF_SKIP_SCAN = 10
+#: VERIFY.txt 에 남는 표지 — 옆 폴더를 셀 때와 ``freshness_check.py`` 가 **같은 글**을 찾는다(``tests/test_freshness_check.py``).
+VF_SKIP_MARK = "SKIP 정규장 종가 대조"
+VF_SKIP_STREAK_MARK = "외부 참값 연속 SKIP"
+#: 검증 중인 리포트 폴더 — ``main`` 이 채운다. 옆 기준일 폴더의 VERIFY.txt 를 볼 때만 쓴다.
+REPORT_DIR: "str | None" = None
+_DAY_DIR = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
+def external_skip_streak(folder: "str | None", asof: str) -> int:
+    """``asof`` 앞(미만) 기준일 폴더들이 외부 참값 대조를 **연달아** SKIP 한 수 — 최근부터 거슬러 센다.
+
+    VERIFY.txt 에 SKIP 표지가 있으면 센다, 대조 줄(``외부 참값:``)이 있으면 멈춘다. 둘 다 없는 폴더(잠정만 남은 날·
+    DB 대조 없이 돈 검증·리포트가 없는 날)는 대조를 시도하지 않은 것이라 세지도 끊지도 않는다.
+    """
+    if not folder:
+        return 0
+    root = os.path.dirname(os.path.abspath(folder.rstrip("/")))
+    try:
+        names = sorted((x for x in os.listdir(root) if _DAY_DIR.fullmatch(x) and x < asof), reverse=True)
+    except OSError:
+        return 0
+    n = 0
+    for name in names[:VF_SKIP_SCAN]:
+        try:
+            with open(os.path.join(root, name, "VERIFY.txt"), encoding="utf-8") as f:
+                text = f.read()
+        except OSError:
+            continue
+        if VF_SKIP_MARK in text:
+            n += 1
+        elif "외부 참값:" in text:
+            break
+    return n
+
+
+def _external_skip(P: dict, why: str) -> None:
+    """외부 참값 대조를 건너뛴다 — 사유와 **연속 횟수**를 남기고, :data:`VF_SKIP_WARN` 회째부터 WARN."""
+    print(f"       {VF_SKIP_MARK} — {why}")
+    streak = 1 + external_skip_streak(REPORT_DIR, P["dates"][-1])
+    msg = f"{VF_SKIP_STREAK_MARK} {streak}회(이 리포트 포함, 확정 리포트만 센다)"
+    if streak >= VF_SKIP_WARN:
+        warn("F", msg, "정규장 종가(regular_close)가 며칠째 준비 안 됐다 — 바구니 ≈ KRX 지수 대조가 그동안 안 돌았다. "
+                       "quant-airflow 의 regular_close 를 보라")
+    else:
+        print(f"       {msg}")
+
+
 def _f_today_context(P: dict, cur, ph: str, meta: dict, px: dict, cap_at) -> None:
     """F 층의 '오늘' 맥락 — KRX 지수 수익률·금액 근사 오차를 DB 에서 다시 재고(리뷰 7), 확정 모드면
     전 거래일의 자체 바구니를 **정규장 종가**(``regular_close``)로 다시 재어 KRX 지수와 맞춘다(리뷰 12, 외부 참값).
@@ -1894,7 +1960,7 @@ def _f_today_context(P: dict, cur, ph: str, meta: dict, px: dict, cap_at) -> Non
         print("       (잠정 리포트 — 정규장 종가 대조는 마감 값(확정·창 밖 재구성)에서만)")
         return
     if len(dates) < 3:
-        print("       SKIP 정규장 종가 대조 — 거래일이 셋 미만")
+        _external_skip(P, "거래일이 셋 미만")
         return
     t1, t2 = dates[-2], dates[-3]
     cur.execute(f"SELECT code, date, close, src FROM regular_close WHERE date IN ({ph},{ph})", (t1, t2))
@@ -1908,7 +1974,7 @@ def _f_today_context(P: dict, cur, ph: str, meta: dict, px: dict, cap_at) -> Non
     total = sum(srcs.values())
     if not total or ready < 0.9 * total:
         # 준비 안 됨은 실패가 아니다 — 다음날 수급이 들어와야 채워지는 뷰다. 사유를 남긴다.
-        print(f"       SKIP 정규장 종가 대조 — {t1} regular_close 준비 안 됨({srcs})")
+        _external_skip(P, f"{t1} regular_close 준비 안 됨({srcs})")
         return
     # 재구성은 유니버스가 **지금의** stocks 마스터다. 그 뒤 폐지된 종목은 지수에는 있고 바구니에는 없어 같은 것을
     # 맞대는 대조가 아니다 — 2026-09-15 재구성: 09-14 에 폐지 예정 코스닥 종목이 −14~−34% 떨어져 바구니가 지수보다
@@ -2502,15 +2568,19 @@ def layer_w(D: dict, P: dict, folder: str) -> None:
                               if (x.get(a) or {}).get("v") is not None), key=lambda t: (-t[1], t[0]))
                 pick = lst[:3] if side == "top" else lst[::-1][:3]
                 stocks = _w_day_stocks(P, mkof(m), a)
+                # 섹터 그날 수익률(리뷰 3차 D3-m1) — 1일 창 수익률 열과 같은 값, 소수 2자리.
+                sret = {s: (S.get(s) or {}).get("ret") for s, _v, _p in pick}
                 want_items = []
                 for s, v, p in pick:
                     arr = stocks.get(s) or []
                     tag = ([t for t in arr if t[1] > 0][:2] if side == "top" else [t for t in arr[::-1] if t[1] < 0][:2])
-                    want_items.append(f"{s} {_w_A(v)}{_w_pc(p)}"
+                    r = sret[s]
+                    want_items.append(f"{s} {_w_A(v)}{_w_pc(p)} {'—' if r is None else _w_P(r) + '%'}"
                                       + ("[" + "·".join(f"{n} {_w_A(x)}" for n, x in tag) + "]" if tag else ""))
                 if ln["items"] != want_items:
                     bad_t.append(f"{m}/{a}/{side} {ln['items'][:1]} vs {want_items[:1]}")
-                tui_items = [f"{s} {FV.fmt_amt(v)}{FV._pct_tag(p)}" for s, v, p in pick]
+                tui_rets = FV.sector_day_ret(D, m)
+                tui_items = [f"{s} {FV.fmt_amt(v)}{FV._pct_tag(p)} {FV._fmt_ret(tui_rets.get(s))}" for s, v, p in pick]
                 if [i.split("[")[0] for i in ln["items"]] != [t.replace("-", "−") for t in tui_items]:
                     bad_tt.append(f"{m}/{a}/{side} 웹 {ln['items'][:1]} vs TUI {tui_items[:1]}")
                 # 종목 꼬리표 — 웹은 이름을 다 쓰고 TUI 는 10칸에서 자른다. 웹 꼬리표를 TUI 규칙으로 잘라 같은지 본다.
@@ -3460,6 +3530,8 @@ def main() -> int:
             run_layer(layer, fn, *args)
 
     d = os.path.expanduser(a.dir)
+    global REPORT_DIR
+    REPORT_DIR = d
     html = open(os.path.join(d, "numbers.html"), encoding="utf-8").read()
     D = json.loads(re.search(r"const D = (\{.*?\});\n", html, re.S).group(1))
     payload = json.load(open(os.path.join(d, "payload.json"), encoding="utf-8"))
@@ -3487,6 +3559,8 @@ def main() -> int:
         go("F", layer_f, payload, a.db)
 
     print(f"\n검사 {CHECKS}건 · 실패 {len(FAILS)}건 · 문서 주장 어긋남 {len(CLAIMS)}건")
+    if WARNS:
+        print(f"경고 {len(WARNS)}건(실패 아님): " + ", ".join(WARNS))
     write_claims(d)
     if FAILS:
         print("실패 목록: " + ", ".join(FAILS))
