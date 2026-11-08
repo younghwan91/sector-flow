@@ -6016,3 +6016,66 @@ guards = ["tests/test_verify_merge.py::test_unsharded_budget_scales_by_the_ci_sh
 file = "scripts/verify_merge.py"
 find = "def ci_shard_count(wt: Path, fallback: int = 4) -> int:"
 replace = "def ci_shard_count(wt: Path, fallback: int = 1) -> int:"
+
+# ── #32 ±0 부류의 남은 창 합 경로(2026-09-02·09-28 재구성, 종이/목재 20일) ──────────────────
+
+[[mutation]]
+id = "viewer-window-sum-keeps-binary-residue"
+why = "뷰어 창 합(표·막대·KPI·툴팁의 길목)이 잔차를 남겨 상쇄된 0 을 '−0' 으로 그린다 — 블록·검증기 '+0' 과 갈린다"
+guards = ["tests/test_web_render.py::test_viewer_window_sum_that_cancels_is_plus_zero_everywhere"]
+file = "scripts/templates/sector_flow.html"
+find = "function sum(arr,a,b){ let s=0; for(let i=a;i<=b;i++) s+=arr[i]; return Z(s); }"
+replace = "function sum(arr,a,b){ let s=0; for(let i=a;i<=b;i++) s+=arr[i]; return s; }"
+
+[[mutation]]
+id = "viewer-market-tile-keeps-binary-residue"
+why = "KPI 카드가 섹터 27개를 다시 누적하며 제 잔차를 만든다 — 상쇄된 시장 합이 '−0' 카드가 된다"
+guards = ["tests/test_web_render.py::test_viewer_market_total_that_cancels_is_plus_zero"]
+file = "scripts/templates/sector_flow.html"
+find = "  ACTORS.forEach(([k,ko])=>{let t=0; D.sectors.forEach(s=>t+=sum(flow(s,k),i0,i1)); t=Z(t);"
+replace = "  ACTORS.forEach(([k,ko])=>{let t=0; D.sectors.forEach(s=>t+=sum(flow(s,k),i0,i1));"
+
+[[mutation]]
+id = "numbers-block-window-sum-keeps-binary-residue"
+why = "블록(수치표·TUI·뷰어 대조가 다 그리는 값)의 창 합이 잔차를 남긴다 — 종이/목재 20일 '−0' vs 뷰어 '+0'"
+guards = ["tests/test_web_render.py::test_viewer_window_sum_that_cancels_is_plus_zero_everywhere"]
+file = "scripts/sector_numbers.py"
+find = "    return 0.0 if abs(t) < 1e-6 else t"
+replace = "    return t"
+
+[[mutation]]
+id = "verify-viewer-expect-sector-sum-keeps-residue"
+why = "검증기의 섹터 창 합 재계산이 잔차를 남겨, 맞게 그린 '+0' 을 '−0' 기대와 비교해 빨갛게 만든다"
+guards = ["tests/test_web_render.py::test_viewer_window_sum_that_cancels_is_plus_zero_everywhere"]
+file = "scripts/verify_report.py"
+find = """        t = sum(sum(((P["flows"].get(mk) or {}).get(sec) or {}).get(k, [0.0] * nd)[i0:i1 + 1]) for mk in mks)
+        return 0.0 if abs(t) < 1e-6 else t"""
+replace = """        t = sum(sum(((P["flows"].get(mk) or {}).get(sec) or {}).get(k, [0.0] * nd)[i0:i1 + 1]) for mk in mks)
+        return t"""
+
+[[mutation]]
+id = "verify-viewer-expect-market-sum-keeps-residue"
+why = "검증기의 시장 합 재계산이 잔차를 남긴다 — KPI 카드 '+0' 을 '−0' 기대와 비교해 빨갛게 만든다"
+guards = ["tests/test_web_render.py::test_viewer_market_total_that_cancels_is_plus_zero"]
+file = "scripts/verify_report.py"
+find = """    def mtot(k):
+        t = sum(tot(s, k) for s in P["sectors"])
+        return 0.0 if abs(t) < 1e-6 else t"""
+replace = """    def mtot(k):
+        return sum(tot(s, k) for s in P["sectors"])"""
+
+[[mutation]]
+id = "viewer-detail-bars-keep-binary-residue"
+why = "기관 세부 막대가 두 시장의 창 합을 더한 잔차를 남겨 상쇄된 합을 '−0' 으로 그린다"
+guards = ["tests/test_web_render.py::test_viewer_detail_bars_kill_the_residual_of_two_markets"]
+file = "scripts/templates/sector_flow.html"
+find = "if(a) t+=sum(a,i0,i1);}); return Z(t);});"
+replace = "if(a) t+=sum(a,i0,i1);}); return t;});"
+
+[[mutation]]
+id = "viewer-chart-end-label-keeps-binary-residue"
+why = "누적 선 끝 라벨이 제 누적의 잔차를 남겨, 같은 화면의 막대 '+0' 옆에 '−0' 을 적는다"
+guards = ["tests/test_web_render.py::test_viewer_chart_end_label_agrees_with_the_bars_when_the_window_cancels"]
+file = "scripts/templates/sector_flow.html"
+find = "const z=Z(acc); pts.push("
+replace = "const z=acc; pts.push("
