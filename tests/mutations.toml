@@ -7331,3 +7331,91 @@ guards = ["tests/test_collect_dart.py::test_rights_issue_the_seed_cannot_see_rea
 file = "src/sectorflow/collect/dart.py"
 find = "                (code, OK)).fetchall():"
 replace = "                (code, \"none\")).fetchall():"
+
+[[mutation]]
+id = "demo-mark-disappears"
+why = "합성 데모의 제목 표지가 사라진다 — 가짜 숫자가 진짜 리포트처럼 보인다"
+guards = ["tests/test_demo.py::test_demo_mark_survives_at_every_width_on_every_title"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "    return f\" {DEMO_MARK}\" if d.get(\"demo\") else \"\""
+replace = "    return \"\""
+
+[[mutation]]
+id = "demo-mark-after-the-title"
+why = "표지를 제목 뒤로 옮긴다 — 좁은 창에서 잘린다"
+guards = ["tests/test_demo.py::test_demo_mark_survives_at_every_width_on_every_title"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "    l1 = demo_mark(d) + l1"
+replace = "    l1 = l1 + demo_mark(d)"
+
+[[mutation]]
+id = "demo-mark-on-every-report"
+why = "표지가 실 리포트에도 붙는다 — 진짜 숫자를 가짜라고 말한다"
+guards = ["tests/test_demo.py::test_real_report_carries_no_demo_mark"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "    return f\" {DEMO_MARK}\" if d.get(\"demo\") else \"\""
+replace = "    return f\" {DEMO_MARK}\""
+
+[[mutation]]
+id = "demo-not-stamped-in-data"
+why = "표지가 데이터가 아니라 폴더 표식에만 있다 — 복사·이름 변경으로 떨어진다"
+guards = ["tests/test_demo.py::test_demo_survives_a_copy_because_the_mark_is_in_the_data"]
+file = "src/sectorflow/demo.py"
+find = "    payload[\"demo\"] = True"
+replace = "    pass"
+
+[[mutation]]
+id = "demo-web-banner-gone"
+why = "웹 두 장에 합성 데모 띠가 없다 — 브라우저로 연 사람은 가짜인 줄 모른다"
+guards = ["tests/test_demo.py::test_web_pages_carry_the_banner_and_title"]
+file = "src/sectorflow/demo.py"
+find = "lambda m: m.group(0) + BANNER"
+replace = "lambda m: m.group(0)"
+
+[[mutation]]
+id = "demo-uses-real-looking-names"
+why = "데모 종목 이름이 '가상' 으로 시작하지 않는다 — 실종목으로 읽힌다"
+guards = ["tests/test_demo.py::test_demo_has_no_real_name_or_code"]
+file = "src/sectorflow/demo.py"
+find = "f\"Z{j:02d}{mk_i}{i:02d}\", f\"{sec}{mk[0]}{i:02d}\""
+replace = "f\"9{j:02d}{mk_i}{i:02d}\", f\"{mk[0]}{i:02d}\""
+
+[[mutation]]
+id = "demo-warns-about-age"
+why = "고정 기준일의 데모에 'N일 지난 리포트' 가 뜬다 — 고장처럼 보인다"
+guards = ["tests/test_demo.py::test_fixed_date_demo_does_not_warn_about_age"]
+file = "src/sectorflow/tui/flow_app.py"
+find = "([] if d.get(\"demo\") else staleness_warning(d[\"asof\"]))"
+replace = "staleness_warning(d[\"asof\"])"
+
+[[mutation]]
+id = "demo-overwrites-a-real-folder"
+why = "--out 이 실 리포트 폴더여도 덮는다"
+guards = ["tests/test_demo.py::test_ensure_never_overwrites_a_folder_that_is_not_a_demo"]
+file = "src/sectorflow/demo.py"
+find = "    if target.exists() and any(target.iterdir()) and not (target / MARKER).exists():"
+replace = "    if False:"
+
+[[mutation]]
+id = "demo-never-rebuilds"
+why = "생성기가 바뀌어도 옛 데모를 연다 — 새 열이 비어 고장처럼 보인다"
+guards = ["tests/test_demo.py::test_ensure_rebuilds_when_the_generator_changed"]
+file = "src/sectorflow/demo.py"
+find = "    return f\"fingerprint: {_fingerprint()}\" in said and all("
+replace = "    return all("
+
+[[mutation]]
+id = "first-run-error-forgets-the-demo"
+why = "리포트가 없을 때 daily_report.sh 만 가리킨다 — DB 없는 사람은 순환한다"
+guards = ["tests/test_demo.py::test_empty_clone_error_points_to_demo_and_received_folder"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "    return (f\"  DB 없이 화면부터 보려면: {prog} --demo   (합성 데이터 — 실데이터 아님)\\n\"\n"
+replace = "    return (f\"\"\n"
+
+[[mutation]]
+id = "batch-error-forgets-the-demo"
+why = "배치의 'DB 접속정보가 없다' 가 화면으로 가는 길을 안 적는다 — 순환의 다른 쪽"
+guards = ["tests/test_demo.py::test_batch_without_db_points_back_to_the_demo"]
+file = "scripts/_env.sh"
+find = "합성 데이터는 uv run sw-flow --demo, 받은 폴더는 --dir <폴더>(README §4.3)."
+replace = "받은 폴더를 쓴다."

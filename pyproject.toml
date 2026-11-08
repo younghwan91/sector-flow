@@ -25,6 +25,8 @@ sector-flow-payload = "sectorflow.report_cli:payload"
 sector-flow-numbers = "sectorflow.report_cli:numbers"
 sector-flow-gate = "sectorflow.report_cli:gate"
 sector-flow-verify = "sectorflow.report_cli:verify"
+# 합성 데모 폴더(실데이터 아님) — `sw-flow --demo` 가 같은 것을 부른다.
+sector-flow-demo = "sectorflow.demo:main"
 # BYO 수집기(자기 키움 키 → sqlite). 읽기 전용 TR 6개만 부른다.
 sector-flow-collect = "sectorflow.collect.run:main"
 
