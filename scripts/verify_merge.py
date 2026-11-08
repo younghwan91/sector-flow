@@ -27,6 +27,26 @@
     python scripts/verify_merge.py <워크트리> --only mutations,render
     python scripts/verify_merge.py <워크트리> --mutations /경로/보고서에서_옮긴.toml
     python scripts/verify_merge.py --self-test          # 하네스가 정말 REJECT 를 내는가
+    python scripts/verify_merge.py . --only mutations --shard 2/4 --budget-min 12   # CI 한 샤드
+
+주입 검증의 속도와 범위 (CI 시간이 PR 마다 4~10분씩 늘던 것을 잡으려고)::
+
+    --shard i/n        변이를 예상 비용으로 n 몫에 나눠 i 번째만 돈다(같은 목록이면 늘 같은 몫).
+                       변이 미선언 새 검사 판정은 1번 몫에서만 한다.
+    --budget-min M     주입 검증이 M 분을 넘으면 REJECT, 75% 를 넘으면 WARN. 2M 분이면 남은 변이를
+                       돌리지 않고 멈춘다(잡 시간 초과로 이유 없이 죽지 않게). 느린 변이 10개를 늘 적는다.
+    --scope all|changed|auto
+                       changed = merge-base 이후 바뀐 파일을 대상·가드로 갖거나 선언이 새로 생긴·바뀐
+                       변이만. auto(기본)는 ``CI`` 가 있고 ``GITHUB_ACTIONS`` 가 없을 때(로컬 pre-push
+                       ci-local) ``--only mutations`` 이면 changed, 그 밖은 all. **전체는 GitHub 이 돈다.**
+                       로컬 changed 모드에선 샤드를 무시한다(ci-local 은 매트릭스를 펼치지 않는다).
+
+가드의 주입 전 초록 확인은 **pytest 한 번**으로 모든 가드를 함께 돈다(예전엔 변이마다 한 번 —
+pytest 가 변이당 두 번이었다). 주입 후 실행은 ``-x`` 로 첫 실패에서 멈춘다.
+
+새 검사(merge-base 이후 추가·수정된 ``def test_*``)는 그 검사를 가드로 둔 변이가 없으면 **REJECT** 다.
+변이로 증명할 수 없는 검사(픽스처가 헛돌지 않는지 보는 검사 등)는 함수 안이나 바로 위에
+``# mutation-exempt: <이유>`` 를 단다 — 이유 없는 표시는 면제가 아니다.
 
 변이 선언 형식 — 워크트리의 ``tests/mutations.toml`` (또는 ``--mutations``)::
 
@@ -248,7 +268,7 @@ def sec_identity(wt: Path, commits: list[str]) -> Section:
 
 #: CI 와 **같은 범위**를 본다. `src/ tests/` 만 보고 "통과" 라고 적었다가 CI 가
 #: 빨간 채로 남은 적이 있다 — 범위가 다르면 통과 보고가 거짓말이 된다.
-RUFF_PATHS = ("src/", "tests/", "scripts/")
+RUFF_PATHS = ("src/", "tests/", "scripts/", "research/")
 
 
 def _ruff(py: str, cwd: Path, env: dict) -> set[str]:
@@ -312,17 +332,43 @@ class _DeadEdit(Exception):
     """다중 편집 변이에서 앞 편집 뒤 다음 앵커가 사라졌다."""
 
 
-def new_test_functions(wt: Path, base_sha: str) -> set[str]:
-    """기준 이후 **추가·수정된** 검사 함수의 nodeid 집합.
+#: 면제 표시 — ``# mutation-exempt: <이유>``. 이유가 이보다 짧으면 표시가 없는 것으로 본다.
+EXEMPT_RE = re.compile(r"#\s*mutation-exempt:\s*(.*?)\s*$")
+EXEMPT_MIN_REASON = 5
+
+
+def _exempt_reason(lines: list[str], lo: int, hi: int) -> str | None:
+    """``lines[lo-1 .. hi-1]``(함수 본문) 또는 그 바로 위에 붙은 주석 줄들의 면제 이유.
+
+    위쪽은 빈 줄을 만나면 멈춘다 — 앞 함수의 면제가 다음 함수로 번지면 안 된다."""
+    cand = list(range(lo, hi + 1))
+    i = lo - 1
+    while i >= 1 and lines[i - 1].lstrip().startswith("#"):
+        cand.append(i)
+        i -= 1
+    for n in cand:
+        m = EXEMPT_RE.search(lines[n - 1]) if 0 < n <= len(lines) else None
+        if m and len(m.group(1)) >= EXEMPT_MIN_REASON:
+            return m.group(1)
+    return None
+
+
+def changed_files(wt: Path, base_sha: str) -> set[str]:
+    """merge-base 이후 커밋 + 작업 트리(커밋 안 된 것 포함)에서 바뀐 경로."""
+    out = set(git(wt, "diff", "--name-only", f"{base_sha}..HEAD").splitlines())
+    out |= {ln[3:] for ln in porcelain(wt)}
+    return {f for f in out if f}
+
+
+def new_test_functions(wt: Path, base_sha: str) -> dict[str, str | None]:
+    """기준 이후 **추가·수정된** 검사 함수 nodeid → 면제 이유(없으면 None).
 
     diff 의 변경 줄 번호를 새 파일의 AST 에 겹쳐 그 줄을 품은 ``def test_*`` 를 찾는다.
     파일 단위로 세면 "한 줄 고친 파일의 검사 40개" 가 전부 미선언으로 뜬다.
     """
-    out: set[str] = set()
-    files = [f for f in git(wt, "diff", "--name-only", f"{base_sha}..HEAD").splitlines()
+    out: dict[str, str | None] = {}
+    files = [f for f in changed_files(wt, base_sha)
              if f.startswith("tests/") and f.endswith(".py")]
-    files += [ln[3:] for ln in porcelain(wt)
-              if ln[3:].startswith("tests/") and ln[3:].endswith(".py")]
     for f in sorted(set(files)):
         path = wt / f
         if not path.exists():
@@ -332,23 +378,187 @@ def new_test_functions(wt: Path, base_sha: str) -> set[str]:
         for m in re.finditer(r"^@@ -\S+ \+(\d+)(?:,(\d+))? @@", diff, re.M):
             start, n = int(m.group(1)), int(m.group(2) or 1)
             touched.update(range(start, start + max(n, 1)))
+        text = path.read_text("utf-8")
         if not touched:                      # 새 파일이면 전부 새 검사다
-            touched = set(range(1, len(path.read_text("utf-8").splitlines()) + 2))
+            touched = set(range(1, len(text.splitlines()) + 2))
         try:
-            tree = ast.parse(path.read_text("utf-8"))
+            tree = ast.parse(text)
         except SyntaxError:
             continue
+        lines = text.splitlines()
         for node in ast.walk(tree):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) \
                     and node.name.startswith("test"):
                 lo = min([node.lineno] + [d.lineno for d in node.decorator_list])
-                if touched & set(range(lo, (node.end_lineno or lo) + 1)):
-                    out.add(f"{f}::{node.name}")
+                hi = node.end_lineno or lo
+                if touched & set(range(lo, hi + 1)):
+                    out[f"{f}::{node.name}"] = _exempt_reason(lines, lo, hi)
     return out
 
 
-def sec_mutations(wt: Path, py: str, base_sha: str, spec_path: Path | None) -> Section:
+def mutation_edits(m: dict) -> list[dict]:
+    """한 변이의 편집 목록 — 단일 편집(file·find·replace)도 목록 하나로."""
+    return m.get("edits") or [{"file": m.get("file"), "find": m.get("find"),
+                               "replace": m.get("replace", "")}]
+
+
+#: 샤드 나누기용 **예상** 비용(초, 대략). 맞을 필요는 없고 무거운 변이가 한 몫에 몰리지 않으면 된다.
+#: 틀리면 샤드 사이 시간이 벌어질 뿐이고, 그건 샤드마다 찍는 실측 시간으로 보인다. 가장 비싼 가드가
+#: 비용이다(주입 후 실행은 ``-x`` 라 보통 첫 가드에서 끝나지만 보수적으로).
+GUARD_COST = {
+    "tests/test_pipeline_e2e.py::test_pipeline_report_verifies_with_no_failures": 25.0,
+    "tests/test_pipeline_e2e.py::test_layer_subset_marks_equal_the_full_run": 25.0,
+    "tests/test_pipeline_e2e.py": 4.0,
+    "tests/test_tui_smoke.py": 6.0,
+    "tests/test_verify_report.py": 3.0,
+    "tests/test_serve_reports.py": 2.0,
+    "tests/test_daily_report_flow.py": 2.0,
+}
+
+
+def mutation_cost(m: dict) -> float:
+    cost = 1.0
+    for g in m.get("guards") or []:
+        cost = max(cost, GUARD_COST.get(g, GUARD_COST.get(g.split("::")[0], 1.0)))
+    return cost + 1.0                         # pytest 기동
+
+
+def parse_shard(text: str) -> tuple[int, int]:
+    m = re.fullmatch(r"\s*(\d+)\s*/\s*(\d+)\s*", text or "")
+    if not m or not 1 <= int(m.group(1)) <= int(m.group(2)):
+        raise ValueError(f"샤드는 i/n (1 ≤ i ≤ n) 이어야 한다: {text!r}")
+    return int(m.group(1)), int(m.group(2))
+
+
+def shard_of(muts: list[dict], i: int, n: int) -> list[dict]:
+    """예상 비용이 큰 것부터 지금 가장 가벼운 몫에 넣는다(LPT). 결정적이다 — 같은 목록이면 샤드마다
+    같은 배정이 나와야 몫이 겹치거나 빠지지 않는다(id 로 동률을 깬다)."""
+    load = [0.0] * n
+    pick: list[list[dict]] = [[] for _ in range(n)]
+    for m in sorted(muts, key=lambda m: (-mutation_cost(m), str(m.get("id")))):
+        k = min(range(n), key=lambda j: (load[j], j))
+        load[k] += mutation_cost(m)
+        pick[k].append(m)
+    order = {id(m): x for x, m in enumerate(muts)}
+    return sorted(pick[i - 1], key=lambda m: order[id(m)])   # 선언 순서대로 돈다
+
+
+#: 이게 바뀌면 모든 가드의 동작이 바뀔 수 있다 — changed 모드도 전체를 돈다.
+FULL_TRIGGERS = ("pyproject.toml", "uv.lock", "tests/conftest.py")
+
+
+def changed_scope(muts: list[dict], changed: set[str],
+                  base_muts: dict[str, dict]) -> tuple[list[dict], str]:
+    """로컬 pre-push 용 — 이 브랜치가 건드린 것과 닿는 변이만.
+
+    고르는 기준: 편집 대상 파일이 바뀌었다 · 가드 파일이 바뀌었다 · 선언이 기준에 없거나 달라졌다.
+    가드가 import 하는 다른 모듈만 바뀐 경우는 놓친다 — 그래서 **전체는 GitHub 이 돈다.**"""
+    hit = sorted(set(FULL_TRIGGERS) & changed)
+    if hit:
+        return list(muts), f"{', '.join(hit)} 가 바뀌어 전체"
+    out = []
+    for m in muts:
+        files = {e.get("file") for e in mutation_edits(m)}
+        gfiles = {g.split("::")[0] for g in m.get("guards") or []}
+        if files & changed or gfiles & changed or base_muts.get(m.get("id")) != m:
+            out.append(m)
+    return out, f"바뀐 파일 {len(changed)}개에 닿는 변이만"
+
+
+def auto_scope(env: dict, only: set[str]) -> str:
+    """로컬 ci-local(``CI`` 는 있고 ``GITHUB_ACTIONS`` 는 없다)이 주입 검증만 부르면 changed."""
+    if env.get("CI") and not env.get("GITHUB_ACTIONS") and only == {"mutations"}:
+        return "changed"
+    return "all"
+
+
+#: 기준선 실행에 붙이는 pytest 플러그인 — 검사마다 결과·시간을 JSON 으로 남긴다.
+BASELINE_PLUGIN = r'''
+import json, os
+_R = {}
+
+
+def pytest_collectreport(report):
+    if report.failed:
+        _R["<collect>" + report.nodeid] = {"outcome": "failed", "dur": 0.0,
+                                           "msg": str(report.longrepr)[-1500:]}
+
+
+def pytest_runtest_logreport(report):
+    r = _R.setdefault(report.nodeid, {"outcome": "passed", "dur": 0.0, "msg": ""})
+    r["dur"] += report.duration
+    if report.failed:
+        r["outcome"] = "failed"
+        r["msg"] = str(report.longrepr)[-1500:]
+    elif report.skipped and r["outcome"] == "passed":
+        r["outcome"] = "skipped"
+
+
+def pytest_sessionfinish(session, exitstatus):
+    with open(os.environ["VERIFY_MERGE_BASELINE"], "w", encoding="utf-8") as f:
+        json.dump(_R, f)
+'''
+
+
+def guard_items(results: dict, guard: str) -> dict:
+    """가드 nodeid 에 해당하는 실행 결과들 — 파라미터(``[...]``)·클래스 하위까지."""
+    return {k: v for k, v in results.items()
+            if k == guard or k.startswith(guard + "[") or k.startswith(guard + "::")}
+
+
+def run_baseline(wt: Path, py: str, guards: list[str], scratch: Path,
+                 timeout: int = 1800) -> tuple[dict, list[str], str]:
+    """모든 가드를 **pytest 한 번**에 — 결과, 못 찾은 nodeid, 출력 꼬리.
+
+    없는 nodeid 가 하나라도 있으면 pytest 는 아무것도 안 돌리고 끝난다(종료코드 4). 그 이름을
+    걷어내고 다시 돈다."""
+    plug_dir = scratch / "baseline_plugin"
+    plug_dir.mkdir(parents=True, exist_ok=True)
+    (plug_dir / "vm_baseline.py").write_text(BASELINE_PLUGIN, "utf-8")
+    env = py_env(wt)
+    env["PYTHONPATH"] = str(plug_dir) + os.pathsep + env["PYTHONPATH"]
+    env["VERIFY_MERGE_BASELINE"] = str(scratch / "baseline.json")
+    missing: list[str] = []
+    todo = list(dict.fromkeys(guards))
+    out = ""
+    path = scratch / "baseline.json"
+    broken: dict = {}                         # 수집 오류 — 다시 돌 때도 잃지 않는다
+    for _ in range(5):
+        if not todo:
+            break
+        # 수집 오류 파일 하나가 세션 전체를 멈추면(pytest 기본) 다른 가드가 전부 "못 찾음" 이 된다.
+        p = run([py, "-m", "pytest", "-q", "-p", "vm_baseline", "-p", "no:cacheprovider",
+                 "--continue-on-collection-errors", *todo], wt, env, timeout=timeout)
+        out = p.stdout + p.stderr
+        res = json.loads(path.read_text("utf-8")) if path.exists() else {}
+        path.unlink(missing_ok=True)
+        broken.update({k: v for k, v in res.items() if k.startswith("<collect>")})
+        # 이름을 대어 부른 nodeid 가 없으면(오타·수집 오류 파일) pytest 는 아무것도 안 돌리고 4 로 끝난다.
+        named = re.findall(r"ERROR: (?:not found:|found no collectors for) (\S+)", out)
+        nofile = re.findall(r"ERROR: file or directory not found: (\S+)", out)
+        gone = [g for g in todo
+                if any(x == g or x.endswith("/" + g) for x in named)
+                or any(g.split("::")[0] == x or x.endswith("/" + g.split("::")[0])
+                       for x in nofile)]
+        if p.returncode == 4 and gone:
+            missing += gone
+            todo = [g for g in todo if g not in gone]
+            continue
+        return {**res, **broken}, missing, out
+    return dict(broken), missing, out
+
+
+def _first_failure(stdout: str) -> str:
+    return next((ln for ln in stdout.splitlines()
+                 if ln.startswith("FAILED") or ln.startswith("ERROR") or " failed" in ln), "").strip()
+
+
+def sec_mutations(wt: Path, py: str, base_sha: str, spec_path: Path | None,
+                  shard: tuple[int, int] | None = None, budget_min: float | None = None,
+                  scope: str = "all") -> Section:
     """**핵심.** 워크트리가 선언한 변이를 실제로 주입해 선언한 검사가 빨개지는가."""
+    import time
+    t_start = time.monotonic()
     s = Section("mutations")
     spec = spec_path or (wt / "tests/mutations.toml")
     new_tests = new_test_functions(wt, base_sha)
@@ -357,7 +567,7 @@ def sec_mutations(wt: Path, py: str, base_sha: str, spec_path: Path | None) -> S
 
     if not spec.exists():
         if new_tests:
-            s.warn(f"변이 선언({spec}) 이 없는데 새 검사가 {len(new_tests)}개 있다 — "
+            s.fail(f"변이 선언({spec}) 이 없는데 새 검사가 {len(new_tests)}개 있다 — "
                    f"이 검사들이 자기 버그를 잡는지 아무도 확인하지 않았다:\n"
                    + "\n".join("      " + t for t in sorted(new_tests)))
         else:
@@ -373,28 +583,49 @@ def sec_mutations(wt: Path, py: str, base_sha: str, spec_path: Path | None) -> S
         s.fail(f"{spec} 에 [[mutation]] 이 하나도 없다")
         return s
 
+    # 새 검사의 변이 미선언 판정은 **선언 전체**를 본다(내 몫만 보면 다른 몫의 가드가 미선언으로 뜬다).
+    all_guarded = {g for m in muts for g in m.get("guards") or []}
+    declared = len(muts)
+    if scope == "changed":
+        try:
+            rel = spec.resolve().relative_to(wt.resolve()).as_posix()
+            base_text = git(wt, "show", f"{base_sha}:{rel}")
+            base_muts = {m.get("id"): m for m in
+                         (tomllib.loads(base_text).get("mutation", []) if base_text else [])}
+        except (ValueError, tomllib.TOMLDecodeError):
+            base_muts = {}
+        muts, why = changed_scope(muts, changed_files(wt, base_sha), base_muts)
+        s.say(f"범위: changed — {why}: {len(muts)}/{declared}개 "
+              f"(로컬 pre-push 용. 전체는 GitHub CI 가 돈다. --scope all 로 전체)")
+        if shard:
+            s.say(f"샤드 {shard[0]}/{shard[1]} 은 무시한다(changed 모드는 한 번에 돈다)")
+            shard = None
+    if shard:
+        muts = shard_of(muts, *shard)
+        s.say(f"샤드 {shard[0]}/{shard[1]}: 변이 {len(muts)}/{declared}개 "
+              f"(예상 비용 {sum(mutation_cost(m) for m in muts):.0f})")
+
     before = porcelain(wt)
-    guarded: set[str] = set()
     env = py_env(wt)
 
+    # ⓪ 선언 정합성 — 필드·대상·앵커(정확히 1번).
+    runnable: list[tuple[dict, list[dict]]] = []
     for m in muts:
         mid = m.get("id", "?")
         # 한 버그가 두 군데를 동시에 바꿔야 재현되는 경우가 있다(예: 리사이즈가
         # 도움말을 닫던 버그는 `else: help=False` 와 KEY_RESIZE 가드가 한 쌍이다).
         # 한 곳만 바꾸면 다른 곳이 막아서 "검사가 못 잡는다" 는 **거짓 판정**이 난다.
-        edits = m.get("edits") or [{"file": m.get("file"), "find": m.get("find"),
-                                    "replace": m.get("replace", "")}]
+        edits = mutation_edits(m)
         if "guards" not in m or any(not e.get("file") or e.get("find") is None
                                     for e in edits):
             s.fail(f"[{mid}] 필드 누락 — guards 와 (file, find) 가 필요하다")
             continue
-        saved: dict[Path, bytes] = {}
-        skip = False
+        bad = False
         for e in edits:
             target = wt / e["file"]
             if not target.exists():
                 s.fail(f"[{mid}] 대상 파일이 없다: {e['file']}")
-                skip = True
+                bad = True
                 break
             n = target.read_text("utf-8").count(e["find"])
             if n == 0:
@@ -406,34 +637,73 @@ def sec_mutations(wt: Path, py: str, base_sha: str, spec_path: Path | None) -> S
                 s.fail(f"[{mid}] 앵커가 {e['file']} 에 없어 이 변이는 "
                        f"**돌지 않았다** — 앵커를 지금 코드에 맞추거나, 버그가 표현 "
                        f"불가능해졌으면 변이를 지워라 ({m.get('why', '')})")
-                skip = True
+                bad = True
                 break
             if n != 1:
                 s.fail(f"[{mid}] find 가 {e['file']} 에서 {n}번 나온다 — "
                        f"정확히 1번이어야 무엇을 바꿨는지가 확정된다")
-                skip = True
+                bad = True
                 break
-        if skip:
-            continue
-        guards = list(m["guards"])
-        guarded.update(guards)
+        if not bad:
+            runnable.append((m, edits))
 
-        # ① 깨끗한 상태에서 가드가 초록인가 — 늘 빨간 검사는 아무것도 증명하지 않는다.
-        clean = run([py, "-m", "pytest", "-q", *guards], wt, env, timeout=900)
-        if clean.returncode != 0:
-            if "no tests ran" in clean.stdout or "ERROR" in clean.stdout:
-                # 기준에서 물려받은 변이인데 워크트리가 그보다 먼저 갈라져 나가
-                # 그 검사가 아직 없는 것일 수 있다. 오타와 구분이 안 되므로 경고다.
-                s.warn(f"[{mid}] 가드를 이 워크트리에서 **찾지 못했다** — nodeid "
-                       f"오타이거나, 기준이 그 검사를 워크트리 분기 뒤에 추가한 "
-                       f"것이다. 머지하면 붙으므로 머지 후 다시 돌려라: "
-                       f"{', '.join(guards)}")
-            else:
-                s.fail(f"[{mid}] 가드가 **주입 전에도** 실패한다 (이미 깨진 "
-                       f"검사다)\n" + tail(clean.stdout, 1200))
+    # ① 깨끗한 상태에서 가드가 초록인가 — 늘 빨간 검사는 아무것도 증명하지 않는다.
+    #    예전엔 변이마다 pytest 를 따로 돌렸다(302개면 302번). 가드를 모아 **한 번**에 돈다.
+    scratch = Path(tempfile.mkdtemp(prefix="verify_merge.mut."))
+    try:
+        guards_all = [g for m, _ in runnable for g in m["guards"]]
+        t0 = time.monotonic()
+        results, missing, base_out = run_baseline(wt, py, guards_all, scratch) \
+            if guards_all else ({}, [], "")
+        if guards_all:
+            s.say(f"기준선: 가드 {len(set(guards_all))}개를 pytest 한 번에 "
+                  f"({time.monotonic() - t0:.0f}초)")
+        if guards_all and not results and not missing:
+            s.fail("기준선 pytest 가 결과를 남기지 않았다\n" + tail(base_out, 2000))
+            return s
+        broken_files = {k[len("<collect>"):].split("::")[0]: v["msg"]
+                        for k, v in results.items() if k.startswith("<collect>")}
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+    timings: list[tuple[float, str]] = []
+    stopped = 0
+    for m, edits in runnable:
+        mid = m.get("id", "?")
+        guards = list(m["guards"])
+        if budget_min and time.monotonic() - t_start > 2 * budget_min * 60:
+            stopped += 1
+            continue
+        gfiles_broken = [g for g in guards if g.split("::")[0] in broken_files]
+        if gfiles_broken:
+            s.fail(f"[{mid}] 가드 파일이 **주입 전에도** 수집되지 않는다: "
+                   f"{gfiles_broken[0].split('::')[0]}\n"
+                   + tail(broken_files[gfiles_broken[0].split("::")[0]], 800))
+            continue
+        lost = [g for g in guards if g in missing or not guard_items(results, g)]
+        if lost:
+            # 기준에서 물려받은 변이인데 워크트리가 그보다 먼저 갈라져 나가
+            # 그 검사가 아직 없는 것일 수 있다. 오타와 구분이 안 되므로 경고다.
+            s.warn(f"[{mid}] 가드를 이 워크트리에서 **찾지 못했다** — nodeid "
+                   f"오타이거나, 기준이 그 검사를 워크트리 분기 뒤에 추가한 "
+                   f"것이다. 머지하면 붙으므로 머지 후 다시 돌려라: {', '.join(lost)}")
+            continue
+        red = {k: v for g in guards for k, v in guard_items(results, g).items()
+               if v["outcome"] == "failed"}
+        if red:
+            k, v = next(iter(red.items()))
+            s.fail(f"[{mid}] 가드가 **주입 전에도** 실패한다 (이미 깨진 검사다): {k}\n"
+                   + tail(v.get("msg", ""), 1200))
+            continue
+        if all(v["outcome"] == "skipped" for g in guards
+               for v in guard_items(results, g).values()):
+            s.fail(f"[{mid}] 가드가 주입 전에 **건너뛰어졌다** — 돌지 않는 검사는 아무것도 증명하지 "
+                   f"않는다: {', '.join(guards)}")
             continue
 
         # ② 주입 → 빨개져야 한다.
+        t0 = time.monotonic()
+        saved: dict[Path, bytes] = {}
         try:
             for e in edits:
                 target = wt / e["file"]
@@ -448,22 +718,28 @@ def sec_mutations(wt: Path, py: str, base_sha: str, spec_path: Path | None) -> S
                     raise _DeadEdit(e["file"])
                 target.write_text(text.replace(e["find"], e["replace"], 1),
                                   encoding="utf-8")
-            hit = run([py, "-m", "pytest", "-q", *guards], wt, env, timeout=900)
+            # -x: 가드 하나라도 빨개지면 잡힌 것이다 — 나머지를 기다릴 이유가 없다.
+            hit = run([py, "-m", "pytest", "-q", "-x", "-p", "no:cacheprovider", *guards],
+                      wt, env, timeout=600)
         except _DeadEdit as dead:
             s.fail(f"[{mid}] 앞 편집을 넣은 뒤 {dead} 의 앵커가 정확히 1번이 아니다 — "
                    f"편집 순서나 앵커를 고쳐라")
             continue
+        except subprocess.TimeoutExpired:
+            hit = None
         finally:
             for target, original in saved.items():   # 무슨 일이 있어도 원상복구
                 target.write_bytes(original)
-        if hit.returncode == 0:
+        dt = time.monotonic() - t0
+        timings.append((dt, mid))
+        if hit is None:
+            s.say(f"  [{mid}] 잡힘(시간 초과 600초 — 변이가 검사를 멈추게 했다) — {m.get('why', '')}")
+        elif hit.returncode == 0:
             s.fail(f"[{mid}] 변이를 넣었는데 가드가 **초록이다** — 이 검사는 "
                    f"{m.get('why', '이 버그')} 를 못 잡는다\n"
                    f"      guards: {', '.join(guards)}")
         else:
-            first = next((ln for ln in hit.stdout.splitlines()
-                          if ln.startswith("FAILED") or " failed" in ln), "")
-            s.say(f"  [{mid}] 잡힘 — {m.get('why', '')} ({first.strip()})")
+            s.say(f"  [{mid}] 잡힘 {dt:.1f}초 — {m.get('why', '')} ({_first_failure(hit.stdout)})")
 
     after = porcelain(wt)
     if after != before:
@@ -472,14 +748,53 @@ def sec_mutations(wt: Path, py: str, base_sha: str, spec_path: Path | None) -> S
     else:
         s.say("원상복구 확인 (git status 가 주입 전과 같다)")
 
-    uncovered = {t for t in new_tests
-                 if not any(t == g or t.split("::")[-1] == g.split("::")[-1]
-                            for g in guarded)}
-    if uncovered:
-        s.warn(f"변이를 하나도 선언하지 않은 새 검사 {len(uncovered)}개 — "
-               f"자기 버그를 잡는지 미확인:\n"
-               + "\n".join("      " + t for t in sorted(uncovered)))
+    # ③ 새 검사인데 그 검사를 가드로 둔 변이가 없다 → REJECT (면제 표시에 이유가 있으면 통과).
+    #    예전엔 경고였고 자기 검증도 PASS 를 못박았다 — 그 사이 경고 14건이 쌓였다(아무도 안 읽었다).
+    if shard and shard[0] != 1:
+        s.say("새 검사의 변이 선언 판정은 샤드 1 이 한다")
+    else:
+        uncovered = {t: why for t, why in new_tests.items()
+                     if not any(t == g or t.split("::")[-1] == g.split("::")[-1]
+                                for g in all_guarded)}
+        exempt = {t: why for t, why in uncovered.items() if why}
+        missing_mut = sorted(t for t, why in uncovered.items() if not why)
+        for t in sorted(exempt):
+            s.say(f"  변이 면제: {t} — {exempt[t]}")
+        if missing_mut:
+            s.fail(f"변이를 하나도 선언하지 않은 새 검사 {len(missing_mut)}개 — 자기 버그를 잡는지 "
+                   f"미확인. tests/mutations.toml 에 이 검사를 가드로 둔 변이를 넣거나, 변이로 증명할 "
+                   f"수 없으면 검사 안·바로 위에 `# mutation-exempt: <이유>` 를 단다:\n"
+                   + "\n".join("      " + t for t in missing_mut))
+
+    # ④ 시간 — 실측을 늘 적고, 예산을 넘으면 REJECT.
+    elapsed = time.monotonic() - t_start
+    s.say(f"주입 검증 {len(timings)}건 · {elapsed / 60:.1f}분"
+          + (f" (예산 {budget_min:g}분)" if budget_min else ""))
+    for dt, mid in sorted(timings, reverse=True)[:10]:
+        s.say(f"    느린 변이 {dt:6.1f}초  {mid}")
+    verdict, msg = budget_verdict(elapsed, budget_min, stopped)
+    if verdict == REJECT:
+        s.fail(msg)
+    elif verdict == WARN:
+        s.warn(msg)
     return s
+
+
+def budget_verdict(elapsed_s: float, budget_min: float | None, stopped: int) -> tuple[str, str]:
+    """시간 예산 판정 — 멈췄거나 넘으면 REJECT, 75% 를 넘으면 WARN."""
+    if not budget_min:
+        return PASS, ""
+    if stopped:
+        return REJECT, (f"시간 예산의 두 배({2 * budget_min:g}분)를 넘어 변이 {stopped}개를 **돌리지 않고** "
+                        f"멈췄다 — 샤드를 늘리거나(ci.yml matrix) 느린 가드를 줄여라")
+    if elapsed_s > budget_min * 60:
+        return REJECT, (f"시간 예산 초과 {elapsed_s / 60:.1f}분 > {budget_min:g}분 — 샤드를 늘리거나"
+                        f"(ci.yml matrix) 위 느린 변이의 가드를 줄여라. 넘긴 채로 두면 다음 PR 이 잡 시간 "
+                        f"상한에 걸려 07:50 배포 관문이 막힌다")
+    if elapsed_s > 0.75 * budget_min * 60:
+        return WARN, (f"시간 예산의 75% 를 넘었다({elapsed_s / 60:.1f}/{budget_min:g}분) — 다음 몇 PR 안에 "
+                      f"샤드를 늘려야 한다")
+    return PASS, ""
 
 
 # --------------------------------------------------------------------------- 5. 렌더 스모크
@@ -916,7 +1231,9 @@ ALL = ("worktree", "identity", "lint", "tests", "mutations",
 
 
 def verify(wt: Path, base: str, report: str, only: set[str], py: str,
-           spec: Path | None) -> tuple[str, list[Section]]:
+           spec: Path | None, shard: tuple[int, int] | None = None,
+           budget_min: float | None = None,
+           scope: str = "all") -> tuple[str, list[Section]]:
     secs: list[Section] = []
     scratch = Path(tempfile.mkdtemp(prefix="verify_merge."))
     try:
@@ -929,7 +1246,8 @@ def verify(wt: Path, base: str, report: str, only: set[str], py: str,
             "identity": lambda: sec_identity(wt, commits),
             "lint": lambda: sec_lint(wt, py, base_sha, scratch),
             "tests": lambda: sec_tests(wt, py),
-            "mutations": lambda: sec_mutations(wt, py, base_sha, spec),
+            "mutations": lambda: sec_mutations(wt, py, base_sha, spec, shard,
+                                               budget_min, scope),
             "render": lambda: sec_render(wt, py, report, scratch, spec),
             "pty": lambda: sec_pty(wt, py, report, scratch),
         }
@@ -1087,13 +1405,35 @@ def self_test(py: str, report: str) -> int:
         commit(wt, "dead anchor")
     scenario("dead-anchor", {"mutations"}, REJECT, dead_anchor, by="mutations")
 
-    # ⑥ 변이 미선언 새 검사 → 경고(REJECT 아님)이고, 판정은 PASS 여야 한다.
+    def _one_mutation(wt: Path) -> None:
+        """⑥·⑦ 은 새 검사 판정만 본다 — 변이 302개를 시나리오마다 다시 주입할 이유가 없다."""
+        (wt / "tests/mutations.toml").write_text(_self_spec(SELF_TEST_GUARD), "utf-8")
+
+    # ⑥ 변이 미선언 새 검사 → REJECT. 예전엔 경고였고(이 시나리오가 PASS 를 못박았다) 그 사이
+    #    미선언 검사 14개가 쌓였다.
     def undeclared(wt: Path) -> None:
+        _one_mutation(wt)
         (wt / "tests/test_zz_new.py").write_text(
             "def test_new_but_undeclared():\n    assert True\n", "utf-8")
         commit(wt, "new test, no mutation")
-    scenario("undeclared-test", {"mutations"}, PASS, undeclared,
-             by="mutations")   # 경고는 나야 한다
+    scenario("undeclared-test", {"mutations"}, REJECT, undeclared,
+             by="mutations")
+
+    # ⑦ 같은 새 검사에 이유 있는 면제 표시 → PASS. 이유 없는 표시는 ⑥ 과 같다(REJECT).
+    def exempted(wt: Path) -> None:
+        _one_mutation(wt)
+        (wt / "tests/test_zz_new.py").write_text(
+            "# mutation-exempt: 픽스처 자체를 보는 검사라 주입할 소스가 없다\n"
+            "def test_new_but_exempt():\n    assert True\n", "utf-8")
+        commit(wt, "new test, exempt")
+    scenario("exempt-test", {"mutations"}, PASS, exempted)
+
+    def bare_exempt(wt: Path) -> None:
+        _one_mutation(wt)
+        (wt / "tests/test_zz_new.py").write_text(
+            "def test_new_bare_exempt():  # mutation-exempt:\n    assert True\n", "utf-8")
+        commit(wt, "new test, exempt without reason")
+    scenario("bare-exempt-test", {"mutations"}, REJECT, bare_exempt, by="mutations")
 
     shutil.rmtree(root, ignore_errors=True)
     ok = all(r[3] for r in results)
@@ -1105,7 +1445,7 @@ def self_test(py: str, report: str) -> int:
 
 # --------------------------------------------------------------------------- CLI
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("worktree", nargs="?", help="검증할 워크트리 경로")
     ap.add_argument("--base", default=DEFAULT_BASE, help="기준 브랜치/커밋")
@@ -1116,7 +1456,15 @@ def main() -> int:
                     help="변이 선언 파일 (기본: 워크트리의 tests/mutations.toml)")
     ap.add_argument("--self-test", action="store_true",
                     help="일부러 깨진 워크트리로 하네스가 REJECT 를 내는지 확인")
-    a = ap.parse_args()
+    ap.add_argument("--shard", default="",
+                    help="주입 검증을 n 몫으로 나눠 i 번째만: i/n (CI matrix). changed 범위에선 무시")
+    ap.add_argument("--budget-min", type=float, default=None,
+                    help="주입 검증 시간 예산(분). 넘으면 REJECT, 75%% 넘으면 WARN, 두 배면 멈춘다")
+    ap.add_argument("--scope", choices=("auto", "all", "changed"), default="auto",
+                    help="주입할 변이 범위. auto: CI 이고 GITHUB_ACTIONS 가 아니며(로컬 ci-local) "
+                         "--only mutations 이면 changed(merge-base 이후 바뀐 파일에 닿는 변이만), "
+                         "그 밖은 all. 전체는 GitHub CI 가 돈다")
+    a = ap.parse_args(argv)
 
     if a.self_test:
         return self_test(interpreter(REPO, a.python), a.report_dir)
@@ -1129,8 +1477,18 @@ def main() -> int:
     if unknown:
         ap.error(f"모르는 항목: {', '.join(sorted(unknown))}")
     spec = Path(a.mutations).resolve() if a.mutations else None
+    scope = auto_scope(os.environ, only) if a.scope == "auto" else a.scope
+    shard = None
+    if a.shard:
+        try:
+            shard = parse_shard(a.shard)
+        except ValueError as e:
+            # ci-local 은 ``${{ matrix.shard }}`` 를 못 풀어 글자 그대로 넘긴다 — changed 범위에선
+            # 샤드를 어차피 안 쓰므로 넘어간다. 전체 범위(GitHub)에서 틀린 샤드는 오류다.
+            if scope != "changed":
+                ap.error(str(e))
     verdict, secs = verify(wt, a.base, a.report_dir, only,
-                           interpreter(wt, a.python), spec)
+                           interpreter(wt, a.python), spec, shard, a.budget_min, scope)
     print(render_report(wt, verdict, secs))
     return 0 if verdict == PASS else 1
 

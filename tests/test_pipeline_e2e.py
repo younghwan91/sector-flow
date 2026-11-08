@@ -142,7 +142,7 @@ def _run(*args: str) -> subprocess.CompletedProcess:
 
 
 def run_pipeline(root: Path) -> dict:
-    """``daily_report.sh`` 와 같은 네 단계(페이로드 → 뷰어 → 수치표 → 검증)."""
+    """``daily_report.sh`` 와 같은 생산 단계(페이로드 → 뷰어 → 수치표). 검증은 :func:`verified` 가 따로 돈다."""
     db = root / "fixture.db"
     meta = build_db(db)
     out = root / "2026-09-07.building.4242"           # 배치처럼 옆 폴더에 짓는다
@@ -155,17 +155,33 @@ def run_pipeline(root: Path) -> dict:
                   "--html", str(out / "numbers.html"))):
         p = _run(str(SCRIPTS / args[0]), *args[1:])
         assert p.returncode == 0, f"{args[0]} 실패\n{p.stdout[-2000:]}\n{p.stderr[-3000:]}"
-    v = _run(str(SCRIPTS / "verify_report.py"), "--dir", str(out), "--db-check", "--db", str(db))
-    marks = {}
-    for ln in v.stdout.splitlines():
-        m = re.match(r"\s*\[(OK|FAIL|CLAIM)\s*\] (\S+) · (.+?)(?:   |$)", ln)
-        if m:
-            marks.setdefault(f"{m.group(2)}/{m.group(3).strip()}", []).append(m.group(1))
     html = (out / "numbers.html").read_text("utf-8")
     D = json.loads(re.search(r"const D = (\{.*?\});\n", html, re.S).group(1))
     P = json.loads((out / "payload.json").read_text("utf-8"))
-    return {"rc": v.returncode, "out": v.stdout + v.stderr, "marks": marks, "D": D, "P": P,
-            "db": db, "dir": out, **meta}
+    return {"D": D, "P": P, "db": db, "dir": out, "_verified": {}, **meta}
+
+
+def verified(report: dict, *layers: str) -> dict:
+    """``verify_report --db-check`` 결과(rc·out·marks). 층을 주면 그 층만, 안 주면 배치와 같은 전 층.
+
+    전 층은 ~20초다(대부분 H 층 — 원장 화면 수백 장). 주입 검증(`verify_merge.py`)은 변이마다 이
+    파일의 검사를 새 프로세스로 돌리므로, 특정 층의 표시만 보는 검사까지 전 층을 기다리면 변이 16개가
+    e2e 에만 10분을 썼다. 층마다 독립이라(공유 상태는 ``chk`` 의 집계뿐) 부분 실행의 표시는 전 층
+    실행의 같은 표시와 같다 — ``test_layer_subset_marks_equal_the_full_run`` 이 그걸 지킨다.
+    같은 모듈 안에서는 층 조합마다 한 번만 돈다.
+    """
+    key = tuple(sorted(layers))
+    if key not in report["_verified"]:
+        extra = ("--layers", ",".join(key)) if key else ()
+        v = _run(str(SCRIPTS / "verify_report.py"), "--dir", str(report["dir"]), "--db-check",
+                 "--db", str(report["db"]), *extra)
+        marks: dict[str, list[str]] = {}
+        for ln in v.stdout.splitlines():
+            m = re.match(r"\s*\[(OK|FAIL|CLAIM)\s*\] (\S+) · (.+?)(?:   |$)", ln)
+            if m:
+                marks.setdefault(f"{m.group(2)}/{m.group(3).strip()}", []).append(m.group(1))
+        report["_verified"][key] = {"rc": v.returncode, "out": v.stdout + v.stderr, "marks": marks}
+    return report["_verified"][key]
 
 
 @pytest.fixture(scope="module")
@@ -174,12 +190,15 @@ def report(tmp_path_factory):
 
 
 def _ok(report, *names: str) -> None:
-    """이름이 정해진 검사가 **돌았고** 전부 OK 인가. 없는 이름은 실패다(검사가 사라져도 초록이면 안 된다)."""
+    """이름이 정해진 검사가 **돌았고** 전부 OK 인가. 없는 이름은 실패다(검사가 사라져도 초록이면 안 된다).
+
+    이름의 층(``F/…`` 의 ``F``)만 돌린다 — 층을 안 돌려 이름이 없으면 그것도 실패다."""
+    v = verified(report, *sorted({n.split("/", 1)[0] for n in names}))
     for name in names:
-        got = report["marks"].get(name)
-        assert got, f"검사 '{name}' 가 출력에 없다\n" + report["out"][-3000:]
+        got = v["marks"].get(name)
+        assert got, f"검사 '{name}' 가 출력에 없다\n" + v["out"][-3000:]
         assert set(got) == {"OK"}, f"검사 '{name}' = {got}\n" + "\n".join(
-            ln for ln in report["out"].splitlines() if name.split("/", 1)[1] in ln)
+            ln for ln in v["out"].splitlines() if name.split("/", 1)[1] in ln)
 
 
 # ── 픽스처가 헛돌지 않는가 ───────────────────────────────────────────────────
@@ -206,11 +225,35 @@ def test_fixture_plants_what_it_claims(report):
 
 def test_pipeline_report_verifies_with_no_failures(report):
     """DB 대조(F)까지 포함한 전 층이 실패 0. 문서 주장 어긋남(CLAIM)은 실패가 아니다."""
-    fails = sorted(k for k, v in report["marks"].items() if "FAIL" in v)
-    assert report["rc"] == 0 and not fails, f"{fails}\n" + report["out"][-4000:]
-    assert sum(len(v) for v in report["marks"].values()) > 150
+    v = verified(report)
+    fails = sorted(k for k, x in v["marks"].items() if "FAIL" in x)
+    assert v["rc"] == 0 and not fails, f"{fails}\n" + v["out"][-4000:]
+    assert sum(len(x) for x in v["marks"].values()) > 150
+    assert "부분 검증" not in v["out"]
     # 검증 대상 줄은 옮겨 갈 이름이다(임시 `.building.NNN` 가 아니다).
-    assert "검증 대상: " + str(report["dir"]).rsplit(".building.", 1)[0] + "\n" in report["out"]
+    assert "검증 대상: " + str(report["dir"]).rsplit(".building.", 1)[0] + "\n" in v["out"]
+
+
+def test_layer_subset_marks_equal_the_full_run(report):
+    """빠른 부분 실행(``--layers``)이 전 층 실행과 **같은 표시**를 내는가 — 다르면 위 검사들이
+    배치가 실제로 보는 것과 다른 것을 본다."""
+    full = verified(report)["marks"]
+    for layers in (("A", "A3"), ("F",), ("A",)):
+        part = verified(report, *layers)
+        assert "부분 검증" in part["out"]
+        assert part["marks"], layers
+        assert {k for k in part["marks"] if k.split("/", 1)[0] not in layers} == set(), layers
+        assert part["marks"] == {k: x for k, x in full.items() if k.split("/", 1)[0] in layers}, layers
+
+
+def test_every_layer_main_runs_is_selectable():
+    """``--layers`` 이름표(``LAYERS``)와 main 이 실제로 부르는 층이 어긋나면 새 층이 고를 수 없게 된다."""
+    import ast
+    src = (SCRIPTS / "verify_report.py").read_text("utf-8")
+    main = next(n for n in ast.parse(src).body if isinstance(n, ast.FunctionDef) and n.name == "main")
+    called = {c.args[0].value for c in ast.walk(main) if isinstance(c, ast.Call)
+              and getattr(c.func, "id", None) == "go" and isinstance(c.args[0], ast.Constant)}
+    assert called == set(_mod("verify_report").LAYERS)
 
 
 def test_pipeline_db_recount_matches_flows(report):
