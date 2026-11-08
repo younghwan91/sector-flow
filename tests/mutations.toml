@@ -4084,8 +4084,8 @@ id = "web-revision-size-hidden"
 why = "웹 잠정 리포트에 잠정→확정 수정 폭이 없다"
 guards = ["tests/test_report_pages.py::test_numbers_today_panel_adds_the_dominant_actor_revision_size_and_base_status"]
 file = "scripts/templates/sector_numbers.html"
-find = "  if(prov&&RS){ const rl=el(\"div\",\"tline rev\");"
-replace = "  if(false){ const rl=el(\"div\",\"tline rev\");"
+find = "  if(prov&&RS){ const rl=el(\"div\",\"tline rev\"), sd="
+replace = "  if(false){ const rl=el(\"div\",\"tline rev\"), sd="
 
 [[mutation]]
 id = "verify-web-skips-the-tui-comparison"
@@ -5133,3 +5133,250 @@ guards = ["tests/test_ci_workflow.py::test_every_tee_step_in_our_workflows_sets_
 file = ".github/workflows/harness-selftest.yml"
 find = "          set -o pipefail\n          uv run --no-sync --with playwright python -m playwright install"
 replace = "          uv run --no-sync --with playwright python -m playwright install"
+
+# ── 2026-11-08 리뷰 3차: 잠정→확정 재계산(D1-M1)·상위 3 유지율과 아카이브 시드(D1-m1)·연속 순매매(D3-M1)
+#    — tests/test_streaks_revisions.py ──────────────────────────────────────────────────────
+
+[[mutation]]
+id = "streak-near-zero-day-counts"
+why = "목록 Σ|값| 의 1% 도 안 되는 날을 사거나 판 날로 세면 −0.5억짜리 날이 '6일 연속 순매도' 를 만든다"
+guards = ["tests/test_streaks_revisions.py::test_streak_counts_same_sign_days_and_a_near_zero_day_breaks_it"]
+file = "scripts/sector_flow.py"
+find = '''    sig = [0 if not g or abs(v) < STREAK_EPS_SHARE * g else (1 if v > 0 else -1) for v, g in zip(ser, gross)]'''
+replace = '''    sig = [0 if v == 0 else (1 if v > 0 else -1) for v, g in zip(ser, gross)]'''
+
+[[mutation]]
+id = "streak-keeps-thin-sectors"
+why = "3종목 섹터의 연속이 최장 섹터로 첫 화면에 오른다 — 한 종목이 부호를 정한다"
+guards = ["tests/test_streaks_revisions.py::test_streak_block_skips_thin_and_unclassified_sectors_and_breaks_ties_by_amount"]
+file = "scripts/sector_flow.py"
+find = '''                if s == UNCLASSIFIED or _members(P, mks, s) < STREAK_MIN_MEMBERS:'''
+replace = '''                if s == UNCLASSIFIED:'''
+
+[[mutation]]
+id = "streak-longest-tie-by-name-only"
+why = "같은 일수면 누적이 큰 섹터가 아니라 이름이 앞선 섹터를 최장이라 적는다"
+guards = ["tests/test_streaks_revisions.py::test_streak_block_skips_thin_and_unclassified_sectors_and_breaks_ties_by_amount"]
+file = "scripts/sector_flow.py"
+find = '''                key = (-f["days"], -abs(f["sum"]), s)'''
+replace = '''                key = (-f["days"], 0, s)'''
+
+[[mutation]]
+id = "top3-ranks-provisional-twice"
+why = "확정 상위 3 을 잠정값으로 뽑으면 유지율이 늘 100% 다"
+guards = ["tests/test_streaks_revisions.py::test_revision_top3_counts_sectors_kept_in_the_top_three"]
+file = "scripts/sector_flow.py"
+find = '''            top_n = {t[0] for t in sorted(vals, key=lambda t: (-t[2], t[0]))[:n]}'''
+replace = '''            top_n = {t[0] for t in sorted(vals, key=lambda t: (-t[1], t[0]))[:n]}'''
+
+[[mutation]]
+id = "top3-counts-tiny-lists"
+why = "섹터가 셋뿐인 목록은 유지율이 늘 100% 라 평균을 부풀린다"
+guards = ["tests/test_streaks_revisions.py::test_revision_top3_counts_sectors_kept_in_the_top_three"]
+file = "scripts/sector_flow.py"
+find = '''            if len(vals) < REV_TOP_MIN_SECTORS:'''
+replace = '''            if not vals:'''
+
+[[mutation]]
+id = "seed-label-unchecked"
+why = "출처 표지 없는 파일을 시드로 읽으면 화면이 '아카이브 18:10 게시본' 이라고 적는 숫자의 출처가 거짓이 된다"
+guards = ["tests/test_streaks_revisions.py::test_revision_stats_reads_the_seed_only_where_the_folder_has_no_record"]
+file = "scripts/sector_flow.py"
+find = '''    if not isinstance(fd, dict) or (fd.get("seed") or {}).get("label") != REV_SEED_LABEL:'''
+replace = '''    if not isinstance(fd, dict):'''
+
+[[mutation]]
+id = "seed-keeps-reclassified-cells"
+why = "재구성은 지금의 종목 마스터로 만들었다 — 그 사이 분류가 바뀐 섹터 칸의 차이를 수정 폭으로 센다"
+guards = ["tests/test_streaks_revisions.py::test_seed_script_writes_final_diff_cells_from_the_evening_archive"]
+file = "scripts/seed_revisions.py"
+find = '''    cells = [c for c in fd["cells_1d"] if mp.get((c[0], c[1])) == mf.get((c[0], c[1]))]'''
+replace = '''    cells = list(fd["cells_1d"])'''
+
+[[mutation]]
+id = "seed-keeps-incomplete-archives"
+why = "10-27 처럼 수집 중간에 만든 게시본(코스닥 0%)이 수정 폭 중앙값을 90% 로 끈다"
+guards = ["tests/test_streaks_revisions.py::test_seed_script_skips_next_morning_incomplete_and_pre_regime_archives"]
+file = "scripts/seed_revisions.py"
+find = '''        if wf and wp < MIN_COVERAGE * wf:'''
+replace = '''        if False:'''
+
+[[mutation]]
+id = "seed-keeps-next-morning-rebuilds"
+why = "다음날 아침 손으로 다시 만든 게시본은 '18:10 게시본이 얼마나 바뀌나' 를 말하지 않는다"
+guards = ["tests/test_streaks_revisions.py::test_seed_script_skips_next_morning_incomplete_and_pre_regime_archives"]
+file = "scripts/seed_revisions.py"
+find = '''    if built.strftime("%Y-%m-%d") != date or built.hour < sf.FINALIZED_KST_HOUR:'''
+replace = '''    if False:'''
+
+[[mutation]]
+id = "verify-streak-market-blind"
+why = "시장 합계의 연속 일수·누적이 틀려도 검증이 모른다"
+guards = ["tests/test_streaks_revisions.py::test_the_verifier_recounts_the_streaks"]
+file = "scripts/verify_report.py"
+find = '''    chk("T", "연속 순매매 — 시장 합계의 연속 일수·누적·1년 백분위 재계산", not bad_m,'''
+replace = '''    chk("T", "연속 순매매 — 시장 합계의 연속 일수·누적·1년 백분위 재계산", True,'''
+
+[[mutation]]
+id = "verify-streak-sector-blind"
+why = "섹터 연속이 틀리거나 얇은 섹터가 끼어도 검증이 모른다"
+guards = ["tests/test_streaks_revisions.py::test_the_verifier_recounts_the_streaks"]
+file = "scripts/verify_report.py"
+find = '''    chk("T", "연속 순매매 — 섹터(얇은 섹터·미분류 제외)의 연속 재계산", not bad_s,'''
+replace = '''    chk("T", "연속 순매매 — 섹터(얇은 섹터·미분류 제외)의 연속 재계산", True,'''
+
+[[mutation]]
+id = "verify-streak-longest-blind"
+why = "첫 화면의 최장 섹터가 다른 섹터여도 검증이 모른다"
+guards = ["tests/test_streaks_revisions.py::test_the_verifier_recounts_the_streaks"]
+file = "scripts/verify_report.py"
+find = '''    chk("T", "연속 순매매 — 시장·주체별 최장 섹터 재계산", not bad_l,'''
+replace = '''    chk("T", "연속 순매매 — 시장·주체별 최장 섹터 재계산", True,'''
+
+[[mutation]]
+id = "verify-streak-missing-blind"
+why = "연속 블록이 통째로 빠져도 검증이 모른다"
+guards = ["tests/test_streaks_revisions.py::test_the_verifier_recounts_the_streaks"]
+file = "scripts/verify_report.py"
+find = '''    chk("T", "연속 순매매 블록(today.streaks)이 있는가", isinstance(S, dict))'''
+replace = '''    chk("T", "연속 순매매 블록(today.streaks)이 있는가", True)'''
+
+[[mutation]]
+id = "verify-final-provisional-values-blind"
+why = "확정 리포트 첫 화면의 잠정값(old)·차이·칸 수가 옆 잠정 리포트와 달라도 검증이 모른다(리뷰 3차 D1-M1)"
+guards = ["tests/test_streaks_revisions.py::test_the_verifier_recounts_final_diff_from_the_provisional_report_before_the_swap"]
+file = "scripts/verify_report.py"
+find = '''    chk("T", "잠정 → 확정 — 잠정값·차이·칸 수를 옆 잠정 리포트에서 다시 센 것과 같은가", not bad,'''
+replace = '''    chk("T", "잠정 → 확정 — 잠정값·차이·칸 수를 옆 잠정 리포트에서 다시 센 것과 같은가", True,'''
+
+[[mutation]]
+id = "verify-final-extremes-blind"
+why = "잠정→확정 극단 목록의 들고 남이 틀려도 검증이 모른다"
+guards = ["tests/test_streaks_revisions.py::test_the_verifier_recounts_final_diff_from_the_provisional_report_before_the_swap"]
+file = "scripts/verify_report.py"
+find = '''    chk("T", "잠정 → 확정 — %ile 극단 목록의 들고 남 재계산", (F.get("extremes_change") or {}) == W["ext"],'''
+replace = '''    chk("T", "잠정 → 확정 — %ile 극단 목록의 들고 남 재계산", True,'''
+
+[[mutation]]
+id = "verify-final-base-blind"
+why = "견준 리포트의 지위·생성 시각이 틀리면 수정 폭(revision_stats)이 그날 저녁 잠정이 아닌 것을 센다"
+guards = ["tests/test_streaks_revisions.py::test_the_verifier_recounts_final_diff_from_the_provisional_report_before_the_swap"]
+file = "scripts/verify_report.py"
+find = '''        F.get("base_final") == bool(prov.get("final")) and F.get("base_built") == built,'''
+replace = '''        True,'''
+
+[[mutation]]
+id = "verify-final-json-blind"
+why = "다음 리포트들이 읽는 final_diff.json 이 페이로드와 달라도 검증이 모른다"
+guards = ["tests/test_streaks_revisions.py::test_the_verifier_recounts_final_diff_from_the_provisional_report_before_the_swap"]
+file = "scripts/verify_report.py"
+find = '''        chk("T", "final_diff.json(다음 리포트들의 수정 폭 원천) = 페이로드의 final_diff", same, fj)'''
+replace = '''        chk("T", "final_diff.json(다음 리포트들의 수정 폭 원천) = 페이로드의 final_diff", True, fj)'''
+
+[[mutation]]
+id = "verify-final-missing-diff-blind"
+why = "바꿔 끼울 잠정 리포트가 옆에 있는데 확정 리포트가 비교를 비워도 검증이 모른다"
+guards = ["tests/test_streaks_revisions.py::test_the_verifier_recounts_final_diff_from_the_provisional_report_before_the_swap"]
+file = "scripts/verify_report.py"
+find = '''            prov is None or _vt_fp(prov) != _vt_fp(P), f"{sib} 있음 · 지문 {_vt_fp(prov)}→{_vt_fp(P)}" if prov else "")'''
+replace = '''            True, f"{sib} 있음 · 지문 {_vt_fp(prov)}→{_vt_fp(P)}" if prov else "")'''
+
+[[mutation]]
+id = "verify-final-sibling-blind"
+why = "견준 잠정 리포트가 사라졌는데도 잠정값 재계산을 건너뛴 채 초록이다"
+guards = ["tests/test_streaks_revisions.py::test_the_verifier_recounts_final_diff_from_the_provisional_report_before_the_swap"]
+file = "scripts/verify_report.py"
+find = '''        prov is not None and _vt_fp(prov) == _vt_fp(P), spath if prov is None else f"지문 {_vt_fp(prov)}→{_vt_fp(P)}")'''
+replace = '''        True, spath if prov is None else f"지문 {_vt_fp(prov)}→{_vt_fp(P)}")'''
+
+[[mutation]]
+id = "verify-final-reads-itself-after-swap"
+why = "바꿔 끼운 뒤에는 옆 폴더가 자기 자신이다 — 확정을 잠정으로 읽고 '차이 없음' 과 견줘 빨개진다"
+guards = ["tests/test_streaks_revisions.py::test_after_the_swap_the_provisional_recount_is_skipped_not_failed"]
+file = "scripts/verify_report.py"
+find = '''    if os.path.realpath(sib) == os.path.realpath(folder):'''
+replace = '''    if False:'''
+
+[[mutation]]
+id = "verify-revision-blind"
+why = "잠정 화면의 '최근 N일 … 중앙 x%, 부호 뒤집힘 n회' 가 옆 폴더들의 확정 기록과 달라도 검증이 모른다"
+guards = ["tests/test_streaks_revisions.py::test_the_verifier_recounts_revision_stats_from_the_sibling_folders"]
+file = "scripts/verify_report.py"
+find = '''    chk("T", "잠정→확정 수정 폭 — 날짜·칸 수·중앙값·부호 뒤집힘을 옆 폴더의 확정 기록·시드에서 다시 센 것과 같은가", same_rev,'''
+replace = '''    chk("T", "잠정→확정 수정 폭 — 날짜·칸 수·중앙값·부호 뒤집힘을 옆 폴더의 확정 기록·시드에서 다시 센 것과 같은가", True,'''
+
+[[mutation]]
+id = "verify-top3-keep-blind"
+why = "상위 3 유지율이 틀려도 검증이 모른다"
+guards = ["tests/test_streaks_revisions.py::test_the_verifier_recounts_revision_stats_from_the_sibling_folders"]
+file = "scripts/verify_report.py"
+find = '''    chk("T", "잠정→확정 수정 폭 — 상위 3 유지율 재계산", _vt_close(R.get("top3_keep_pct"), keep, 0.051)'''
+replace = '''    chk("T", "잠정→확정 수정 폭 — 상위 3 유지율 재계산", True'''
+
+[[mutation]]
+id = "verify-seed-label-blind"
+why = "시드로 센 날의 출처 표지가 빠져도 검증이 모른다 — 화면이 아카이브 숫자를 확정 기록처럼 적는다"
+guards = ["tests/test_streaks_revisions.py::test_the_verifier_recounts_revision_stats_from_the_sibling_folders"]
+file = "scripts/verify_report.py"
+find = '''    chk("T", "잠정→확정 수정 폭 — 시드로 센 날짜와 출처 표지", R.get("seed") == want_seed,'''
+replace = '''    chk("T", "잠정→확정 수정 폭 — 시드로 센 날짜와 출처 표지", True,'''
+
+[[mutation]]
+id = "verify-web-streak-blind"
+why = "웹 '오늘' 패널의 연속 순매매·수정 폭 줄이 TUI 첫 화면과 다른 말을 해도 검증이 모른다"
+guards = ["tests/test_streaks_revisions.py::test_the_web_layer_catches_a_streak_or_revision_line_that_drifts_from_the_terminal"]
+file = "scripts/verify_report.py"
+find = '''        chk("W", "'오늘' 패널 연속 순매매·잠정 수정 폭 = TUI 첫 화면 글자", not bad_sk, "; ".join(bad_sk[:3]))'''
+replace = '''        chk("W", "'오늘' 패널 연속 순매매·잠정 수정 폭 = TUI 첫 화면 글자", True, "; ".join(bad_sk[:3]))'''
+
+[[mutation]]
+id = "streak-line-hidden"
+why = "첫 화면에 연속 순매매 줄이 없다 — '외국인이 며칠째 파는가' 가 안 보인다"
+guards = ["tests/test_streaks_revisions.py::test_first_screen_shows_streaks_and_the_revision_line_with_top3_and_seed"]
+file = "src/sectorflow/tui/flow_view.py"
+find = '''    if sti is not None:'''
+replace = '''    if False:'''
+
+[[mutation]]
+id = "revision-seed-label-dropped"
+why = "수정 폭이 시드(아카이브 게시본 대 재구성)에서 나왔는데 화면이 출처를 안 적는다"
+guards = ["tests/test_streaks_revisions.py::test_first_screen_shows_streaks_and_the_revision_line_with_top3_and_seed"]
+file = "src/sectorflow/tui/flow_view.py"
+find = '''    if not seed.get("dates"):'''
+replace = '''    if True:'''
+
+[[mutation]]
+id = "revision-top3-hidden"
+why = "잠정 화면에 상위 3 유지율이 없다 — 첫 화면 상위 3 이 확정에서 얼마나 그대로인지 모른다"
+guards = ["tests/test_streaks_revisions.py::test_first_screen_shows_streaks_and_the_revision_line_with_top3_and_seed"]
+file = "src/sectorflow/tui/flow_view.py"
+find = '''(f", 상위3 유지 {rhu(keep):.0f}%" if keep is not None else "")'''
+replace = '''("" if keep is not None else "")'''
+
+[[mutation]]
+id = "streak-amount-never-in-jo"
+why = "−118,489억을 −11.8조로 줄이지 않으면 연속 줄이 폭을 넘어 항목이 잘린다 — 웹(BIG)과도 갈린다"
+guards = ["tests/test_streaks_revisions.py::test_big_amounts_switch_to_jo_at_ten_thousand_eok"]
+file = "src/sectorflow/tui/flow_view.py"
+find = '''    if abs(rhu(v)) >= 10000:'''
+replace = '''    if False:'''
+
+[[mutation]]
+id = "web-streak-card-missing"
+why = "웹 '오늘' 패널에 연속 순매매 칸이 없다 — 터미널 첫 화면과 다른 사실을 말한다"
+guards = ["tests/test_streaks_revisions.py::test_web_today_panel_says_the_same_streaks_and_revision_line_as_the_terminal"]
+file = "scripts/templates/sector_numbers.html"
+find = '''  if(SK){ const c2b='''
+replace = '''  if(false){ const c2b='''
+
+[[mutation]]
+id = "revision-line-on-closed-rebuild"
+why = "창 밖 재구성(finalize_unverified)은 마감 값인데 TUI 만 '잠정→확정 수정 폭' 을 적어 웹(CLOSED)과 갈린다"
+guards = ["tests/test_web_render.py::test_web_layer_is_green_on_a_rebuilt_day_outside_the_finalize_window"]
+file = "src/sectorflow/tui/flow_view.py"
+find = '''    마감 값(확정, 또는 창 밖 재구성 ``finalize_unverified``)이면 None — 웹 ``CLOSED`` 와 같은 기준이다.
+    """
+    if d.get("finalize_unverified") or d.get("final"):'''
+replace = '''    마감 값(확정, 또는 창 밖 재구성 ``finalize_unverified``)이면 None — 웹 ``CLOSED`` 와 같은 기준이다.
+    """
+    if d.get("final"):'''

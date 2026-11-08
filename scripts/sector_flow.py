@@ -405,6 +405,7 @@ def build_payload(df: pd.DataFrame, dates: list[str], caps: pd.DataFrame,
         "detail_labels": {k: ko for k, ko in INST_DETAIL},
     }
     out["today"] = today_block(out, _market_daily(df, dates, markets))
+    out["today"]["streaks"] = streak_block(out)
     return out
 
 
@@ -578,6 +579,83 @@ def today_block(P: dict, mkt: dict) -> dict:
     }
 
 
+# ─────────────────────────────────────────────── 연속 순매매 — 1일 순매수 부호가 같은 날이 며칠째인가
+#
+# "외국인이 거래소에서 며칠째 팔고 있나" 를 사실로 적는다. 부호만 센다 — 판정·점수가 아니다.
+
+#: 연속을 재는 주체. 시장 줄은 :data:`STREAK_MARKET_ACTORS`, 섹터 최장은 기관·투신+연기금·그날 최대 순매매 주체
+#: (기타법인일 수 있어 넣는다).
+STREAK_ACTORS = (("inst", "기관"), ("invpen", "투신+연기금"), ("forgn", "외국인"), ("indiv", "개인"),
+                 ("etc", "기타법인"))
+STREAK_MARKET_ACTORS = ("inst", "invpen", "forgn", "indiv")
+#: 분모 게이트 — 그날 |값| 이 같은 (시장, 주체) 섹터 목록의 Σ|값| 의 이 몫 미만이면 **≈0 날**이다. ≈0 날은
+#: 사는 날도 파는 날도 아니어서 연속을 끊는다(오늘이 ≈0 이면 연속이 없다). 시장 합계도 같은 목록(그 시장의
+#: 섹터)에 견준다. 문턱은 목록 안 몫이다(CLAUDE.md 화면·리포트 규칙).
+STREAK_EPS_SHARE = 0.01
+#: 섹터 연속에서 빼는 얇은 섹터 — 종목 수가 이보다 적으면 한두 종목이 부호를 정한다(수치표 ``MIN_NAMES`` 와
+#: 같은 값). ``(미분류)`` 는 섹터가 아니라 뺀다.
+STREAK_MIN_MEMBERS = 10
+
+
+def _members(P: dict, mks: list[str], sec: str) -> int:
+    return sum(int((P.get("n_by_sector") or {}).get(m, {}).get(sec, 0) or 0) for m in mks)
+
+
+def streak_fact(ser: list[float], gross: list[float], lookback: int = TODAY_LOOKBACK) -> dict:
+    """마지막 날까지 1일 순매수 부호가 같은 날 수와 그 누적, 그 길이의 1년 백분위.
+
+    ``sign`` 은 +1(순매수)·−1(순매도)·0(≈0 날 — 연속 없음). 백분위는 되돌아보기 안의 **날마다의 연속 길이**
+    (부호 무관, ≈0 날은 0) 분포에서 오늘 길이의 midrank(:func:`day_pct` 와 같은 정의)다. 페이로드 첫날보다
+    앞은 모르므로 첫 며칠의 길이는 짧게 잡힌다.
+    """
+    sig = [0 if not g or abs(v) < STREAK_EPS_SHARE * g else (1 if v > 0 else -1) for v, g in zip(ser, gross)]
+    runs: list[int] = []
+    for i, s in enumerate(sig):
+        runs.append(0 if s == 0 else runs[-1] + 1 if i and sig[i - 1] == s else 1)
+    k = runs[-1] if runs else 0
+    n = min(len(runs), lookback)
+    pct = None
+    if k and n >= 2:
+        win = runs[-n:]
+        below = sum(1 for r in win if r < k)
+        ties = sum(1 for r in win if r == k)
+        pct = round(100.0 * (below + (ties - 1) / 2.0) / (n - 1), 1)
+    return {"sign": sig[-1] if sig else 0, "days": k,
+            "sum": round(sum(ser[len(ser) - k:]), 2) if k else 0.0, "pct": pct}
+
+
+def streak_block(P: dict) -> dict:
+    """``payload["today"]["streaks"]`` — 시장 합계와 섹터(얇은 섹터·미분류 제외)의 연속 순매매.
+
+    시장 합계는 그 시장(들)의 섹터 일별 배열의 합이다(검증기가 같은 배열에서 다시 센다). ``longest`` 는
+    (시장, 주체)마다 연속이 가장 긴 섹터 — 동률은 누적 |금액| 큰 쪽, 그다음 이름순.
+    """
+    n = len(P["dates"])
+    out: dict = {"eps_share": STREAK_EPS_SHARE, "min_members": STREAK_MIN_MEMBERS,
+                 "lookback": min(n, TODAY_LOOKBACK), "actors": {a: ko for a, ko in STREAK_ACTORS},
+                 "market_actors": list(STREAK_MARKET_ACTORS), "market": {}, "sectors": {}, "longest": {}}
+    for mkey, mks in _mkeys(P):
+        present = [s for s in P["sectors"] if _present(P, mks, s)]
+        for a, _ko in STREAK_ACTORS:
+            sers = {s: ser for s in present if (ser := _series(P, mks, s, a)) is not None}
+            if not sers:
+                continue
+            gross = [sum(abs(x[i]) for x in sers.values()) for i in range(n)]
+            total = [round(sum(x[i] for x in sers.values()), 2) for i in range(n)]
+            out["market"].setdefault(mkey, {})[a] = streak_fact(total, gross)
+            best = None
+            for s, ser in sers.items():
+                if s == UNCLASSIFIED or _members(P, mks, s) < STREAK_MIN_MEMBERS:
+                    continue
+                f = streak_fact(ser, gross)
+                out["sectors"].setdefault(mkey, {}).setdefault(s, {})[a] = f
+                key = (-f["days"], -abs(f["sum"]), s)
+                if f["days"] and (best is None or key < best):
+                    best = key
+            out["longest"].setdefault(mkey, {})[a] = best[2] if best else None
+    return out
+
+
 def _ranks(P: dict, mks: list[str], actor: str, win: int):
     """섹터의 ``win`` 일 순매수 순위(1 = 가장 많이 샀다). 동률은 섹터 이름순. 못 세면 ``None``."""
     if len(P.get("dates") or []) < win:
@@ -696,6 +774,19 @@ def final_diff_block(P: dict, root: "str | None") -> "tuple[dict | None, str | N
     if (why := _override_mismatch(P, old)):
         return None, why
     built = os.path.getmtime(os.path.join(root, asof, "payload.json"))
+    fd = final_diff_compute(P, old)
+    return {"base_final": fd.pop("base_final"),
+            "base_built": datetime.fromtimestamp(built, KST).strftime("%Y-%m-%d %H:%M"), **fd}, None
+
+
+KST = timezone(timedelta(hours=9))
+
+
+def final_diff_compute(P: dict, old: dict) -> dict:
+    """두 페이로드(확정 ``P``, 잠정 ``old``)의 차이 — :func:`final_diff_block` 의 몸통(``base_built`` 만 뺀 것).
+
+    아카이브 시드(``scripts/seed_revisions.py``)가 같은 정의로 1일 칸을 만들려고 따로 부른다.
+    """
     changed, totals, n_cells, cells_1d = [], [], 0, []
 
     def win_sum(ser, w):
@@ -730,13 +821,12 @@ def final_diff_block(P: dict, root: "str | None") -> "tuple[dict | None, str | N
     ext_change = extremes_change(P, old)
     return {
         "base_final": bool(old.get("final")),
-        "base_built": datetime.fromtimestamp(built, timezone(timedelta(hours=9))).strftime("%Y-%m-%d %H:%M"),
         "windows": list(FINAL_DIFF_WINDOWS), "tol": FINAL_DIFF_TOL,
         "n_cells": n_cells, "n_changed": len(changed),
         "changed": changed, "market_totals": totals,
         "cells_1d": cells_1d,
         "pct_hi": PCT_HI, "pct_lo": PCT_LO, "extremes_change": ext_change,
-    }, None
+    }
 
 
 #: 오늘 1년%ile 의 극단 문턱 — 화면(``flow_view.PCT_HI/LO``)과 웹(``PCT_HI/LO``)이 같은 값을 쓴다.
@@ -846,16 +936,88 @@ def revision_rows(cells: list, gate_share: float = REV_GATE_SHARE) -> tuple[list
     return rel, flips
 
 
+#: 상위 3 유지율을 재는 주체 — 첫 화면이 상위 3 을 적는 주체(기관·투신+연기금·그날 최대 순매매 주체 후보).
+REV_TOP_ACTORS = ("inst", "invpen", "forgn", "indiv", "etc")
+REV_TOP_N = 3
+#: (시장, 주체) 목록에 잠정·확정 값이 다 있는 섹터가 이보다 적으면 그 목록은 상위 3 유지율에 넣지 않는다 —
+#: 섹터가 셋뿐이면 유지율이 늘 100% 다.
+REV_TOP_MIN_SECTORS = 6
+#: 아카이브 시드 — 확정 모드가 생기기 전의 18:10 게시본을 확정 재구성 리포트에 견준 1일 칸(``scripts/seed_revisions.py``).
+#: ``<root>/.revision_seed/<기준일>.json`` 에 ``final_diff.json`` 과 같은 꼴로 둔다. 그 기준일 폴더가 쓸 만한
+#: 잠정 대비를 주지 못할 때만 읽는다(진짜 확정 기록이 늘 먼저다). 화면이 출처를 적는다.
+REV_SEED_DIR = ".revision_seed"
+REV_SEED_LABEL = "시드: 아카이브 18:10 게시본 대 확정 재구성"
+
+
+def _seed_cells(root: str, date: str) -> "tuple[list | None, str | None]":
+    path = os.path.join(root, REV_SEED_DIR, f"{date}.json")
+    if not os.path.isfile(path):
+        return None, None
+    try:
+        with open(path, encoding="utf-8") as f:
+            fd = json.load(f)
+    except (OSError, ValueError):
+        return None, "시드 파일을 못 읽었다"
+    if not isinstance(fd, dict) or (fd.get("seed") or {}).get("label") != REV_SEED_LABEL:
+        return None, "시드 표지가 없다"
+    return _usable_base(fd, date)
+
+
+def _top_cell(d: "dict | None", parts: tuple) -> "tuple[float, float] | bool | None":
+    """한 (시장, 섹터)의 (잠정, 확정) — 칸이 없으면 None, 있는데 값이 빠졌으면 False."""
+    if d is None:
+        return None
+    got = [d.get(p) for p in parts]
+    if any(g is None or g[0] is None or g[1] is None for g in got):
+        return False
+    return sum(g[0] for g in got), sum(g[1] for g in got)
+
+
+def revision_top3(cells: list, n: int = REV_TOP_N) -> tuple[int, int]:
+    """(유지된 칸, 전체 칸) — (시장, 주체)마다 잠정 상위 ``n`` 섹터 중 확정 상위 ``n`` 에도 있는 수.
+
+    순위는 첫 화면과 같다: 1일 순매수 큰 순, 동률은 이름순. 시장은 개별 시장과 ``전체``(섹터별 시장 합 — 모든
+    시장 칸에 잠정값이 있는 섹터만), 주체는 :data:`REV_TOP_ACTORS`(``invpen`` = 투신 + 연기금 칸의 합).
+    """
+    by: dict = {}
+    for m, s, a, old, new in cells:
+        by.setdefault((m, s), {})[a] = (old, new)
+    mkts = sorted({m for m, _s in by})
+    secs = sorted({s for _m, s in by})
+    kept = total = 0
+    for a in REV_TOP_ACTORS:
+        parts = ("invtrt", "penfnd_etc") if a == "invpen" else (a,)
+        for mk in mkts + ["전체"]:
+            vals = []
+            for s in secs:
+                cs = [c for c in (_top_cell(by.get((m, s)), parts) for m in (mkts if mk == "전체" else [mk]))
+                      if c is not None]
+                if not cs or any(c is False for c in cs):
+                    continue
+                vals.append((s, round(sum(c[0] for c in cs), 2), round(sum(c[1] for c in cs), 2)))
+            if len(vals) < REV_TOP_MIN_SECTORS:
+                continue
+            top_o = {t[0] for t in sorted(vals, key=lambda t: (-t[1], t[0]))[:n]}
+            top_n = {t[0] for t in sorted(vals, key=lambda t: (-t[2], t[0]))[:n]}
+            kept += len(top_o & top_n)
+            total += n
+    return kept, total
+
+
 def revision_stats(P: dict, root: "str | None") -> dict:
     """``payload["revision_stats"]`` — 최근 :data:`REV_DAYS` 개 확정 기준일의 잠정→확정 수정 폭.
 
     섹터 1일 순매수 칸(시장 × 섹터 × 기관·투신·연기금·외국인·개인·기타법인)의 |확정 − 잠정| ÷ |확정| 중앙값과
-    부호 뒤집힘 수. 이 리포트가 확정이면 자기 ``final_diff`` 도 넣는다. 기준일보다 뒤의 폴더는 읽지 않는다.
+    부호 뒤집힘 수, 그리고 (시장, 주체)별 상위 3 섹터가 잠정→확정에서 그대로인 몫(``top3_keep_pct``).
+    이 리포트가 확정이면 자기 ``final_diff`` 도 넣는다. 기준일보다 뒤의 폴더는 읽지 않는다. 확정 기록이 없는
+    기준일은 아카이브 시드(:data:`REV_SEED_DIR`)를 읽고 ``seed`` 에 그 날짜와 출처를 적는다.
     """
     asof = P["dates"][-1]
     out = {"days": REV_DAYS, "gate_share": REV_GATE_SHARE, "win": 1, "n_dates": 0, "dates": [],
-           "n_cells": 0, "rel_median_pct": None, "flips": 0, "skipped": {}}
+           "n_cells": 0, "rel_median_pct": None, "flips": 0, "top_n": REV_TOP_N,
+           "top3_keep_pct": None, "top3_lists": 0, "seed": None, "skipped": {}}
     found: list = []
+    seeded: list = []
     own = P.get("final_diff") if P.get("final") else None
     if isinstance(own, dict):
         cells, why = _usable_base(own, asof)
@@ -864,26 +1026,42 @@ def revision_stats(P: dict, root: "str | None") -> dict:
         else:
             out["skipped"][asof] = why
     if root and os.path.isdir(root):
+        names = set(os.listdir(root))
+        seed_dir = os.path.join(root, REV_SEED_DIR)
+        if os.path.isdir(seed_dir):
+            names |= {f[:-5] for f in os.listdir(seed_dir) if f.endswith(".json")}
         # 최근 것부터 훑고 REV_DAYS 개를 모으면 멈춘다 — 1년치 폴더를 다 열지 않고, 건너뛴 이유도 그 안의 것만 적는다.
-        for name in sorted(os.listdir(root), reverse=True):
+        for name in sorted(names, reverse=True):
             if len(found) >= REV_DAYS:
                 break
             if not (re.fullmatch(r"\d{4}-\d{2}-\d{2}", name) and name < asof):
                 continue
-            cells, why = _final_cells(root, name)
+            cells, why = _final_cells(root, name) if os.path.isdir(os.path.join(root, name)) else (None, "확정 아님")
             if cells is None:
+                sc, swhy = _seed_cells(root, name)
+                if sc is not None:
+                    found.append((name, sc))
+                    seeded.append(name)
+                    continue
+                why = swhy or why
                 if why != "확정 아님":
                     out["skipped"][name] = why
                 continue
             found.append((name, cells))
     found.sort()
-    rel, flips = [], 0
+    rel, flips, kept, lists = [], 0, 0, 0
     for _d, cells in found:
         r, f = revision_rows(cells)
         rel += r
         flips += f
+        k, t = revision_top3(cells)
+        kept += k
+        lists += t // REV_TOP_N
     out.update(n_dates=len(found), dates=[d for d, _ in found], n_cells=len(rel), flips=flips,
-               rel_median_pct=round(float(pd.Series(rel).median()), 1) if rel else None)
+               rel_median_pct=round(float(pd.Series(rel).median()), 1) if rel else None,
+               top3_keep_pct=round(100.0 * kept / (lists * REV_TOP_N), 1) if lists else None,
+               top3_lists=lists,
+               seed={"label": REV_SEED_LABEL, "dates": sorted(seeded)} if seeded else None)
     return out
 
 

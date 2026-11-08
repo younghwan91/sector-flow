@@ -1416,17 +1416,78 @@ def _ranked_line(prefix: str, ranked: list, stocks: dict, side: str, width: int,
     return pad(prefix, width)
 
 
-def revision_line(d: dict) -> "str | None":
-    """잠정 리포트에서 — 최근 N개 확정일의 잠정→확정 수정 폭(페이로드 ``revision_stats``). 확정이면 None."""
-    if d.get("final"):
+def revision_tiers(d: dict) -> "list[str] | None":
+    """잠정 리포트에서 — 최근 N개 확정일의 잠정→확정 수정 폭(페이로드 ``revision_stats``). 확정이면 None.
+
+    긴 것부터 짧은 것 순의 후보 — 좁은 화면에서 칸 수부터 줄이고, 시드 출처(`revision_stats.seed`)는 끝까지 남긴다.
+    마감 값(확정, 또는 창 밖 재구성 ``finalize_unverified``)이면 None — 웹 ``CLOSED`` 와 같은 기준이다.
+    """
+    if d.get("finalize_unverified") or d.get("final"):
         return None
     R = d.get("revision_stats")
     if not isinstance(R, dict):
         return None
     if not R.get("n_dates") or R.get("rel_median_pct") is None:
-        return " 잠정→확정 수정 폭: 아직 확정 기록이 없다 — 확정 리포트가 쌓이면 여기 적는다"
-    return (f" 최근 {R['n_dates']}일 잠정→확정: 섹터 칸 중앙 {rhu(R['rel_median_pct']):.0f}%,"
-            f" 부호 뒤집힘 {R.get('flips', 0)}회 (1일 칸 {R.get('n_cells', 0)}개)")
+        return [" 잠정→확정 수정 폭: 아직 확정 기록이 없다 — 확정 리포트가 쌓이면 여기 적는다"]
+    keep = R.get("top3_keep_pct")
+    head = (f" 최근 {R['n_dates']}일 잠정→확정: 섹터 칸 중앙 {rhu(R['rel_median_pct']):.0f}%,"
+            f" 부호 뒤집힘 {R.get('flips', 0)}회" + (f", 상위3 유지 {rhu(keep):.0f}%" if keep is not None else ""))
+    cells = f" (1일 칸 {R.get('n_cells', 0)}개)"
+    seed = R.get("seed") or {}
+    if not seed.get("dates"):
+        return [head + cells, head]
+    k = len(seed["dates"])
+    return [f"{head}{cells} · {seed.get('label')} {k}일", f"{head} · {seed.get('label')} {k}일",
+            f"{head} · 시드 {k}일"]
+
+
+def revision_line(d: dict) -> "str | None":
+    """:func:`revision_tiers` 의 가장 긴 꼴 — 웹 '오늘' 패널이 같은 글자를 적는다."""
+    t = revision_tiers(d)
+    return t[0] if t else None
+
+
+#: 연속 순매매 줄의 주체 이름(페이로드 ``today.streaks.actors`` 가 없을 때).
+STREAK_KO = {"inst": "기관", "invpen": "투신+연기금", "forgn": "외국인", "indiv": "개인", "etc": "기타법인"}
+
+
+def fmt_big(v) -> str:
+    """누적 금액 — |값| 이 1조(10,000억) 이상이면 `-4.1조`, 아래는 `-3,210억`. 웹 `BIG` 와 같은 반올림."""
+    if v is None:
+        return "—"
+    if abs(rhu(v)) >= 10000:
+        return ("+" if v >= 0 else "-") + f"{abs(rhu(v / 10000, 1)):.1f}조"
+    return fmt_amt(v) + "억"
+
+
+def _streak_text(f: "dict | None") -> str:
+    if not f or not f.get("days"):
+        return "연속 없음(오늘 ≈0)"
+    side = "순매수" if f.get("sign", 0) > 0 else "순매도"
+    return f"{f['days']}일 연속 {side} 누적 {fmt_big(f.get('sum'))}{_pct_tag(f.get('pct'))}"
+
+
+def streak_items(d: dict, market: str) -> "list[str] | None":
+    """첫 화면 연속 순매매 줄의 항목 — 시장 합계 4주체, 그다음 기관·투신+연기금·그날 최대 순매매 주체의 최장 섹터.
+
+    페이로드 ``today.streaks`` 를 옮길 뿐이다(정의 ``sector_flow.streak_block``). 없으면(옛 리포트) None.
+    웹 '오늘' 패널이 같은 항목을 같은 순서로 적는다(검증기 W 층이 대조한다).
+    """
+    S = (d.get("today") or {}).get("streaks")
+    if not isinstance(S, dict):
+        return None
+    ko = {**STREAK_KO, **(S.get("actors") or {})}
+    M = (S.get("market") or {}).get(market) or {}
+    items = [f"{ko.get(a, a)} {_streak_text(M.get(a))}" for a in S.get("market_actors") or ()]
+    rows = (S.get("sectors") or {}).get(market) or {}
+    for a, _label in banner_actors(d, market):
+        sec = ((S.get("longest") or {}).get(market) or {}).get(a)
+        items.append(f"{ko.get(a, a)} 최장 " + (f"{sec} {_streak_text((rows.get(sec) or {}).get(a))}" if sec else "없음"))
+    return items
+
+
+def streak_prefix(market: str) -> str:
+    return f" 연속 순매매 {market}[일·누적(연속 길이 1년%ile)]: "
 
 
 def change_title(C: dict) -> list[str]:
@@ -1498,7 +1559,10 @@ def _banner_today(st: State, width: int) -> list[str]:
             f" ※ (미분류) {unc}종목 — 섹터가 아니다"]), width))
     rl = revision_line(d)
     if rl:
-        lines.append(pad(_first_fitting(width, [rl, rl.split(" (")[0]]), width))
+        lines.append(pad(_first_fitting(width, revision_tiers(d)), width))
+    sti = streak_items(d, mk)
+    if sti is not None:
+        lines.append(_items_line(streak_prefix(mk), sti, width))
     lines.append(pad("", width))
     actors = banner_actors(d, mk)
     ranked_lines = []
@@ -2373,6 +2437,8 @@ EVIDENCE = {
     "n_all": B_MEAS,
     # 오늘(첫 화면·웹 '오늘' 패널) — 금액 근사 오차와 KRX 지수(정규장) 수익률은 잰 값이다.
     "gap": B_MEAS, "krx": B_MEAS,
+    # 연속 순매매(1일 순매수 부호가 같은 날 수) — 센 값이다. 앞날 관계는 검정하지 않았다.
+    "streak": B_MEAS,
 }
 
 #: 도움말 열 이름 → (증거 표지, 한 줄 근거). 섹터 표 절.
@@ -2580,7 +2646,15 @@ HELP = [
     ("잠정 수정폭", "잠정 리포트 첫 화면에 최근 N개 확정일의 잠정→확정 수정 폭을 적는다:"),
     ("", "        1일 섹터 칸 |확정−잠정|÷|확정| 의 중앙값과 부호 뒤집힘 수. 칸은"),
     ("", "        (시장, 주체) 안에서 Σ|확정값| 의 2% 이상인 것만(0 근처 칸 제외)."),
+    ("", "        상위3 유지 = (시장, 주체)마다 잠정 상위 3 중 확정 상위 3 에도"),
+    ("", "        든 몫. 확정 기록이 없는 날은 시드(아카이브 18:10 게시본 대"),
+    ("", "        확정 재구성)로 세고 그렇게 적는다."),
     ("", "        잠정 리포트의 %ile 극단 목록에는 (잠정) 표지가 붙는다."),
+    ("연속순매매", "1일 순매수 부호가 오늘까지 같은 날 수와 그 누적, 그 길이의 1년%ile"),
+    ("", "        (최근 260일 날마다의 연속 길이 분포 안 순위, 부호 무관). 그날 |값| 이"),
+    ("", "        (시장, 주체) 섹터 목록 Σ|값| 의 1% 미만이면 ≈0 날 — 연속을 끊는다."),
+    ("", "        시장 합계 4주체, 그리고 기관·투신+연기금·최대 순매매 주체의 최장 섹터"),
+    ("", "        (10종목 미만 섹터·(미분류) 제외). 센 값이다 — 앞날을 말하지 않는다."),
     ("직전 대비", "직전 거래일 리포트가 **게시한 그대로의** 20일 누적 순매수 순위와 견준"),
     ("", "        상위 5 섹터의 들고 남(기관·투신+연기금). 20일 이동 창이라 오늘"),
     ("", "        하루가 아니라 들어온 날·빠진 날이 같이 움직인다. 직전이 잠정이었거나"),
