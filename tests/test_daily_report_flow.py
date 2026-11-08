@@ -27,6 +27,7 @@ import pathlib, sys
 a = sys.argv
 if "--final" in a:
     pathlib.Path(a[a.index("--json") + 1]).with_name("ARGS_FINAL").write_text("1")
+    pathlib.Path(a[a.index("--json") + 1]).with_name("final_diff.txt").write_text("잠정 → 확정 비교")
 if "--json" in a:
     pathlib.Path(a[a.index("--json") + 1]).write_text("{}")
 if "--html" in a:
@@ -438,6 +439,7 @@ def test_final_mode_rebuilds_with_final_data_once_finalize_is_done(repo, tmp_pat
     p = _run(repo, today="2026-11-03", KR_QUANT_FINAL="1", KR_QUANT_AIRFLOW_LOGS=str(logs))
     assert p.returncode == 0, p.stdout + p.stderr
     assert (dest / "FINAL.txt").is_file()
+    assert "잠정 → 확정 비교" in (dest / "FINAL.txt").read_text(), "확정에서 바뀐 값을 FINAL.txt 에 안 붙였다"
     assert (dest / "ARGS_FINAL").is_file(), "sector_flow 에 --final 을 안 넘겼다 — 제목이 잠정으로 남는다"
     assert (dest / "numbers.html").read_text() != "<provisional>"
     # 한 번 확정한 기준일은 다시 안 만든다.

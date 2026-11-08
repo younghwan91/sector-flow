@@ -11,6 +11,7 @@
   F. 독립   — **DB 원자료에서 처음부터 다시 만든 값**과 페이로드가 같은가
   G. 원장   — ``sw-ledger`` 화면의 값·그림, 그리고 flow 와 같은 수를 말하는가
   H. 화면·키 — **듣는 키와 화면에 적힌 키**가 같은가(값이 아니라 조작을 본다)
+  T. 오늘   — 1일 값·1년 백분위·시장 합계·직전 리포트 대비를 일별 배열에서 다시 센다
 
 A~D 는 전부 *파일 안의 값끼리* 정합한지만 본다. 그래서 producer 가 임펄스를
 통째로 잘못 계산해도(수량을 금액으로 착각, `flu_rt` 의 bp 단위를 놓침 — 둘 다
@@ -1458,6 +1459,248 @@ def layer_f(P: dict, db: str | None) -> None:
 
 
 
+# ─────────────────────────────────────────────── T. 오늘 — 1일·백분위·시장 합계·직전 대비
+
+#: 오늘 백분위의 정의 — **producer 상수를 읽지 않고** 여기에 따로 적는다. 페이로드의 ``lookback`` 을 믿으면
+#: producer 가 되돌아보기를 잘못 잡았을 때 검증도 같은 값으로 따라간다.
+VT_LOOKBACK = 260
+VT_MIN_LIVE = 0.25
+VT_DETAIL = ("invtrt", "penfnd_etc")
+
+
+def _vt_series(P: dict, mks: list, sec: str, key: str):
+    """(시장들, 섹터, 주체)의 일별 순매수 — 소수 2자리. ``sector_flow._series`` 를 부르지 않는다."""
+    if key == "invpen":
+        a = _vt_series(P, mks, sec, "invtrt")
+        b = _vt_series(P, mks, sec, "penfnd_etc")
+        return None if a is None or b is None else [round(x + y, 2) for x, y in zip(a, b)]
+    tbl = P.get("detail" if key in VT_DETAIL else "flows") or {}
+    arrs = [tbl[m][sec][key] for m in mks
+            if key in (tbl.get(m, {}).get(sec) or {})]
+    if not arrs:
+        return None
+    return [round(sum((a[i] or 0.0) for a in arrs), 2) for i in range(len(P["dates"]))]
+
+
+def _vt_pct(ser: list):
+    """마지막 값의 midrank 백분위 — 정렬 + 이분 탐색(producer 는 선형으로 센다)."""
+    import bisect  # noqa: PLC0415
+    n = min(len(ser), VT_LOOKBACK)
+    if n < 2:
+        return None
+    srt = sorted(ser[-n:])
+    zeros = bisect.bisect_right(srt, 0.0) - bisect.bisect_left(srt, 0.0)
+    if n - zeros < VT_MIN_LIVE * n:
+        return None
+    lo, hi = bisect.bisect_left(srt, ser[-1]), bisect.bisect_right(srt, ser[-1])
+    return 100.0 * (lo + (hi - lo - 1) / 2.0) / (n - 1)
+
+
+def _vt_ranks(P: dict, mks: list, actor: str, win: int):
+    vals = {}
+    for s in P["sectors"]:
+        if not any((P.get("n_by_sector") or {}).get(m, {}).get(s) for m in mks):
+            continue
+        ser = _vt_series(P, mks, s, actor)
+        if ser is None or len(ser) < win:
+            return None
+        vals[s] = round(sum(ser[-win:]), 2)
+    order = sorted(vals.items(), key=lambda kv: (-kv[1], kv[0]))
+    return {s: i + 1 for i, (s, _v) in enumerate(order)}
+
+
+def layer_t(P: dict, folder: "str | None" = None) -> None:
+    """T. **오늘** — ``today``·``change``·``final_diff`` 와 종목 1일 집계를 페이로드 일별 배열에서 다시 센다.
+
+    1일 값은 일별 배열의 마지막 칸, 백분위는 그 1년 분포(정의는 위 상수), 시장 합계는 섹터 마지막 칸의 합,
+    시장 수익률은 섹터 ``ret×retw`` 를 다시 가중한 것이다. producer 는 시장 합계·수익률을 **종목에서 바로**
+    모으므로 경로가 다르다. 직전 대비는 옆 폴더의 직전 리포트가 있으면 그 순위까지 다시 센다.
+    """
+    print("\nT. 오늘 — 1일 값·1년 백분위·시장 합계·직전 리포트 대비")
+    dates, mkts, secs = P["dates"], P["markets"], P["sectors"]
+    n = len(dates)
+    T = P.get("today")
+    chk("T", "today 가 있는가", isinstance(T, dict))
+    if not isinstance(T, dict):
+        return
+    chk("T", "today 기준일 = 페이로드 마지막 날", T.get("date") == dates[-1], f"{T.get('date')}")
+    chk("T", "되돌아보기 = min(거래일, 260)", T.get("lookback") == min(n, VT_LOOKBACK),
+        f"{T.get('lookback')}")
+    mkeys = [("전체", list(mkts))] + [(m, [m]) for m in mkts]
+    actors = ("inst", "invtrt", "penfnd_etc", "invpen", "forgn", "indiv")
+    bad_v, bad_p, bad_set, bad_r, cnt = [], [], [], [], 0
+    for mk, mks in mkeys:
+        rows = (T.get("sectors") or {}).get(mk) or {}
+        want = {s for s in secs if any((P.get("n_by_sector") or {}).get(m, {}).get(s) for m in mks)}
+        if set(rows) != want:
+            bad_set.append(f"{mk}: 남음 {sorted(set(rows) - want)[:2]} 빠짐 {sorted(want - set(rows))[:2]}")
+        for s in sorted(want & set(rows)):
+            for a in actors:
+                ser = _vt_series(P, mks, s, a)
+                got = rows[s].get(a)
+                if ser is None:
+                    continue
+                cnt += 1
+                if not got or abs((got.get("v") or 0) - ser[-1]) > 0.006 or got.get("v") is None:
+                    bad_v.append(f"{mk}/{s}/{a} {got and got.get('v')} vs {ser[-1]}")
+                    continue
+                p = _vt_pct(ser)
+                q = got.get("pct")
+                if (p is None) != (q is None) or (p is not None and abs(p - q) > 0.051):
+                    bad_p.append(f"{mk}/{s}/{a} {q} vs {p if p is None else round(p, 1)}")
+            num = den = 0.0
+            for m in mks:
+                r, w = P["ret"][m][s][-1], P["retw"][m][s][-1]
+                if r is not None and w:
+                    num, den = num + r * w, den + w
+            want_r = num / den if den else None
+            got_r = rows[s].get("ret")
+            if (want_r is None) != (got_r is None) or (want_r is not None and abs(want_r - got_r) > 0.002):
+                bad_r.append(f"{mk}/{s} {got_r} vs {want_r}")
+    chk("T", "오늘 섹터 칸 = 그 시장(들)에 종목이 있는 섹터", not bad_set, "; ".join(bad_set[:2]))
+    chk("T", "오늘 섹터×주체 순매수 = 일별 배열 마지막 칸", not bad_v,
+        f"{len(bad_v)}/{cnt}" + ("  " + "; ".join(bad_v[:2]) if bad_v else ""))
+    chk("T", "오늘 섹터×주체 1년 백분위 재계산", not bad_p,
+        f"{len(bad_p)}/{cnt}" + ("  " + "; ".join(bad_p[:2]) if bad_p else ""))
+    chk("T", "오늘 섹터 수익률 = 마지막 날 ret×retw 가중", not bad_r, "; ".join(bad_r[:2]))
+
+    # 시장 합계와 시장 수익률 — producer 는 종목에서, 여기는 섹터 배열에서.
+    bad_m, bad_mp, bad_mr = [], [], []
+    for mk, mks in mkeys:
+        M = (T.get("market") or {}).get(mk) or {}
+        for a in ("inst", "forgn", "indiv", "etc", "invtrt", "penfnd_etc", "invpen", "tv"):
+            ser = [0.0] * n
+            for s in secs:
+                one = _vt_series(P, mks, s, a)
+                for i, v in enumerate(one or []):
+                    ser[i] += v
+            ser = [round(v, 2) for v in ser]
+            got = M.get("tv") if a == "tv" else (M.get("net") or {}).get(a, {}).get("v")
+            tol = 0.006 * len(secs) + 0.011
+            if got is None or abs(got - ser[-1]) > tol:
+                bad_m.append(f"{mk}/{a} {got} vs {ser[-1]:.2f}")
+            if a != "tv":
+                p, q = _vt_pct(ser), (M.get("net") or {}).get(a, {}).get("pct")
+                # 섹터 반올림 합과 종목 합의 차(≤ tol)가 동률을 갈 수 있다 — 한 칸(100/(n−1)) 여유.
+                if (p is None) != (q is None) or (p is not None and abs(p - q) > 100.0 / (n - 1) + 0.051):
+                    bad_mp.append(f"{mk}/{a} {q} vs {p}")
+        daily = []
+        for i in range(n):
+            num = den = 0.0
+            for m in mks:
+                for s in secs:
+                    r, w = P["ret"][m][s][i], P["retw"][m][s][i]
+                    if r is not None and w:
+                        num, den = num + r * w, den + w
+            daily.append(num / den if den else None)
+        for w in (1, 20):
+            got = (M.get("ret") or {}).get(str(w))
+            if w > n or daily[-1] is None:
+                want_r = None
+            else:
+                acc = 1.0
+                for r in daily[-w:]:
+                    acc *= 1.0 + (r or 0.0) / 100.0
+                want_r = (acc - 1.0) * 100.0
+            if (want_r is None) != (got is None) or (want_r is not None and abs(want_r - got) > 0.02):
+                bad_mr.append(f"{mk}/{w}일 {got} vs {want_r}")
+    chk("T", "오늘 시장 합계 = 섹터 마지막 칸의 합", not bad_m, "; ".join(bad_m[:3]))
+    chk("T", "오늘 시장 합계 1년 백분위 재계산", not bad_mp, "; ".join(bad_mp[:3]))
+    chk("T", "시장 수익률 1·20일 = 섹터 ret×retw 재가중의 기하누적", not bad_mr, "; ".join(bad_mr[:3]))
+
+    # 종목 1일 집계 — 섹터 합이 섹터 마지막 칸과 맞는가(종목 값은 소수 1자리라 종목 수만큼 여유).
+    win1 = [(r, r["win"]["1"]) for r in P["names"].values() if "1" in (r.get("win") or {})]
+    chk("T", "종목 1일 집계가 있는가", bool(win1), f"{len(win1)}종목")
+    agg: dict = {}
+    for r, w in win1:
+        a = agg.setdefault((r["market"], r["sector"]), [0.0, 0])
+        a[0] += w.get("inst") or 0.0
+        a[1] += 1
+    bad = [f"{m}/{s} 종목합 {v:+.1f} vs {P['flows'][m][s]['inst'][-1]:+.2f}"
+           for (m, s), (v, k) in agg.items()
+           if m in P["flows"] and s in P["flows"][m]
+           and abs(v - P["flows"][m][s]["inst"][-1]) > 0.05 * k + 0.011]
+    chk("T", "종목 1일 기관 합 = 섹터 마지막 칸", not bad, "; ".join(bad[:2]))
+
+    # 직전 리포트 대비
+    C, why = P.get("change"), P.get("change_reason")
+    prev_date = dates[-2] if n > 1 else None
+    old = None
+    if folder and prev_date:
+        path = os.path.join(os.path.dirname(os.path.abspath(folder)), prev_date, "payload.json")
+        if os.path.isfile(path):
+            try:
+                old = json.load(open(path, encoding="utf-8"))
+            except ValueError:
+                old = None
+            if old and (old.get("dates") or [None])[-1] != prev_date:
+                old = None
+    chk("T", "직전 대비 키가 있는가", "change" in P)
+    if C is None:
+        chk("T", "직전 대비가 비었으면 이유가 있는가", bool(why), f"{why}")
+        chk("T", "직전 리포트가 옆에 있는데 대비가 비지 않았는가", old is None,
+            f"{prev_date} 있음" if old else "")
+    else:
+        chk("T", "직전 대비의 직전일 = 페이로드 바로 앞 거래일(미래 아님)",
+            C.get("prev_date") == prev_date and prev_date < dates[-1], f"{C.get('prev_date')}")
+        bad_c, bad_p2, bad_t = [], [], []
+        topn = 5
+        for mk, mks in mkeys:
+            for a in ("inst", "invpen"):
+                cur = _vt_ranks(P, mks, a, 20)
+                got = ((C.get("rank") or {}).get(mk) or {}).get(a)
+                if cur is None:
+                    continue
+                if not got or {s: v[1] for s, v in got.items()} != cur:
+                    bad_c.append(f"{mk}/{a}")
+                    continue
+                if old is not None:
+                    prev = _vt_ranks(old, mks, a, 20) if set(mks) <= set(old["markets"]) else None
+                    if prev is None or {s: v[0] for s, v in got.items()} != {s: prev.get(s) for s in cur}:
+                        bad_p2.append(f"{mk}/{a}")
+                    else:
+                        top_c = sorted(cur, key=cur.get)[:topn]
+                        top_p = sorted(prev, key=prev.get)[:topn]
+                        tt = ((C.get("top") or {}).get(mk) or {}).get(a) or {}
+                        if (tt.get("cur"), tt.get("prev"), tt.get("entered"), tt.get("exited")) != (
+                                top_c, top_p, [s for s in top_c if s not in top_p],
+                                [s for s in top_p if s not in top_c]):
+                            bad_t.append(f"{mk}/{a}")
+        chk("T", "직전 대비 — 오늘 20일 순위 재계산", not bad_c, ", ".join(bad_c[:3]))
+        if old is not None:
+            chk("T", "직전 대비 — 직전 리포트의 20일 순위·상위 5 들고 남 재계산",
+                not bad_p2 and not bad_t, ", ".join((bad_p2 + bad_t)[:3]))
+        else:
+            print("       (직전 리포트가 옆 폴더에 없다 — 직전 순위 대조는 건너뛴다)")
+
+    # 잠정 → 확정
+    if P.get("final"):
+        chk("T", "확정 리포트에 잠정 대비(final_diff 또는 이유)가 있는가",
+            "final_diff" in P and (P["final_diff"] is not None or bool(P.get("final_diff_reason"))))
+    F = P.get("final_diff")
+    if isinstance(F, dict):
+        bad_f = []
+        for r in F.get("changed") or []:
+            ser = _vt_series(P, [r["market"]], r["sector"], r["actor"])
+            want = None if ser is None else sum(ser[-r["win"]:])
+            if want is None or abs(want - r["new"]) > 0.011:
+                bad_f.append(f"{r['market']}/{r['sector']}/{r['actor']}/{r['win']} new {r['new']} vs {want}")
+            elif r["old"] is not None and (abs(r["new"] - r["old"] - r["diff"]) > 0.011
+                                           or abs(r["diff"]) <= F["tol"]):
+                bad_f.append(f"{r['market']}/{r['sector']}/{r['actor']}/{r['win']} diff {r['diff']}")
+        for t in F.get("market_totals") or []:
+            tot = 0.0
+            for s in secs:
+                ser = _vt_series(P, [t["market"]], s, t["actor"])
+                if ser is not None and (P.get("n_by_sector") or {}).get(t["market"], {}).get(s):
+                    tot += sum(ser[-t["win"]:])
+            if abs(tot - t["new"]) > 0.011 * len(secs):
+                bad_f.append(f"{t['market']}/{t['actor']}/{t['win']} 합 {t['new']} vs {tot:.2f}")
+        chk("T", "잠정 → 확정 — 확정값·차이가 페이로드에서 다시 나오는가",
+            not bad_f and F.get("n_changed") == len(F.get("changed") or []),
+            f"{len(bad_f)}건  " + "; ".join(bad_f[:2]))
+
+
 # ─────────────────────────────────────────────── H. 화면·키
 #
 # A~G 는 **값**을 본다. 이 층은 값이 아니라 "화면과 키가 실제로 그렇게 동작하는가"
@@ -2257,6 +2500,7 @@ def main() -> int:
     run_layer("E", layer_e, D)
     run_layer("G", layer_g, payload, D)
     run_layer("H", layer_h, D, payload)
+    run_layer("T", layer_t, payload, d)
     if a.db_check and a.db:
         run_layer("F", layer_f, payload, a.db)
 

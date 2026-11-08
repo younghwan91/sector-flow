@@ -198,6 +198,8 @@ fi
 
 if [ -n "$FINAL_OK" ]; then
   echo "[$(date '+%F %T')] daily_finalize 확인 뒤 확정치로 만들었다." > "$BUILD/FINAL.txt"
+  # 잠정 → 확정에서 바뀐 머리 숫자(sector_flow.py --final 이 남긴다).
+  if [ -f "$BUILD/final_diff.txt" ]; then cat "$BUILD/final_diff.txt" >> "$BUILD/FINAL.txt"; fi
 fi
 if [ -d "$DEST" ]; then
   OLD="$DEST.replaced.$$"
