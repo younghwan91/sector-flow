@@ -6016,3 +6016,105 @@ guards = ["tests/test_verify_merge.py::test_unsharded_budget_scales_by_the_ci_sh
 file = "scripts/verify_merge.py"
 find = "def ci_shard_count(wt: Path, fallback: int = 4) -> int:"
 replace = "def ci_shard_count(wt: Path, fallback: int = 1) -> int:"
+# ── 오늘의 수급 다이제스트(scripts/digest.py) — 밖에 나갈 글이라 "말하면 안 되는 것" 쪽 검사가 중심이다.
+
+[[mutation]]
+id = "digest-banned-guard-off"
+why = "금칙어 검사가 걸려도 만든다 — '급등'·'추천' 이 든 글이 게시용 폴더에 남는다"
+guards = ["tests/test_digest.py::test_banned_word_in_body_fails_build"]
+file = "scripts/digest.py"
+find = "    if hits:"
+replace = "    if False:"
+
+[[mutation]]
+id = "digest-banned-spacing"
+why = "공백을 지우지 않고 비교하면 '수익  보장'·'목표 가' 처럼 띄어 쓴 금칙어가 빠져나간다"
+guards = ["tests/test_digest.py::test_banned_words_are_caught_across_spacing"]
+file = "scripts/digest.py"
+find = '    flat = re.sub(r"\s+", "", text)'
+replace = "    flat = text"
+
+[[mutation]]
+id = "digest-guard-scans-footer"
+why = "금칙어 검사가 면책 꼬리까지 보면 '추천이 아니다' 때문에 매일 아무것도 안 만든다(또는 꼬리를 빼고 싶어진다)"
+guards = ["tests/test_digest.py::test_disclaimer_alone_passes_guard"]
+file = "scripts/digest.py"
+find = '    check_compliance(body, "digest.md")'
+replace = '    check_compliance(text, "digest.md")'
+
+[[mutation]]
+id = "digest-footer-dropped"
+why = "면책·자료 출처 꼬리 없이 글이 나간다"
+guards = ["tests/test_digest.py::test_disclaimer_is_fixed_tail"]
+file = "scripts/digest.py"
+find = '        full = f"{body}\n\n{FOOTER}\n"'
+replace = '        full = f"{body}\n"'
+
+[[mutation]]
+id = "digest-length-unchecked"
+why = "길이 상한을 안 보면 긴 날 글이 텔레그램 미리보기·한 화면을 넘는다 — 극단 목록 줄이기도 안 돈다"
+guards = ["tests/test_digest.py::test_text_fits_char_limit_and_trims_extremes_first"]
+file = "scripts/digest.py"
+find = "        if len(full) <= MAX_CHARS:"
+replace = "        if True:"
+
+[[mutation]]
+id = "digest-provisional-says-final"
+why = "마감 시계(finalized)만 보고 '확정' 이라 적는다 — 화면 칩이 한때 그랬다(chip-claims-final)"
+guards = ["tests/test_digest.py::test_provisional_and_final_wording"]
+file = "scripts/digest.py"
+find = """    if P.get("final"):
+        return "마감·확정\""""
+replace = """    if P.get("finalized"):
+        return "마감·확정\""""
+
+[[mutation]]
+id = "digest-dominant-by-sign"
+why = "'금액이 가장 큰 주체' 를 부호로 고르면 순매도가 가장 큰 날(외국인 −2.8조)에 순매수 쪽이 뽑힌다"
+guards = ["tests/test_digest.py::test_dominant_actor_is_by_absolute_amount",
+          "tests/test_digest.py::test_snapshot_from_fixture"]
+file = "scripts/digest.py"
+find = "key=lambda t: (abs(t[1]),"
+replace = "key=lambda t: (t[1],"
+
+[[mutation]]
+id = "digest-sell-bar-painted-buy"
+why = "순매도 막대를 순매수 색으로 칠한다 — 카드에서 부호가 색으로 뒤집힌다"
+guards = ["tests/test_digest.py::test_card_html_is_card_sized_and_carries_facts"]
+file = "scripts/digest.py"
+find = 'return "flat" if not v else ("buy" if v > 0 else "sell")'
+replace = 'return "flat" if not v else "buy"'
+
+[[mutation]]
+id = "digest-card-wrong-size"
+why = "카드가 1080×1350(4:5)이 아니다"
+guards = ["tests/test_digest.py::test_card_html_is_card_sized_and_carries_facts",
+          "tests/test_digest.py::test_png_card_renders_at_card_size"]
+file = "scripts/digest.py"
+find = "CARD_W, CARD_H = 1080, 1350"
+replace = "CARD_W, CARD_H = 1080, 1080"
+
+[[mutation]]
+id = "digest-overflow-unchecked"
+why = "넘친 카드를 그대로 찍는다 — 면책 꼬리가 잘린 PNG 가 나갔다(scrollHeight 는 overflow:hidden 카드에서 늘 카드 높이다)"
+guards = ["tests/test_digest.py::test_content_past_card_edge_is_overflow",
+          "tests/test_digest.py::test_overflowing_card_is_not_shot"]
+file = "scripts/digest.py"
+find = "    if sh > CARD_H or sw > CARD_W:"
+replace = "    if False:"
+
+[[mutation]]
+id = "digest-ignores-verify-failed"
+why = "자기 검증에 걸린 리포트로 밖에 나갈 글을 만든다"
+guards = ["tests/test_digest.py::test_main_refuses_verify_failed_report"]
+file = "scripts/digest.py"
+find = 'if (d / "VERIFY_FAILED.txt").exists() and not a.allow_unverified:'
+replace = "if False:"
+
+[[mutation]]
+id = "digest-keeps-stale-output"
+why = "못 만든 날 어제 digest.md 가 그대로 남아 오늘 것처럼 읽힌다"
+guards = ["tests/test_digest.py::test_banned_word_in_body_fails_build"]
+file = "scripts/digest.py"
+find = "        clear()                    # 옛 다이제스트가"
+replace = "        pass                       # 옛 다이제스트가"

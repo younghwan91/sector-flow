@@ -328,6 +328,8 @@ if [ -n "$EV_SUMMARY" ]; then EV_CHECKS="${EV_SUMMARY%% *}" EV_FAILS="${EV_SUMMA
 if [ -f "$BUILD/final_diff.json" ]; then
   EV_DIFF="$(grep -o '"n_changed"[[:space:]]*:[[:space:]]*[0-9][0-9]*' "$BUILD/final_diff.json" 2>/dev/null | head -n 1 | grep -o '[0-9][0-9]*$')" || true
 fi
+# 선택(기본 꺼짐): 오늘의 수급 다이제스트 digest.md·json·png(scripts/digest.py) — 보내지 않고 폴더에만 쓴다. 실패해도 리포트는 게시한다.
+if [ -n "${KR_QUANT_DIGEST:-}" ]; then "${UVR[@]}" --with playwright python scripts/digest.py --dir "$BUILD" || echo "[$(date '+%F %T')] ⚠️ 다이제스트를 못 만들었다 — 리포트는 그대로 게시한다" >&2; fi
 
 if [ -n "$REBUILD" ] && [ -n "$FINAL_OK" ]; then
   echo "[$(date '+%F %T')] 재구성 — daily_finalize 확인 뒤 확정된 DB 값으로 만들었다(REBUILT.txt)." > "$BUILD/FINAL.txt"
