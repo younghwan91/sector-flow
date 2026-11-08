@@ -1370,6 +1370,7 @@ def test_spike_column_marks_what_beats_the_even_anchor(data):
     from sectorflow.tui.ledger_view import SPIKE_MARK_MULT
 
     mo = Model(_spiky_payload())
+    mo.ai = ACTOR_KEYS.index("indiv")       # 픽스처는 개인 흐름만 싣는다(기본 주체는 기관)
     assert mo.uniform_spike() == pytest.approx(100.0 / mo.window)
     lines, _t, nh = ledger_lines(mo, 132)
     cols = _fit(ledger_cols(), 132)
@@ -2139,3 +2140,87 @@ def test_the_bar_header_is_never_cut_into_a_lone_minus(data):
                 continue
             assert re.fullmatch(rf"−\s*(?:{re.escape(ko)})?\s*\+", bar), (width, ko, repr(bar))
             assert head.rstrip().endswith("+")
+
+
+# ------------------------------------------------ r2 — sw-flow 와 같은 출발점·얇은 섹터·판정 문구
+
+def test_ledger_starts_on_institution_like_sw_flow(data):
+    """원장의 첫 주체는 **기관**이다 — ``sw-flow`` 와 같다.
+
+    회귀: 원장만 개인으로 시작해서, 두 화면을 오가며 같은 섹터를 보면 같은 이름의 막대가 다른 돈을 말했다.
+    주입: ``self.ai = ACTOR_KEYS.index("inst")`` 를 ``self.ai = 0`` 으로 되돌리면 실패한다.
+    """
+    from sectorflow.tui.flow_view import ACTORS as FLOW_ACTORS
+
+    assert Model(data).actor == FLOW_ACTORS[0][0] == "inst"
+
+
+def _thin_payload() -> dict:
+    """얇은 섹터(`가`, 3종목)가 **모든 값에서 가장 크다** — 섞어 줄세우면 어느 정렬에서든 맨 위로 온다.
+
+    이름도 가나다 맨 앞이라 섹터명 정렬에서도 위로 온다. 그래서 "맨 아래" 는 정렬 키가 아니라 문턱이 만든다.
+    """
+    n = 20
+    secs = ["가", "나", "다"]
+    scale = {"가": 900.0, "나": 30.0, "다": 10.0}
+
+    def cell(s):
+        return {k: [scale[s] * (1 + (i % 3)) * (1 if j % 2 else -1) for i in range(n)]
+                for j, k in enumerate(ACTOR_KEYS)}
+
+    return {"dates": [f"2026-03-{i + 1:02d}" for i in range(n)], "sectors": secs,
+            "markets": ["거래소"], "flows": {"거래소": {s: cell(s) for s in secs}},
+            "cap": {"거래소": {s: 1000.0 for s in secs}},
+            "n_by_sector": {"거래소": {"가": 3, "나": 50, "다": 40}}, "finalized": True}
+
+
+def test_thin_sectors_sink_to_the_bottom_under_every_sort():
+    """``~``(10종목 미만) 섹터는 **어느 정렬에서도 맨 아래**다 — ``sw-flow``·수치표와 같다.
+
+    회귀: 원장은 섞어 줄세워 거래소/부동산(3종목)이 절대크기 순 한가운데에 있었다. 회색으로 죽인 줄이
+    위에 오면 순서가 회색의 말을 뒤집는다.
+    주입: ``rows()`` 의 ``out.sort(key=lambda r: r["n"] < THIN_N)`` 를 지우면 실패한다.
+    """
+    mo = Model(_thin_payload())
+    for si in range(len(SORTS)):
+        mo.si = si
+        got = [r["sector"] for r in mo.rows()]
+        assert got[-1] == "가", (SORTS[si], got)
+        assert all(r["n"] >= THIN_N for r in mo.rows()[:-1])
+
+
+def test_comove_outlier_line_leaves_out_thin_sectors():
+    """"시장 공통요인과 따로 논다" 줄에 얇은 섹터를 올리지 않는다. 행렬에는 ``~`` 를 달고 남긴다.
+
+    회귀: 2종목짜리 코스닥/출판·매체복제가 그 줄에 올라, 두 종목의 사정이 섹터의 성질처럼 읽혔다.
+    주입: ``comove_lines`` 가 ``thin=`` 을 넘기지 않게 되돌리면 실패한다.
+    """
+    from sectorflow.tui.ledger_view import comove_outliers
+
+    P = _corr_payload()
+    mo = Model(P)
+    mo.wi = WINDOWS.index(20)
+    keys, _m = mo.corr_matrix()
+    lowest = keys[-1]                       # 평균상관이 가장 낮은 섹터 = 원래 결론 줄의 첫 이름
+    assert lowest in comove_lines(mo, 200)[0][2], "픽스처가 헛돈다 — 얇게 만들 섹터가 결론 줄에 없다"
+    P["n_by_sector"]["거래소"][lowest] = 2
+    mo = Model(P)
+    mo.wi = WINDOWS.index(20)
+    lines, _marks, head = comove_lines(mo, 200)
+    assert lowest not in lines[2], lines[2]
+    assert any(f"~{lowest}" in ln for ln in lines[head:]), "행렬 행 이름에 ~ 가 없다"
+    # 함수 자체도 — 다 얇으면 결론이 없다고 말한다.
+    assert comove_outliers(["갑"], {"갑": 0.1}, thin={"갑"}) == (" 평균상관을 낼 수 있는 섹터가 없다.",)
+
+
+def test_comove_verdict_states_the_measured_fact_with_its_scope():
+    """판정줄은 **잰 사실과 범위**만 말한다 — "로테이션은 우연보다 드물다" 는 검정 문서에 없는 결론이었다.
+
+    주입: 긴 문구를 "로테이션은 우연보다 드물다" 로 되돌리면 실패한다.
+    """
+    from sectorflow.tui.ledger_view import comove_verdict_tiers
+
+    low = comove_verdict_tiers(0.10, 0.50)
+    assert all("로테이션" not in t for t in low), low
+    assert "널보다 드물다" in low[0] and "이 시장·구간·주체" in low[0], low[0]
+    assert "읽지 마라" in comove_verdict_tiers(0.49, 0.50)[0]

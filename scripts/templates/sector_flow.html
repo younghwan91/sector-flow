@@ -96,7 +96,8 @@ select{font:inherit; font-size:12.5px; padding:5px 8px; border-radius:7px; borde
 .hmc{height:19px; border-radius:2px; cursor:pointer; background:var(--sunk)}
 .hmc:hover{outline:2px solid var(--ink); outline-offset:-1px}
 .hmax{font-size:10px; color:var(--ink-3); text-align:center; white-space:nowrap; padding-top:4px}
-.hmsel{outline:2px solid var(--ink); outline-offset:-1px}
+/* 선택 행 테두리는 box-shadow — outline 은 왼쪽에 붙인 이름 칸 위로 비쳐 그려졌다. */
+.hmsel{box-shadow:inset 0 0 0 2px var(--ink)}
 
 /* line */
 .chart{padding:6px 14px 12px}
@@ -174,6 +175,20 @@ nav.links a:hover{text-decoration:underline}
 .seg{flex-wrap:wrap}
 .scrollhint{display:none; font-size:11px; color:var(--ink-3); padding:6px 15px 0}
 @media (max-width:900px){.scrollhint{display:block}}
+/* 얇은 섹터(`~`, 그 시장·구간에 거래된 종목 10개 미만) — TUI·수치표처럼 회색으로 죽이고 맨 아래에 둔다. */
+.tm{color:var(--ink-3); margin-left:2px; font-weight:400}
+.row.thin .name,.row.thin .val .num{color:var(--ink-3)}
+.row.thin .bb{background:var(--ctx)}
+.hmlab.thin{color:var(--ink-3)}
+/* 히트맵을 오른쪽 끝(최근)으로 밀어도 섹터 이름은 남는다 — 이름 칸을 왼쪽에 붙인다.
+   스크롤 칸의 왼쪽 안쪽 여백은 sticky 가 피해 가므로(그 틈으로 칸이 비쳤다) 여백을 격자 쪽 margin 으로 옮긴다. */
+.hm{padding-left:0} .hmgrid{margin-left:14px}
+.hmlab{position:sticky; left:0; z-index:2; background:var(--card)}
+.hmc.thin{opacity:.35}
+tr.thin td{color:var(--ink-3)}
+.seg button:disabled{opacity:.45; cursor:not-allowed}
+/* 폰에서 누적 추이 눈금 — svg 를 실제 픽셀 폭으로 그리므로 글자가 줄지 않는다. */
+@media (max-width:640px){.tk{font-size:11px}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 
@@ -219,13 +234,13 @@ nav.links a:hover{text-decoration:underline}
   </section>
 
   <section class="panel">
-    <h2 id="rk-title">구간 누적 랭킹<small>막대를 누르면 섹터가 선택된다 · 이름 아래 = 그 섹터의 순매수(순매도) 금액 상위 종목</small></h2>
+    <h2 id="rk-title">구간 누적 랭킹<small>막대를 누르면 섹터가 선택된다 · 이름 아래 = 그 섹터의 순매수(순매도) 금액 상위 종목 · <b>~</b> = 그 시장·구간에 거래된 종목이 10개 미만(섹터로 읽지 않는다, 회색·맨 아래)</small></h2>
     <div class="rows" id="rows"></div>
   </section>
 
   <div class="two">
-    <section class="panel"><h2 id="d-buy">순매수 상위<small>금액(억) 순 · 오른쪽은 시총 대비 %p · 이름 아래 투신·연기금(억)</small></h2><div class="lst" id="lst-buy"></div></section>
-    <section class="panel"><h2 id="d-sell">순매도 상위<small>금액(억) 순 · 오른쪽은 시총 대비 %p · 이름 아래 투신·연기금(억)</small></h2><div class="lst" id="lst-sell"></div></section>
+    <section class="panel"><h2 id="d-buy">순매수 상위<small>금액(억) 순<span class="ev" id="ev-buy-amt"></span> · 오른쪽은 시총 대비 %p · 이름 아래 투신·연기금(억)<span class="ev" id="ev-buy-trust"></span></small></h2><div class="lst" id="lst-buy"></div></section>
+    <section class="panel"><h2 id="d-sell">순매도 상위<small>금액(억) 순<span class="ev" id="ev-sell-amt"></span> · 오른쪽은 시총 대비 %p · 이름 아래 투신·연기금(억)<span class="ev" id="ev-sell-trust"></span></small></h2><div class="lst" id="lst-sell"></div></section>
   </div>
 
   <section class="panel"><h2 id="d-detail">기관 세부<small>구간 누적 · 억원</small></h2><div class="det-bars" id="detbars"></div></section>
@@ -236,8 +251,15 @@ nav.links a:hover{text-decoration:underline}
     <p><b>__BASIS__</b>. 키움 KRX 코드(접미사 없음) 응답이라 시장 전체 체결이 아니라 KRX 몫이다(근거 docs/formulas.md §1.0).</p>
     <p><b>순매수 금액은 종가 환산 근사다.</b> DB 가 주는 것은 순매매 <em>수량</em>이라 그날 종가를 곱해 금액을 복원했다. 참값은 VWAP 가중이다 — 방향과 상대 크기를 보는 용도다.</p>
     <p><b>가속 %p 는 구간 누적 순매수 ÷ 구간말 시가총액 × 100 이다</b>(TUI·수치표의 <b>가속</b>과 같은 정의). 기관 지분율이 몇 %p 올랐나에 대한 근사이지 실제 보유잔고가 아니다. 시총이 작은 섹터는 분모가 작아 크게 튄다 — 종목 수와 거래대금을 같이 보라.</p>
-    <p><b>"미반응"(돈은 들어왔는데 덜 간 섹터) 기준은 내렸다.</b> 횡단면 잔차가 사실상 "많이 빠진 순" 의 재포장이었고(수치표에서도 같은 이유로 내렸다), 이름이 앞날 신호처럼 읽혔다. 섹터 수급의 앞날 관계는 검정함 — 증거 없음.</p>
-    <p><b>증거 표지</b> — <b>[측정]</b> 지금·지난 구간을 잰 값, 앞날을 주장하지 않는다 · <b>[앞날 증거 없음]</b> 섹터 앞날 5·20일 수익률과의 순위 관계를 검정함 — 증거 없음(기관·외국인 20일, 기관 60일, 투신+연기금 20일).</p>
+    <p><b>"미반응"(돈은 들어왔는데 덜 간 섹터) 순위는 이 화면에서 내렸다.</b> 그 횡단면 잔차는 수치표·터미널의 <b>미실현 x</b> 와 같은 값인데, x 는 섹터 20일 수익률 반전과 순위상관 ρ 0.82~0.93 이라 사실상 "많이 빠진 순" 이다. 앞날 관계도 검정함 — 증거 없음. 수치표·터미널은 x 와 거기서 나온 값(예상Δv·포텐셜·dW/dt·풀림)을 <b>[≈섹터 20일 반전: x]</b>·[측정] 표지와 함께 탐색 쪽에서만 보인다.</p>
+    <p><b>증거 표지</b> — 앞날 수익률과의 관계를 사전등록해 검정한 결과다(<a href="https://github.com/younghwan91/sector-flow/tree/main/docs/validation">docs/validation</a>, 2018~2026). 표지는 <b>검정한 창·주체</b>에만 붙는다. 그 밖의 창(1·5·120일·직접 고른 구간)은 <b>[측정]</b> 으로 적고 "앞날 검정은 20일만" 처럼 범위를 밝힌다.</p>
+    <p class="evleg"><b>[측정]</b> 지금·지난 구간을 잰 값. 앞날을 주장하지 않는다(앞날 검정 안 함).<br>
+      <b>[앞날 증거 없음]</b> 검정함 — 증거 없음. 섹터 앞날 5·20일 순위 IC. 섹터: 가속·기관 20일, 기관 60일, 외국인 20일, 투신+연기금 20일. 종목: 기관 20일(확인 구간에서 미확인)·외국인 20일(탈락) 순매수.<br>
+      <b>[음의 순위 정보·쓸 수 없음]</b> 종목 투신+연기금 20일의 섹터 안 순위: IC 가 음으로 확인됐다. 그러나 매수 상위 회피는 확인 구간에서 역효과였다 — 쓸 수 없다. 이 화면에서는 종목 이름 아래 투신·연기금(20일 창).<br>
+      <b>[판정 불가: G]</b> 관문 통과 섹터가 날마다 2~7개라 검정력이 없다. 이 화면에는 G 가 없다(수치표·터미널 탐색 모드).<br>
+      <b>[≈섹터 20일 반전: x]</b> 미실현 x 는 사실상 섹터 20일 수익률 반전이다(ρ 0.82~0.93). 앞날 관계도 검정함 — 증거 없음. 이 화면에는 x 가 없다.</p>
+    <p><b>1일 구간에는 가속(%p)이 없다.</b> 하루치는 사실(4주체 순매수·거래대금·수익률)만 적는다 — TUI 1일 창과 같다. 1일을 고르면 임펄스(금액) 순이다.</p>
+    <p><b>~ 표시 섹터</b>는 그 시장·구간에 거래된 종목이 10개 미만이다(TUI·수치표와 같은 문턱). 시총 분모가 작아 가속이 쉽게 튀므로 회색으로 두고 어느 기준에서도 맨 아래에 놓는다. 종목 값이 실린 기간(프리셋)은 그 기간에 거래된 종목을, 그 밖의 구간은 페이로드 전 기간에 거래된 종목을 센다.</p>
     <p><b>수익률은 전일 20:00 → 당일 20:00 이다(애프터마켓 포함 통합 종가).</b> 2026-09-14 부터 일별 종가가 KRX 애프터마켓(16:00~20:00)까지 포함한 통합값이라 정규장(15:30) 종가 기준인 KRX 지수와 같은 날 갈린다(11-06 거래소 자체 바구니 −4.37% vs 코스피 −6.02%). 지수(정규장)와 나란히 보려면 수치표 맨 위 "오늘" 패널.</p>
     <p><b>수익률은 자체 바구니다.</b> 그 섹터 자금흐름과 같은 종목집합의 전일 시총 가중 일별 수익률을 기하누적한다. KRX 업종지수가 아니다 — 구성종목이 달라 분자와 분모가 다른 바구니가 된다(실측: 부동산 20일이 지수 +6.0% vs 자체 +74.9%).</p>
     <p><b>0 은 "관망"이 아니라 "0 또는 미보고"다.</b> 수집기가 파싱에 실패한 필드를 0 으로 채워 둘을 구분할 수 없다. 행 자체의 유무는 신뢰할 수 있다.</p>
@@ -253,6 +275,16 @@ const PRESETS=[[1,"1일"],[5,"5일"],[20,"20일"],[60,"60일"],[120,"120일"],[0
 const METRICS=[["amt","임펄스 억"],["share","가속 %p"]];
 /** 증거 수준 — TUI(`flow_view.EVIDENCE`)와 **같은 표**다. 검사가 둘을 대조한다. */
 const EV={"inst":"[앞날 증거 없음]","forgn":"[앞날 증거 없음]","indiv":"[측정]","etc":"[측정]","accel":"[앞날 증거 없음]","tv":"[측정]","cap":"[측정]"};
+/** 표지가 말하는 **검정 범위** — 주체별로 검정한 창 길이(거래일). 섹터 순매수·가속 둘 다 이 범위다
+ *  (검정한 값은 주체 순매수 ÷ 섹터 시총, 기관 20일은 금액도). 이 밖의 창·주체는 앞날을 검정하지 않았으므로
+ *  [측정] 으로 적고 범위를 밝힌다 — 5일 기관 임펄스에 [앞날 증거 없음] 을 달면 검정하지 않은 것을 검정했다고 말한다.
+ *  근거: docs/validation/2026-11-08-results.md(기관 20일), -usefulness-results.md(S2 외국인 20일·S3 기관 60일). */
+const EV_TESTED={"inst":[20,60],"forgn":[20]};
+/** 종목 층의 표지 — 섹터와 다르다. 투신+연기금 20일 섹터 안 순위는 IC 가 **음**으로 확인됐고(K1) 쓸 수 없다,
+ *  기관 20일은 확인 구간에서 미확인(K2), 외국인 20일은 탈락(K3). TUI `flow_view._EV_NAMES` 와 같은 말이다. */
+const EV_NAME={"trust":["[음의 순위 정보·쓸 수 없음]",[20]],"inst":["[앞날 증거 없음]",[20]],"forgn":["[앞날 증거 없음]",[20]]};
+/** 얇은 섹터 문턱 — TUI `flow_view.THIN_MIN`·수치표 `MIN_NAMES` 와 같은 값(검사가 대조한다). */
+const THIN_MIN=10;
 const NDATE=D.dates.length;
 
 let market="전체", actor="inst", metric="share", picked=null;
@@ -264,6 +296,20 @@ const sgn=n=>(n>=0?"+":"−");
 const amt=n=>sgn(n)+Math.abs(n).toLocaleString("ko-KR",{maximumFractionDigits:0});
 const pp =n=>sgn(n)+Math.abs(n).toFixed(2);
 const mkts=()=>market==="전체"?D.markets:[market];
+const nDays=()=>i1-i0+1;
+/** 실제로 쓰는 기준. **1일에는 가속이 없다** — 하루치는 사실(4주체 순매수·거래대금·수익률)만 있고 가속은
+ *  파생값이라 TUI 1일 창이 `—` 로 둔다. 예전 뷰어는 1일 가속을 내고 그 순으로 줄세웠다(부동산 3종목이 2등). */
+const M=()=>nDays()===1?"amt":metric;
+const ONE_DAY_NOTE="1일은 가속(파생값)을 내지 않는다 — 임펄스(금액) 순";
+function scopeNote(days){ return "[측정] · 앞날 검정은 "+days.join("·")+"일만"; }
+/** 섹터 열의 표지 — `k` 는 `EV` 키(주체 또는 `accel`), `act` 는 그 값의 주체. 검정한 (주체, 창)이면 `EV` 그대로,
+ *  창만 다르면 [측정] + 범위, 검정한 적 없는 주체(개인·기타법인)의 가속은 [측정]. */
+function evFor(k,act){ const b=EV[k]; if(!b||b==="[측정]") return b||"";
+  const t=EV_TESTED[act||k]; if(!t) return "[측정]";
+  return t.includes(nDays())?b:scopeNote(t); }
+/** 종목 열의 표지(`trust` = 투신·연기금, 그 밖은 주체 키). 검정 안 한 주체는 늘 [측정]. */
+function evName(k){ const e=EV_NAME[k]; if(!e) return "[측정]";
+  return e[1].includes(nDays())?e[0]:scopeNote(e[1]); }
 
 function flow(sec,act){ // 일별 배열 합(시장 합산)
   const out=new Array(NDATE).fill(0);
@@ -282,6 +328,29 @@ function present(sec){
   if(!nb||!ms.every(m=>nb[m]&&typeof nb[m]==="object")) return true;
   return ms.some(m=>(nb[m][sec]||0)>0);
 }
+/** 그 시장·구간에 **거래된** 종목 수 — 수치표 `names_count`·TUI `n_all` 과 같은 집합(종목 값이 실린 창).
+ *  종목 값이 없는 구간(전체·날짜 직접 지정)은 페이로드 전 기간에 거래된 종목(`n_by_sector`)으로 센다.
+ *  둘 다 없는 옛 페이로드는 아무것도 얇다고 하지 않는다. */
+const _nCache=new Map();
+function nOf(sec){
+  const w=nameWin(), key=market+"|"+(w||"*");
+  let c=_nCache.get(key);
+  if(!c){
+    c={}; const ms=mkts();
+    if(w){
+      for(const code in D.names){const r=D.names[code];
+        if(!ms.includes(r.market)||!(r.win&&r.win[w])) continue;
+        c[r.sector]=(c[r.sector]||0)+1;}
+    }else if(D.n_by_sector&&ms.every(m=>D.n_by_sector[m]&&typeof D.n_by_sector[m]==="object")){
+      ms.forEach(m=>{const o=D.n_by_sector[m]; for(const s in o) c[s]=(c[s]||0)+(+o[s]||0);});
+    }else c=null;
+    _nCache.set(key,c);
+  }
+  return c?(c[sec]||0):Infinity;
+}
+/** 얇은 섹터(`~`) — 분모(시총)가 작아 가속이 쉽게 튄다. 회색, 그리고 **어느 기준에서도 맨 아래**다
+ *  (TUI `State.rows`·수치표와 같다). 예전 뷰어는 섞어 줄세워 1일 부동산(3종목)이 가속 2등이었다. */
+const thin=sec=>nOf(sec)<THIN_MIN;
 function capOf(sec){
   const ym=D.dates[i1].slice(0,7);
   let c=0;
@@ -294,7 +363,7 @@ function capOf(sec){
 function sum(arr,a,b){ let s=0; for(let i=a;i<=b;i++) s+=arr[i]; return s; }
 function windowVal(sec,act){
   const t=sum(flow(sec,act),i0,i1);
-  if(metric==="amt") return t; const c=capOf(sec); return c?t/c*100:0; }
+  if(M()==="amt") return t; const c=capOf(sec); return c?t/c*100:0; }
 /** 구간 누적 수익률(%) — **자체 바구니**(자금흐름과 같은 종목집합), 전일 시총 가중.
  *  이전 판본은 KRX 업종지수를 썼는데 구성종목이 달랐다(부동산 20일 지수 +6.0% vs
  *  자체 바구니 +74.9%). 분자는 A 바구니, 분모는 B 바구니를 보던 셈이고, 맞추니
@@ -311,9 +380,11 @@ function retOf(sec){
   return any?(acc-1)*100:null;
 }
 const hasIdx=sec=>retOf(sec)!=null;
-function accelOf(sec){ const c=capOf(sec); return c?sum(flow(sec,actor),i0,i1)/c*100:0; }
-function unit(){ return metric==="amt"?"억":"%p"; }
-function fmt(v){ return metric==="amt"?amt(v):pp(v); }
+/** 기관이 아니라 **고른 주체**의 가속. 1일 창에는 없다(`null` → `—`). */
+function accelOf(sec){ if(nDays()===1) return null; const c=capOf(sec); return c?sum(flow(sec,actor),i0,i1)/c*100:0; }
+function unit(){ return M()==="amt"?"억":"%p"; }
+function fmt(v){ return M()==="amt"?amt(v):pp(v); }
+const ppx=v=>v==null?"—":pp(v);
 function fmt2(v){ return pp(v); }
 
 /* ---------- controls ---------- */
@@ -325,7 +396,7 @@ function seg(id,opts,get,set){
 }
 seg("seg-market",[["전체","전체"],...D.markets.map(m=>[m,m])],()=>market,v=>{market=v;render();});
 seg("seg-actor",ACTORS,()=>actor,v=>{actor=v;render();});
-seg("seg-metric",METRICS,()=>metric,v=>{metric=v;render();});
+seg("seg-metric",METRICS,()=>M(),v=>{metric=v;render();});
 seg("seg-preset",PRESETS,()=>curPreset(),v=>{
   i1=NDATE-1; i0=v===0?0:Math.max(0,NDATE-v); render();});
 function curPreset(){ if(i1!==NDATE-1) return -1;
@@ -391,14 +462,16 @@ function renderHeat(order){
   const grid=el("div","hmgrid");
   grid.style.gridTemplateColumns=`120px repeat(${bk.length},minmax(14px,1fr))`;
   const vals=new Map(); let mx=0;
+  // 농도의 최대는 **얇지 않은** 섹터에서 잰다 — 3종목 섹터의 %p 가 척도를 먹으면 나머지가 다 옅어진다.
   order.forEach(s=>{const f=flow(s,actor); const c=capOf(s);
-    const row=bk.map(([a,z])=>{const t=sum(f,a,z); return metric==="amt"?t:(c?t/c*100:0);});
-    vals.set(s,row); row.forEach(v=>mx=Math.max(mx,Math.abs(v)));});
+    const row=bk.map(([a,z])=>{const t=sum(f,a,z); return M()==="amt"?t:(c?t/c*100:0);});
+    vals.set(s,row); if(!thin(s)) row.forEach(v=>mx=Math.max(mx,Math.abs(v)));});
   mx=mx||1;
   order.forEach(s=>{
-    const lab=el("div","hmlab",s); grid.append(lab);
+    const th=thin(s);
+    const lab=el("div","hmlab"+(th?" thin":""),s+(th?"~":"")); grid.append(lab);
     vals.get(s).forEach((v,bi)=>{
-      const c=el("div","hmc"+(picked===s?" hmsel":""));
+      const c=el("div","hmc"+(picked===s?" hmsel":"")+(th?" thin":""));
       const a=Math.min(1,Math.sqrt(Math.abs(v)/mx))*0.92+0.04;
       if(Math.abs(v)>1e-9) c.style.background=`color-mix(in srgb, var(${v>=0?"--buy":"--sell"}) ${a*100}%, transparent)`;
       const [ba,bz]=bk[bi];
@@ -416,21 +489,28 @@ function renderHeat(order){
   // 눈금은 **월-일**이다. 예전 slice(2,7) 은 '26-10' 처럼 연-월이라 한 달 안에서 같은 글자가 반복됐다.
   bk.forEach(([a],bi)=>{const t=el("div","hmax", bi%4===0?D.dates[a].slice(5,10):""); grid.append(t);});
   box.append(grid);
+  // 오른쪽 끝 = 최근이다. 폰(390px)에서는 히트맵이 옆으로 넘치는데 왼쪽(가장 옛날)부터 보여서 오늘이 화면 밖이었다.
+  box.scrollLeft=box.scrollWidth;
 }
 
 /* ---------- cumulative line ---------- */
 function renderLine(order){
   const box=document.getElementById("line"); box.replaceChildren();
-  const W=1000,H=290,L=54,R=118,T=12,B=26;
+  // svg 를 **실제 픽셀 폭**으로 그린다. 예전엔 1000 폭 viewBox 를 화면에 맞춰 줄여서 폰(390px)에서 눈금 글자가
+  // 4px 남짓이 됐다. 좁으면 끝 이름표를 오른쪽 여백 대신 그림 위쪽에 둔다.
+  const cw=Number(box.clientWidth)-28, W=cw>=280?Math.round(cw):1000, narrow=W<640;
+  const H=narrow?250:290,L=narrow?52:54,R=narrow?12:118,T=narrow?26:12,B=26;
   const svg=document.createElementNS("http://www.w3.org/2000/svg","svg");
   svg.setAttribute("viewBox",`0 0 ${W} ${H}`); svg.setAttribute("role","img");
   const focus=picked||order[0];
   const series=order.map(s=>{
     const f=flow(s,actor), c=capOf(s); let acc=0; const pts=[];
-    for(let i=i0;i<=i1;i++){acc+=f[i]; pts.push(metric==="amt"?acc:(c?acc/c*100:0));}
+    for(let i=i0;i<=i1;i++){acc+=f[i]; pts.push(M()==="amt"?acc:(c?acc/c*100:0));}
     return {s,pts};
   });
-  let lo=0,hi=0; series.forEach(o=>o.pts.forEach(v=>{lo=Math.min(lo,v);hi=Math.max(hi,v);}));
+  // 세로 범위도 얇은 섹터를 빼고 잰다(강조한 섹터는 늘 넣는다) — 회색으로 죽인 선이 축을 정하면 안 된다.
+  let lo=0,hi=0; series.forEach(o=>{ if(thin(o.s)&&o.s!==focus) return;
+    o.pts.forEach(v=>{lo=Math.min(lo,v);hi=Math.max(hi,v);});});
   if(hi===lo){hi=1;lo=-1;}
   const pad=(hi-lo)*0.08; hi+=pad; lo-=pad;
   const n=i1-i0+1;
@@ -443,23 +523,30 @@ function renderLine(order){
     const tx=mk("text",{x:L-8,y:Y(v)+3,class:"tk","text-anchor":"end"}); tx.textContent=fmt(v); svg.append(tx);}
   svg.append(mk("line",{x1:L,x2:W-R,y1:Y(0),y2:Y(0),class:"zl"}));
   const path=o=>o.pts.map((v,i)=>(i?"L":"M")+X(i).toFixed(1)+" "+Y(v).toFixed(1)).join(" ");
-  series.filter(o=>o.s!==focus).forEach(o=>svg.append(mk("path",{d:path(o),class:"ctxln"})));
+  series.filter(o=>o.s!==focus&&!thin(o.s)).forEach(o=>svg.append(mk("path",{d:path(o),class:"ctxln"})));
   const f=series.find(o=>o.s===focus);
   if(f){
     const last=f.pts[f.pts.length-1], col=last>=0?"var(--buy)":"var(--sell)";
     svg.append(mk("path",{d:path(f),class:"mainln",stroke:col}));
     svg.append(mk("circle",{cx:X(n-1),cy:Y(last),r:4,fill:col}));
-    const lb=mk("text",{x:X(n-1)+9,y:Y(last)+4,class:"endlab",fill:col}); lb.textContent=focus+" "+fmt(last)+unit();
+    const lb=narrow?mk("text",{x:W-R,y:14,class:"endlab",fill:col,"text-anchor":"end"})
+                   :mk("text",{x:X(n-1)+9,y:Y(last)+4,class:"endlab",fill:col});
+    lb.textContent=focus+(thin(focus)?"~":"")+" "+fmt(last)+unit();
     svg.append(lb);
   }
-  [0,Math.floor((n-1)/2),n-1].forEach(i=>{const t=mk("text",{x:X(i),y:H-6,class:"tk","text-anchor":"middle"});
-    t.textContent=D.dates[i0+i]; svg.append(t);});
+  // 날짜 눈금 — 양 끝은 안쪽으로 붙여 좁은 화면에서 잘리지 않게 한다. 하루면 하나만.
+  const ticks=n<2?[[0,"start"]]:[[0,"start"],[Math.floor((n-1)/2),"middle"],[n-1,"end"]];
+  ticks.forEach(([i,anc])=>{const t=mk("text",{x:X(i),y:H-6,class:"tk","text-anchor":anc});
+    t.textContent=narrow?D.dates[i0+i].slice(5):D.dates[i0+i]; svg.append(t);});
   box.append(svg);
+  const nthin=order.filter(s=>thin(s)&&s!==focus).length;
   document.getElementById("ln-legend").replaceChildren(
-    el("span",null,(focus||"")+" 강조 · 나머지 "+(order.length-1)+"개 섹터는 회색"));
+    el("span",null,(focus||"")+" 강조 · 나머지 "+(order.length-1-nthin)+"개 섹터는 회색"
+      +(nthin?" · ~ 섹터 "+nthin+"개는 안 그림":"")));
 }
 
 /* ---------- ranking ---------- */
+let lastOrder=[];
 function render(){
   ["seg-market","seg-actor","seg-metric","seg-preset"].forEach(id=>document.getElementById(id)._sync());
   selFrom.value=String(i0); selTo.value=String(i1);
@@ -467,25 +554,34 @@ function render(){
   document.getElementById("hdr-asof").textContent="기준일 "+D.dates[NDATE-1];
   document.getElementById("hdr-range").textContent="· 보는 구간 "+D.dates[i0]+" ~ "+D.dates[i1];
   document.getElementById("hdr-meta").textContent=(i1-i0+1)+"거래일 · "+D.n_names.toLocaleString("ko-KR")+"종목";
+  // 1일에는 가속 단추를 끈다 — 눌러도 기준이 안 바뀌는데 눌린 척하면 화면이 거짓말을 한다.
+  [...document.getElementById("seg-metric").children].forEach(b=>{
+    const off=nDays()===1&&b.dataset.k==="share"; b.disabled=off; b.title=off?ONE_DAY_NOTE:"";});
+  document.getElementById("rangeinfo").textContent=nDays()===1?ONE_DAY_NOTE:"";
   document.getElementById("rk-title").firstChild.textContent=
-    "구간 누적 "+label+" — "+(metric==="amt"?"임펄스(금액) 큰 순":"가속(%p) 큰 순")+" "+(EV[metric==="amt"?actor:"accel"]||"");
+    "구간 누적 "+label+" — "+(M()==="amt"?"임펄스(금액) 큰 순":"가속(%p) 큰 순")+" "+evFor(M()==="amt"?actor:"accel",actor);
   document.getElementById("ln-title").firstChild.textContent=label+" 누적 추이 ("+unit()+", 구간 시작 = 0) ";
 
-  let order=D.sectors.filter(present).sort((a,b)=>windowVal(b,actor)-windowVal(a,actor));
+  // 얇은 섹터(`~`)는 기준과 무관하게 맨 아래 — TUI·수치표와 같다. 회색 줄이 맨 위를 차지하면 순서가 회색의 말을 뒤집는다.
+  let order=D.sectors.filter(present).sort((a,b)=>(thin(a)-thin(b))||(windowVal(b,actor)-windowVal(a,actor)));
   if(!picked||!order.includes(picked)) picked=order[0];
+  lastOrder=order;
 
   renderTiles();
   renderHeat(order);
   renderLine(order);
 
-  const mx=Math.max(...order.map(s=>Math.abs(windowVal(s,actor))),1e-9);
+  const core=order.filter(s=>!thin(s));
+  const mx=Math.max(...(core.length?core:order).map(s=>Math.abs(windowVal(s,actor))),1e-9);
   const rows=document.getElementById("rows"); rows.replaceChildren();
   order.forEach(s=>{
-    const v=windowVal(s,actor);
-    const other=metric==="amt"?accelOf(s):sum(flow(s,actor),i0,i1);
-    const osuf=metric==="amt"?"%p":"억";
-    const b=el("button","row"); b.type="button"; b.setAttribute("aria-current",String(picked===s));
-    const nb=el("div","namebox"); nb.append(el("div","name",s));
+    const v=windowVal(s,actor), th=thin(s);
+    const other=M()==="amt"?accelOf(s):sum(flow(s,actor),i0,i1);
+    const osuf=M()==="amt"?"%p":"억";
+    const b=el("button","row"+(th?" thin":"")); b.type="button"; b.setAttribute("aria-current",String(picked===s));
+    if(th) b.title="종목 "+nOf(s)+"개 — 10개 미만이라 섹터로 읽지 않는다";
+    const nm0=el("div","name",s); if(th) nm0.append(el("span","tm","~"));
+    const nb=el("div","namebox"); nb.append(nm0);
     // 이름 줄 = 그 섹터 막대 방향(순매수면 산 쪽, 순매도면 판 쪽)의 **금액** 상위 2개.
     const dv=drivers(s,actor);
     const lead=(v>=0?dv.filter(x=>x.v>0):dv.filter(x=>x.v<0).reverse()).slice(0,2);
@@ -494,17 +590,18 @@ function render(){
     const tr=el("div","track"); tr.append(el("div","axis"));
     const bb=el("div","bb "+(v>=0?"p":"n"));
     if(v>=0) bb.style.left="50%"; else bb.style.right="50%";
-    bb.style.width=Math.max(Math.abs(v)/mx*50,0.3)+"%"; tr.append(bb); b.append(tr);
+    bb.style.width=Math.min(50,Math.max(Math.abs(v)/mx*50,0.3))+"%"; tr.append(bb); b.append(tr);
     const val=el("div","val");
     val.append(el("span","num "+cls(v),fmt(v)));
-    val.append(el("span","sub num",(metric==="share"?amt(other):pp(other))+osuf));
+    val.append(el("span","sub num",M()==="share"?amt(other)+osuf:(other==null?"—":pp(other)+osuf)));
     b.append(val);
     b.addEventListener("mouseenter",e=>tipShow(e,s,[
       ["기간",D.dates[i0]+" ~ "+D.dates[i1]],
       ...ACTORS.map(([k,ko])=>{const t=sum(flow(s,k),i0,i1); return [ko,amt(t)+"억",cls(t)];}),
       ["거래대금",amt(sum(flow(s,"tv"),i0,i1)).replace("+","")+"억"],
       ["시가총액",amt(capOf(s)).replace("+","")+"억"],
-      ["가속 %p",pp(accelOf(s))+"%p",cls(accelOf(s))],
+      ["종목 수",(nOf(s)===Infinity?"—":nOf(s)+"개")+(th?" (~ 10개 미만)":"")],
+      ["가속 %p",accelOf(s)==null?"— (1일)":pp(accelOf(s))+"%p",accelOf(s)==null?"":cls(accelOf(s))],
       ...(hasIdx(s)?[["수익률 (자체 바구니·~20시 종가)",pp(retOf(s))+"%",cls(retOf(s))]]:[["수익률","값 없음"]]),
       ...drivers(s,actor).filter(x=>x.v>0).slice(0,3).map(x=>["↑ "+x.name,amt(x.v)+"억",cls(x.v)])]));
     b.addEventListener("mousemove",tipMove); b.addEventListener("mouseleave",tipHide);
@@ -530,8 +627,13 @@ function renderTiles(){
 
 function renderNames(){
   const label=ACTORS.find(a=>a[0]===actor)[1];
-  document.getElementById("d-buy").firstChild.textContent=picked+" — "+label+" 순매수 상위 ";
-  document.getElementById("d-sell").firstChild.textContent=picked+" — "+label+" 순매도 상위 ";
+  const pk=picked+(picked&&thin(picked)?"~":"");
+  document.getElementById("d-buy").firstChild.textContent=pk+" — "+label+" 순매수 상위 ";
+  document.getElementById("d-sell").firstChild.textContent=pk+" — "+label+" 순매도 상위 ";
+  // 표지 — 종목 층은 섹터와 다르다(`EV_NAME`). 투신·연기금 20일은 [음의 순위 정보·쓸 수 없음], 다른 창은 [측정]+범위.
+  ["buy","sell"].forEach(sd=>{
+    document.getElementById("ev-"+sd+"-amt").textContent=" "+evName(actor);
+    document.getElementById("ev-"+sd+"-trust").textContent=" "+evName("trust");});
   const all=drivers(picked,actor);
   // 부호로 나누므로 같은 종목이 양쪽에 뜨지 않는다. 금액 순 — 화면의 순매수·순매도 상위와 같다.
   fill("lst-buy", all.filter(r=>r.v>0).slice(0,6));
@@ -575,13 +677,15 @@ function renderTable(order){
   const t=document.getElementById("tbl"); t.replaceChildren();
   const thead=el("thead"),tr=el("tr");
   [["섹터"],["기관","inst"],["외국인","forgn"],["개인","indiv"],["기타법인","etc"],["기관 가속 %p","accel"],["거래대금","tv"],["시가총액","cap"]].forEach(([h,k])=>{
-    const th=el("th",null,h); if(k&&EV[k]){ th.title=EV[k]; th.append(el("br"),el("span","ev",EV[k])); } tr.append(th);});
+    const ev=k?evFor(k,k==="accel"?"inst":k):"";
+    const th=el("th",null,h); if(ev){ th.title=ev; th.append(el("br"),el("span","ev",ev)); } tr.append(th);});
   thead.append(tr); t.append(thead);
   const tb=el("tbody");
-  order.forEach(s=>{const r=el("tr"); r.append(el("td",null,s));
+  order.forEach(s=>{const th=thin(s), r=el("tr",th?"thin":null); r.append(el("td",null,s+(th?"~":"")));
     ACTORS.forEach(([k])=>{const v=sum(flow(s,k),i0,i1); r.append(el("td","num "+cls(v),amt(v)));});
-    const c=capOf(s), iv=sum(flow(s,"inst"),i0,i1), sh=c?iv/c*100:0;
-    r.append(el("td","num "+cls(sh),pp(sh)));
+    // 기관 가속 — 1일에는 없다(TUI 1일 창과 같다).
+    const c=capOf(s), iv=sum(flow(s,"inst"),i0,i1), sh=nDays()===1?null:(c?iv/c*100:0);
+    r.append(el("td","num "+(sh==null?"":cls(sh)),ppx(sh)));
     r.append(el("td","num",amt(sum(flow(s,"tv"),i0,i1)).replace("+","")));
     r.append(el("td","num",amt(c).replace("+","")));
     tb.append(r);});
@@ -604,4 +708,8 @@ document.getElementById("hdr-chip").append(chip);
 staleChip(D.dates[NDATE-1],document.getElementById("hdr-chip"));
 
 render();
+// 폭이 바뀌면 누적 추이만 다시 그린다(svg 를 픽셀 폭으로 그리므로). 페이지를 node 로 돌리는 검사에는 window 가 없다.
+if(typeof window!=="undefined"&&window.addEventListener){
+  let rt=0; window.addEventListener("resize",()=>{clearTimeout(rt); rt=setTimeout(()=>renderLine(lastOrder),150);});
+}
 </script>
