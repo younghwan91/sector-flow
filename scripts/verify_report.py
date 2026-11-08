@@ -2629,39 +2629,54 @@ def _key_ints():
     return d
 
 
-def _live(make, apply, fields, keys) -> set:
+def _live(make, apply, fields, keys, unseen: "list | None" = None, label: str = "") -> set:
     """실제로 **듣는** 키 — `handle_key` 를 태워 상태가 달라지는가로 판정한다.
 
     소스를 파싱하지 않는다. "위 공통 분기가 처리한다" 같은 주석은 거짓일 수 있고,
     실제로 거짓이었다. 상태를 직접 보는 쪽만 그걸 못 속인다.
+
+    출발 커서는 **목록 길이에 맞춘 앱이 닿을 수 있는 자리**다: 끝(End 로 간 자리)이 L 이면 0·``min(3, L-1)``·L.
+    키는 그중 한 곳에서라도 상태를 바꾸면 듣는다. 예전엔 3 고정이라 4행 목록(09-18 재구성의 전 종목)에서 3 이 곧
+    끝이어서 ↓·PgDn·G 를 "안 듣는다" 고 했고, 2행 목록엔 앱이 만들 수 없는 커서 3 을 박았다. 2행이면 ↑ 는 끝에서만,
+    ↓ 는 처음에서만 움직이므로 출발점 하나로는 안 된다. 한 행뿐이면 이동 키는 볼 수 없다 — 통과로 세지 않고
+    ``unseen`` 에 적는다.
     """
     def snap(o):
         return tuple(getattr(o, f, None) for f in fields)
 
-    def at_top():
-        # 출발 커서 하나로는 짧은 목록에서 틀린다 — 4행 목록에서 행 3 은 이미 끝이라 ↓·PgDn·G 가
-        # 아무것도 안 바꾼다(09-18 재구성 리포트의 전 종목 4행). 키는 **움직일 수 있는 자리**에서 본다:
-        # 행 3 과 맨 위 두 출발점 중 하나에서라도 상태가 바뀌면 듣는 키다. 죽은 키는 둘 다에서 죽는다.
+    def at(row: int):
         o = make()
         for f in _CURSOR_FIELDS:
             if isinstance(getattr(o, f, None), int):
-                setattr(o, f, 0)
+                setattr(o, f, row)
         return o
 
+    probe = at(0)
+    apply(probe, keys["KEY_END"])
+    last = max((getattr(probe, f) for f in _CURSOR_FIELDS if isinstance(getattr(probe, f, None), int)),
+               default=0)
+    starts = sorted({0, max(0, min(3, last - 1)), last})
     out = set()
     for name, k in keys.items():
-        for start in (make, at_top):
-            o = start()
+        for row in starts:
+            o = at(row)
             before = snap(o)
             cont = apply(o, k)
             if not cont or snap(o) != before:
                 out.add(name)
                 break
+    one_row = last == 0 and "KEY_DOWN" not in out
+    if one_row:
+        out |= _MOVE_KEYS & set(keys)
+        if unseen is not None:
+            unseen.append(label)
     return out
 
 
-#: 화면 상태의 커서 필드(flow ``State``·ledger ``Model``). ``_live`` 가 맨 위 출발점을 만들 때 0 으로 둔다.
+#: 화면 상태의 커서 필드(flow ``State``·ledger ``Model``). ``_live`` 가 출발 커서를 둘 때 쓴다.
 _CURSOR_FIELDS = ("row", "drow", "arow", "hrow", "crow", "help_row")
+#: 한 행뿐인 목록에서는 듣는지 볼 수 없는 이동 키.
+_MOVE_KEYS = {"KEY_UP", "KEY_DOWN", "KEY_PPAGE", "KEY_NPAGE", "KEY_HOME", "KEY_END", "g", "G", "j", "k"}
 
 
 def _help_key_text(entries) -> str:
@@ -2835,7 +2850,9 @@ def layer_h(D: dict, P: dict) -> None:
         ("ledger", "한계", lmo("limits"), lapply, LF, LV.FOOTER_TIERS),
         ("ledger", "도움말", lmo("ledger", True), lapply, LF, LV.HELP_FOOT_TIERS),
     ]
-    live = {(app, name): _live(mk, ap, f, KEYS) for app, name, mk, ap, f, _t in SCREENS}
+    live_unseen: list = []
+    live = {(app, name): _live(mk, ap, f, KEYS, live_unseen, f"{app}/{name}")
+            for app, name, mk, ap, f, _t in SCREENS}
 
     # --- 푸터 단계는 **단조**인가 ------------------------------------------
     # 오늘 밟은 자리다 — 새 화면의 `t` 를 다섯 단계 중 하나에만 적어서, 가장
@@ -2875,7 +2892,8 @@ def layer_h(D: dict, P: dict) -> None:
             for k in sorted(_advertised(t) - got):
                 bad.append(f"{app}/{name} 단계{i} 가 적은 {k!r} 이 안 듣는다")
     chk("H", "푸터·도움말푸터가 적은 키가 그 화면에서 실제로 듣는가",
-        not bad, f"{len(bad)}건  " + "; ".join(bad[:4]))
+        not bad, f"{len(bad)}건  " + "; ".join(bad[:4])
+        + (f"  (한 행뿐이라 이동 키를 못 본 화면: {', '.join(live_unseen)})" if live_unseen else ""))
 
     # 그 예외는 화면이 적는가 — 헤더가 "정렬이 없다" 를 말해야 한다.
     bad = []

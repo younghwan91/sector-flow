@@ -120,10 +120,11 @@ def test_end_key_check_accepts_the_true_last_row_of_a_short_list(n_names):
 
 
 @pytest.mark.parametrize("n_names", [2, 4])
-def test_advertised_keys_count_as_live_on_a_list_too_short_to_move_from_row_3(n_names):
+def test_advertised_keys_count_as_live_on_a_list_too_short_to_move_from_row_3(n_names, capsys):
     """회귀 — 09-18 재구성: 전 종목이 4행이라 출발 커서 3 이 이미 끝이어서 ↓·PgDn·G 가 "안 듣는다" 고 했다.
 
-    키가 듣는지는 그 키가 움직일 수 있는 자리에서 본다(맨 위·행 3 두 출발점의 합집합).
+    키가 듣는지는 목록 길이에 맞춘, 앱이 닿을 수 있는 자리(처음·min(3, 끝-1)·끝)에서 본다. 한 행뿐이면
+    이동 키는 볼 수 없다 — 통과가 아니라 "못 본 화면" 으로 적혀야 한다.
     주입: 출발점을 다시 행 3 하나로 두면 실패한다.
     """
     from sectorflow.tui.flow_view import State
@@ -131,8 +132,13 @@ def test_advertised_keys_count_as_live_on_a_list_too_short_to_move_from_row_3(n_
     st = State(_flow(n_names))
     st.allv = True
     assert len(st.all_picks()) == n_names, "픽스처가 그 길이의 목록을 못 만든다 — 검사가 헛돈다"
+    capsys.readouterr()
     fails = _h_fails(_flow(n_names))
     assert not [f for f in fails if "적은 키가 그 화면에서 실제로 듣는가" in f], fails
+    line = [ln for ln in capsys.readouterr().out.splitlines() if "적은 키가 그 화면에서" in ln][0]
+    # 이 픽스처의 섹터 표는 **한 행**이다 — 이동 키를 볼 수 없으니 못 봤다고 적고, 2행 이상인 전 종목은 본다.
+    unseen = line.split("이동 키를 못 본 화면", 1)[-1] if "이동 키를 못 본 화면" in line else ""
+    assert "flow/섹터 표" in unseen and "전 종목(t)" not in unseen, line
 
 
 def test_cursor_range_check_starts_from_a_state_the_app_can_reach():

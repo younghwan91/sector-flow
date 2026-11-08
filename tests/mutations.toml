@@ -4625,5 +4625,13 @@ why = """키가 듣는지를 행 3 출발점 하나로만 본다 — 4행 이하
 이미 끝이라 ↓·PgDn·G 를 "안 듣는다" 고 해 멀쩡한 리포트가 검증 실패가 된다(2026-09-18 재구성)."""
 guards = ["tests/test_verify_report.py::test_advertised_keys_count_as_live_on_a_list_too_short_to_move_from_row_3"]
 file = "scripts/verify_report.py"
-find = "        for start in (make, at_top):"
-replace = "        for start in (make,):"
+find = "    starts = sorted({0, max(0, min(3, last - 1)), last})"
+replace = "    starts = [3]"
+
+[[mutation]]
+id = "verify-one-row-list-passes-silently"
+why = "한 행뿐인 목록에서 이동 키를 볼 수 없는데 '못 본 화면' 으로 안 적고 조용히 통과로 센다"
+guards = ["tests/test_verify_report.py::test_advertised_keys_count_as_live_on_a_list_too_short_to_move_from_row_3"]
+file = "scripts/verify_report.py"
+find = "        if unseen is not None:\n            unseen.append(label)"
+replace = "        pass"
