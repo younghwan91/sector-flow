@@ -6016,3 +6016,73 @@ guards = ["tests/test_verify_merge.py::test_unsharded_budget_scales_by_the_ci_sh
 file = "scripts/verify_merge.py"
 find = "def ci_shard_count(wt: Path, fallback: int = 4) -> int:"
 replace = "def ci_shard_count(wt: Path, fallback: int = 1) -> int:"
+
+# ── 검증·품질 페이지(scripts/trust_page.py) ──────────────────────────────────────────
+
+[[mutation]]
+id = "trust-banned-word-guard-off"
+why = """금지어(추천·급등 …)가 검사 이름 같은 데이터로 들어와도 페이지를 쓴다. 정적 문구만 보는 검사는
+이 경로를 못 본다 — 데이터에서 들어온 말은 생성 때 막아야 한다."""
+guards = ["tests/test_trust_page.py::test_a_banned_word_coming_from_the_data_blocks_the_write"]
+file = "scripts/trust_page.py"
+find = """    hits = banned_hits(page)
+    if hits:"""
+replace = """    hits = banned_hits(page)
+    if False:"""
+
+[[mutation]]
+id = "trust-gate-blocks-of-one-day-merged"
+why = """같은 기준일 관문이 크론 로그에 두 번(막힌 뒤 재시도 통과) 있을 때 두 블록을 합치면, 결국 만든 리포트의
+관문이 '막힘' 으로 보인다. 마지막 블록이 그날의 관문이다."""
+guards = ["tests/test_trust_page.py::test_each_report_folder_gets_its_state_verify_gate_and_final_diff"]
+file = "scripts/trust_page.py"
+find = "            cur = out[h.group(1)] = []"
+replace = "            cur = out.setdefault(h.group(1), [])"
+
+[[mutation]]
+id = "trust-crashed-verifier-counted-as-pass"
+why = """검사기가 도중에 멈춰 요약 줄이 없는 VERIFY 를 통과로 센다(10-27 이 그랬다). 실패 표시만 보면
+멈추기 전까지의 FAIL 이 0 이라 통과로 보인다."""
+guards = ["tests/test_trust_page.py::test_each_report_folder_gets_its_state_verify_gate_and_final_diff",
+          "tests/test_trust_page.py::test_failure_reasons_and_tiles_count_what_happened"]
+file = "scripts/trust_page.py"
+find = """        if has["VERIFY_FAILED.txt"] or v["fails"] or not v["complete"]:"""
+replace = """        if v["fails"]:"""
+
+[[mutation]]
+id = "trust-rebuilt-shown-as-final"
+why = "재구성 폴더에도 FINAL.txt 가 있다 — 재구성을 먼저 보지 않으면 나중에 다시 만든 날이 '확정' 게시본으로 보인다"
+guards = ["tests/test_trust_page.py::test_each_report_folder_gets_its_state_verify_gate_and_final_diff"]
+file = "scripts/trust_page.py"
+find = """    elif has["REBUILT.txt"]:
+        day["state"] = "재구성\""""
+replace = """    elif False:
+        day["state"] = "재구성\""""
+
+[[mutation]]
+id = "trust-unfavorable-caveat-dropped"
+why = "K1 의 '쓸 수 있는 형태는 못 보임' 을 빼면 확인된 음의 IC 만 남아 유리하게 읽힌다 — 불리한 결과를 덜어내는 편집"
+guards = ["tests/test_trust_page.py::test_unfavorable_results_and_limitations_are_on_the_page"]
+file = "scripts/trust_page.py"
+find = "\"음(−)의 순위 정보 확인 · 쓸 수 있는 형태는 못 보임\", \"bad\","
+replace = "\"음(−)의 순위 정보 확인\", \"ok\","
+
+[[mutation]]
+id = "trust-prereg-hash-not-the-prereg"
+why = """사전등록 칸에 그 파일을 넣은 커밋이 아닌 해시(원 사전등록)를 적는다. 둘 다 결과보다 앞서 있어
+순서만 보는 검사는 통과한다 — 해시가 그 사전등록 파일을 처음 넣은 커밋인지 본다."""
+guards = ["tests/test_trust_page.py::test_preregistration_commits_are_real_and_precede_their_results"]
+file = "scripts/trust_page.py"
+find = """     (PREREG_Q3D, "6ca326a"), (RESULTS, "8385ae1")),
+    ("선정 점수 G"""
+replace = """     (PREREG_Q3D, "bd27017"), (RESULTS, "8385ae1")),
+    ("선정 점수 G"""
+
+[[mutation]]
+id = "trust-page-not-in-web-allow-list"
+why = "허용 목록에서 빠지면 페이지를 만들어도 웹에서 404 다 — 만드는 쪽 검사만으로는 안 보인다"
+guards = ["tests/test_trust_page.py::test_default_output_lands_in_the_latest_folder_and_the_web_serves_it"]
+file = "scripts/serve_reports.py"
+find = """    "trust.html": "text/html; charset=utf-8",  # 검증·품질 — scripts/trust_page.py 가 latest 폴더에 쓴다
+"""
+replace = ""
