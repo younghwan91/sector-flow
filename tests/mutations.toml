@@ -4887,3 +4887,19 @@ guards = ["tests/test_rebuild_history.py::test_needs_a_date_range"]
 file = "scripts/rebuild_history.py"
 find = "        ap.error(\"--from 과 --to, 또는 --dates 가 필요하다\")"
 replace = "        days = []"
+
+[[mutation]]
+id = "verify-unverified-rebuild-needs-provisional-mark"
+why = "검증기가 창 밖 재구성(마감 값)에도 '(잠정)' 표지를 요구해 그 리포트를 모두 검증 실패로 만든다(2026-09-15 재구성)"
+guards = ["tests/test_web_render.py::test_web_layer_is_green_on_a_rebuilt_day_outside_the_finalize_window"]
+file = "scripts/verify_report.py"
+find = "            if not (D.get(\"final\") or D.get(\"finalize_unverified\")) and \"(잠정)\" not in"
+replace = "            if not D.get(\"final\") and \"(잠정)\" not in"
+
+[[mutation]]
+id = "verify-one-day-list-tie-order"
+why = "같은 금액의 두 종목 순서를 뷰어와 맞대 검증 실패를 낸다 — JS 는 0 으로 시작하지 않는 코드를 숫자 순으로 앞에 돈다"
+guards = ["tests/test_web_render.py::test_web_layer_one_day_list_does_not_care_how_ties_are_ordered"]
+file = "scripts/verify_report.py"
+find = "                    peers = [(n, _sub(iv, pf)) for n, v2, iv, pf in want if round(v2, 1) == round(v, 1)]"
+replace = "                    peers = [(_n, _sub(_i, _p))]"

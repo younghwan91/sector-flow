@@ -171,3 +171,34 @@ def test_krx_index_return_is_recomputed_from_the_db():
     VR.FAILS.clear()
     VR._f_today_context(P, con.cursor(), "?", meta, px, lambda c, d, p: None if p is None else p * 100.0)
     assert any("KRX 지수" in f for f in VR.FAILS), VR.FAILS
+
+
+@node
+def test_web_layer_is_green_on_a_rebuilt_day_outside_the_finalize_window(PD, tmp_path):
+    """창 밖 재구성(finalize_unverified)은 마감 값이다 — '(잠정) 표지가 없다' 로 빨개지면 안 된다(2026-09-15 재구성)."""
+    P, D = PD
+    P2 = dict(P, rebuilt=True, finalize_unverified=True)
+    D2 = dict(D, rebuilt=True, finalize_unverified=True)
+    assert _w_fails(P2, D2, _write(tmp_path, P2, D2)) == []
+
+
+@node
+def test_web_layer_one_day_list_does_not_care_how_ties_are_ordered(PD, tmp_path):
+    """같은 1일 금액의 두 종목은 뷰어(JS)와 검증기(파이썬)가 다른 순서로 놓는다 — 그걸 불일치로 보면 안 된다.
+
+    JS 객체는 0 으로 시작하지 않는 숫자 꼴 키(175330)를 **맨 앞에 숫자 순**으로 돌고, 파이썬 dict 는 넣은 순서로 돈다.
+    동률이면 정렬이 그 순서를 남겨 둘이 갈린다(2026-09-15 금융: LG 003550·JB금융지주 175330 둘 다 +37.9억).
+    """
+    P, D = PD
+    P2 = json.loads(json.dumps(P))
+    sec = max(P2["today"]["sectors"]["전체"], key=lambda s: abs((P2["today"]["sectors"]["전체"][s].get("inst") or {}).get("v") or 0))
+    mine = sorted(c for c, n in P2["names"].items() if n.get("sector") == sec and (n.get("win") or {}).get("1"))
+    assert len(mine) >= 2, "픽스처가 동률을 만들 종목이 없다"
+    lo, hi = mine[0], mine[1]
+    for i, c in enumerate((lo, hi)):
+        P2["names"][c]["win"]["1"].update(inst=37.9, invtrt=2.2 + i, penfnd_etc=11.9 + i)   # 같은 금액, 다른 세부
+    # hi 를 0 으로 시작하지 않는 코드로 바꿔 **뒤에** 넣는다 — 파이썬은 lo·175330, JS 는 175330·lo 순으로 돈다.
+    moved = P2["names"].pop(hi)
+    P2["names"]["175330"] = moved
+    D2 = SN.build(P2)
+    assert not [f for f in _w_fails(P2, D2, _write(tmp_path, P2, D2)) if "1일 종목 목록" in f]

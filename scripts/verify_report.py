@@ -1890,8 +1890,8 @@ def _f_today_context(P: dict, cur, ph: str, meta: dict, px: dict, cap_at) -> Non
     chk("F", "금액 근사 오차(시장·섹터 최대) = DB 재계산", not bad and n_cmp > 0, "; ".join(bad[:2]))
 
     # ── 외부 참값: 전 거래일 자체 바구니(정규장 종가) ≈ KRX 지수 ──
-    if not P.get("final"):
-        print("       (잠정 리포트 — 정규장 종가 대조는 확정 모드에서만)")
+    if not (P.get("final") or P.get("finalize_unverified")):
+        print("       (잠정 리포트 — 정규장 종가 대조는 마감 값(확정·창 밖 재구성)에서만)")
         return
     if len(dates) < 3:
         print("       SKIP 정규장 종가 대조 — 거래일이 셋 미만")
@@ -2521,7 +2521,8 @@ def layer_w(D: dict, P: dict, folder: str) -> None:
                 hi, lo = FV.today_extremes(D, m, ln["actor"])
                 if ln["items"] != (hi if ln["side"] == "hi" else lo):
                     bad_tt.append(f"{m}/{ln['actor']}/{ln['side']} 웹 {ln['items'][:2]} vs TUI {(hi if ln['side'] == 'hi' else lo)[:2]}")
-            if not D.get("final") and "(잠정)" not in ((cards.get("t-ext") or {}).get("title") or ""):
+            # 마감 값(확정·창 밖 재구성 finalize_unverified)이 아닐 때만 (잠정) 이다 — 페이지의 CLOSED 와 같은 판단.
+            if not (D.get("final") or D.get("finalize_unverified")) and "(잠정)" not in ((cards.get("t-ext") or {}).get("title") or ""):
                 bad_t.append(f"{m} 잠정 리포트인데 극단 목록에 (잠정) 표지가 없다")
             for ln in (cards.get("t-ret") or {}).get("lines", []):
                 mm = ln.get("market")
@@ -2562,9 +2563,13 @@ def layer_w(D: dict, P: dict, folder: str) -> None:
                 n_v += len(want)
                 if [g["amt"] for g in got] != [_w_A(v) + "억" for _n, v, _i, _p in want]:
                     bad_v.append(f"{s}/{side} {[g['amt'] for g in got][:2]} vs {[_w_A(v) + '억' for _n, v, _i, _p in want][:2]}")
-                for g, (n, _v, iv, pf) in zip(got, want):
-                    if not (g.get("name") or "").startswith(n or "") or \
-                            f"투신 {'—' if iv is None else _w_A(iv)} · 연기금 {'—' if pf is None else _w_A(pf)}억" != g.get("sub"):
+                # 같은 금액(표시 0.1억 단위)끼리는 순서를 묻지 않는다 — 뷰어(JS)와 여기(파이썬)의 동률 정렬이 다르다
+                # (2026-09-15 금융: LG·JB금융지주 둘 다 +37.9억). 금액 순서는 위에서 이미 봤다.
+                def _sub(iv, pf):
+                    return f"투신 {'—' if iv is None else _w_A(iv)} · 연기금 {'—' if pf is None else _w_A(pf)}억"
+                for g, (_n, v, _i, _p) in zip(got, want):
+                    peers = [(n, _sub(iv, pf)) for n, v2, iv, pf in want if round(v2, 1) == round(v, 1)]
+                    if not any((g.get("name") or "").startswith(n or "") and sub == g.get("sub") for n, sub in peers):
                         bad_v.append(f"{s}/{side} {g.get('name')} {g.get('sub')}")
                         break
         chk("W", "뷰어 1일 종목 목록 = names.win['1'](금액·투신·연기금)", not bad_v and n_v > 0,
