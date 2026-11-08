@@ -2962,7 +2962,9 @@ def _w_viewer_expect(P: dict, w: int, m: str) -> dict:
     nb = P.get("n_by_sector") or {}
 
     def tot(sec, k):
-        return sum(sum(((P["flows"].get(mk) or {}).get(sec) or {}).get(k, [0.0] * nd)[i0:i1 + 1]) for mk in mks)
+        # 잔차 제거는 뷰어 `Z`·블록 `sector_numbers.zsum` 과 같은 문턱 — 상쇄된 0 의 부호를 맞춘다.
+        t = sum(sum(((P["flows"].get(mk) or {}).get(sec) or {}).get(k, [0.0] * nd)[i0:i1 + 1]) for mk in mks)
+        return 0.0 if abs(t) < 1e-6 else t
 
     def cap(sec):
         c = 0.0
@@ -2972,7 +2974,10 @@ def _w_viewer_expect(P: dict, w: int, m: str) -> dict:
         return c
     shaped = bool(nb) and all(isinstance(nb.get(mk), dict) for mk in mks)
     present = [s for s in P["sectors"] if not shaped or any((nb[mk].get(s) or 0) > 0 for mk in mks)]
-    out = {"tot": {k: sum(tot(s, k) for s in P["sectors"]) for k in ("inst", "forgn", "indiv", "etc", "tv")},
+    def mtot(k):
+        t = sum(tot(s, k) for s in P["sectors"])
+        return 0.0 if abs(t) < 1e-6 else t
+    out = {"tot": {k: mtot(k) for k in ("inst", "forgn", "indiv", "etc", "tv")},
            "sec": {}}
     for s in present:
         c = cap(s)
