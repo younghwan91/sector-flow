@@ -117,10 +117,23 @@ def test_serve_sh_does_nothing_without_a_tailscale_address(tmp_path):
     for tool in ("dirname", "date", "head", "mkdir"):
         os.symlink(f"/usr/bin/{tool}" if os.path.exists(f"/usr/bin/{tool}") else f"/bin/{tool}",
                    tmp_path / tool)
-    p = subprocess.run(["/bin/bash", str(REPO / "scripts" / "serve.sh")], capture_output=True,
+    # 레포의 serve.sh 를 그대로 돌리면 기동 실패 횟수(.serve.misses)가 **이 작업 트리의** reports/ 에 쌓여
+    # 12번째마다 1 로 끝났다 — 돌린 횟수에 따라 깨지는 검사였다(2026-11-08). 임시 레포 사본에서 돌린다.
+    repo = tmp_path / "repo"
+    (repo / "scripts").mkdir(parents=True)
+    for name in ("serve.sh", "serve_reports.py"):
+        shutil.copy(REPO / "scripts" / name, repo / "scripts" / name)
+    for _ in range(2 * srv.SOFT_FAIL_ALERT_EVERY):
+        p = subprocess.run(["/bin/bash", str(repo / "scripts" / "serve.sh")], capture_output=True,
+                           text=True, env=env, timeout=10)
+        assert "Tailscale 주소가 없다" in p.stdout
+        if p.returncode != 0:
+            break
+    misses = int((repo / "reports" / ".serve.misses").read_text())
+    assert misses == srv.SOFT_FAIL_ALERT_EVERY and p.returncode == 1, "한 시간째에 한 번 알려야 한다"
+    p = subprocess.run(["/bin/bash", str(repo / "scripts" / "serve.sh")], capture_output=True,
                        text=True, env=env, timeout=10)
     assert p.returncode == 0, p.stderr
-    assert "Tailscale 주소가 없다" in p.stdout
 
 
 def test_soft_failures_alert_once_an_hour_not_every_five_minutes(tmp_path):
