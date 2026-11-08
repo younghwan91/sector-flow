@@ -293,6 +293,7 @@ def test_main_writes_final_diff_next_to_the_payload(tmp_path, monkeypatch):
     monkeypatch.setattr(sf, "sector_cap", lambda con, d, last: caps)
     monkeypatch.setattr(sf, "index_returns", lambda *a, **k: {m: {} for m in SECTORS})
     monkeypatch.setattr(sf, "sector_cap_monthly", lambda *a: {})
+    monkeypatch.setattr(sf, "market_context", lambda con, d, P: None)
     build = tmp_path / f"{dates[-1]}.building.9"
     build.mkdir()
     out = build / "payload.json"
@@ -311,3 +312,78 @@ def test_numbers_page_carries_today_for_the_terminal(P):
     D = sn.build(P)
     assert D["today"] == P["today"]
     assert "change" in D and D["change_reason"] == P["change_reason"]
+
+
+# ── 시장 맥락 — KRX 지수(정규장)·금액 근사 오차 (DB 는 sqlite 메모리 표로 흉내) ──
+
+
+def _ctx_db(dates, index_rows, bars):
+    import sqlite3
+
+    con = sqlite3.connect(":memory:")
+    con.execute("CREATE TABLE sector_index (code TEXT, name TEXT, date TEXT, close REAL)")
+    con.executemany("INSERT INTO sector_index VALUES (?,?,?,?)", index_rows)
+    con.execute("CREATE TABLE daily_bars (code TEXT, date TEXT, volume REAL, trade_value REAL, source TEXT)")
+    con.executemany("INSERT INTO daily_bars VALUES (?,?,?,?,?)", bars)
+    return con
+
+
+def test_krx_index_returns_use_this_payloads_trading_days_and_never_fill():
+    """KRX 종합지수 1·20일 수익률 — 기준일과 그 1·20 거래일 전 종가의 비. 없으면 메우지 않고 None.
+
+    주입: 20일 기준을 20 거래일 전이 아니라 19 거래일 전으로 잡으면 값이 바뀐다.
+    """
+    dates = [f"2026-10-{d:02d}" for d in range(1, 26)]
+    rows = [("001", "종합(KOSPI)", d, 1000.0 + 10 * i) for i, d in enumerate(dates)]
+    rows += [("101", "종합(KOSDAQ)", d, 500.0) for d in dates[:-1]]       # 기준일 지수 없음
+    con = _ctx_db(dates, rows, [])
+    got = sf.krx_index_block(con, dates, ["거래소", "코스닥"])
+    k = got["거래소"]["ret"]
+    assert k["1"] == pytest.approx((1240 / 1230 - 1) * 100, abs=1e-3)
+    assert k["20"] == pytest.approx((1240 / 1040 - 1) * 100, abs=1e-3)
+    assert got["거래소"]["name"] == "코스피"
+    assert got["코스닥"]["ret"] == {"1": None, "20": None}
+
+
+def test_approx_gap_compares_close_with_vwap_weighted_by_absolute_net_quantity():
+    """금액 근사 오차 = |Σ n·close − Σ n·vwap| / Σ n·vwap, n = 4주체 |순매수 수량| 합, vwap = 거래대금(백만원)·1e6/거래량.
+
+    주입: 거래대금 단위를 원으로 읽으면(1e6 을 빼면) 오차가 100% 가까이 된다.
+    """
+    asof = "2026-11-06"
+    df = pd.DataFrame([
+        {"code": "A", "date": asof, "market": "거래소", "close": 100.0,
+         "individual": -10, "foreign_": 4, "institution": 6, "etc_corp": 0},
+        {"code": "B", "date": asof, "market": "코스닥", "close": 50.0,
+         "individual": 0, "foreign_": -2, "institution": 2, "etc_corp": 0},
+        {"code": "C", "date": asof, "market": "코스닥", "close": 10.0,      # 거래량 0 — 양쪽에서 빠진다
+         "individual": 5, "foreign_": -5, "institution": 0, "etc_corp": 0},
+    ])
+    # A: vwap 110 (거래대금 1.1백만원 / 10,000주), B: vwap 50 — naver 행은 키움이 있으면 무시
+    bars = [("A", asof, 10000, 1.1, "kiwoom"), ("A", asof, 10000, 9.9, "naver"),
+            ("B", asof, 20000, 1.0, "kiwoom"), ("C", asof, 0, 0.0, "kiwoom")]
+    got = sf.approx_gap(_ctx_db([asof], [], bars), df, asof, ["거래소", "코스닥"])
+    assert got["거래소"]["pct"] == pytest.approx(abs(20 * 100 - 20 * 110) / (20 * 110) * 100, abs=0.01)
+    assert got["코스닥"]["pct"] == pytest.approx(0.0)
+    assert got["코스닥"]["cover"] == pytest.approx(200 / 300 * 100, abs=0.1)
+    want = abs(2000 + 200 - (2200 + 200)) / 2400 * 100
+    assert got["전체"]["pct"] == pytest.approx(want, abs=0.01)
+
+
+def test_market_context_puts_index_and_gap_inside_today(P, monkeypatch):
+    """KRX 지수·근사 오차는 `today` 안에 실린다 — 화면은 numbers.html 의 D 하나만 읽고 build 가 today 를 통째로 건넨다."""
+    Q = json.loads(json.dumps(P))
+    monkeypatch.setattr(sf, "krx_index_block", lambda con, dates, mk: {"거래소": {"ret": {"1": 1.0}}})
+    monkeypatch.setattr(sf, "approx_gap", lambda con, df, asof, mk: {"코스닥": {"pct": 6.0}})
+    sf.market_context(None, None, Q)
+    assert Q["today"]["krx_index"] == {"거래소": {"ret": {"1": 1.0}}}
+    assert Q["today"]["market"]["코스닥"]["approx_gap"] == {"pct": 6.0}
+    assert Q["today"]["market"]["거래소"]["approx_gap"] is None
+    assert Q["today"]["approx_gap_warn"] == sf.APPROX_GAP_WARN == 5.0
+
+
+def test_today_rows_carry_all_four_actors_for_the_one_day_window(P):
+    """1일 창은 주체를 4개 다 돈다 — `today` 섹터 칸에 기타법인까지 있어야 한다."""
+    for rows in P["today"]["sectors"].values():
+        for row in rows.values():
+            assert {"inst", "forgn", "indiv", "etc"} <= set(row)
