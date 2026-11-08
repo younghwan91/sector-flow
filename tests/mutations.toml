@@ -5748,7 +5748,7 @@ id = "krx-truth-build-hook-dropped"
 why = "sector_flow 빌드가 attach 를 안 부르면 KR_QUANT_KRX_TRUTH=1 로 만들어도 아무 일도 안 일어난다"
 guards = ["tests/test_krx_truth.py::test_sector_flow_build_calls_attach_before_writing_outputs"]
 file = "scripts/sector_flow.py"
-find = "    _krx_truth().attach(payload,\n                        os.path.dirname(os.path.abspath(a.json or a.html)) if (a.json or a.html) else None,\n                        root)"
+find = "    _attach_krx_truth(payload,\n                      os.path.dirname(os.path.abspath(a.json or a.html)) if (a.json or a.html) else None,\n                      root)"
 replace = "    pass"
 
 [[mutation]]
@@ -7341,3 +7341,53 @@ guards = ["tests/test_packaging.py::test_report_entry_points_ship_their_script_a
 file = "src/sectorflow/offline_templates.py"
 find = 'WEB_ONLY_TEMPLATES = ("digest_card.html", "trust.html")'
 replace = 'WEB_ONLY_TEMPLATES = ("digest_card.html",)'
+
+[[mutation]]
+id = "wheel-krx-truth-load-unguarded"
+why = "krx_truth.py 가 없는 설치본에서 모듈을 그대로 읽어 --json 이 FileNotFoundError 로 죽는다(선택 기능이 본 리포트를 죽인다)"
+guards = ["tests/test_packaging.py::test_built_wheel_makes_a_report_from_its_own_copy",
+          "tests/test_packaging.py::test_krx_truth_load_failure_never_breaks_the_report"]
+file = "scripts/sector_flow.py"
+find = "    if not os.path.isfile(p):\n        if os.environ.get(\"KR_QUANT_KRX_TRUTH\") == \"1\":"
+replace = "    if False:\n        if os.environ.get(\"KR_QUANT_KRX_TRUTH\") == \"1\":"
+
+[[mutation]]
+id = "krx-truth-broken-module-kills-the-report"
+why = "krx_truth.py 를 못 읽을 때(문법·import 오류) 예외가 올라와 리포트 전체가 죽는다 — attach 의 보호 밖이다"
+guards = ["tests/test_packaging.py::test_krx_truth_load_failure_never_breaks_the_report"]
+file = "scripts/sector_flow.py"
+find = "    except Exception as e:  # noqa: BLE001 — 선택 기능의 버그가 본 리포트를 죽이면 안 된다\n        if isinstance(payload.get(\"today\"), dict):"
+replace = "    except ZeroDivisionError as e:\n        if isinstance(payload.get(\"today\"), dict):"
+
+[[mutation]]
+id = "wheel-closure-undeclared-import"
+why = "싣는 스크립트가 선언하지 않은 패키지를 import 한다 — 레포 venv 에선 돌고 설치본에서만 죽는다"
+guards = ["tests/test_packaging.py::test_shipped_code_import_closure_stays_inside_the_wheel"]
+file = "scripts/completeness_gate.py"
+find = "import statistics\nimport sys\nimport warnings\n"
+replace = "import statistics\nimport sys\nimport warnings\nif False:\n    import pytest\n"
+
+[[mutation]]
+id = "wheel-closure-script-calls-unshipped-sibling"
+why = "싣는 스크립트가 wheel 에 없는 옆 스크립트를 부른다 — 체크아웃에선 돌고 설치본에서만 죽는다"
+guards = ["tests/test_packaging.py::test_shipped_code_import_closure_stays_inside_the_wheel"]
+file = "scripts/sector_numbers.py"
+find = "os.path.join(here, \"sector_flow.py\"),"
+replace = "os.path.join(here, \"digest.py\"),"
+
+[[mutation]]
+id = "wheel-closure-script-uses-web-only-template"
+why = "싣는 스크립트가 웹 전용 템플릿을 읽는다 — 설치본에서 FileNotFoundError"
+guards = ["tests/test_packaging.py::test_shipped_code_import_closure_stays_inside_the_wheel"]
+file = "scripts/sector_numbers.py"
+find = "os.path.join(here, \"templates\", \"sector_numbers.html\")"
+replace = "os.path.join(here, \"templates\", \"trust.html\")"
+
+[[mutation]]
+id = "wheel-hook-ships-only-first-template"
+why = "빌드 훅이 템플릿 하나만 실어 선언은 맞는데 설치본이 HTML 을 못 만든다 — 진짜 wheel 을 만들어야 보인다"
+guards = ["tests/test_packaging.py::test_built_wheel_makes_a_report_from_its_own_copy",
+          "tests/test_packaging.py::test_hook_ships_offline_templates"]
+file = "hatch_build.py"
+find = "        for name in off.TEMPLATES:"
+replace = "        for name in off.TEMPLATES[:1]:"

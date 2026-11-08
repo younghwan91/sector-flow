@@ -300,6 +300,6 @@ def test_sector_flow_build_calls_attach_before_writing_outputs():
     """sector_flow.main 이 revision_stats 뒤·산출물 쓰기 전에 attach 를 부른다 — 둘 다 payload 에 실려야 HTML 이 본다."""
     src = (REPO / "scripts" / "sector_flow.py").read_text("utf-8")
     i_rev = src.index('payload["revision_stats"] = revision_stats(payload, root)')
-    i_kt = src.index("_krx_truth().attach(payload,")
+    i_kt = src.index("_attach_krx_truth(payload,\n")
     i_out = src.index('json.dump(payload, f, ensure_ascii=False)')
     assert i_rev < i_kt < i_out
