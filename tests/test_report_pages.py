@@ -486,6 +486,17 @@ def test_rebuilt_day_outside_the_finalize_window_says_no_final_record(tpl, tmp_p
 @node
 def test_numbers_page_return_label_is_final_style_for_a_rebuilt_day_outside_the_finalize_window(tmp_path):
     """창 밖 재구성은 두 달 지난 마감 값이다 — 수치표의 수익률 라벨이 '애프터마켓 진행 중' 이면 거짓이다."""
-    texts = _page("sector_numbers.html", dict(_numbers_data(), rebuilt=True, finalize_unverified=True), tmp_path)
-    joined = " ".join(texts)
+    import importlib.util
+    def mod(name, path):
+        spec = importlib.util.spec_from_file_location(name, path)
+        m = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(m)
+        return m
+    SN = mod("sector_numbers", REPO / "scripts" / "sector_numbers.py")
+    PT = mod("payload_today", REPO / "tests" / "test_payload_today.py")
+    P = PT._payload()                                   # '오늘' 블록이 있어야 수익률 라벨이 그려진다
+    P.pop("final", None)
+    P.update(rebuilt=True, finalize_unverified=True)
+    joined = " ".join(_page("sector_numbers.html", SN.build(P), tmp_path))
+    assert "전일 20:00→당일 20:00" in joined, "라벨이 아예 안 그려졌다 — 시험이 헛돈다"
     assert "애프터마켓 진행 중" not in joined and "수집시각 잠정" not in joined, joined[:300]
