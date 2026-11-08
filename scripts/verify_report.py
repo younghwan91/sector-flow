@@ -2637,14 +2637,31 @@ def _live(make, apply, fields, keys) -> set:
     """
     def snap(o):
         return tuple(getattr(o, f, None) for f in fields)
+
+    def at_top():
+        # 출발 커서 하나로는 짧은 목록에서 틀린다 — 4행 목록에서 행 3 은 이미 끝이라 ↓·PgDn·G 가
+        # 아무것도 안 바꾼다(09-18 재구성 리포트의 전 종목 4행). 키는 **움직일 수 있는 자리**에서 본다:
+        # 행 3 과 맨 위 두 출발점 중 하나에서라도 상태가 바뀌면 듣는 키다. 죽은 키는 둘 다에서 죽는다.
+        o = make()
+        for f in _CURSOR_FIELDS:
+            if isinstance(getattr(o, f, None), int):
+                setattr(o, f, 0)
+        return o
+
     out = set()
     for name, k in keys.items():
-        o = make()
-        before = snap(o)
-        cont = apply(o, k)
-        if not cont or snap(o) != before:
-            out.add(name)
+        for start in (make, at_top):
+            o = start()
+            before = snap(o)
+            cont = apply(o, k)
+            if not cont or snap(o) != before:
+                out.add(name)
+                break
     return out
+
+
+#: 화면 상태의 커서 필드(flow ``State``·ledger ``Model``). ``_live`` 가 맨 위 출발점을 만들 때 0 으로 둔다.
+_CURSOR_FIELDS = ("row", "drow", "arow", "hrow", "crow", "help_row")
 
 
 def _help_key_text(entries) -> str:

@@ -4618,3 +4618,12 @@ guards = ["tests/test_rebuild_asof.py::test_rebuild_history_parallel_chunks_stil
 file = "scripts/rebuild_history.py"
 find = "        for k in range(1, len(chunks)):"
 replace = "        for k in range(len(chunks), len(chunks)):"
+
+[[mutation]]
+id = "verify-live-keys-from-row-3-only"
+why = """키가 듣는지를 행 3 출발점 하나로만 본다 — 4행 이하 목록(관문 통과가 적은 날의 전 종목)에서 행 3 이
+이미 끝이라 ↓·PgDn·G 를 "안 듣는다" 고 해 멀쩡한 리포트가 검증 실패가 된다(2026-09-18 재구성)."""
+guards = ["tests/test_verify_report.py::test_advertised_keys_count_as_live_on_a_list_too_short_to_move_from_row_3"]
+file = "scripts/verify_report.py"
+find = "        for start in (make, at_top):"
+replace = "        for start in (make,):"
