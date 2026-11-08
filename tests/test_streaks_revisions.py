@@ -151,7 +151,7 @@ def test_revision_top3_counts_sectors_kept_in_the_top_three(tmp_path):
     assert sf.revision_top3(inv + [["거래소", "S9", "invtrt", 99.0, 99.0]]) == (6, 6)
 
 
-# ── 종목(주도주) 수정 ───────────────────────────────────────────────────────
+# ── 종목(기관상위) 수정 ───────────────────────────────────────────────────────
 
 def _stk_payload(vals: dict, extra: "dict | None" = None) -> dict:
     """names 만 있는 최소 페이로드 — vals: code → (시장, 섹터, 기관, 투신, 연기금, 외국인)."""
@@ -162,7 +162,7 @@ def _stk_payload(vals: dict, extra: "dict | None" = None) -> dict:
 
 
 def _stk_pair():
-    """한 섹터(거래소/반도체) — 잠정 주도주 {a1, a2}(a2 가 80% 를 처음 넘긴 행), 확정에서 a6 이 처음 잡힌다."""
+    """한 섹터(거래소/반도체) — 잠정 기관상위 {a1, a2}(a2 가 80% 를 처음 넘긴 행), 확정에서 a6 이 처음 잡힌다."""
     prov = _stk_payload({
         "a1": ("거래소", "반도체", 100.0, 10.0, 0.0, 20.0),
         "a2": ("거래소", "반도체", 50.0, 0.1, 0.0, -5.0),
@@ -182,7 +182,7 @@ def _stk_pair():
 
 
 def test_stock_diff_lists_driver_rows_beyond_the_threshold(monkeypatch):
-    """주도주(|기관| 누적 80% — 넘긴 행 포함)의 합집합만 보고, 문턱을 넘는 행만 max|Δ| 순으로 상한까지 싣는다."""
+    """기관상위(|기관| 누적 80% — 넘긴 행 포함)의 합집합만 보고, 문턱을 넘는 행만 max|Δ| 순으로 상한까지 싣는다."""
     prov, fin = _stk_pair()
     S = sf.stock_diff(fin, prov)
     assert S["n_stocks"] == 3, "잠정 {a1,a2} ∪ 확정 {a1,a6,a2} — a3 이하는 80% 밖"
@@ -193,13 +193,13 @@ def test_stock_diff_lists_driver_rows_beyond_the_threshold(monkeypatch):
     monkeypatch.setattr(sf, "STOCK_DIFF_CAP", 1)
     S = sf.stock_diff(fin, prov)
     assert len(S["rows"]) == 1 and S["n_rows"] == 2, "상한은 rows 만 자르고 요약은 전체에서 센다"
-    # 옛 형식(1일 종목 칸이 아예 없다) 게시본 대비 — 모든 주도주를 "수정"이라 적는 것은 거짓이다.
+    # 옛 형식(1일 종목 칸이 아예 없다) 게시본 대비 — 모든 기관상위를 "수정"이라 적는 것은 거짓이다.
     legacy = {"names": {c: dict(r, win={}) for c, r in prov["names"].items()}}
     assert sf.stock_diff(fin, legacy) is None
 
 
 def test_stock_diff_summary_gates_small_cells_and_counts_flips():
-    """요약: 분모 게이트(그 (시장, 섹터, 주체) 주도주 Σ|확정| 의 2%)를 넘는 칸의 중앙값·부호 뒤집힘."""
+    """요약: 분모 게이트(그 (시장, 섹터, 주체) 기관상위 Σ|확정| 의 2%)를 넘는 칸의 중앙값·부호 뒤집힘."""
     prov, fin = _stk_pair()
     S = sf.stock_diff(fin, prov)
     # 기관 [0, 19.7] · 투신 a1 [2.0](a2 0.1 은 게이트 밖) · 외국인 [0, 200(뒤집힘)] · 연기금 0 값 없음 → 5칸.
@@ -252,7 +252,7 @@ def _seed_file(root: Path, date: str, cells, label=sf.REV_SEED_LABEL, built=None
                                                 "seed": {"label": label}}), "utf-8")
 
 
-#: 시드 두 날의 종목(주도주) 일별 요약 — 집계: 날 2, 칸 16, 뒤집힘 1, 중앙 (4+2)/2=3.0, 유지 8/(3×3)=88.9%.
+#: 시드 두 날의 종목(기관상위) 일별 요약 — 집계: 날 2, 칸 16, 뒤집힘 1, 중앙 (4+2)/2=3.0, 유지 8/(3×3)=88.9%.
 _STK_A = {"n_cells": 10, "rel_median_pct": 4.0, "flips": 1, "top3_kept": 5, "top3_lists": 2}
 _STK_B = {"n_cells": 6, "rel_median_pct": 2.0, "flips": 0, "top3_kept": 3, "top3_lists": 1}
 
@@ -311,8 +311,8 @@ def _rev_stk_median(R):
     (_rev_bump_flips, "T/잠정→확정 수정 폭 — 날짜·칸 수·중앙값·부호 뒤집힘을 옆 폴더의 확정 기록·시드에서 다시 센 것과 같은가"),
     (_rev_bump_keep, "T/잠정→확정 수정 폭 — 상위 3 유지율 재계산"),
     (_rev_drop_seed, "T/잠정→확정 수정 폭 — 시드로 센 날짜와 출처 표지"),
-    (_rev_stk_cells, "T/잠정→확정 수정 폭 — 종목(주도주) 일별 요약의 집계 재계산"),
-    (_rev_stk_median, "T/잠정→확정 수정 폭 — 종목(주도주) 일별 요약의 집계 재계산"),
+    (_rev_stk_cells, "T/잠정→확정 수정 폭 — 종목(기관상위) 일별 요약의 집계 재계산"),
+    (_rev_stk_median, "T/잠정→확정 수정 폭 — 종목(기관상위) 일별 요약의 집계 재계산"),
 ])
 def test_the_verifier_recounts_revision_stats_from_the_sibling_folders(tmp_path, corrupt, want):
     root = _revision_root(tmp_path)
@@ -336,7 +336,7 @@ def _final_build(tmp_path: Path):
     old["flows"]["코스닥"]["금융"]["inst"][-1] -= 12.34
     ser = old["flows"]["거래소"]["반도체"]["inst"]
     ser[-1] = max(ser) + 50.0                       # 잠정에서는 1년 최고 — 확정에서 극단 목록을 나간다
-    # 종목 층 — |기관| 최대 종목(자기 섹터의 주도주)의 잠정값을 틀어 주도주 행 하나를 만든다.
+    # 종목 층 — |기관| 최대 종목(자기 섹터의 기관상위)의 잠정값을 틀어 기관상위 행 하나를 만든다.
     w1 = {c: r["win"]["1"] for c, r in old["names"].items() if (r.get("win") or {}).get("1")}
     code = max(w1, key=lambda c: abs(w1[c]["inst"]))
     old["names"][code]["win"]["1"]["inst"] = round(w1[code]["inst"] - 12.3, 1)
@@ -396,9 +396,9 @@ def _fd_sibling_gone(P, b):
     (_fd_old, "T/잠정 → 확정 — 잠정값·차이·칸 수를 옆 잠정 리포트에서 다시 센 것과 같은가"),
     (_fd_cells, "T/잠정 → 확정 — 잠정값·차이·칸 수를 옆 잠정 리포트에서 다시 센 것과 같은가"),
     (_fd_ext, "T/잠정 → 확정 — %ile 극단 목록의 들고 남 재계산"),
-    (_fd_stk_row, "T/잠정 → 확정 — 종목(주도주) 행·요약을 옆 잠정 리포트에서 다시 센 것과 같은가"),
-    (_fd_stk_missing, "T/잠정 → 확정 — 종목(주도주) 행·요약을 옆 잠정 리포트에서 다시 센 것과 같은가"),
-    (_fd_stk_kept, "T/잠정 → 확정 — 종목(주도주) 행·요약을 옆 잠정 리포트에서 다시 센 것과 같은가"),
+    (_fd_stk_row, "T/잠정 → 확정 — 종목(기관상위) 행·요약을 옆 잠정 리포트에서 다시 센 것과 같은가"),
+    (_fd_stk_missing, "T/잠정 → 확정 — 종목(기관상위) 행·요약을 옆 잠정 리포트에서 다시 센 것과 같은가"),
+    (_fd_stk_kept, "T/잠정 → 확정 — 종목(기관상위) 행·요약을 옆 잠정 리포트에서 다시 센 것과 같은가"),
     (_fd_built, "T/잠정 → 확정 — 견준 리포트의 지위·생성 시각 = 옆 폴더의 것"),
     (_fd_json, "T/final_diff.json(다음 리포트들의 수정 폭 원천) = 페이로드의 final_diff"),
     (_fd_none, "T/잠정 → 확정 — 바꿔 끼울 잠정 리포트가 옆에 있는데 비교가 비지 않았는가(덮어쓰기 지문이 같을 때)"),
@@ -424,7 +424,7 @@ def test_the_stock_layer_is_empty_against_a_legacy_provisional_without_one_day_c
     (build / "final_diff.json").write_text(json.dumps(P["final_diff"], ensure_ascii=False), "utf-8")
     assert _fails(P, build) == []
     P["final_diff"]["stocks"] = {"n_rows": 0}
-    assert "T/잠정 → 확정 — 종목(주도주) 층은 1일 칸이 없는 옛 형식 게시본 대비에서 비어 있는가" in _fails(P, build)
+    assert "T/잠정 → 확정 — 종목(기관상위) 층은 1일 칸이 없는 옛 형식 게시본 대비에서 비어 있는가" in _fails(P, build)
 
 
 def test_after_the_swap_the_provisional_recount_is_skipped_not_failed(tmp_path, capsys):
@@ -450,7 +450,7 @@ def _archive(tmp_path: Path):
     asof = fin["dates"][-1]
     prov = json.loads(json.dumps(fin))
     prov["flows"]["코스닥"]["금융"]["inst"][-1] -= 12.34
-    # 종목 층 — 코스닥 |기관| 최대 종목(자기 섹터의 주도주)의 잠정값을 튼다.
+    # 종목 층 — 코스닥 |기관| 최대 종목(자기 섹터의 기관상위)의 잠정값을 튼다.
     k2 = max((c for c, r in prov["names"].items() if r["market"] == "코스닥" and (r.get("win") or {}).get("1")),
              key=lambda c: abs(prov["names"][c]["win"]["1"]["inst"]))
     prov["names"][k2]["win"]["1"]["inst"] = round(prov["names"][k2]["win"]["1"]["inst"] - 23.4, 1)
@@ -477,7 +477,7 @@ def test_seed_script_writes_final_diff_cells_from_the_evening_archive(tmp_path):
     assert ("거래소", "금융", "inst") not in cells and ("거래소", "화학", "inst") not in cells
     o, n = cells[("코스닥", "금융", "inst")]
     assert n - o == pytest.approx(12.34, abs=0.011)
-    # 종목(주도주) 층도 시드에 싣는다 — 분류가 바뀐 (시장, 섹터) 둘은 종목 층에서도 통째로 뺀다.
+    # 종목(기관상위) 층도 시드에 싣는다 — 분류가 바뀐 (시장, 섹터) 둘은 종목 층에서도 통째로 뺀다.
     S = doc["stocks"]
     assert S["dropped_sectors"] == 2 and not any((r[0], r[1]) in {("거래소", "금융"), ("거래소", "화학")}
                                                  for r in S["rows"])
@@ -537,9 +537,9 @@ def test_first_screen_shows_streaks_and_the_revision_line_with_top3_and_seed(P):
     assert any(i.startswith(f"외국인 {f['days']}일 연속 {side} 누적 ") for i in items) or not f["days"]
     assert any(i.startswith(f"기관 최장 {S['longest']['전체']['inst']} ") for i in items)
     assert "상위3 유지 93%" in text and f"{sf.REV_SEED_LABEL} 17일" in text, text
-    assert ", 주도주 중앙 7%·종목 상위3 유지 85%" in text, text
+    assert ", 기관상위 중앙 7%·종목 상위3 유지 85%" in text, text
     assert all("시드" in t for t in revision_tiers(D)), "좁은 화면에서도 시드 출처는 남는다"
-    assert "주도주" not in revision_tiers(D)[1], "좁은 화면에서는 종목 층부터 줄인다"
+    assert "기관상위" not in revision_tiers(D)[1], "좁은 화면에서는 종목 층부터 줄인다"
     assert "연속 순매매" not in "\n".join(banner_lines(State(dict(D, today={**D["today"], "streaks": None})), 400))
 
 

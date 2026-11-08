@@ -129,7 +129,7 @@ def seed_one(folder: "str | None", arch: str, final_root: str, since: str) -> tu
         "base_final": False,
         "base_built": built.strftime("%Y-%m-%d %H:%M"),
         "cells_1d": cells,
-        # 종목(주도주) 층 — final_diff_compute 안의 stock_diff 가 같은 membership 규칙으로
+        # 종목(기관상위) 층 — final_diff_compute 안의 stock_diff 가 같은 membership 규칙으로
         # 구성이 갈린 (시장, 섹터)를 이미 뺐다(dropped_sectors). 그대로 싣는다.
         "stocks": fd["stocks"],
         "seed": {"label": sf.REV_SEED_LABEL,
@@ -142,7 +142,7 @@ def seed_one(folder: "str | None", arch: str, final_root: str, since: str) -> tu
     S = fd["stocks"]
     smed = None if S is None else S["rel_median_pct"]
     stk = " · 종목 층 없음(게시본에 1일 종목 칸이 없다 — 옛 형식)" if S is None else (
-        f" · 주도주 {S['n_stocks']}종목 행 {S['n_rows']} 중앙 "
+        f" · 기관상위 {S['n_stocks']}종목 행 {S['n_rows']} 중앙 "
         + ("—" if smed is None else f"{smed:.1f}%"))
     line = (f"칸 {len(cells)}(버림 {dropped}) · 게이트 통과 {len(rel)} · 중앙 "
             f"{'—' if med is None else f'{med:.1f}%'} · 뒤집힘 {flips} · 상위3 유지 "
