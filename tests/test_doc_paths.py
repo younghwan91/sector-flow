@@ -34,6 +34,8 @@ ALLOWED = {
     ("docs/formulas.md", "docs/GUARDRAILS.md"): "swing-it 의 파일이라고 적은 자리",
     ("README.md", "docs/strategy/inquiries/krx_market_data.md"):
         "strategy-a-plus 브랜치(질의 문서 작업 트리)의 파일이라고 적은 자리 — KRX 공식 대조의 이용 범위 질의",
+    ("docs/byo/phase1-equivalence.md", "docs/strategy/byo-feasibility.md"):
+        "strategy-a-plus 브랜치의 BYO 타당성 문서라고 적은 자리(커밋 1b02f66) — main 에 없다",
 }
 
 TICK = re.compile(r"`([^`\n]+)`")
