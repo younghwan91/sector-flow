@@ -484,3 +484,67 @@ def test_viewer_rounds_like_the_tui(tmp_path):
     got = VR._w_run(shutil.which("node"), str(page), f"__out({{a:{json.dumps(vals)}.map(amt), p:{json.dumps(vals)}.map(pp)}});")
     assert got["a"] == [VR._w_minus(FV.fmt_amt(v)) for v in vals]
     assert got["p"] == [VR._w_minus(FV.fmt_pct(v)) for v in vals]
+
+
+# ── #32 의 ±0 부류, 뷰어 창 합 경로(2026-09-02·09-28 재구성) — 상쇄된 창 합의 잔차 부호 ──────────────
+
+#: 네 값의 십진 합은 0 — 왼쪽부터 더하면(뷰어 JS) −2.8e-17, 보정 합(파이썬 3.12+ sum)은 0.0.
+_CANCEL_JS_NEG = [0.1, -0.5, 0.3, 0.1]
+#: 세 값 — 어느 쪽으로 더해도 음의 잔차(double 자체의 십진 오차). 블록(zsum 전)·검증기(rhu 전)가 '−0' 이 되는 쪽.
+_CANCEL_BOTH_NEG = [-0.1, -0.2, 0.3]
+
+
+def _flows_patch(P: dict, mkt: str, pats: dict) -> dict:
+    """``flows[mkt][sec][actor]`` 의 마지막 20일 머리에 패턴을 심는다(나머지 0) — 20·60·120일 합이 그 패턴이 된다."""
+    P2 = json.loads(json.dumps(P))
+    nd = len(P2["dates"])
+    for (sec, actor), pat in pats.items():
+        arr = [0.0] * nd
+        arr[nd - 20:nd - 20 + len(pat)] = pat
+        P2["flows"][mkt][sec][actor] = arr
+    return P2
+
+
+@node
+def test_viewer_window_sum_that_cancels_is_plus_zero_everywhere(PD, tmp_path):
+    """상쇄돼 0 인 20일 합이 뷰어 표·막대 '+0' = 블록 '+0' = 검증기 '+0' 이다.
+
+    2026-09-02·09-28 재구성: 종이/목재 20일 합이 뷰어(JS, 왼쪽부터)에서 −2.8e-17, 블록·검증기(파이썬)에서
+    0.0 또는 −2.8e-17 로 남아 '−0' vs '+0' 셋이 서로 갈렸다. 금융은 JS 쪽만, 반도체는 양쪽 다 음의 잔차 —
+    뷰어 `Z`·블록 `zsum`·검증기 `_w_rhu` 중 **어느 하나**를 빼도 빨개진다.
+    """
+    P, _ = PD
+    P2 = _flows_patch(P, "코스닥", {("금융", "etc"): _CANCEL_JS_NEG, ("반도체", "etc"): _CANCEL_BOTH_NEG})
+    a = P2["flows"]["코스닥"]["금융"]["etc"]
+    assert functools.reduce(operator.add, a, 0.0) < 0 and sum(a) == 0.0, "픽스처가 JS 쪽 잔차를 안 만든다"
+    b = P2["flows"]["코스닥"]["반도체"]["etc"]
+    assert functools.reduce(operator.add, b, 0.0) < 0 and sum(b) < 0, "픽스처가 양쪽 음의 잔차를 안 만든다"
+    D2 = SN.build(P2)
+    for w in ("20", "60", "120"):
+        blk = {r["sector"]: r for r in D2["blocks"][f"{w}|코스닥"]["rows"]}
+        assert blk["금융"]["etc"] == 0.0 and math.copysign(1, blk["금융"]["etc"]) > 0
+        assert blk["반도체"]["etc"] == 0.0 and math.copysign(1, blk["반도체"]["etc"]) > 0
+    fails = [f for f in _w_fails(P2, D2, _write(tmp_path, P2, D2)) if "뷰어" in f]
+    assert fails == [], fails
+
+
+@node
+def test_viewer_market_total_that_cancels_is_plus_zero(PD, tmp_path):
+    """섹터 합(각각은 0 아님)이 시장 전체에서 상쇄될 때 — KPI 카드도 '+0' 이다.
+
+    sum() 이 잔차를 지워도 KPI 는 섹터 27개를 **다시 누적**하므로 제 잔차를 만든다(음수 둘을 먼저 더하면 −5.6e-17).
+    검증기의 시장 합(`out["tot"]`)도 같은 자리에서 지운다 — 한쪽만 지우면 '+0' vs '−0' 으로 빨갛다.
+    """
+    P, _ = PD
+    secs = [s for s in P["sectors"] if s in P["flows"]["코스닥"]]
+    # D.sectors 순회 순서대로 음·음·양 — 각 섹터 합은 −0.1·−0.2·+0.3(0 아님), 시장 합만 0.
+    pats = {(secs[0], "etc"): [-0.1], (secs[1], "etc"): [-0.2], (secs[2], "etc"): [0.3]}
+    for s in secs[3:]:
+        pats[(s, "etc")] = [0.0]
+    P2 = _flows_patch(P, "코스닥", pats)
+    tots = [sum(P2["flows"]["코스닥"][s]["etc"]) for s in secs[:3]]
+    acc = functools.reduce(operator.add, tots, 0.0)
+    assert acc != 0.0 and acc < 0, "픽스처가 시장 합의 음 잔차를 안 만든다"
+    D2 = SN.build(P2)
+    fails = [f for f in _w_fails(P2, D2, _write(tmp_path, P2, D2)) if "뷰어" in f]
+    assert fails == [], fails
