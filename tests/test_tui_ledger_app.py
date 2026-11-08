@@ -373,3 +373,37 @@ def test_the_app_paints_the_sector_name_using_the_coordinates_the_view_gives(
     assert (s["status_y"], want[0], want[1]) in scr.chg, \
         f"상태줄의 이름을 안 세웠다: {[c for c in scr.chg if c[0] == s['status_y']]}"
     app._COLORS = 0
+
+
+@pytest.mark.parametrize("cols", [80, 100, 120, 160])
+def test_terminal_bottom_row_lists_the_keys_and_where_you_are(cols):
+    """실제 터미널 폭(앱은 오른끝 한 칸을 비운다)에서 하단 줄이 **바꾸는 키**와 위치를 적는다.
+
+    실측 100x30: 하단이 ``?:도움말 q:종료`` 뿐이라 ``v w m a s d`` 가 사라졌고, 24개 중
+    몇 개가 보이는지도 안 적혔다. 앱이 하단을 **다시 만들지 않는지**도 같이 본다 —
+    뷰가 낸 줄이 그대로 그려져야 한다.
+    """
+    mo = Model(_payload(nsec=27))
+    total = len(mo.rows())
+    scr = _draw(mo, h=20, w=cols)
+    bottom = scr.rows[19]
+    assert bottom == screen(mo, cols - 1, 20)["lines"][-1]
+    for k in "vwmasd":
+        assert any(t[0] == k for t in bottom.split()), f"폭{cols}: {k} 가 없다 — {bottom!r}"
+    assert "미관측" in bottom
+    assert f"/{total}" in bottom and bottom.rstrip().split()[-1].startswith("1-"), bottom
+
+
+def test_escape_closes_help_and_is_inert_on_the_table():
+    """Esc 는 ``sw-flow`` 와 같다 — 도움말을 닫고, 표에서는 **아무 일도 안 한다**(종료 아님).
+
+    원장에는 드릴다운이 없으므로 Esc 가 닫을 층은 도움말 하나다. 느린 SSH 에서
+    방향키가 Esc 와 나머지로 쪼개져 오므로 표에서 Esc 가 무언가를 하면 안 된다.
+    """
+    mo = Model(_payload())
+    before = _draw(mo).rows.copy()
+    assert app._key(mo, 27, 10) is True
+    assert _draw(mo).rows == before, "표에서 Esc 가 화면을 바꿨다"
+    app._key(mo, ord("?"), 10)
+    assert mo.help
+    assert app._key(mo, 27, 10) is True and not mo.help

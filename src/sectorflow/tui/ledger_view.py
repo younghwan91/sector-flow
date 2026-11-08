@@ -34,8 +34,8 @@ import random
 
 from sectorflow.tui.flow_view import (
     HELP_TITLE_TIERS, MARKET_ORDER, cell_len, cell_width, fit_widths, fmt_amt, help_desc,
-    help_lines, hint_line, missing_report_hint, pad, report_warnings, staleness_warning,
-    status_chip, tier_for)
+    help_lines, hint_line, missing_report_hint, pad, report_warnings, scroll_mark,
+    staleness_warning, status_chip, tier_for)
 
 ACTORS = (("indiv", "개인"), ("forgn", "외국인"), ("inst", "기관"), ("etc", "기타법인"))
 ACTOR_KEYS = tuple(k for k, _ in ACTORS)
@@ -814,6 +814,22 @@ def _too_narrow(what: str, width: int, minw: int) -> str:
                      f" 최소 {minw}칸", " 좁다"), width)
 
 
+def bar_label(actor_ko: str, width: int) -> str:
+    """발산 막대 열의 머리 — **정확히** ``width`` 칸, ``−`` 는 왼끝·``+`` 는 오른끝.
+
+    막대의 0 은 열 한가운데라 음수는 왼쪽, 양수는 오른쪽으로 자란다. 머리도 그 두
+    끝을 가리켜야 한다. 예전엔 ``"−  개인  +"`` 를 그대로 ``pad`` 해서, 폭 100 처럼
+    막대가 두 칸뿐인 자리에서 ``−`` 한 글자만 남았다 — 잘린 머리는 "음수 열" 로
+    읽힌다. 주체 이름은 **통째로 들어갈 때만** 가운데에 적는다.
+    """
+    if width < 2:
+        return pad("", width)
+    inner = width - 2
+    name = actor_ko if cell_len(actor_ko) + 2 <= inner else ""
+    left = (inner - cell_len(name)) // 2
+    return "−" + " " * left + pad(name, inner - left) + "+"
+
+
 def ledger_lines(mo: Model, width: int) -> tuple[list[str], list[bool], int]:
     """(행, 얇은섹터 여부, 헤더 줄 수).
 
@@ -833,7 +849,7 @@ def ledger_lines(mo: Model, width: int) -> tuple[list[str], list[bool], int]:
     half = max(0, min(12, (width - used - 2) // 2))
     head = " ".join(pad(c[0], c[1], c[2]) for c in cols)
     if half:
-        head += " " + pad(f"−  {mo.actor_ko}  +", 2 * half)
+        head += " " + bar_label(mo.actor_ko, 2 * half)
     out = [pad(head, width)]
     thin = [False]
 
@@ -1691,13 +1707,18 @@ FOOTER_TIERS = (
     " v:화면 w:구간 m:시장 a:주체 s:정렬 d:β제거 ↑↓:섹터"
     " g/G:처음/끝 ?:도움말 q:종료",
     " v:화면 w:구간 m:시장 a:주체 s:정렬 d:β제거 ↑↓ ?:도움말 q:종료",
-    " v화면 w구간 m시장 a주체 s정렬 ?:도움말 q:종료",
-    " v w m a s:바꾸기 ?:도움말 q:종료",
+    " v화면 w구간 m시장 a주체 s정렬 d:β제거 ?:도움말 q:종료",
+    " v w m a s d:바꾸기 ?:도움말 q:종료",
     " ?:도움말 q:종료",
     " ?:키 q:종료",
 )
 #: 예전 이름 — 중간 단계가 기본이다.
 FOOTER = FOOTER_TIERS[1]
+#: 바꾸는 키(``v w m a s d``)를 **이름까지** 다 적는 가장 짧은 단계, 그리고 이름 없이
+#: 글자만이라도 다 적는 가장 짧은 단계. :func:`banner_footer` 가 이 둘을 지키려고
+#: 배너를 먼저 줄인다.
+FOOTER_LABELLED = FOOTER_TIERS[2]
+FOOTER_KEYS = FOOTER_TIERS[3]
 
 
 def footer_line(width: int) -> str:
@@ -1705,30 +1726,38 @@ def footer_line(width: int) -> str:
     return tier_for(FOOTER_TIERS, width)
 
 
-def banner_footer(width: int) -> str:
-    """마지막 줄 — 배너(본문) + 푸터(키). 정확히 ``width`` 칸.
+def banner_footer(width: int, mark: str = "") -> str:
+    """마지막 줄 — 배너(본문) + 푸터(키) + 위치(``mark``). 정확히 ``width`` 칸.
 
     예전엔 앱이 ``(" " + BANNER + "   " + FOOTER)[:w]`` 로 **문자 슬라이스**해
     붙였다. 두 가지가 틀렸다 — (1) 폭 80(SSH 기본)에서 배너만으로 77칸이라
     푸터가 통째로 사라져 ``?`` 가 화면 어디에도 없었고, (2) 문자 수로 자르니
     한글이 섞인 줄에서 표시 칸과 어긋났다.
 
-    배너가 **먼저** 자리를 잡는다(이 화면이 존재하는 이유가 그 경고다). 그래도
-    푸터가 한 단계도 못 들어가면 배너를 한 단계 줄인다 — 배너는 어느 단계에서도
-    "미관측" 을 지키므로 줄여도 경고는 남지만, 키는 없으면 아예 못 찾는다.
+    그 뒤엔 배너가 **가장 긴 단계**를 끝까지 지켜서 폭 100 에서도 푸터가
+    ``?:도움말 q:종료`` 로 주저앉았다 — ``v``·``w``·``m``·``a``·``s``·``d`` 가
+    화면 어디에도 없었다(실측 100x30). 배너는 **어느 단계에서도 "미관측" 을
+    지키므로** 줄여도 경고는 남지만, 안 적힌 키는 없는 키다. 그래서 고르는 순서:
+
+    1. 바꾸는 키를 이름까지 다 적는 푸터(:data:`FOOTER_LABELLED`)가 들어가는 가장 긴 배너,
+    2. 안 되면 글자만이라도 다 적는 푸터(:data:`FOOTER_KEYS`)가 들어가는 가장 긴 배너,
+    3. 안 되면 ``?`` 만이라도(가장 짧은 단계) — 배너는 그래도 남는다.
+
+    고른 배너 옆에는 남는 자리에 들어가는 가장 자세한 푸터를 붙인다.
+
+    ``mark`` 는 목록이 화면보다 길 때의 위치(``1-23/27``, ``flow_view.scroll_mark``)다.
+    ``sw-flow`` 와 같은 자리(맨 아래 줄 오른끝)에 두고 **자르지 않는다** — 잘린
+    숫자는 다른 숫자다. 경고와 ``?`` 를 같이 못 담는 폭에서는 위치를 통째로 뺀다.
     """
-    short = FOOTER_TIERS[-1]
-    ban = banner_for(width)
-    room = width - 1 - cell_len(ban) - 2
-    if room < cell_len(short):
-        for b in BANNER_TIERS:
-            r = width - 1 - cell_len(b) - 2
-            if r >= cell_len(short):
-                ban, room = b, r
-                break
-        else:
-            return pad(" " + ban, width)
-    return pad(" " + ban + "  " + tier_for(FOOTER_TIERS, room), width)
+    mw = cell_len(mark)
+    for m in ((mw, 0) if mark else (0,)):
+        for target in (FOOTER_LABELLED, FOOTER_KEYS, FOOTER_TIERS[-1]):
+            for b in BANNER_TIERS:
+                room = width - m - 1 - cell_len(b) - 2
+                if room >= cell_len(target):
+                    line = pad(" " + b + "  " + tier_for(FOOTER_TIERS, room), width - m)
+                    return line + (mark if m else "")
+    return pad(" " + banner_for(width), width)
 
 
 #: 표와 하단 세 줄(힌트·상태줄·배너) 사이 **빈 줄**. 표 마지막 행이 힌트바에 딱
@@ -1787,6 +1816,7 @@ def screen(mo: Model, width: int, height: int) -> dict:
         cursor = None
         lines = body
         top = 0
+        mark = scroll_mark(mo.hrow, len(body), total)
     else:
         if mo.view == "ledger":
             lines, thin, nh = ledger_lines(mo, width)
@@ -1813,6 +1843,9 @@ def screen(mo: Model, width: int, height: int) -> dict:
             top = max(0, min(mo.row - view_h + 1, max(0, len(lines) - nh - view_h)))
         sl = slice(nh + top, nh + top + view_h)
         total = len(lines)
+        # 표가 화면보다 길면 **어디를 보고 있나**(``1-23/27``). 이게 없으면 100x30
+        # 에서 27개 중 23개만 보여도 그게 전부처럼 읽힌다(``sw-flow`` 와 같은 표시).
+        mark = scroll_mark(top, len(lines[sl]), total - nh)
         # 커서가 있는 화면인지의 판정은 `Model.has_cursor` 한 곳이다 — 상태줄도
         # 같은 것을 본다(예전엔 여기서만 알고, 상태줄은 없는 선택을 이름까지 댔다).
         cursor = (len(head_lines) + nh + (mo.row - top)) if mo.has_cursor else None
@@ -1823,7 +1856,7 @@ def screen(mo: Model, width: int, height: int) -> dict:
     body = body[:body_h] + [pad("", width)] * max(0, body_h - len(body))
     out = (body + [pad("", width)] * gap
            + [pad(hint_text(mo, width), width), status_line(mo, width),
-              banner_footer(width)])
+              banner_footer(width, mark)])
     # 소스의 **강조** 는 읽는 사람 눈에 띄라고 쓴 표기지 화면에 나갈 글자가
     # 아니다. 문자열을 하나씩 쫓으면 다음 문구가 또 새어 나온다(동시성 헤더에서
     # 실제로 새어 나왔다) — **출구 한 곳에서** 뗀다. 폭 계산 뒤에 떼면 줄이

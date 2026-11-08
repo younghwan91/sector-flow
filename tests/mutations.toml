@@ -142,8 +142,8 @@ guards = [
   "tests/test_tui_smoke.py::test_ledger_shows_the_keys_at_the_default_ssh_width",
 ]
 file = "src/sectorflow/tui/ledger_view.py"
-find = """    return pad(" " + ban + "  " + tier_for(FOOTER_TIERS, room), width)"""
-replace = """    return pad((" " + BANNER + "   " + FOOTER)[:width], width)"""
+find = """                    line = pad(" " + b + "  " + tier_for(FOOTER_TIERS, room), width - m)"""
+replace = """                    return pad((" " + BANNER + "   " + FOOTER)[:width], width)"""
 
 [[mutation]]
 id = "ledger-help-q-quits"
@@ -272,10 +272,10 @@ guards = ["tests/test_tui_ledger_view.py::test_hint_bar_is_on_every_screen_and_f
 file = "src/sectorflow/tui/ledger_view.py"
 find = """    out = (body + [pad("", width)] * gap
            + [pad(hint_text(mo, width), width), status_line(mo, width),
-              banner_footer(width)])"""
+              banner_footer(width, mark)])"""
 replace = """    out = (body + [pad("", width)] * gap
            + [status_line(mo, width), status_line(mo, width),
-              banner_footer(width)])"""
+              banner_footer(width, mark)])"""
 
 [[mutation]]
 id = "ledger-help-scrolls-past-the-end"
@@ -1611,3 +1611,127 @@ guards = ["tests/test_validation_fixes.py::test_numbers_carry_the_final_flag"]
 file = "scripts/sector_numbers.py"
 find = """"final": bool(P.get("final")),"""
 replace = """"final": False,"""
+
+# ── 원장 하단 줄·위치·막대 머리, 웹 목록 (web-index-ledger) ──────────────────
+
+[[mutation]]
+id = "ledger-footer-yields-to-the-long-banner"
+why = """배너가 가장 긴 단계를 끝까지 지키면 폭 100 에서 푸터가 `?:도움말 q:종료` 로
+주저앉아 v·w·m·a·s·d 가 화면 어디에도 없다(실측 100x30). 배너는 어느 단계에서도
+"미관측" 을 지키므로 먼저 줄어야 한다."""
+guards = [
+  "tests/test_tui_ledger_view.py::test_bottom_line_keeps_every_changing_key_at_common_widths",
+  "tests/test_tui_ledger_app.py::test_terminal_bottom_row_lists_the_keys_and_where_you_are",
+]
+file = "src/sectorflow/tui/ledger_view.py"
+find = "        for target in (FOOTER_LABELLED, FOOTER_KEYS, FOOTER_TIERS[-1]):"
+replace = "        for target in (FOOTER_TIERS[-1],):"
+
+[[mutation]]
+id = "ledger-banner-shrinks-past-its-warning"
+why = """키를 지키려고 배너를 끝까지 줄이면 폭 120 에서도 "섹터→섹터" 가 사라진다 —
+배너는 가장 긴 것부터 시도해야 한다."""
+guards = ["tests/test_tui_ledger_view.py::test_banner_is_on_screen_not_in_a_footnote"]
+file = "src/sectorflow/tui/ledger_view.py"
+find = """            for b in BANNER_TIERS:
+                room = width - m - 1 - cell_len(b) - 2"""
+replace = """            for b in BANNER_TIERS[-1:]:
+                room = width - m - 1 - cell_len(b) - 2"""
+
+[[mutation]]
+id = "ledger-position-mark-steals-the-footer"
+why = """위치 표시 자리를 빼지 않고 푸터를 고르면 줄 끝에서 키 안내가 잘린다(`q:종` …)
+— 잘린 안내문은 "여기가 전부" 로 읽힌다."""
+guards = [
+  "tests/test_tui_ledger_view.py::test_bottom_line_gives_up_the_position_before_the_warning_or_help",
+  "tests/test_tui_ledger_view.py::test_bottom_line_keeps_every_changing_key_at_common_widths",
+]
+file = "src/sectorflow/tui/ledger_view.py"
+find = "                room = width - m - 1 - cell_len(b) - 2"
+replace = "                room = width - 1 - cell_len(b) - 2"
+
+[[mutation]]
+id = "ledger-no-position-mark"
+why = "표가 화면보다 길 때 위치(1-23/27)가 없으면 보이는 23개가 전부처럼 읽힌다"
+guards = [
+  "tests/test_tui_ledger_view.py::test_hidden_rows_show_where_you_are_in_the_list",
+  "tests/test_tui_ledger_app.py::test_terminal_bottom_row_lists_the_keys_and_where_you_are",
+]
+file = "src/sectorflow/tui/ledger_view.py"
+find = "        mark = scroll_mark(top, len(lines[sl]), total - nh)"
+replace = "        mark = \"\""
+
+[[mutation]]
+id = "ledger-bar-header-cut-to-a-minus"
+why = "막대 머리를 그대로 pad 하면 막대가 두 칸인 폭 100 에서 `−` 한 글자만 남는다"
+guards = ["tests/test_tui_ledger_view.py::test_the_bar_header_is_never_cut_into_a_lone_minus"]
+file = "src/sectorflow/tui/ledger_view.py"
+find = "        head += \" \" + bar_label(mo.actor_ko, 2 * half)"
+replace = "        head += \" \" + pad(f\"−  {mo.actor_ko}  +\", 2 * half)"
+
+[[mutation]]
+id = "ledger-esc-does-not-close-help"
+why = "Esc 가 도움말을 못 닫으면 sw-flow 와 손버릇이 갈린다"
+guards = ["tests/test_tui_ledger_app.py::test_escape_closes_help_and_is_inert_on_the_table"]
+file = "src/sectorflow/tui/ledger_app.py"
+find = """        elif ch in (ord("q"), 27, ord("?"), curses.KEY_ENTER, 10, 13):
+            mo.help = False"""
+replace = """        elif ch in (ord("q"), ord("?"), curses.KEY_ENTER, 10, 13):
+            mo.help = False"""
+
+[[mutation]]
+id = "index-never-says-final"
+why = "확정 모드가 다시 만든 날을 목록이 안 적으면 잠정 리포트와 구별이 안 된다"
+guards = ["tests/test_serve_reports.py::test_each_row_says_final_or_provisional_and_links_both_pages"]
+file = "scripts/serve_reports.py"
+find = "    if has[\"FINAL.txt\"]:\n        tags.append("
+replace = "    if False:\n        tags.append("
+
+[[mutation]]
+id = "index-provisional-on-a-day-without-a-report"
+why = "수집 미완이라 리포트가 없는 날에 잠정 표시를 붙이면 있는 리포트처럼 읽힌다"
+guards = ["tests/test_serve_reports.py::test_each_row_says_final_or_provisional_and_links_both_pages"]
+file = "scripts/serve_reports.py"
+find = """            tags.append(f'<a class="tag warn" href="/{d}/INCOMPLETE.txt">수집 미완</a>')
+        return tags"""
+replace = """            tags.append(f'<a class="tag warn" href="/{d}/INCOMPLETE.txt">수집 미완</a>')"""
+
+[[mutation]]
+id = "index-latest-row-not-marked"
+why = "최신 줄이 다른 줄과 똑같으면 목록에서 어느 것이 지금 것인지 눈이 못 찾는다"
+guards = ["tests/test_serve_reports.py::test_the_newest_row_and_its_status_stand_out"]
+file = "scripts/serve_reports.py"
+find = "        cls = ' class=\"latest\"' if d == latest else \"\""
+replace = "        cls = \"\""
+
+[[mutation]]
+id = "index-hero-without-status"
+why = "맨 위 최신 칸이 확정/잠정·검증을 안 적으면 단추만 보고 잠정 리포트를 연다"
+guards = ["tests/test_serve_reports.py::test_the_newest_row_and_its_status_stand_out"]
+file = "scripts/serve_reports.py"
+find = """f'<span class="tags">{" ".join(day_tags(root, latest))}</span></p>{stale}'"""
+replace = """f'</p>{stale}'"""
+
+[[mutation]]
+id = "index-says-reports-never-change"
+why = "08:20 확정 모드가 전날을 다시 만드는데 목록이 \"만들어 둔 리포트는 안 바뀐다\" 고 적었다"
+guards = ["tests/test_serve_reports.py::test_index_does_not_claim_reports_never_change"]
+file = "scripts/serve_reports.py"
+find = "<p class=dim>평일 18:10 리포트는 그날 <b>잠정치</b>로 만든다."
+replace = "<p class=dim>당일 값은 잠정이다 — 확정치는 다음날 새벽 DB 에 덮이고, 만들어 둔 리포트는 안 바뀐다. 평일 18:10 리포트는 그날 <b>잠정치</b>로 만든다."
+
+[[mutation]]
+id = "index-wide-table-on-phones"
+why = "목록 줄이 안 접히면 390px 폰에서 가로 스크롤이 생기고 태그가 화면 밖으로 나간다"
+guards = ["tests/test_serve_reports.py::test_index_fits_a_phone_without_a_wide_table"]
+file = "scripts/serve_reports.py"
+find = "ul.days li{{display:flex;flex-wrap:wrap;"
+replace = "ul.days li{{display:flex;flex-wrap:nowrap;"
+
+[[mutation]]
+id = "final-note-not-served"
+why = "확정 태그가 가리키는 FINAL.txt 가 허용 목록에 없으면 태그 링크가 404 다"
+guards = ["tests/test_serve_reports.py::test_final_note_is_served_as_text"]
+file = "scripts/serve_reports.py"
+find = "    \"FINAL.txt\": \"text/plain; charset=utf-8\",\n"
+replace = ""
