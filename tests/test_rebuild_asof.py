@@ -155,23 +155,30 @@ def test_rebuild_history_runs_oldest_first_and_summarises(tmp_path):
 def test_verify_takes_the_rebuilt_asof_as_the_reference_day(tmp_path):
     """B 층의 "기준일 = DB 최신일" 은 재구성에선 늘 틀린다 — ``--asof`` 를 주면 그날(그 이하 마지막 거래일)과 맞춘다."""
     import importlib.util
+    import sqlite3
     spec = importlib.util.spec_from_file_location("verify_report", REPO / "scripts" / "verify_report.py")
     VR = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(VR)
-    db = _db(tmp_path / "now.db", upto=DAYS[-1])
-    import sqlite3
-    con = sqlite3.connect(db)                      # B 층의 OHLC 불변식이 읽는 열(운영 표에는 있다)
-    con.executescript("ALTER TABLE daily_bars_adjusted ADD COLUMN high REAL;"
-                      "ALTER TABLE daily_bars_adjusted ADD COLUMN low REAL;"
-                      "UPDATE daily_bars_adjusted SET high=close, low=close;")
-    con.close()
-    P = _payload(tmp_path, db, "r", "--asof", ASOF)
 
-    def ref_fails(asof):
+    def db_for(name, upto):
+        db = _db(tmp_path / name, upto=upto)
+        con = sqlite3.connect(db)                  # B 층의 OHLC 불변식이 읽는 열(운영 표에는 있다)
+        con.executescript("ALTER TABLE daily_bars_adjusted ADD COLUMN high REAL;"
+                          "ALTER TABLE daily_bars_adjusted ADD COLUMN low REAL;"
+                          "UPDATE daily_bars_adjusted SET high=close, low=close;")
+        con.close()
+        return db
+
+    now, then = db_for("now.db", DAYS[-1]), db_for("then.db", ASOF)
+    P = _payload(tmp_path, now, "r", "--asof", ASOF)
+
+    def ref_fails(db, asof):
         VR.FAILS.clear()
         VR.layer_b(P, db, asof)
         return [f for f in VR.FAILS if "기준일" in f or "거래대금" in f]
 
-    assert ref_fails(ASOF) == []
-    assert ref_fails(None), "대조군: --asof 없이는 DB 최신일과 달라 걸려야 한다"
-    assert ref_fails(DAYS[-1]), "다른 날을 --asof 로 주면 걸려야 한다"
+    assert ref_fails(now, ASOF) == []
+    assert ref_fails(now, None), "대조군: --asof 없이는 DB 최신일과 달라 걸려야 한다"
+    assert ref_fails(now, DAYS[-1]), "다른 날을 --asof 로 주면 걸려야 한다"
+    # 리포트가 지정한 날보다 앞에서 끝났으면(그 사이 거래일이 없어 DB 마지막 날과는 맞아도) 걸려야 한다.
+    assert ref_fails(then, DAYS[-1]), "재구성하라고 한 날이 아닌 리포트를 통과시켰다"

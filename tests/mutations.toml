@@ -4588,3 +4588,25 @@ guards = ["tests/test_rebuild_asof.py::test_rebuild_history_runs_oldest_first_an
 file = "scripts/rebuild_history.py"
 find = "        days = weekdays(a.start, a.end)"
 replace = "        days = weekdays(a.start, a.end)[::-1]"
+
+[[mutation]]
+id = "rebuild-flag-not-in-payload"
+why = "재구성 페이로드에 rebuilt 가 안 실려 웹 밖의 모든 화면(수치표·TUI)이 그날 게시본처럼 보인다"
+guards = ["tests/test_rebuild_asof.py::test_rebuilt_flag_marks_payload_and_skips_the_provisional_comparison"]
+file = "scripts/sector_flow.py"
+find = """    if a.rebuilt:
+        # 키를 재구성일 때만 싣는다 — 화면이 "재구성" 을 붙인다.
+        payload["rebuilt"] = True"""
+replace = """    if a.rebuilt:
+        pass"""
+
+[[mutation]]
+id = "rebuild-compares-old-definitions-as-final-diff"
+why = """재구성이 같은 자리의 옛 리포트(옛 코드·옛 정의)와 잠정→확정 비교를 낸다 — 정의 변경을 확정치 변화로
+잘못 읽게 된다(운영 루트에서 제자리 재구성하면 옛 폴더가 있다)."""
+guards = ["tests/test_rebuild_asof.py::test_rebuilt_flag_marks_payload_and_skips_the_provisional_comparison"]
+file = "scripts/sector_flow.py"
+find = """        if a.rebuilt:
+            # 같은 자리의 옛 리포트는"""
+replace = """        if False:
+            # 같은 자리의 옛 리포트는"""
