@@ -2527,10 +2527,10 @@ def _vt_revision_check(P: dict, folder: "str | None") -> None:
     med = statistics.median(rel) if rel else None
     keep = 100.0 * kept / (lists * VT_TOP_N) if lists else None
     want_seed = {"label": VT_SEED_LABEL, "dates": sorted(seeded)} if seeded else None
-    chk("T", "잠정→확정 수정 폭 — 날짜·칸 수·중앙값·부호 뒤집힘을 옆 폴더의 확정 기록·시드에서 다시 센 것과 같은가",
-        R.get("dates") == sorted(d for d, _ in found) and R.get("n_dates") == len(found)
-        and R.get("n_cells") == len(rel) and R.get("flips") == flips
-        and _vt_close(R.get("rel_median_pct"), med, 0.051),
+    same_rev = (R.get("dates") == sorted(d for d, _ in found) and R.get("n_dates") == len(found)
+                and R.get("n_cells") == len(rel) and R.get("flips") == flips
+                and _vt_close(R.get("rel_median_pct"), med, 0.051))
+    chk("T", "잠정→확정 수정 폭 — 날짜·칸 수·중앙값·부호 뒤집힘을 옆 폴더의 확정 기록·시드에서 다시 센 것과 같은가", same_rev,
         f"{R.get('n_dates')}일·{R.get('n_cells')}칸·중앙 {R.get('rel_median_pct')}·뒤집힘 {R.get('flips')} vs "
         f"{len(found)}일·{len(rel)}칸·중앙 {med if med is None else round(med, 1)}·뒤집힘 {flips}")
     chk("T", "잠정→확정 수정 폭 — 상위 3 유지율 재계산", _vt_close(R.get("top3_keep_pct"), keep, 0.051)

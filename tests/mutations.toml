@@ -5302,8 +5302,8 @@ id = "verify-revision-blind"
 why = "잠정 화면의 '최근 N일 … 중앙 x%, 부호 뒤집힘 n회' 가 옆 폴더들의 확정 기록과 달라도 검증이 모른다"
 guards = ["tests/test_streaks_revisions.py::test_the_verifier_recounts_revision_stats_from_the_sibling_folders"]
 file = "scripts/verify_report.py"
-find = '''        R.get("dates") == sorted(d for d, _ in found) and R.get("n_dates") == len(found)'''
-replace = '''        True'''
+find = '''    chk("T", "잠정→확정 수정 폭 — 날짜·칸 수·중앙값·부호 뒤집힘을 옆 폴더의 확정 기록·시드에서 다시 센 것과 같은가", same_rev,'''
+replace = '''    chk("T", "잠정→확정 수정 폭 — 날짜·칸 수·중앙값·부호 뒤집힘을 옆 폴더의 확정 기록·시드에서 다시 센 것과 같은가", True,'''
 
 [[mutation]]
 id = "verify-top3-keep-blind"
