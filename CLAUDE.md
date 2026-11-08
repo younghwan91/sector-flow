@@ -25,7 +25,8 @@
 - 크론은 평일 18:10·19:10, 화~토 08:20·10:20(확정 모드 `KR_QUANT_FINAL=1`, 10:20 은 재시도)에 같은 `daily_report.sh` 를 부른다. 08:20 은 `daily_finalize` 성공을
   Airflow 로그로 확인하고(`scripts/finalize_done.py`) 전날을 확정치로 다시 만든다(`FINAL.txt`). 확인 못 하면 75, 이미 확정이면 0 으로 건너뛴다. 완전성 관문(`scripts/completeness_gate.py`)이 막으면
   폴더에 `INCOMPLETE.txt` 만 남기고 75 로 끝나며(`latest` 유지) 다음 실행이 그 기준일을 다시 만든다. `KR_QUANT_FORCE` 도 관문은 못 끈다.
-  이상 종료는 `scripts/cron_run.sh` 가 quant-airflow `alert.sh` 로 알리고, 크론 로그가 5MB 를 넘으면 `.1` 로 돌린다. 평일 20:30 `scripts/freshness_check.sh` 가 결과(`latest`·알림 웹훅)를 본다.
+  이상 종료는 `scripts/cron_run.sh` 가 quant-airflow `alert.sh` 로 알리고, 크론 로그가 5MB 를 넘으면 `.1` 로 돌린다. 평일 20:30 `scripts/freshness_check.sh` 가 결과(`latest`·SLO·원장·배포 지연·알림 웹훅)를 본다.
+  휴장 달력 정본은 `scripts/krx_calendar.py` — 매년 12월 KRX 공지로 다음 해를 대조한다(2027 은 잠정). 디스크 소실·새 머신 복구는 README §3.2.
   상한: 크론 `timeout 40m`, `reports/.report.lock`(겹치면 75), DB 접속 10초·문장 10분(`storage.connect`). 알림별 대응은 README §3.1.
 - 이 레포는 PRIVATE 다. 공개 전환은 사용자가 정한다.
 

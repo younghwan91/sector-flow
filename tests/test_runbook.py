@@ -80,6 +80,18 @@ MESSAGES: list[tuple[str, str, str]] = [
     ("scripts/freshness_check.py", "오늘 리포트가 안 걸렸다", "오늘 리포트가 안 걸렸다"),
     ("scripts/freshness_check.py", "supply_demand 가 비었다", "supply_demand 가 비었다"),
     ("scripts/freshness_check.py", "휴장일이면 무시", "휴장일이면 무시"),
+    ("scripts/freshness_check.py", "달력상 거래일인데 supply_demand 가 비었다", "달력상 거래일인데"),
+    ("scripts/freshness_check.py", "[달력] 오늘(", "[달력] 오늘(…)은 달력에 휴장"),
+    ("scripts/freshness_check.py", "[달력] {", "[달력] <해>년이 scripts/krx_calendar.py 에 없다"),
+    ("scripts/freshness_check.py", "자기 검증에 걸린 채 latest", "자기 검증에 걸린 채 latest"),
+    ("scripts/freshness_check.py", "확정 리포트가 자기 검증에 걸렸다", "확정 리포트가 자기 검증에 걸렸다"),
+    ("scripts/freshness_check.py", "이 미게시다", "미게시다"),
+    ("scripts/freshness_check.py", "실행 기록이 원장에 없다", "실행 기록이 원장에 없다"),
+    ("scripts/freshness_check.py", "18:10 뒤 실행 기록이 원장에 없다", "18:10 뒤 실행 기록이 원장에 없다"),
+    ("scripts/freshness_check.py", "이 점검의 판정을 원장에 못 썼다", "이 점검의 판정을 원장에 못 썼다"),
+    ("scripts/freshness_check.py", "[웹] /healthz 프로브가", "프로브가 N분째 없다"),
+    ("scripts/freshness_check.py", "시간째 안 받았다", "시간째 안 받았다"),
+    ("scripts/freshness_check.py", "개 뒤처졌다", "뒤처졌다"),
     ("scripts/freshness_check.py", "이 확정되지 않았다", "이 확정되지 않았다"),
     ("scripts/freshness_check.py", "ALERT_WEBHOOK_URL 이 비었다", "ALERT_WEBHOOK_URL 이 비었다"),
     ("scripts/freshness_check.py", "200 으로 답했지만 JSON 이 아니다", "200 으로 답했지만 JSON 이 아니다"),
@@ -210,6 +222,24 @@ def test_new_operator_messages_need_a_runbook_entry():
     orphans = [(rel, msg) for rel, msg in _scraped()
                if not any(s == rel and p in msg for s, p in known)]
     assert not orphans, "런북 줄이 없는 운영자 문구:\n" + "\n".join(f"  {r}: {m}" for r, m in orphans)
+
+
+def test_runbook_names_the_github_billing_stop():
+    """결제 정지는 코드 탓처럼 보인다 — CI 가 안 돌아 pull-all --ci-gate 가 조용히 멈춘다. 문구와 복구 뒤 재실행이 있어야 한다."""
+    book = _runbook()
+    assert "job was not started" in book and "spending limit" in book
+    row = next(ln for ln in book.splitlines() if "spending limit" in ln)
+    assert "gh run rerun" in row and "복구 뒤" in row
+
+
+def test_recovery_runbook_is_there_and_was_rehearsed():
+    """reports/ 는 백업 대상이 아니다 — 디스크를 잃은 날 읽을 순서와, 실제로 돌려 잰 시간이 있어야 한다."""
+    book = _runbook()
+    sec = book[book.index("### 3.2 디스크 소실·새 머신 복구"):]
+    for must in ("rebuild_history.py", "ln -sfn", "cron-install", "uv sync --extra pg", "events.jsonl", ".archive",
+                 "seed_revisions.py", "backup_to_gdrive.sh", "리허설 실측"):
+        assert must in sec, must
+    assert re.search(r"\d+초", sec), "리허설 시간이 없다"
 
 
 def test_exemptions_still_point_at_real_lines():
