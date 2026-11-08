@@ -10,7 +10,11 @@ from __future__ import annotations
 import copy
 import importlib.util
 import json
+import os
 import struct
+import subprocess
+import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -103,18 +107,18 @@ EXPECTED = """\
   상위: 보험 +900(96) · 금융 +400(70) · 건설 +120(62)
   하위: 반도체 -5,000(3) · 화학 -300(30) · 통신 -10(45)
 
-1년 %ile 극단(≥95 / ≤5)
-- 기관 ≥95: 유통 99 · 반도체 97 / ≤5: 화학 4 · 건설 5
-- 투신+연기금 ≥95: 화학 100 / ≤5: 통신 2
-- 외국인 ≥95: 보험 96 / ≤5: 반도체 3
+1년 분위 상단(≥95)·하단(≤5) — 오늘 값이 1년 일별 분포의 어디인가
+- 기관 상단: 유통 99 · 반도체 97 / 하단: 화학 4 · 건설 5
+- 투신+연기금 상단: 화학 100 / 하단: 통신 2
+- 외국인 상단: 보험 96 / 하단: 반도체 3
 
-20일 순매수 상위5 들고 남 — 20일 누적 기준, 11-05 리포트 대비
-- 기관: 들어옴 유통 · 나감 보험
+20일 순매수 상위5 변동 — 20일 누적 기준, 11-05 리포트 대비
+- 기관: 상위5에 새로 든 섹터: 유통 · 빠진 섹터: 보험
 - 투신+연기금: 변동 없음
 
 ---
 이 글은 수급 사실 요약이며 투자 판단·추천이 아니다. 섹터 수급 지표와 앞날 수익률의 관계는 검정했고 증거가 없다.
-자료: KRX·증권사 공개 수급(수량×종가 근사)
+자료: 한국거래소 투자자별 매매동향·지수(키움증권 API로 수집). 금액은 순매수 수량×종가 근사, 섹터 구분·수익률은 자체 계산.
 """
 
 
@@ -172,7 +176,10 @@ def test_disclaimer_is_fixed_tail():
     """면책·자료 출처가 정해진 글자 그대로 글 끝과 카드에 있다."""
     assert dg.DISCLAIMER == ("이 글은 수급 사실 요약이며 투자 판단·추천이 아니다. "
                              "섹터 수급 지표와 앞날 수익률의 관계는 검정했고 증거가 없다.")
-    assert dg.SOURCE == "자료: KRX·증권사 공개 수급(수량×종가 근사)"
+    assert dg.SOURCE == ("자료: 한국거래소 투자자별 매매동향·지수(키움증권 API로 수집). "
+                         "금액은 순매수 수량×종가 근사, 섹터 구분·수익률은 자체 계산.")
+    assert "공개" not in dg.SOURCE        # 재배포 허락이 확인되지 않았다
+    assert "밖에 게시하지 않는다" in dg.__doc__
     for kw in (dict(), dict(final=True)):
         _F, text, pages = dg.build(fixture_payload(**kw))
         assert text.endswith(f"\n\n---\n{dg.DISCLAIMER}\n{dg.SOURCE}\n")
@@ -217,10 +224,23 @@ def test_banned_word_in_body_fails_build(tmp_path):
 
 def test_banned_words_are_caught_across_spacing():
     """띄어쓰기를 바꿔도 잡는다 — '수익  보장', '목표 가', '매수신호'."""
-    assert dg.banned_hits("이건 수익  보장") == ["수익 보장"]
+    assert "수익 보장" in dg.banned_hits("이건 수익  보장")
     assert dg.banned_hits("목표 가 3만") == ["목표가"]
     assert "매수 신호" in dg.banned_hits("매수신호")
     assert dg.banned_hits("기관 +1,200(97)") == []
+
+
+def test_banned_words_survive_unicode_and_punctuation_tricks():
+    """폭 0 문자·전각·문장부호를 끼워도 잡는다. 목록 구분자를 넘어 붙여 읽지는 않는다."""
+    assert dg.banned_hits("추\u200b천") == ["추천"]
+    assert dg.banned_hits("추.천 섹터") == ["추천"]
+    assert dg.banned_hits("급-등") == ["급등"]
+    assert dg.banned_hits("（대장주）") == ["대장주"]
+    assert dg.banned_hits("수\ufeff혜") == ["수혜"]
+    for w in ("유망", "주도주", "매수하라", "담아라", "전망", "기대", "급락"):
+        assert w in dg.banned_hits(f"섹터 {w}"), w
+    assert dg.banned_hits("통신 · 호텔") == []                 # '신호' 가 아니다
+    assert dg.banned_hits(EXPECTED.split("---")[0]) == []
 
 
 def test_disclaimer_alone_passes_guard(tmp_path):
@@ -251,7 +271,8 @@ def test_card_html_is_card_sized_and_carries_facts():
     assert (dg.CARD_W, dg.CARD_H) == (1080, 1350)
     assert "width: 1080px; height: 1350px" in page
     assert "<script" not in page and "http://" not in page and "https://" not in page
-    for s in ("+2,500", "-4,200", "-6.02%", "-3.81%", "오늘 금액 최대", "들어옴 유통", "금액 근사 오차 큼 코스닥 6.2%"):
+    for s in ("+2,500", "-4,200", "-6.02%", "-3.81%", "오늘 금액 최대", "상위5에 새로 든 섹터: 유통",
+              "금액 근사 오차 큼 코스닥 6.2%", "빨강 = 순매수", "파랑 = 순매도", "상단(≥95)·하단(≤5)"):
         assert s in page, s
     # 외국인 막대(순매도)는 sell, 기관(순매수)은 buy — 0 기준선 왼쪽으로 뻗는다
     rows = page.split('<div class="net-row">')[1:]
@@ -259,6 +280,106 @@ def test_card_html_is_card_sized_and_carries_facts():
     assert 'class="bar sell" style="left:0.00%;width:50.00%"' in rows[1]
     # 줄인 판은 극단 목록만 다르다
     assert len(pages) == len(dg.CARD_EXTREME_CAPS)
+
+
+def test_card_text_guard_catches_what_only_the_card_says(monkeypatch):
+    """카드에만 있는 글(제목·범례 등)에 금칙어가 들면 만들지 않는다 — 글 검사만으로는 못 잡는다."""
+    real = dg.card_html
+    monkeypatch.setattr(dg, "card_html", lambda F, cap=3: real(F, cap).replace("오늘의 수급</h1>", "유망 섹터</h1>"))
+    with pytest.raises(dg.DigestError, match="digest_card.html"):
+        dg.build(fixture_payload())
+
+
+def test_displayed_percentile_decides_the_band():
+    """보이는 정수로 문턱을 비교한다 — 94.6 은 '95' 로 보이니 상단에 들고, 5.4 는 '5' 로 하단에 든다.
+    99.6 은 '100' 으로 보인다(둘이 어긋나지 않는다)."""
+    P = fixture_payload()
+    secs = P["today"]["sectors"]["전체"]
+    secs["금융"]["inst"]["pct"] = 94.6
+    secs["통신"]["inst"]["pct"] = 5.4
+    secs["보험"]["inst"]["pct"] = 94.4
+    secs["유통"]["inst"]["pct"] = 99.6
+    F = dg.collect(P)
+    inst = F["sectors"][0]
+    assert ["금융", 95] in inst["hi"] and ["유통", 100] in inst["hi"]
+    assert ["통신", 5] in inst["lo"]
+    assert all(n != "보험" for n, _ in inst["hi"])
+    text = dg.compose(F)[1]
+    assert "금융 +800(95)" in text and "금융 95" in text
+    assert dg.pct_int(94.5) == 95 and dg.pct_int(5.5) == 6 and dg.pct_int(None) is None
+
+
+def test_unclassified_bucket_is_not_listed_as_a_sector():
+    """'(미분류)' 는 섹터가 아니다 — 상·하위·분위·변동 목록 어디에도 안 싣는다."""
+    P = fixture_payload()
+    P["today"]["sectors"]["전체"]["(미분류)"] = _row(inst=(99999.0, 100.0), invpen=(-99999.0, 0.0),
+                                                   forgn=(-99999.0, 0.0))
+    P["change"]["top"]["전체"]["inst"]["entered"] = ["유통", "(미분류)"]
+    F, text, pages = dg.build(P)
+    assert "미분류" not in text and "미분류" not in pages[0]
+    assert F["excluded"] == ["(미분류)"]
+
+
+def test_few_sectors_never_list_one_sector_as_both_top_and_bottom():
+    """섹터가 6개 미만인 날 같은 섹터가 상위와 하위에 함께 서지 않는다."""
+    P = fixture_payload()
+    secs = P["today"]["sectors"]["전체"]
+    for k in list(secs)[4:]:
+        del secs[k]
+    F = dg.collect(P)
+    for s in F["sectors"]:
+        tops = {n for n, *_ in s["top"]}
+        assert not tops & {n for n, *_ in s["bottom"]}, s
+        assert len(s["top"]) == 3 and len(s["bottom"]) == 1
+
+
+HOOK_RE = r"^if \[ -n \"\$\{KR_QUANT_DIGEST:-\}\" \]; then .*$"
+
+
+def _hook_line() -> str:
+    import re
+    lines = re.findall(HOOK_RE, (REPO / "scripts" / "daily_report.sh").read_text("utf-8"), flags=re.M)
+    assert len(lines) == 1, lines
+    return lines[0]
+
+
+def _run_hook(tmp_path: Path, fake_body: str, env_extra: dict) -> "subprocess.CompletedProcess":
+    """daily_report.sh 의 다이제스트 줄만 떼어 set -euo pipefail 아래에서 가짜 uv 로 돌린다."""
+    fake = tmp_path / "fake_uv"
+    fake.write_text("#!/usr/bin/env bash\n" + fake_body, encoding="utf-8")
+    fake.chmod(0o755)
+    script = tmp_path / "hook.sh"
+    script.write_text(f"set -euo pipefail\nUVR=({fake})\nBUILD={tmp_path}\n{_hook_line()}\necho PUBLISHED\n",
+                      encoding="utf-8")
+    env = {**os.environ, "KR_QUANT_DIGEST": "1", **env_extra}
+    return subprocess.run(["bash", str(script)], capture_output=True, text=True, timeout=40, env=env)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="bash")
+def test_digest_hook_cannot_block_or_fail_publishing(tmp_path):
+    """다이제스트가 멈추거나(TERM 도 무시) 실패해도 리포트 게시(다음 줄)는 계속된다. 오프라인·판 고정으로 부른다."""
+    rec = tmp_path / "args"
+    r = _run_hook(tmp_path, f'echo "$UV_OFFLINE $*" > {rec}\n', {})
+    assert r.returncode == 0 and "PUBLISHED" in r.stdout
+    assert rec.read_text().split() == ["1", "--with", "playwright==1.48.0", "python", "scripts/digest.py",
+                                       "--dir", str(tmp_path)]
+
+    r = _run_hook(tmp_path, "exit 1\n", {})
+    assert r.returncode == 0 and "PUBLISHED" in r.stdout and "못 만들었다" in r.stderr
+
+    t0 = time.monotonic()
+    r = _run_hook(tmp_path, "trap '' TERM\nexec sleep 120\n", {"KR_QUANT_DIGEST_TIMEOUT": "1s"})
+    assert r.returncode == 0 and "PUBLISHED" in r.stdout
+    assert time.monotonic() - t0 < 30
+
+
+def test_render_waits_are_bounded():
+    """브라우저 단계마다 상한이 있다 — fonts.ready 가 안 풀려도 5초 뒤 찍는다."""
+    import inspect
+    src = inspect.getsource(dg.render_png)
+    assert "FONTS_READY_JS" in src and 'evaluate("document.fonts.ready")' not in src
+    assert "setTimeout(r, 5000)" in dg.FONTS_READY_JS
+    assert src.count("timeout=RENDER_TIMEOUT_MS") >= 3
 
 
 def _png_size(path: Path) -> tuple[int, int]:

@@ -57,6 +57,8 @@
   ul.facts { list-style: none; font-size: 20px; line-height: 1.45; }
   ul.facts b { margin-right: 6px; }
   .sep { color: var(--ink-3); }
+  .legend { font-size: 18px; color: var(--ink-2); margin: -2px 0 4px; }
+  .legend .dot { margin: 0 6px 0 0; } .legend .dot.sell { margin-left: 18px; }
   .notes p { font-size: 20px; color: var(--ink-2); }
   footer { margin-top: auto; border-top: 1px solid var(--rule); padding-top: 10px; font-size: 18px; color: var(--ink-2); line-height: 1.45; }
 </style>
@@ -69,6 +71,7 @@
 
 <section>
   <h2>시장 순매수[억] · __MARKET__(거래소+코스닥)<small>괄호는 1년 일별 %ile</small></h2>
+  <p class="legend"><i class="dot buy"></i>빨강 = 순매수 <i class="dot sell"></i>파랑 = 순매도</p>
   __NET_ROWS__
 </section>
 
@@ -86,7 +89,7 @@
 </section>
 
 <section>
-  <h2>1년 %ile 극단</h2>
+  <h2>1년 분위 상단(≥__PCT_HI__)·하단(≤__PCT_LO__)<small>오늘 값이 1년 일별 분포의 어디인가</small></h2>
   <ul class="facts">__EXTREMES__</ul>
 </section>
 

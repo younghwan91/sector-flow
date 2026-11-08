@@ -8,7 +8,9 @@
 * ``digest.png``  — 1080×1350 카드. ``scripts/templates/digest_card.html`` 을 Playwright Chromium 으로 찍는다.
   Playwright 가 없으면 건너뛴다(``--png auto``). ``digest_card.html`` 은 늘 남긴다.
 
-**보내지 않는다.** 네트워크를 쓰지 않고 폴더에 파일만 쓴다. 게시는 사람이 정한다.
+**보내지 않는다.** 네트워크를 쓰지 않고 폴더에 파일만 쓴다. 게시는 사람이 정한다 — 그리고 KRX·키움 자료의
+재배포 권리와 유사투자자문업 해당 여부 문의(docs/strategy/inquiries)에 답을 받기 전에는 **밖에 게시하지 않는다.**
+자료는 키움증권 계좌 보유자 API 로 받은 한국거래소 자료이고, 재배포 허락은 아직 확인되지 않았다.
 
 화면 배너(``flow_view.banner_lines``)와 같은 원칙이다 — 페이로드 ``today``·``change``·``final_diff`` 의
 값을 옮길 뿐 점수·순위 판정·추천을 싣지 않는다. 섹터 수급 지표는 앞날 수익률과의 관계를 검정했고 증거가
@@ -16,7 +18,11 @@
 (:func:`check_compliance` — 금칙어가 하나라도 있으면 세 파일 모두 안 쓰고, 옛 산출물도 지운다).
 
 ``flow_view`` 를 import 하지 않는다 — 화면 코드와 엮이면 화면을 고칠 때마다 이 글이 같이 흔들린다.
-같은 정의(1년 %ile 극단 문턱 95/5, 상태 칩)를 여기서 다시 적는다.
+같은 정의(1년 분위 문턱 95/5, 상태 칩)를 여기서 다시 적는다. 다만 문턱 비교는 화면과 달리 **보이는 정수**
+(반올림한 값)로 한다 — 글에 "95" 로 적힌 섹터가 "≥95" 목록에서 빠지거나 "100" 이 99.6 인 어긋남을 없앤다.
+
+``(미분류)``(벤더가 섹터를 안 준 종목 묶음)는 목록에 싣지 않는다 — 섹터가 아니다. ``digest.json`` 의
+``excluded`` 에 남긴다.
 
 사용::
 
@@ -30,9 +36,11 @@ import argparse
 import glob
 import html
 import json
+import math
 import os
 import re
 import sys
+import unicodedata
 from datetime import date
 from pathlib import Path
 
@@ -48,8 +56,10 @@ SECTOR_ACTORS = (("inst", "기관"), ("invpen", "투신+연기금"))
 KO = {"inst": "기관", "invtrt": "투신", "penfnd_etc": "연기금", "invpen": "투신+연기금",
       "forgn": "외국인", "indiv": "개인", "etc": "기타법인"}
 TOP_N = 3
-#: 1년 %ile 극단 문턱(포함) — 화면 배너(flow_view.PCT_HI/PCT_LO)와 같다.
-PCT_HI, PCT_LO = 95.0, 5.0
+#: 1년 분위 상단·하단 문턱(포함) — 화면 배너(flow_view.PCT_HI/PCT_LO)와 같은 값. 비교는 보이는 정수로.
+PCT_HI, PCT_LO = 95, 5
+#: 목록에서 빼는 묶음 — 섹터가 아니다.
+EXCLUDED_SECTORS = ("(미분류)",)
 #: 글 길이 상한(문자 수, 줄바꿈 포함) — 텔레그램 미리보기·뉴스레터 한 화면.
 MAX_CHARS = 1200
 #: 길이가 넘치면 극단 목록을 이 개수까지 차례로 줄인다(0 = 개수만). 그래도 넘치면 만들지 않는다.
@@ -59,13 +69,15 @@ CARD_W, CARD_H = 1080, 1350
 #: 카드가 넘치면 극단 목록을 이 개수까지 차례로 줄여 다시 찍는다.
 CARD_EXTREME_CAPS = (3, 1, 0)
 
-#: 본문에 나오면 안 되는 말. 공백을 지우고 비교한다("매수신호"·"수익 보장" 둘 다 잡는다).
-BANNED = ("추천", "매수 신호", "매도 신호", "신호", "급등", "폭등", "세력", "목표가", "수익 보장", "확실")
+#: 본문에 나오면 안 되는 말 — 권유·전망·보장으로 읽히는 말. 비교 방법은 :func:`banned_hits`.
+BANNED = ("추천", "매수 신호", "매도 신호", "신호", "급등", "폭등", "급락", "세력", "목표가", "수익 보장", "보장",
+          "확실", "유망", "수혜", "주도주", "대장주", "매수하라", "담아라", "전망", "기대")
 
 #: 고정 꼬리 — 금칙어 검사에서 빠지는 유일한 글. 바꾸면 테스트가 정확한 문자열로 잡는다.
 DISCLAIMER = ("이 글은 수급 사실 요약이며 투자 판단·추천이 아니다. "
               "섹터 수급 지표와 앞날 수익률의 관계는 검정했고 증거가 없다.")
-SOURCE = "자료: KRX·증권사 공개 수급(수량×종가 근사)"
+SOURCE = ("자료: 한국거래소 투자자별 매매동향·지수(키움증권 API로 수집). "
+          "금액은 순매수 수량×종가 근사, 섹터 구분·수익률은 자체 계산.")
 FOOTER = f"---\n{DISCLAIMER}\n{SOURCE}"
 
 _WEEKDAY = "월화수목금토일"
@@ -92,6 +104,11 @@ def status_label(P: dict) -> str:
     return "마감·잠정" if P.get("finalized") else "장중·미확정"
 
 
+def pct_int(p) -> "int | None":
+    """보이는 백분위 — 반올림(0.5 는 올림). 글·카드·문턱 비교가 모두 이 값을 쓴다."""
+    return None if p is None else int(math.floor(p + 0.5))
+
+
 def _fact(x) -> tuple:
     x = x or {}
     return x.get("v"), x.get("pct")
@@ -99,10 +116,14 @@ def _fact(x) -> tuple:
 
 def _rank(secs: dict, actor: str) -> list[tuple[str, float, "float | None"]]:
     """(섹터, 오늘 순매수, 1년%ile) — 금액 큰 순, 동률은 이름순. 값이 없는 섹터는 뺀다."""
-    out = [(s, *_fact(row.get(actor))) for s, row in secs.items()]
+    out = [(s, *_fact(row.get(actor))) for s, row in secs.items() if s not in EXCLUDED_SECTORS]
     out = [t for t in out if t[1] is not None]
     out.sort(key=lambda t: (-t[1], t[0]))
     return out
+
+
+def _sectors_only(names: list[str]) -> list[str]:
+    return [s for s in names if s not in EXCLUDED_SECTORS]
 
 
 def dominant_actor(net: dict) -> "str | None":
@@ -133,14 +154,16 @@ def collect(P: dict) -> dict:
     sectors = []
     for a, ko in actors:
         ranked = _rank(secs, a)
-        hi = sorted(((s, p) for s, _v, p in ranked if p is not None and p >= PCT_HI),
-                    key=lambda t: (-t[1], t[0]))
-        lo = sorted(((s, p) for s, _v, p in ranked if p is not None and p <= PCT_LO),
-                    key=lambda t: (t[1], t[0]))
+        shown = [(s, pct_int(p)) for s, _v, p in ranked if p is not None]
+        hi = sorted(((s, q) for s, q in shown if q >= PCT_HI), key=lambda t: (-t[1], t[0]))
+        lo = sorted(((s, q) for s, q in shown if q <= PCT_LO), key=lambda t: (t[1], t[0]))
+        top = ranked[:TOP_N]
+        # 섹터가 6개 미만인 날 같은 섹터가 상위와 하위에 함께 서지 않게 — 하위는 상위에 없는 것만.
+        bottom = [t for t in ranked[::-1] if t not in top][:TOP_N]
         sectors.append({
             "actor": a, "ko": ko, "dominant": a == dom,
-            "top": [list(t) for t in ranked[:TOP_N]],
-            "bottom": [list(t) for t in ranked[::-1][:TOP_N]],
+            "top": [list(t) for t in top],
+            "bottom": [list(t) for t in bottom],
             "hi": [list(t) for t in hi], "lo": [list(t) for t in lo],
         })
 
@@ -169,8 +192,8 @@ def collect(P: dict) -> dict:
             t = ((C.get("top") or {}).get(MARKET) or {}).get(a) or {}
             ok = t.get("entered") is not None and t.get("exited") is not None
             change["actors"].append({"actor": a, "ko": ko,
-                                     "entered": t.get("entered") if ok else None,
-                                     "exited": t.get("exited") if ok else None})
+                                     "entered": _sectors_only(t["entered"]) if ok else None,
+                                     "exited": _sectors_only(t["exited"]) if ok else None})
 
     final = None
     if P.get("final"):
@@ -187,7 +210,7 @@ def collect(P: dict) -> dict:
                 for a, ko in NET_ACTORS],
         "dominant": dom, "returns": rets, "approx_gap": gaps,
         "sectors": sectors, "pct_hi": PCT_HI, "pct_lo": PCT_LO,
-        "change": change, "final_diff": final,
+        "change": change, "final_diff": final, "excluded": list(EXCLUDED_SECTORS),
     }
 
 
@@ -198,7 +221,7 @@ def amt(v) -> str:
 
 
 def pct_tag(p) -> str:
-    return "(—)" if p is None else f"({p:.0f})"
+    return "(—)" if p is None else f"({pct_int(p)})"
 
 
 def ret_str(v) -> str:
@@ -224,6 +247,16 @@ def _capped(xs: list[str], cap: int) -> str:
     return " · ".join(xs[:cap]) + (f" 외 {len(xs) - cap}" if len(xs) > cap else "")
 
 
+def change_phrase(a: dict, top_n: int) -> str:
+    """직전 리포트 대비 상위 N 의 변동 한 구 — `상위5에 새로 든 섹터: X · 빠진 섹터: Y`."""
+    if a["entered"] is None:
+        return "비교 없음"
+    if not a["entered"] and not a["exited"]:
+        return "변동 없음"
+    return (f"상위{top_n}에 새로 든 섹터: {_items(a['entered'])}"
+            f" · 빠진 섹터: {_items(a['exited'])}")
+
+
 def body_text(F: dict, extreme_cap: int = EXTREME_CAPS[0]) -> str:
     """꼬리를 뺀 본문 — 금칙어 검사 대상."""
     L = [f"오늘의 수급 · {day_label(F['asof'])} · {F['status']}"]
@@ -243,25 +276,20 @@ def body_text(F: dict, extreme_cap: int = EXTREME_CAPS[0]) -> str:
         L.append(f"- {s['ko']}{tag}")
         L.append("  상위: " + _items([f"{n} {amt(v)}{pct_tag(p)}" for n, v, p in s["top"]]))
         L.append("  하위: " + _items([f"{n} {amt(v)}{pct_tag(p)}" for n, v, p in s["bottom"]]))
-    L += ["", f"1년 %ile 극단(≥{F['pct_hi']:.0f} / ≤{F['pct_lo']:.0f})"]
+    L += ["", f"1년 분위 상단(≥{F['pct_hi']})·하단(≤{F['pct_lo']}) — 오늘 값이 1년 일별 분포의 어디인가"]
     for s in F["sectors"]:
-        hi = [f"{n} {p:.0f}" for n, p in s["hi"]]
-        lo = [f"{n} {p:.0f}" for n, p in s["lo"]]
-        L.append(f"- {s['ko']} ≥{F['pct_hi']:.0f}: {_capped(hi, extreme_cap)}"
-                 f" / ≤{F['pct_lo']:.0f}: {_capped(lo, extreme_cap)}")
+        hi = [f"{n} {q}" for n, q in s["hi"]]
+        lo = [f"{n} {q}" for n, q in s["lo"]]
+        L.append(f"- {s['ko']} 상단: {_capped(hi, extreme_cap)} / 하단: {_capped(lo, extreme_cap)}")
     C = F["change"]
     L.append("")
     if C["prev_date"]:
-        L.append(f"{C['window']}일 순매수 상위{C['top_n']} 들고 남 — {C['window']}일 누적 기준, "
+        L.append(f"{C['window']}일 순매수 상위{C['top_n']} 변동 — {C['window']}일 누적 기준, "
                  f"{C['prev_date'][5:]} 리포트 대비")
         for a in C["actors"]:
-            if a["entered"] is None:
-                L.append(f"- {a['ko']}: 비교 없음")
-            else:
-                L.append(f"- {a['ko']}: " + _items([f"들어옴 {s}" for s in a["entered"]]
-                                                   + [f"나감 {s}" for s in a["exited"]], "변동 없음"))
+            L.append(f"- {a['ko']}: {change_phrase(a, C['top_n'])}")
     else:
-        L.append(f"{C['window']}일 상위{C['top_n']} 들고 남({C['window']}일 누적 기준): 비교 없음 — {C['reason']}")
+        L.append(f"{C['window']}일 순매수 상위{C['top_n']} 변동({C['window']}일 누적 기준): 비교 없음 — {C['reason']}")
     fd = F["final_diff"]
     if fd is not None:
         L.append("")
@@ -283,10 +311,21 @@ def compose(F: dict) -> tuple[str, str]:
     raise DigestError(f"글이 {len(full)}자로 상한 {MAX_CHARS}자를 넘는다(극단 목록을 다 줄인 뒤에도)")
 
 
+#: 금칙어 비교에서 한 항목으로 보는 단위의 경계 — 목록 구분자(` · `·` | `), 줄, `: `.
+_ITEM_SEP = re.compile(r"\s+[·|]\s+|\n|:\s")
+
+
+def _letters(t: str) -> str:
+    return "".join(c for c in t if unicodedata.category(c)[0] in "LN")
+
+
 def banned_hits(text: str) -> list[str]:
-    """``text`` 에 든 금칙어 — 공백을 지우고 비교한다."""
-    flat = re.sub(r"\s+", "", text)
-    return [w for w in BANNED if re.sub(r"\s+", "", w) in flat]
+    """``text`` 에 든 금칙어. NFKC 로 정규화한 뒤 항목(:data:`_ITEM_SEP` 로 나눈 것)마다 글자·숫자만 남겨
+    비교한다 — 공백(`수익  보장`)·폭 0 문자·문장부호(`추.천`·`급-등`)를 끼워도 잡는다. 항목 경계를 넘어
+    붙이지는 않는다(`통신 · 호텔` 이 `신호` 가 되지 않게).
+    """
+    items = [_letters(it) for it in _ITEM_SEP.split(unicodedata.normalize("NFKC", text))]
+    return [w for w in BANNED if any(_letters(w) in it for it in items)]
 
 
 def check_compliance(body: str, where: str = "digest.md") -> None:
@@ -338,20 +377,15 @@ def card_html(F: dict, extreme_cap: int = CARD_EXTREME_CAPS[0]) -> str:
                     f'<h4>하위 3</h4><ol>{li(s["bottom"])}</ol></div>')
     ext = []
     for s in F["sectors"]:
-        hi = _capped([f"{n} {p:.0f}" for n, p in s["hi"]], extreme_cap)
-        lo = _capped([f"{n} {p:.0f}" for n, p in s["lo"]], extreme_cap)
-        ext.append(f'<li><b>{_e(s["ko"])}</b> ≥{F["pct_hi"]:.0f}: {_e(hi)} <span class="sep">/</span> '
-                   f'≤{F["pct_lo"]:.0f}: {_e(lo)}</li>')
+        hi = _capped([f"{n} {q}" for n, q in s["hi"]], extreme_cap)
+        lo = _capped([f"{n} {q}" for n, q in s["lo"]], extreme_cap)
+        ext.append(f'<li><b>{_e(s["ko"])}</b> 상단: {_e(hi)} <span class="sep">/</span> 하단: {_e(lo)}</li>')
     C = F["change"]
     if C["prev_date"]:
-        chg_head = f'{C["window"]}일 순매수 상위{C["top_n"]} 들고 남 · {C["window"]}일 누적 기준 · {C["prev_date"][5:]} 리포트 대비'
-        chg = "".join(
-            f'<li><b>{_e(a["ko"])}</b> '
-            + (_e("비교 없음") if a["entered"] is None else _e(_items(
-                [f"들어옴 {s}" for s in a["entered"]] + [f"나감 {s}" for s in a["exited"]], "변동 없음")))
-            + "</li>" for a in C["actors"])
+        chg_head = f'{C["window"]}일 순매수 상위{C["top_n"]} 변동 · {C["window"]}일 누적 기준 · {C["prev_date"][5:]} 리포트 대비'
+        chg = "".join(f'<li><b>{_e(a["ko"])}</b> {_e(change_phrase(a, C["top_n"]))}</li>' for a in C["actors"])
     else:
-        chg_head = f'{C["window"]}일 순매수 상위{C["top_n"]} 들고 남 · {C["window"]}일 누적 기준'
+        chg_head = f'{C["window"]}일 순매수 상위{C["top_n"]} 변동 · {C["window"]}일 누적 기준'
         chg = f"<li>비교 없음 — {_e(C['reason'])}</li>"
     fd = F["final_diff"]
     notes = []
@@ -368,7 +402,7 @@ def card_html(F: dict, extreme_cap: int = CARD_EXTREME_CAPS[0]) -> str:
         "STATUS_CLASS": "final" if F["final"] else "prov",
         "MARKET": _e(F["market"]), "NET_ROWS": "".join(net_rows), "GAPS": gaps,
         "RET_ROWS": "".join(ret_rows), "SECTOR_COLS": "".join(cols),
-        "EXTREMES": "".join(ext), "CHANGE_HEAD": _e(chg_head), "CHANGE": chg,
+        "PCT_HI": str(F["pct_hi"]), "PCT_LO": str(F["pct_lo"]), "EXTREMES": "".join(ext), "CHANGE_HEAD": _e(chg_head), "CHANGE": chg,
         "NOTES": "".join(f"<p>{_e(n)}</p>" for n in notes),
         "DISCLAIMER": _e(DISCLAIMER), "SOURCE": _e(SOURCE),
     }
@@ -398,6 +432,11 @@ def _cached_chromium() -> "str | None":
     return found[-1] if found else None
 
 
+#: 브라우저 단계마다의 상한(ms). 배치 쪽 상한은 daily_report.sh 의 ``timeout`` 이 따로 건다.
+RENDER_TIMEOUT_MS = 30_000
+#: 글꼴 로딩 대기 — 5초가 지나면 있는 글꼴로 찍는다(넘침 검사가 그 결과를 다시 본다).
+FONTS_READY_JS = "Promise.race([document.fonts.ready, new Promise(r => setTimeout(r, 5000))]).then(() => true)"
+
 #: 카드 안 모든 요소의 (오른쪽 끝, 아래 끝) 최댓값 — 넘침 검사. body 의 안쪽 여백까지 포함해 잰다.
 CONTENT_EXTENT_JS = """() => {
   const pb = parseFloat(getComputedStyle(document.body).paddingBottom) || 0;
@@ -426,21 +465,24 @@ def render_png(html_path: Path, png_path: Path) -> None:
 
     with sync_playwright() as p:
         try:
-            browser = p.chromium.launch()
+            browser = p.chromium.launch(timeout=RENDER_TIMEOUT_MS)
         except Exception as e:                          # 판이 맞는 브라우저가 없다
             exe = _cached_chromium()
             if not exe:
                 raise DigestError(f"Chromium 을 못 띄웠다: {type(e).__name__}") from e
-            browser = p.chromium.launch(executable_path=exe)
+            browser = p.chromium.launch(executable_path=exe, timeout=RENDER_TIMEOUT_MS)
         try:
             page = browser.new_page(viewport={"width": CARD_W, "height": CARD_H}, device_scale_factor=1)
             page.route("**/*", lambda r: r.continue_() if r.request.url.startswith("file:") else r.abort())
-            page.goto(html_path.resolve().as_uri())
-            page.evaluate("document.fonts.ready")
+            page.set_default_timeout(RENDER_TIMEOUT_MS)
+            page.goto(html_path.resolve().as_uri(), wait_until="load", timeout=RENDER_TIMEOUT_MS)
+            # 글꼴 대기는 상한을 둔다 — fonts.ready 가 안 풀리는 환경에서 배치가 멈추면 안 된다.
+            page.evaluate(FONTS_READY_JS)
             # scrollHeight 는 못 쓴다 — 카드가 html·body 를 고정 크기·overflow:hidden 으로 묶어 늘 카드 높이를
             # 돌려준다(꼬리 면책 문구가 잘린 카드가 이 검사를 통과했다). 요소마다 실제 상자 끝을 잰다.
             check_extent(*page.evaluate(CONTENT_EXTENT_JS))
-            page.screenshot(path=str(png_path), clip={"x": 0, "y": 0, "width": CARD_W, "height": CARD_H})
+            page.screenshot(path=str(png_path), clip={"x": 0, "y": 0, "width": CARD_W, "height": CARD_H},
+                            timeout=RENDER_TIMEOUT_MS)
         finally:
             browser.close()
 

@@ -6031,8 +6031,8 @@ id = "digest-banned-spacing"
 why = "공백을 지우지 않고 비교하면 '수익  보장'·'목표 가' 처럼 띄어 쓴 금칙어가 빠져나간다"
 guards = ["tests/test_digest.py::test_banned_words_are_caught_across_spacing"]
 file = "scripts/digest.py"
-find = '    flat = re.sub(r"\s+", "", text)'
-replace = "    flat = text"
+find = '    return "".join(c for c in t if unicodedata.category(c)[0] in "LN")'
+replace = '    return "".join(c for c in t if unicodedata.category(c)[0] in "LNZ")'
 
 [[mutation]]
 id = "digest-guard-scans-footer"
@@ -6118,3 +6118,83 @@ guards = ["tests/test_digest.py::test_banned_word_in_body_fails_build"]
 file = "scripts/digest.py"
 find = "        clear()                    # 옛 다이제스트가"
 replace = "        pass                       # 옛 다이제스트가"
+
+[[mutation]]
+id = "digest-card-guard-off"
+why = "카드에만 있는 글(제목·범례·머리말)의 금칙어 검사를 뺀다 — 글 검사는 카드 글을 안 본다"
+guards = ["tests/test_digest.py::test_card_text_guard_catches_what_only_the_card_says"]
+file = "scripts/digest.py"
+find = '        check_compliance(card_visible_text(page), "digest_card.html")'
+replace = "        pass"
+
+[[mutation]]
+id = "digest-banned-punctuation-pass-off"
+why = "문장부호를 남긴 채 비교한다 — '추.천'·'급-등' 이 빠져나간다"
+guards = ["tests/test_digest.py::test_banned_words_survive_unicode_and_punctuation_tricks"]
+file = "scripts/digest.py"
+find = '    return "".join(c for c in t if unicodedata.category(c)[0] in "LN")'
+replace = '    return "".join(c for c in t if unicodedata.category(c)[0] in "LNP")'
+
+[[mutation]]
+id = "digest-banned-joins-across-items"
+why = "목록 구분자를 넘어 붙여 읽으면 '통신 · 호텔' 이 '신호' 가 되어 멀쩡한 날 다이제스트가 안 나온다"
+guards = ["tests/test_digest.py::test_banned_words_survive_unicode_and_punctuation_tricks"]
+file = "scripts/digest.py"
+find = '_ITEM_SEP = re.compile(r"\s+[·|]\s+|\n|:\s")'
+replace = '_ITEM_SEP = re.compile(r"\n")'
+
+[[mutation]]
+id = "digest-band-on-raw-percentile"
+why = "날 값으로 문턱을 비교하면 '(95)' 로 보이는 94.6 이 상단 목록에서 빠진다 — 글이 자기 숫자와 어긋난다"
+guards = ["tests/test_digest.py::test_displayed_percentile_decides_the_band"]
+file = "scripts/digest.py"
+find = "        shown = [(s, pct_int(p)) for s, _v, p in ranked if p is not None]"
+replace = "        shown = [(s, p) for s, _v, p in ranked if p is not None]"
+
+[[mutation]]
+id = "digest-unclassified-listed"
+why = "'(미분류)' 를 섹터처럼 상·하위에 싣는다"
+guards = ["tests/test_digest.py::test_unclassified_bucket_is_not_listed_as_a_sector"]
+file = "scripts/digest.py"
+find = "for s, row in secs.items() if s not in EXCLUDED_SECTORS]"
+replace = "for s, row in secs.items()]"
+
+[[mutation]]
+id = "digest-top-bottom-overlap"
+why = "섹터가 6개 미만인 날 같은 섹터가 상위와 하위에 함께 선다"
+guards = ["tests/test_digest.py::test_few_sectors_never_list_one_sector_as_both_top_and_bottom"]
+file = "scripts/digest.py"
+find = "        bottom = [t for t in ranked[::-1] if t not in top][:TOP_N]"
+replace = "        bottom = ranked[::-1][:TOP_N]"
+
+[[mutation]]
+id = "digest-fonts-wait-unbounded"
+why = "fonts.ready 를 상한 없이 기다린다 — 안 풀리면 배치가 바깥 40분 상한까지 멈춘다"
+guards = ["tests/test_digest.py::test_render_waits_are_bounded"]
+file = "scripts/digest.py"
+find = "            page.evaluate(FONTS_READY_JS)"
+replace = '            page.evaluate("document.fonts.ready")'
+
+[[mutation]]
+id = "digest-hook-no-timeout"
+why = "다이제스트 훅에 시간 상한이 없으면 멈춘 렌더가 배치를 40분 상한까지 잡고, 그 뒤 EXIT 트랩이 짓던 리포트를 지운다"
+guards = ["tests/test_digest.py::test_digest_hook_cannot_block_or_fail_publishing"]
+file = "scripts/daily_report.sh"
+find = 'timeout -k 10s "${KR_QUANT_DIGEST_TIMEOUT:-5m}" '
+replace = ""
+
+[[mutation]]
+id = "digest-hook-failure-stops-publish"
+why = "다이제스트가 실패하면 set -e 로 배치가 죽어 리포트가 게시되지 않는다"
+guards = ["tests/test_digest.py::test_digest_hook_cannot_block_or_fail_publishing"]
+file = "scripts/daily_report.sh"
+find = '--dir "$BUILD" || echo'
+replace = '--dir "$BUILD"; echo'
+
+[[mutation]]
+id = "digest-hook-unpinned"
+why = "playwright 판을 안 박으면 실행마다 색인을 보고, 받아 둔 브라우저와 드라이버 판이 어긋난다"
+guards = ["tests/test_digest.py::test_digest_hook_cannot_block_or_fail_publishing"]
+file = "scripts/daily_report.sh"
+find = "--with 'playwright==1.48.0'"
+replace = "--with playwright"
