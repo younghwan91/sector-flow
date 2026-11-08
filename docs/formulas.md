@@ -1,5 +1,5 @@
 # sw-flow · sw-ledger 화면 값의 수식 정의
-<!-- refs-verified-at: 8fb7297e50ef22420bc7f56ff012eea4e8c93c2c -->
+<!-- refs-verified-at: a5f1497e6619727870574c08c5df905b3b2d49f9 -->
 
 두 터미널 화면(`sw-flow`·`sw-ledger`)에 뜨는 모든 값의 정의를 코드 위치와 함께 모은 **정본**이다. 식마다 그것을
 계산하는 `파일:줄` 이 붙어 있고, 지표마다 **근거 수준**(앞날 수익률에 대해 검증된 것이 있나)을 적었다.
@@ -80,7 +80,7 @@
 `src/sectorflow/tui/ledger_view.py:650`(원장 정렬), `src/sectorflow/tui/ledger_view.py:730-731`(동시성 nan 순서).
 
 값이 없는 것은 작은 값이 아니다. 구현 — `src/sectorflow/tui/flow_view.py:673-681`(섹터 정렬), `src/sectorflow/tui/flow_view.py:763-771`(종목 정렬),
-`src/sectorflow/tui/ledger_view.py:538`(원장 정렬), `src/sectorflow/tui/ledger_view.py:618-619`(동시성 nan 순서).
+`src/sectorflow/tui/ledger_view.py:551`(원장 정렬), `src/sectorflow/tui/ledger_view.py:631-632`(동시성 nan 순서).
 
 적용되는 자리: 수익률이 없는 종목·날(§1.3), 최근집중의 작은 분모·작은 몫(§3.6), 잔여몫·최대일몫의
 작은 분모(§4.3·§4.4), 상관의 분산 0 쌍(§4.7), 누적 기여율의 비-순매수 정렬(§3.3), 관문을 못 넘은 선정(§2.12·§3.9).
