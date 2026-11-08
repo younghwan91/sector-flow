@@ -1583,8 +1583,8 @@ id = "finalize-failure-counts-as-done"
 why = "확정 작업이 실패했는데 확정치로 다시 만들었다고 적는다"
 guards = ["tests/test_daily_report_flow.py::test_final_mode_keeps_the_provisional_report_when_finalize_is_not_confirmed"]
 file = "scripts/finalize_done.py"
-find = """            if OK_LINE not in f.read():"""
-replace = """            if False:"""
+find = """        if OK_LINE not in text:"""
+replace = """        if False:"""
 
 [[mutation]]
 id = "finalize-before-the-report-day-counts"
@@ -7331,3 +7331,43 @@ guards = ["tests/test_collect_dart.py::test_rights_issue_the_seed_cannot_see_rea
 file = "src/sectorflow/collect/dart.py"
 find = "                (code, OK)).fetchall():"
 replace = "                (code, \"none\")).fetchall():"
+
+[[mutation]]
+id = "finalize-ended-max"
+why = "실행이 끝난 때를 가장 늦은 태스크로 재면 기준일 안에 끝난 태스크가 확정으로 넘어간다"
+guards = ["tests/test_finalize_done.py::test_a_run_counts_only_once_every_task_ended_after_the_day"]
+file = "scripts/finalize_done.py"
+find = "ended = min(datetime.fromtimestamp(os.path.getmtime(p), KST) for p in logs)"
+replace = "ended = max(datetime.fromtimestamp(os.path.getmtime(p), KST) for p in logs)"
+
+[[mutation]]
+id = "finalize-ignores-fail-count"
+why = "수집기는 실패율 20% 까지 종료코드 0 이다 — 500종목이 잠정치인데 확정이라 적는다"
+guards = ["tests/test_finalize_done.py::test_exit_code_zero_with_too_many_failures_is_not_final"]
+file = "scripts/finalize_done.py"
+find = "problem = fail_problem(text) if task in FAIL_TASKS else None"
+replace = "problem = None"
+
+[[mutation]]
+id = "finalize-fail-rate-loose"
+why = "문턱이 수집기의 20% 와 같으면 읽으나 마나다"
+guards = ["tests/test_finalize_done.py::test_exit_code_zero_with_too_many_failures_is_not_final"]
+file = "scripts/finalize_done.py"
+find = "FAIL_RATE_MAX = 0.01"
+replace = "FAIL_RATE_MAX = 0.2"
+
+[[mutation]]
+id = "finalize-fail-rate-tight"
+why = "문턱이 평소 실패(최대 13/2,633)보다 낮으면 멀쩡한 날이 확정이 안 된다"
+guards = ["tests/test_finalize_done.py::test_the_worst_failure_count_seen_in_24_runs_is_still_final"]
+file = "scripts/finalize_done.py"
+find = "FAIL_RATE_MAX = 0.01"
+replace = "FAIL_RATE_MAX = 0.001"
+
+[[mutation]]
+id = "finalize-missing-done-line-passes"
+why = "완료 줄이 없을 때 통과하면 수집기 출력이 바뀐 날부터 실패율 검사가 조용히 죽는다"
+guards = ["tests/test_finalize_done.py::test_a_log_without_the_completion_line_is_named_not_passed"]
+file = "scripts/finalize_done.py"
+find = """        return "완료 줄(done=… fail=…)이 없다 — 수집기 출력이 바뀌었으면 finalize_done._DONE_LINE 을 맞춰라\""""
+replace = """        return None"""
