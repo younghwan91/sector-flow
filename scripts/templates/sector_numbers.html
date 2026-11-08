@@ -189,7 +189,7 @@ let win = WINS.includes(20) ? 20 : WINS[0], mkt = "전체";
 let sortKey = "accel", sortDir = -1;
 const EXP_KEYS = new Set(["G","exp","x","P","xdot","xddot"]);
 /** 증거 수준 — TUI(`flow_view.EVIDENCE`)와 **같은 표**다. 검사가 둘을 대조한다. */
-const EV={"accel":"[앞날 증거 없음]","trust":"[측정]","inst":"[앞날 증거 없음]","forgn":"[앞날 증거 없음]","indiv":"[측정]","etc":"[측정]","x":"[≈섹터 20일 반전: x]","G":"[판정 불가: G]","exp":"[측정]","U":"[측정]","P":"[측정]","xdot":"[측정]","xddot":"[측정]","ret":"[측정]","tv":"[측정]","cap":"[측정]","n_all":"[측정]","pct":"[측정]","gap":"[측정]","krx":"[측정]"};
+const EV={"accel":"[앞날 증거 없음]","trust":"[측정]","inst":"[앞날 증거 없음]","forgn":"[앞날 증거 없음]","indiv":"[측정]","etc":"[측정]","x":"[≈섹터 20일 반전: x]","G":"[판정 불가: G]","exp":"[측정]","U":"[측정]","P":"[측정]","xdot":"[측정]","xddot":"[측정]","ret":"[측정]","tv":"[측정]","cap":"[측정]","n_all":"[측정]","pct":"[측정]","gap":"[측정]","krx":"[측정]","streak":"[측정]"};
 /** 표지가 말하는 **검정 범위** — (주체, 값의 종류)별로 검정한 창 길이(거래일). `share` = 순매수 ÷ 섹터 시총(가속),
  *  `amt` = 순매수 금액(임펄스). 검정은 전부 `전체` 시장·10종목 미만 섹터 제외: 기관 가속 20일·기관 임펄스 20일(Q3d),
  *  외국인 20일·기관 60일(÷ 섹터 시총만, S2·S3). TUI `flow_view.EV_TESTED`·뷰어 `EV_TESTED` 와 **같은 표**다(검사가 대조).
@@ -228,6 +228,8 @@ const P=n=>n==null?"—":sg(n)+Math.abs(RHU(n,2)).toFixed(2);
 const N0=n=>n==null?"—":RHU(n).toLocaleString("ko-KR");
 const PI=p=>p==null?"—":String(RHU(p));
 const F3=v=>v==null?"—":sg(v)+Math.abs(RHU(v,3)).toFixed(3);
+/** 누적 금액 — |값| 1조(10,000억) 이상은 `−4.1조`, 아래는 `−3,210억`(TUI `fmt_big`). */
+const BIG=v=>v==null?"—":(Math.abs(RHU(v))>=1e4?sg(v)+Math.abs(RHU(v/1e4,1)).toFixed(1)+"조":A(v)+"억");
 
 // 맨 앞은 **기준일**이다. 페이로드 전체 범위(1년)를 먼저 적으면 그게 이 숫자들의 날짜로 읽힌다.
 document.getElementById("asof").textContent = "기준일 "+D.asof;
@@ -354,13 +356,28 @@ function renderToday(){
   const unc=mk.reduce((a,m)=>a+(+(((D.n_by_sector||{})[m]||{})["(미분류)"])||0),0);
   if(unc) c2.append(el("div","tnote","※ (미분류) "+unc+"종목 — 벤더 마스터에 섹터가 빈 종목이다(섹터가 아니다). 은행 넷은 금융으로 덮었다."));
   const RS=D.revision_stats;
-  if(prov&&RS){ const rl=el("div","tline rev");
+  if(prov&&RS){ const rl=el("div","tline rev"), sd=RS.seed&&RS.seed.dates&&RS.seed.dates.length?RS.seed:null;
+    // TUI `revision_line` 과 같은 글자 — 상위3 유지율과 시드 출처까지(검증기 W 층이 대조한다).
     rl.textContent=(RS.n_dates&&RS.rel_median_pct!=null)
-      ?"최근 "+RS.n_dates+"일 잠정→확정: 섹터 칸 중앙 "+RHU(RS.rel_median_pct)+"%, 부호 뒤집힘 "+(RS.flips||0)+"회 (1일 칸 "+(RS.n_cells||0)+"개)"
+      ?"최근 "+RS.n_dates+"일 잠정→확정: 섹터 칸 중앙 "+RHU(RS.rel_median_pct)+"%, 부호 뒤집힘 "+(RS.flips||0)+"회"
+        +(RS.top3_keep_pct!=null?", 상위3 유지 "+RHU(RS.top3_keep_pct)+"%":"")+" (1일 칸 "+(RS.n_cells||0)+"개)"
+        +(sd?" · "+sd.label+" "+sd.dates.length+"일":"")
       :"잠정→확정 수정 폭: 아직 확정 기록이 없다 — 확정 리포트가 쌓이면 여기 적는다";
     c2.append(rl); }
   c2.append(el("div","tnote","%ile = 그날 값의 1년 일별 분포 안 순위. 증거 "+EV.pct+" · 금액 = 수량×종가 근사 "+EV.gap));
   g.append(c2);
+  // 2b. 연속 순매매 — TUI `streak_items` 와 같은 항목을 같은 순서로(시장 합계 4주체, 최장 섹터)
+  const SK=T.streaks;
+  if(SK){ const c2b=card("연속 순매매 "+mkt+" [일·누적(연속 길이 1년%ile)]"); c2b.id="t-streak";
+    const sko=Object.assign({},KO,SK.actors||{}), M2=(SK.market||{})[mkt]||{}, rows=(SK.sectors||{})[mkt]||{};
+    const stx=f=>(!f||!f.days)?"연속 없음(오늘 ≈0)":f.days+"일 연속 "+(f.sign>0?"순매수":"순매도")+" 누적 "+BIG(f.sum)+pc(f.pct);
+    const items=(SK.market_actors||[]).map(a=>(sko[a]||a)+" "+stx(M2[a]));
+    bannerActors(mkt).forEach(([a])=>{ const s=((SK.longest||{})[mkt]||{})[a];
+      items.push((sko[a]||a)+" 최장 "+(s?s+" "+stx((rows[s]||{})[a]):"없음")); });
+    c2b.append(tline("",items));
+    c2b.append(el("div","tnote","1일 순매수 부호가 오늘까지 같은 날 수와 그 누적. 그날 |값| 이 (시장, 주체) 섹터 목록 Σ|값| 의 "
+      +RHU((SK.eps_share||0)*100)+"% 미만이면 ≈0 날로 연속을 끊는다. 섹터는 "+(SK.min_members||10)+"종목 미만·(미분류) 제외. 증거 "+EV.streak));
+    g.append(c2b); }
   // 3. 섹터 상위·하위 3 (기관 · 투신+연기금 · 그날의 최대 순매매 주체) + 그 주체의 그날 종목
   const acts=bannerActors(mkt);
   const c3=card("오늘 섹터 순매수 [억 (1년%ile)] 1일 수익률[%] — "+mkt+" · 금액 순 · [ ] = 그 주체의 그날 종목");

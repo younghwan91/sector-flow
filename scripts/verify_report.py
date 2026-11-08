@@ -2256,6 +2256,361 @@ def layer_t(P: dict, folder: "str | None" = None) -> None:
         chk("T", "잠정 → 확정 — 확정값·차이가 페이로드에서 다시 나오는가",
             not bad_f and F.get("n_changed") == len(F.get("changed") or []),
             f"{len(bad_f)}건  " + "; ".join(bad_f[:2]))
+    _vt_final_vs_provisional(P, folder)
+    _vt_revision_check(P, folder)
+    _vt_streak_check(P)
+
+
+# ─────────────────────────────────────────────── T. 잠정 → 확정 — 옆 폴더의 잠정 리포트에서 다시 센다
+#
+# daily_report.sh 는 확정 리포트를 ``<루트>/<기준일>.building.<pid>`` 에 짓고 **바꿔 끼우기 전에** 검증한다 —
+# 그때 ``<루트>/<기준일>/payload.json`` 이 바뀔 잠정 리포트다. 화면이 적는 잠정값(``old``)·차이·칸 수·
+# 극단 목록의 들고 남을 거기서 따로 다시 센다. 정의는 producer 상수를 읽지 않고 여기 적는다.
+
+VT_FD_ACTORS = ("inst", "invtrt", "penfnd_etc", "forgn", "indiv", "etc")
+VT_FD_WINS = (1, 5)
+VT_FD_TOL = 0.05
+VT_EXT_ACTORS = ("inst", "invpen", "forgn", "indiv", "etc")
+VT_KST = 9 * 3600
+
+
+def _vt_fp(Q: "dict | None") -> str:
+    return ((Q or {}).get("sector_override") or {}).get("fp") or "none"
+
+
+def _vt_extremes(Q: dict, mks: list, actor: str):
+    if not set(mks) <= set(Q.get("markets") or []):
+        return None
+    hi, lo = set(), set()
+    for s in Q["sectors"]:
+        if not any((Q.get("n_by_sector") or {}).get(m, {}).get(s) for m in mks):
+            continue
+        ser = _vt_series(Q, mks, s, actor)
+        p = None if ser is None else _vt_pct(ser)
+        if p is None:
+            continue
+        if p >= 95.0:
+            hi.add(s)
+        elif p <= 5.0:
+            lo.add(s)
+    return hi, lo
+
+
+def _vt_final_diff(P: dict, prov: dict) -> dict:
+    """확정 ``P`` 와 잠정 ``prov`` 에서 다시 센 (바뀐 칸, 시장 합계, 1일 칸, 칸 수, 극단 들고 남)."""
+    changed, totals, cells, n_cells = {}, {}, {}, 0
+    for m in P["markets"]:
+        for a in VT_FD_ACTORS:
+            tn = dict.fromkeys(VT_FD_WINS, 0.0)
+            to: dict = dict.fromkeys(VT_FD_WINS, 0.0)
+            for s in P["sectors"]:
+                if not (P.get("n_by_sector") or {}).get(m, {}).get(s):
+                    continue
+                sn = _vt_series(P, [m], s, a)
+                if sn is None:
+                    continue
+                so = _vt_series(prov, [m], s, a) if m in (prov.get("markets") or []) else None
+                cells[(m, s, a)] = (None if so is None else so[-1], sn[-1])
+                for w in VT_FD_WINS:
+                    vn = round(sum(sn[-w:]), 2)
+                    vo = None if so is None else round(sum(so[-w:]), 2)
+                    n_cells += 1
+                    tn[w] += vn
+                    to[w] = None if to[w] is None or vo is None else to[w] + vo
+                    if vo is None or abs(vn - vo) > VT_FD_TOL:
+                        changed[(m, s, a, w)] = (vo, vn)
+            for w in VT_FD_WINS:
+                totals[(m, a, w)] = (to[w], tn[w])
+    ext: dict = {}
+    for mk, mks in [("전체", list(P["markets"]))] + [(m, [m]) for m in P["markets"]]:
+        for a in VT_EXT_ACTORS:
+            new, old = _vt_extremes(P, mks, a), _vt_extremes(prov, mks, a)
+            if new is None or old is None:
+                continue
+            ch = {"hi_in": sorted(new[0] - old[0]), "hi_out": sorted(old[0] - new[0]),
+                  "lo_in": sorted(new[1] - old[1]), "lo_out": sorted(old[1] - new[1])}
+            if any(ch.values()):
+                ext.setdefault(mk, {})[a] = ch
+    return {"changed": changed, "totals": totals, "cells": cells, "n_cells": n_cells, "ext": ext}
+
+
+def _vt_close(a, b, tol: float) -> bool:
+    return (a is None) == (b is None) and (a is None or abs(a - b) <= tol)
+
+
+def _vt_final_vs_provisional(P: dict, folder: "str | None") -> None:
+    F = P.get("final_diff")
+    if not P.get("final") or not folder:
+        return
+    asof = P["dates"][-1]
+    sib = os.path.join(os.path.dirname(os.path.abspath(folder)), asof)
+    spath = os.path.join(sib, "payload.json")
+    if os.path.realpath(sib) == os.path.realpath(folder):
+        print("       (바꿔 끼운 뒤다 — 잠정 리포트가 옆에 없어 잠정값 재계산은 건너뛴다. 배치는 바꿔 끼우기 전에 검증한다)")
+        return
+    prov = None
+    if os.path.isfile(spath):
+        try:
+            prov = json.load(open(spath, encoding="utf-8"))
+        except ValueError:
+            prov = None
+        if prov and (prov.get("dates") or [None])[-1] != asof:
+            prov = None
+    if not isinstance(F, dict):
+        chk("T", "잠정 → 확정 — 바꿔 끼울 잠정 리포트가 옆에 있는데 비교가 비지 않았는가(덮어쓰기 지문이 같을 때)",
+            prov is None or _vt_fp(prov) != _vt_fp(P), f"{sib} 있음 · 지문 {_vt_fp(prov)}→{_vt_fp(P)}" if prov else "")
+        return
+    chk("T", "잠정 → 확정 — 견준 잠정 리포트가 옆 폴더에 있고 지문이 같은가",
+        prov is not None and _vt_fp(prov) == _vt_fp(P), spath if prov is None else f"지문 {_vt_fp(prov)}→{_vt_fp(P)}")
+    if prov is None or _vt_fp(prov) != _vt_fp(P):
+        return
+    W = _vt_final_diff(P, prov)
+    bad = []
+    got = {(r["market"], r["sector"], r["actor"], r["win"]): r for r in F.get("changed") or []}
+    if set(got) != set(W["changed"]):
+        bad.append(f"바뀐 칸 집합 남음 {sorted(set(got) - set(W['changed']))[:2]} "
+                   f"빠짐 {sorted(set(W['changed']) - set(got))[:2]}")
+    for k in set(got) & set(W["changed"]):
+        vo, vn = W["changed"][k]
+        r = got[k]
+        if not (_vt_close(r.get("old"), vo, 0.011) and _vt_close(r.get("new"), vn, 0.011)
+                and _vt_close(r.get("diff"), None if vo is None else vn - vo, 0.011)):
+            bad.append(f"{'/'.join(map(str, k))} {r.get('old')}→{r.get('new')} vs {vo}→{vn}")
+    if F.get("n_cells") != W["n_cells"] or F.get("n_changed") != len(W["changed"]):
+        bad.append(f"칸 수 {F.get('n_changed')}/{F.get('n_cells')} vs {len(W['changed'])}/{W['n_cells']}")
+    tot = {(t["market"], t["actor"], t["win"]): t for t in F.get("market_totals") or []}
+    if set(tot) != set(W["totals"]):
+        bad.append("시장 합계 칸 집합")
+    tol_t = 0.011 * len(P["sectors"])
+    for k in set(tot) & set(W["totals"]):
+        vo, vn = W["totals"][k]
+        t = tot[k]
+        if not (_vt_close(t.get("old"), vo, tol_t) and _vt_close(t.get("new"), vn, tol_t)):
+            bad.append(f"합계 {'/'.join(map(str, k))} {t.get('old')}→{t.get('new')} vs {vo}→{vn}")
+    cells = {(c[0], c[1], c[2]): (c[3], c[4]) for c in F.get("cells_1d") or []}
+    if set(cells) != set(W["cells"]) or any(
+            not (_vt_close(cells[k][0], W["cells"][k][0], 0.006) and _vt_close(cells[k][1], W["cells"][k][1], 0.006))
+            for k in set(cells) & set(W["cells"])):
+        bad.append("1일 칸(cells_1d)")
+    chk("T", "잠정 → 확정 — 잠정값·차이·칸 수를 옆 잠정 리포트에서 다시 센 것과 같은가", not bad,
+        f"{len(bad)}건  " + "; ".join(bad[:3]))
+    chk("T", "잠정 → 확정 — %ile 극단 목록의 들고 남 재계산", (F.get("extremes_change") or {}) == W["ext"],
+        f"{F.get('extremes_change')} vs {W['ext']}"[:300])
+    from datetime import datetime, timezone  # noqa: PLC0415
+    built = datetime.fromtimestamp(os.path.getmtime(spath) + VT_KST, timezone.utc).strftime("%Y-%m-%d %H:%M")
+    chk("T", "잠정 → 확정 — 견준 리포트의 지위·생성 시각 = 옆 폴더의 것",
+        F.get("base_final") == bool(prov.get("final")) and F.get("base_built") == built,
+        f"{F.get('base_final')}/{F.get('base_built')} vs {bool(prov.get('final'))}/{built}")
+    fj = os.path.join(folder, "final_diff.json")
+    if os.path.isfile(fj):
+        try:
+            same = json.load(open(fj, encoding="utf-8")) == F
+        except ValueError:
+            same = False
+        chk("T", "final_diff.json(다음 리포트들의 수정 폭 원천) = 페이로드의 final_diff", same, fj)
+
+
+# ─────────────────────────────────────────────── T. 수정 폭 — 옆 폴더들의 확정 기록·시드에서 다시 센다
+
+VT_REV_DAYS = 20
+VT_REV_GATE = 0.02
+VT_TOP_N = 3
+VT_TOP_MIN = 6
+VT_TOP_ACTORS = ("inst", "invpen", "forgn", "indiv", "etc")
+VT_SEED_DIR = ".revision_seed"
+VT_SEED_LABEL = "시드: 아카이브 18:10 게시본 대 확정 재구성"
+
+
+def _vt_usable(fd, date: str):
+    if not isinstance(fd, dict) or fd.get("base_final") or fd.get("cells_1d") is None:
+        return None
+    return fd["cells_1d"] if str(fd.get("base_built") or "")[:10] == date else None
+
+
+def _vt_rev_cells(root: str, date: str):
+    """(1일 칸, 시드인가) — 확정 폴더의 기록이 먼저, 없으면 시드. 못 쓰면 (None, False)."""
+    d = os.path.join(root, date)
+    if os.path.isfile(os.path.join(d, "FINAL.txt")) and not os.path.isfile(os.path.join(d, "VERIFY_FAILED.txt")):
+        for name in ("final_diff.json", "payload.json"):
+            path = os.path.join(d, name)
+            if not os.path.isfile(path):
+                continue
+            try:
+                doc = json.load(open(path, encoding="utf-8"))
+            except ValueError:
+                continue
+            cells = _vt_usable(doc if name == "final_diff.json" else doc.get("final_diff"), date)
+            if cells is not None:
+                return cells, False
+            break
+    path = os.path.join(root, VT_SEED_DIR, f"{date}.json")
+    if os.path.isfile(path):
+        try:
+            doc = json.load(open(path, encoding="utf-8"))
+        except ValueError:
+            doc = None
+        if isinstance(doc, dict) and (doc.get("seed") or {}).get("label") == VT_SEED_LABEL:
+            cells = _vt_usable(doc, date)
+            if cells is not None:
+                return cells, True
+    return None, False
+
+
+def _vt_top3(cells: list) -> tuple[int, int]:
+    """(유지, 목록 수) — (시장·전체, 주체)마다 잠정 상위 3 ∩ 확정 상위 3."""
+    vals: dict = {}
+    bad: set = set()
+    mkts = sorted({c[0] for c in cells})
+    for m, s, a, old, new in cells:
+        keys = ["invpen"] if a in ("invtrt", "penfnd_etc") else [a]
+        for k in keys:
+            if k not in VT_TOP_ACTORS:
+                continue
+            for mk in (m, "전체"):
+                if old is None or new is None:
+                    bad.add((mk, k, s))
+                    continue
+                o, n = vals.setdefault((mk, k), {}).get(s, (0.0, 0.0))
+                vals[(mk, k)][s] = (o + old, n + new)
+    # 투신+연기금은 두 칸이 다 있어야 한다.
+    have = {(c[0], c[1], c[2]) for c in cells}
+    for m, s, a, _o, _n in cells:
+        if a in ("invtrt", "penfnd_etc") and not {(m, s, "invtrt"), (m, s, "penfnd_etc")} <= have:
+            bad |= {(m, "invpen", s), ("전체", "invpen", s)}
+    kept = lists = 0
+    for (mk, k), d in vals.items():
+        if mk != "전체" and mk not in mkts:
+            continue
+        rows = [(s, round(o, 2), round(n, 2)) for s, (o, n) in d.items() if (mk, k, s) not in bad]
+        if len(rows) < VT_TOP_MIN:
+            continue
+        a = {r[0] for r in sorted(rows, key=lambda r: (-r[1], r[0]))[:VT_TOP_N]}
+        b = {r[0] for r in sorted(rows, key=lambda r: (-r[2], r[0]))[:VT_TOP_N]}
+        kept += len(a & b)
+        lists += 1
+    return kept, lists
+
+
+def _vt_revision_check(P: dict, folder: "str | None") -> None:
+    R = P.get("revision_stats")
+    if not isinstance(R, dict) or not folder:
+        return
+    asof = P["dates"][-1]
+    root = os.path.dirname(os.path.abspath(folder))
+    found, seeded = [], []
+    if P.get("final"):
+        cells = _vt_usable(P.get("final_diff"), asof)
+        if cells is not None:
+            found.append((asof, cells))
+    names = set(os.listdir(root))
+    if os.path.isdir(os.path.join(root, VT_SEED_DIR)):
+        names |= {f.removesuffix(".json") for f in os.listdir(os.path.join(root, VT_SEED_DIR))}
+    for name in sorted((n for n in names if re.fullmatch(r"\d{4}-\d{2}-\d{2}", n) and n < asof), reverse=True):
+        if len(found) >= VT_REV_DAYS:
+            break
+        cells, is_seed = _vt_rev_cells(root, name)
+        if cells is not None:
+            found.append((name, cells))
+            if is_seed:
+                seeded.append(name)
+    rel, flips, kept, lists = [], 0, 0, 0
+    for _d, cells in found:
+        tot: dict = {}
+        for m, _s, a, _o, new in cells:
+            tot[(m, a)] = tot.get((m, a), 0.0) + abs(new or 0.0)
+        for m, _s, a, old, new in cells:
+            if old is not None and new and abs(new) >= VT_REV_GATE * tot[(m, a)]:
+                rel.append(abs(new - old) / abs(new) * 100.0)
+                flips += old * new < 0
+        k, n = _vt_top3(cells)
+        kept, lists = kept + k, lists + n
+    med = statistics.median(rel) if rel else None
+    keep = 100.0 * kept / (lists * VT_TOP_N) if lists else None
+    want_seed = {"label": VT_SEED_LABEL, "dates": sorted(seeded)} if seeded else None
+    chk("T", "잠정→확정 수정 폭 — 날짜·칸 수·중앙값·부호 뒤집힘을 옆 폴더의 확정 기록·시드에서 다시 센 것과 같은가",
+        R.get("dates") == sorted(d for d, _ in found) and R.get("n_dates") == len(found)
+        and R.get("n_cells") == len(rel) and R.get("flips") == flips
+        and _vt_close(R.get("rel_median_pct"), med, 0.051),
+        f"{R.get('n_dates')}일·{R.get('n_cells')}칸·중앙 {R.get('rel_median_pct')}·뒤집힘 {R.get('flips')} vs "
+        f"{len(found)}일·{len(rel)}칸·중앙 {med if med is None else round(med, 1)}·뒤집힘 {flips}")
+    chk("T", "잠정→확정 수정 폭 — 상위 3 유지율 재계산", _vt_close(R.get("top3_keep_pct"), keep, 0.051)
+        and R.get("top3_lists") == lists, f"{R.get('top3_keep_pct')}/{R.get('top3_lists')} vs "
+        f"{keep if keep is None else round(keep, 1)}/{lists}")
+    chk("T", "잠정→확정 수정 폭 — 시드로 센 날짜와 출처 표지", R.get("seed") == want_seed,
+        f"{R.get('seed')} vs {want_seed}"[:300])
+
+
+# ─────────────────────────────────────────────── T. 연속 순매매 — 일별 배열에서 다시 센다
+
+VT_STREAK_EPS = 0.01
+VT_STREAK_MIN = 10
+VT_STREAK_ACTORS = ("inst", "invpen", "forgn", "indiv", "etc")
+
+
+def _vt_streak(ser: list, gross: list) -> dict:
+    """뒤에서부터 같은 부호를 센다(producer 는 앞에서 이어 센다). 백분위는 정렬 + 이분 탐색."""
+    import bisect  # noqa: PLC0415
+    sg = [((v > 0) - (v < 0)) if g and abs(v) >= VT_STREAK_EPS * g else 0 for v, g in zip(ser, gross)]
+    lens = []
+    for i in range(len(sg)):
+        j = i
+        while j >= 0 and sg[j] != 0 and sg[j] == sg[i]:
+            j -= 1
+        lens.append(i - j)
+    k = lens[-1] if lens else 0
+    n = min(len(lens), VT_LOOKBACK)
+    pct = None
+    if k and n >= 2:
+        srt = sorted(lens[-n:])
+        lo, hi = bisect.bisect_left(srt, k), bisect.bisect_right(srt, k)
+        pct = 100.0 * (lo + (hi - lo - 1) / 2.0) / (n - 1)
+    return {"sign": sg[-1] if sg else 0, "days": k, "sum": sum(ser[-k:]) if k else 0.0, "pct": pct}
+
+
+def _vt_streak_check(P: dict) -> None:
+    T = P.get("today") or {}
+    S = T.get("streaks")
+    chk("T", "연속 순매매 블록(today.streaks)이 있는가", isinstance(S, dict))
+    if not isinstance(S, dict):
+        return
+    n = len(P["dates"])
+    nb = P.get("n_by_sector") or {}
+    bad_m, bad_s, bad_l = [], [], []
+
+    def same(got, want, tol_sum):
+        return (isinstance(got, dict) and got.get("sign") == want["sign"] and got.get("days") == want["days"]
+                and abs((got.get("sum") or 0.0) - want["sum"]) <= tol_sum and _vt_close(got.get("pct"), want["pct"], 0.051))
+
+    for mk, mks in [("전체", list(P["markets"]))] + [(m, [m]) for m in P["markets"]]:
+        present = [s for s in P["sectors"] if any(nb.get(m, {}).get(s) for m in mks)]
+        for a in VT_STREAK_ACTORS:
+            sers = {s: x for s in present if (x := _vt_series(P, mks, s, a)) is not None}
+            if not sers:
+                continue
+            gross = [sum(abs(x[i]) for x in sers.values()) for i in range(n)]
+            total = [round(sum(x[i] for x in sers.values()), 2) for i in range(n)]
+            want = _vt_streak(total, gross)
+            got = ((S.get("market") or {}).get(mk) or {}).get(a)
+            if not same(got, want, 0.011 * len(present)):
+                bad_m.append(f"{mk}/{a} {got} vs {want}")
+            best = None
+            elig = [s for s in sers if s != "(미분류)" and sum(int(nb.get(m, {}).get(s) or 0) for m in mks) >= VT_STREAK_MIN]
+            rows = ((S.get("sectors") or {}).get(mk) or {})
+            if {s for s in rows if a in rows[s]} != set(elig):
+                bad_s.append(f"{mk}/{a} 섹터 집합")
+            for s in elig:
+                w = _vt_streak(sers[s], gross)
+                if not same((rows.get(s) or {}).get(a), w, 0.011):
+                    bad_s.append(f"{mk}/{s}/{a} {(rows.get(s) or {}).get(a)} vs {w}")
+                if w["days"]:
+                    key = (-w["days"], -abs(round(w["sum"], 2)), s)
+                    best = key if best is None or key < best else best
+            if ((S.get("longest") or {}).get(mk) or {}).get(a) != (best[2] if best else None):
+                bad_l.append(f"{mk}/{a} {((S.get('longest') or {}).get(mk) or {}).get(a)} vs {best and best[2]}")
+    chk("T", "연속 순매매 — 시장 합계의 연속 일수·누적·1년 백분위 재계산", not bad_m, "; ".join(bad_m[:2]))
+    chk("T", "연속 순매매 — 섹터(얇은 섹터·미분류 제외)의 연속 재계산", not bad_s,
+        f"{len(bad_s)}건  " + "; ".join(bad_s[:2]))
+    chk("T", "연속 순매매 — 시장·주체별 최장 섹터 재계산", not bad_l, "; ".join(bad_l[:2]))
 
 
 # ─────────────────────────────────────────────── W. 웹 — 그려진 페이지의 숫자
@@ -2616,6 +2971,20 @@ def layer_w(D: dict, P: dict, folder: str) -> None:
                     bad_t.append(f"{m}/{mm} 수익률 {toks} vs {want_t}")
         chk("W", "'오늘' 패널 = 페이로드(시장 4주체·상위/하위+종목·수익률·잠정 표지)", not bad_t, "; ".join(bad_t[:3]))
         chk("W", "'오늘' 패널 = TUI 첫 화면(주체·상위/하위·%ile 극단 글자)", not bad_tt, "; ".join(bad_tt[:3]))
+        # 연속 순매매 줄과 잠정 수정 폭 줄 — TUI 가 첫 화면에 그리는 글자(가장 긴 꼴)와 같은가.
+        bad_sk = []
+        for m in out["mkts"]:
+            cards = {c["id"]: c for c in out["today"].get(m) or [] if c["id"]}
+            want = FV.streak_items(D, m)
+            card = cards.get("t-streak")
+            got = ((card or {}).get("lines") or [{}])[0].get("items") if card else None
+            if (want is None) != (card is None) or (want is not None and got != [w.replace("-", "−") for w in want]):
+                bad_sk.append(f"{m} 연속 웹 {(got or [None])[:2]} vs TUI {(want or [None])[:2]}")
+            rl = FV.revision_line(D)
+            web = [ln["text"] for ln in (cards.get("t-net") or {}).get("lines", []) if "rev" in (ln.get("cls") or "")]
+            if (rl.strip() if rl else None) != (web[0] if web else None):
+                bad_sk.append(f"{m} 수정 폭 웹 {web[:1]} vs TUI {rl!r}")
+        chk("W", "'오늘' 패널 연속 순매매·잠정 수정 폭 = TUI 첫 화면 글자", not bad_sk, "; ".join(bad_sk[:3]))
 
     # 뷰어 1일 종목 목록
     vpath = os.path.join(folder, "viewer.html")
