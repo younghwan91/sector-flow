@@ -128,17 +128,31 @@ def default_db_path() -> Path:
     return Path(__file__).resolve().parents[2] / "data" / "sector_flow.db"
 
 
+#: Postgres 접속 대기 상한[초]. DB 서버가 응답 없이 패킷만 삼키면 libpq 기본은 무한 대기다.
+PG_CONNECT_TIMEOUT_S = 10
+#: Postgres 문장 하나의 상한[밀리초]. 배치 전체가 실측 2~5분(2026-10-28~11-06 cron.log)이라
+#: 문장 하나가 10분이면 락 대기·폭주 쿼리다. 크론 줄의 timeout(40m)은 배치 전체를, 이것은 DB 쪽 세션을 끊는다
+#: (클라이언트가 죽어도 서버에서 쿼리가 계속 도는 것을 막는다).
+PG_STATEMENT_TIMEOUT_MS = 10 * 60 * 1000
+
+
 def connect(db_path: str | Path | None = None) -> Any:
     """Open a connection with row access.
 
     ``db_path`` starting with ``postgresql://``/``postgres://`` opens Postgres
-    (e.g. TimescaleDB) via psycopg2. Anything else is treated as a sqlite file
-    path (default: ``<repo>/data/sector_flow.db``, dirs created as needed).
+    (e.g. TimescaleDB) via psycopg2 with :data:`PG_CONNECT_TIMEOUT_S` and a
+    session ``statement_timeout`` of :data:`PG_STATEMENT_TIMEOUT_MS`. Anything
+    else is treated as a sqlite file path (default: ``<repo>/data/sector_flow.db``,
+    dirs created as needed).
     """
     if isinstance(db_path, str) and db_path.startswith(_PG_PREFIXES):
         import psycopg2  # optional dep, only needed for this path
 
-        con = psycopg2.connect(db_path)
+        con = psycopg2.connect(db_path, connect_timeout=PG_CONNECT_TIMEOUT_S)
+        # options= 로 넘기면 DSN 에 이미 있는 options 를 덮는다 — 세션 SET 으로 건다. commit 해야 세션에 남는다.
+        with con.cursor() as cur:
+            cur.execute(f"SET statement_timeout = {int(PG_STATEMENT_TIMEOUT_MS)}")
+        con.commit()
         # Schema (tables, hypertables, compression policy) is provisioned by
         # quant-airflow/sql/init_timescale.sql, not here — init_db() only
         # applies to the sqlite path.

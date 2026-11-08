@@ -1862,6 +1862,63 @@ find = """    elif [ "$rc" -eq 124 ]; then"""
 replace = """    elif false; then"""
 
 [[mutation]]
+id = "pg-no-connect-timeout"
+why = "DB 서버가 패킷을 삼키면 접속에서 무한 대기한다"
+guards = ["tests/test_ops_guards.py::test_pg_connection_has_a_connect_timeout"]
+file = "src/sectorflow/storage.py"
+find = "psycopg2.connect(db_path, connect_timeout=PG_CONNECT_TIMEOUT_S)"
+replace = "psycopg2.connect(db_path)"
+
+[[mutation]]
+id = "pg-no-statement-timeout"
+why = "락 대기·폭주 쿼리가 클라이언트가 죽은 뒤에도 서버에서 계속 돈다"
+guards = ["tests/test_ops_guards.py::test_pg_session_has_a_statement_timeout"]
+file = "src/sectorflow/storage.py"
+find = """            cur.execute(f"SET statement_timeout = {int(PG_STATEMENT_TIMEOUT_MS)}")"""
+replace = """            pass"""
+
+[[mutation]]
+id = "pg-statement-timeout-not-committed"
+why = "SET 뒤 commit 이 없으면 첫 rollback 에 세션 상한이 풀린다"
+guards = ["tests/test_ops_guards.py::test_pg_session_has_a_statement_timeout"]
+file = "src/sectorflow/storage.py"
+find = """        con.commit()
+        # Schema (tables"""
+replace = """        # Schema (tables"""
+
+[[mutation]]
+id = "pandas-warning-noise-sector-flow"
+why = "read_sql 마다 같은 UserWarning 이 크론 로그를 덮어 진짜 경고를 묻는다"
+guards = ["tests/test_ops_guards.py::test_pandas_dbapi_warning_is_silenced_in_report_scripts[sector_flow]"]
+file = "scripts/sector_flow.py"
+find = """warnings.filterwarnings("ignore", message="pandas only supports SQLAlchemy", category=UserWarning)"""
+replace = """pass"""
+
+[[mutation]]
+id = "pandas-warning-noise-completeness-gate"
+why = "read_sql 마다 같은 UserWarning 이 크론 로그를 덮어 진짜 경고를 묻는다"
+guards = ["tests/test_ops_guards.py::test_pandas_dbapi_warning_is_silenced_in_report_scripts[completeness_gate]"]
+file = "scripts/completeness_gate.py"
+find = """warnings.filterwarnings("ignore", message="pandas only supports SQLAlchemy", category=UserWarning)"""
+replace = """pass"""
+
+[[mutation]]
+id = "pandas-warning-noise-verify-report"
+why = "read_sql 마다 같은 UserWarning 이 크론 로그를 덮어 진짜 경고를 묻는다"
+guards = ["tests/test_ops_guards.py::test_pandas_dbapi_warning_is_silenced_in_report_scripts[verify_report]"]
+file = "scripts/verify_report.py"
+find = """warnings.filterwarnings("ignore", message="pandas only supports SQLAlchemy", category=UserWarning)"""
+replace = """pass"""
+
+[[mutation]]
+id = "pandas-warning-filter-too-broad"
+why = "잡음을 끄려다 UserWarning 을 통째로 끄면 진짜 경고도 사라진다"
+guards = ["tests/test_ops_guards.py::test_pandas_dbapi_warning_is_silenced_in_report_scripts[sector_flow]"]
+file = "scripts/sector_flow.py"
+find = """warnings.filterwarnings("ignore", message="pandas only supports SQLAlchemy", category=UserWarning)"""
+replace = """warnings.filterwarnings("ignore", category=UserWarning)"""
+
+[[mutation]]
 id = "fresh-missing-report-passes"
 why = "수급은 왔는데 리포트가 안 걸린 날을 정상이라 한다"
 guards = ["tests/test_freshness_check.py::test_data_without_todays_report_is_an_error",
