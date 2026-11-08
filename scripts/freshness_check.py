@@ -40,6 +40,9 @@ import urllib.request
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))   # scripts/ 는 패키지가 아니다
+import ops_ledger  # noqa: E402 — 운영 사건 원장(기록·SLO 기한, scripts/ops_ledger.py)
+
 KST = timezone(timedelta(hours=9))
 REPO = Path(__file__).resolve().parent.parent
 WARN = 75
@@ -120,6 +123,42 @@ def check_prev_final(root: Path, prev: str | None) -> tuple[int, list[str]]:
                   "안 돌았거나 daily_finalize 를 확인하지 못했다.",
                   f"    reports/cron.log 의 08:20 줄과 `uv run python scripts/finalize_done.py --asof {prev}` 를 본다. "
                   "다음 거래일 수집이 들어와 08:20 은 이 날을 다시 안 본다 — 지난 기준일 재구성으로 다시 만든다(README §3.1)."]
+
+
+def check_slo(root: Path, prev: str | None) -> tuple[int, list[str]]:
+    """전 거래일이 SLO(docs/slo.md) 안이었나 — 운영 사건 원장(``events.jsonl``)으로 잰다.
+
+    잠정은 그날 18:30(KST)까지 게시, 확정은 다음날 10:40 까지(08:40 목표, 10:20 재시도 뒤 상한).
+    늦은 **기록이 있을 때만** 경고한다(75) — 원장에 그날 기록이 없으면(원장 도입 전·백필 공백) 못 재는 것이지
+    위반이 아니고, 게시·확정이 아예 없는 날은 위의 신선도·확정 점검이 이미 잡는다.
+    """
+    if not prev:
+        return 0, []
+    evs = [e for e in ops_ledger.iter_events(root) if e.get("event") == "report" and e.get("asof") == prev]
+    if not evs:
+        return 0, [f"[SLO] 원장에 전 거래일({prev}) 기록이 없다 — 재지 않는다(기록은 reports/events.jsonl, "
+                   "통계는 scripts/ops_ledger.py)"]
+    rc, out = 0, []
+    prov = ops_ledger.first_ts(evs, ops_ledger.is_prov_publication)
+    fin = ops_ledger.first_ts(evs, ops_ledger.is_final_confirmation)
+    if prov is not None and prov > ops_ledger.prov_deadline(prev):
+        rc = worse(rc, WARN)
+        out.append(f"⚠️ [SLO] 전 거래일({prev}) 잠정 리포트가 기한({ops_ledger.PROV_SLO_KST:%H:%M} KST)을 넘겨 "
+                   f"게시됐다({prov.astimezone(KST):%H:%M} KST) — 18:10 실행이 늦었거나 수집이 늦게 끝났다. "
+                   "reports/cron.log 의 그날 18:10·19:10 줄을 보라(docs/slo.md).")
+    if fin is not None and fin > ops_ledger.final_deadline(prev):
+        rc = worse(rc, WARN)
+        out.append(f"⚠️ [SLO] 전 거래일({prev}) 확정이 기한({ops_ledger.FINAL_SLO_KST:%H:%M} KST)을 넘겼다"
+                   f"({fin.astimezone(KST):%m-%d %H:%M} KST) — 08:20·10:20 확정 모드가 둘 다 못 끝냈다. "
+                   "reports/cron.log 의 08:20·10:20 줄과 daily_finalize 를 보라(docs/slo.md).")
+    if rc == 0:
+        said = []
+        if prov is not None:
+            said.append(f"잠정 {prov.astimezone(KST):%H:%M}")
+        if fin is not None:
+            said.append(f"확정 {fin.astimezone(KST):%m-%d %H:%M}")
+        out.append(f"[SLO] 전 거래일({prev}) {' · '.join(said) or '게시 기록 없음(다른 점검이 본다)'} — 기한 안이다")
+    return rc, out
 
 
 #: verify_report.py 가 VERIFY.txt 에 남기는 표지 — **같은 글**이어야 한다(``tests/test_freshness_check.py`` 가 맞춘다).
@@ -309,6 +348,8 @@ def main(argv: list[str] | None = None) -> int:
             rc, lines = worse(rc, prc), lines + plines
             xrc, xlines = check_external_truth(Path(a.root), prev)
             rc, lines = worse(rc, xrc), lines + xlines
+            src, slines = check_slo(Path(a.root), prev)
+            rc, lines = worse(rc, src), lines + slines
     data_rc = rc
     # 알림 통로는 무슨 일이 있어도 본다 — 위가 실패한 날일수록 알림이 가야 한다.
     alert_sh = alert_sh_path(os.environ)
@@ -326,6 +367,9 @@ def main(argv: list[str] | None = None) -> int:
     lines += heartbeat(alert_value("HEARTBEAT_URL", os.environ, alert_sh), data_rc == 0 and not dead_hook,
                        why="알림 웹훅이 죽어 있다" if data_rc == 0 else "점검이 깨끗하지 않다")
     print("\n".join(lines))
+    # 이 점검의 판정도 원장에 한 줄 — 실패해도(디스크·권한) append_event 가 stderr 로만 말하고 rc 를 안 바꾼다.
+    ops_ledger.append_event(Path(a.root), {"ts": ops_ledger.utc_now_iso(), "event": "freshness",
+                                           "today": today, "rc": rc})
     return rc
 
 
