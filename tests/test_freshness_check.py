@@ -323,6 +323,51 @@ def test_cron_path_clean_day_passes_and_pings_the_heartbeat(repo, hook):
     assert url not in p.stdout + p.stderr and beat not in p.stdout + p.stderr
 
 
+def test_cron_path_heartbeat_works_without_a_webhook(repo, hook):
+    """하트비트만 쓰는 설정 — 웹훅이 비었다고 핑을 안 보내면 외부 감시가 매일 같은 이유로 울린다."""
+    beat, beats = hook(200, b"OK")
+    _fresh(repo)
+    _qa_env(repo, f"HEARTBEAT_URL={beat}\n")
+    p = _run(repo)
+    assert p.returncode == 75 and "ALERT_WEBHOOK_URL 이 비었다" in p.stdout, p.stdout + p.stderr
+    assert beats == ["GET"] and "[하트비트] 보냈다" in p.stdout
+
+
+def test_cron_path_dead_webhook_withholds_the_heartbeat(repo, hook):
+    """웹훅이 **있는데 죽은** 날은 그 경고가 아무에게도 안 간다 — 핑이 비는 것이 유일한 신호다."""
+    url, _ = hook(404, b'{"message": "Unknown Webhook"}')
+    beat, beats = hook(200, b"OK")
+    _fresh(repo)
+    _qa_env(repo, f"ALERT_WEBHOOK_URL={url}\nHEARTBEAT_URL={beat}\n")
+    p = _run(repo)
+    assert p.returncode == 75, p.stdout + p.stderr
+    assert beats == [] and "알림 웹훅이 죽어 있다" in p.stdout
+
+
+@pytest.mark.parametrize(("webhook", "pinged"), [(None, True), (200, True), (404, False)])
+def test_heartbeat_follows_the_data_checks_not_the_webhook_in_process(tmp_path, hook, monkeypatch, capsys,
+                                                                      webhook, pinged):
+    """``main`` 을 직접 — 주말(데이터 점검 0)에 웹훅이 없거나 살았으면 핑, 있는데 죽었으면 안 보낸다."""
+    beat, beats = hook(200, b"OK")
+    alert = tmp_path / "qa" / "scripts" / "alert.sh"
+    alert.parent.mkdir(parents=True)
+    alert.write_text("#!/bin/sh\nexit 0\n")
+    alert.chmod(alert.stat().st_mode | stat.S_IEXEC)
+    env = f"HEARTBEAT_URL={beat}\n"
+    if webhook is not None:
+        env += f"ALERT_WEBHOOK_URL={hook(webhook, b'{}')[0]}\n"
+    (tmp_path / "qa" / ".env").write_text(env)
+    for k in ("SF_CRON_ENV", "ALERT_WEBHOOK_URL", "HEARTBEAT_URL"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("SECTOR_FLOW_ALERT", str(alert))
+    rc = fc.main(["--today", "2026-11-07", "--root", str(tmp_path)])
+    out = capsys.readouterr().out
+    assert rc == (0 if webhook == 200 else 75), out
+    assert (beats == ["GET"]) == pinged, out
+    if not pinged:
+        assert "알림 웹훅이 죽어 있다" in out
+
+
 def test_cron_path_dead_webhook_warns(repo, hook):
     url, _ = hook(404, b'{"message": "Unknown Webhook"}')
     _fresh(repo)

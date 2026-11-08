@@ -106,7 +106,8 @@ research/validation/        # docs/validation 결과의 재현 스크립트 (CI 
 | 평일 18:10 | 수집이 끝났으면 리포트를 만들어 `latest` 로 건다 |
 | 평일 19:10 | 18:10 에 못 만든 날을 다시 시도한다 |
 | 화~토 08:20 | **확정 모드**(`KR_QUANT_FINAL=1`). 새벽 `daily_finalize` 가 확정치를 덮은 것을 확인하면(`scripts/finalize_done.py`) 전날 리포트를 확정치로 다시 만든다 — 제목이 `마감·확정`, 폴더에 `FINAL.txt`. 확인이 안 되면 잠정 리포트를 두고 경고(75)로 끝난다 |
-| 평일 20:30 | 신선도 점검(`scripts/freshness_check.py`). 오늘 수급이 왔는데 `latest` 가 오늘이 아니면 오류, 오늘 수급이 없거나 알림 웹훅이 비었으면 경고 |
+| 화~토 10:20 | 확정 모드 재시도. `daily_finalize` 가 늦게 끝난 날을 손 없이 확정한다. 이미 `FINAL.txt` 가 있으면 건너뛴다 |
+| 평일 20:30 | 신선도 점검(`scripts/freshness_check.py`). 오늘 수급이 왔는데 `latest` 가 오늘이 아니면 오류, 오늘 수급이 없거나 전 거래일이 확정되지 않았거나 알림 웹훅이 비었으면 경고. 리포트·수급·확정이 깨끗하면 하트비트를 보낸다 |
 | 5분마다 | 웹 서버(§4.4)가 안 떠 있거나 `/healthz` 에 대답하지 않으면 다시 띄운다 |
 
 상한: 배치 40분(`timeout`), DB 접속 10초, 문장 하나 10분(`statement_timeout`). 두 실행이 겹치면 뒤의 것이
@@ -136,21 +137,34 @@ G 순위 ρ≥0.95·통과 변화≤1 기준을 못 넘은 날 37.5%, [`docs/val
 
 | 알림·증상 | 원인 | 할 일 |
 |---|---|---|
-| `report 경고 (rc=75)`, 본문 `수집 미완` | 오늘 수집이 아직 안 끝났다. 폴더에 `INCOMPLETE.txt`, `latest` 는 전날 | 기다린다 — 19:10·다음날 08:20 이 다시 만든다. 수집이 끝났으면 `scripts/daily_report.sh` |
+| `report 경고 (rc=75)`, 본문 `수집 미완` · `[FAIL]` 줄 | 오늘 수집이 아직 안 끝났다. 폴더에 `INCOMPLETE.txt`, `latest` 는 전날. `[FAIL]` 줄이 모자란 것을 말한다(`조정 종가` 면 quant-airflow `daily_price_adjust` 가 아직 안 돌았다, `시장 목록이 비었다` 면 `stocks` 표가 비었다) | 기다린다 — 19:10·다음날 08:20 이 다시 만든다. 수집이 끝났으면 `scripts/daily_report.sh` |
 | `report 실패 (rc=1)`, 본문 `오늘이 아닌데 수집 미완` | 지난 기준일이 아직 미완이다. 다음 거래일 수집이 시작되면 기준일이 넘어가 그 날은 영영 안 만들어진다 | quant-airflow 에서 수집을 메운 뒤 바로 `scripts/daily_report.sh` |
-| `report 실패 (rc=1)`, 본문 `검증 실패` · 폴더에 `VERIFY_FAILED.txt` | 게시는 됐지만 자기 검증(§9)에 걸렸다. 화면·HTML 에 ⚠ | `grep FAIL reports/latest/VERIFY_FAILED.txt` 로 걸린 검사를 본다. 원인을 고친 뒤 `scripts/daily_report.sh`(검증 실패 폴더는 다시 만든다. 확정 리포트는 확정으로 남는다) |
-| `report 실패 (rc=1)`, 본문 `DB 에서 기준일을 못 읽었다` · `report 시간 초과 (rc=124)` · 본문 `statement timeout` | DB 서버가 죽었거나 접속정보가 틀렸거나 락에 걸렸다 | quant-airflow 의 TimescaleDB 를 살핀다. 접속 확인: `set -a; . ~/git/quant-airflow/.env; set +a; uv run --extra pg python -c "import os; from sectorflow.storage import connect; connect(os.environ['KR_QUANT_DB']).close(); print('ok')"`. 복구 뒤 `scripts/daily_report.sh` |
-| `report 경고 (rc=75)` 08:20, 본문 `확정치를 확인하지 못했다` | `daily_finalize` 가 실패·지연됐거나 Airflow 로그 경로가 바뀌었다. 본문의 `[확정치]` 줄이 어느 쪽인지 말한다 | `uv run python scripts/finalize_done.py --asof <기준일>` 로 이유를 본다. 확정이 끝났으면 `KR_QUANT_FINAL=1 scripts/daily_report.sh`. 경로가 바뀌었으면 `finalize_done.py` 의 경로 규칙을 고친다 |
+| `report 실패 (rc=1)`, 본문 `검증 실패` · `게시했지만 검증에 걸렸다` · 폴더에 `VERIFY_FAILED.txt` | 게시는 됐지만 자기 검증(§9)에 걸렸다. 화면·HTML 에 ⚠ | `grep FAIL reports/latest/VERIFY_FAILED.txt` 로 걸린 검사를 본다. 원인을 고친 뒤 `scripts/daily_report.sh`(검증 실패 폴더는 다시 만든다. 확정 리포트는 확정으로 남는다) |
+| `report 실패 (rc=1)`, 본문 `DB 에서 기준일을 못 읽었다` · `fresh 실패 (rc=1)`, 본문 `DB 에서 오늘 수급을 못 셌다` · `report 시간 초과 (rc=124)` · 본문 `statement timeout` | DB 서버가 죽었거나 접속정보가 틀렸거나 락에 걸렸다 | quant-airflow 의 TimescaleDB 를 살핀다. 접속 확인: `set -a; . ~/git/quant-airflow/.env; set +a; uv run --extra pg python -c "import os; from sectorflow.storage import connect; connect(os.environ['KR_QUANT_DB']).close(); print('ok')"`. 복구 뒤 `scripts/daily_report.sh` |
+| `report 실패 (rc=1)`, 본문 `기준일이 없다` | 접속은 됐는데 `supply_demand` 가 비었다 — `KR_QUANT_DB` 가 빈 사본이나 다른 DB 를 가리킨다 | `~/git/quant-airflow/.env`(이 레포에 `.env` 가 있으면 그쪽이 먼저다)의 `KR_QUANT_DB` 를 본다 |
+| `report 실패 (rc=1)`, 본문 `DB 접속정보가 없다` | `.env` 도 `~/git/quant-airflow/.env` 도 `KR_QUANT_DB` 도 없다 — quant-airflow 체크아웃이 옮겨졌거나 지워졌다 | `ls ~/git/quant-airflow/.env`. 이 레포에 사본을 두지 않는다 — 정본을 되살린다 |
+| `report 실패 (rc=127)`·`fresh 실패 (rc=127)`, 본문 `uv 를 찾지 못했다` | 크론 PATH 에 `uv` 가 없고 `~/.local/bin/uv` 도 없다 — uv 를 지웠거나 다른 곳에 깔았다 | `ls ~/.local/bin/uv`. 다시 깔거나 크론 줄에 `KR_QUANT_UV=<경로>` 를 준다 |
+| `report 실패 (rc=N)`, 본문 `완전성 관문 오류(rc=N)` | 관문(`scripts/completeness_gate.py`)이 판정 전에 죽었다 — DB 가 끊겼거나 문장 시간 초과거나 코드 오류. 위 꼬리의 `Traceback` 마지막 줄이 원인이다 | `set -a; . ~/git/quant-airflow/.env; set +a; uv run --extra pg python scripts/completeness_gate.py --asof <기준일>` 로 재현한다. 고친 뒤 `scripts/daily_report.sh` |
+| `실패 (rc=1)`, 본문에 `Traceback` | 파이썬 스크립트가 예외로 죽었다. 마지막 줄이 예외, 그 위 `File "…/scripts/…", line N` 이 자리다 | 같은 명령을 손으로 돌려 재현한다(DB 가 필요하면 위의 `.env` 불러오기부터). 고친 뒤 `scripts/daily_report.sh` |
+| `<작업> 실패 (rc=N)`, 본문 `임시 파일을 못 만들었다` | 알림 꼬리나 DB 오류를 담을 임시 파일을 `reports/` 에도 `/tmp` 에도 못 만들었다 — 디스크가 찼거나(`/tmp` 는 사용자 할당량 tmpfs) 권한이 바뀌었다. 본문이 빠진 알림이라 출력은 크론 로그에 있다 | `df -h ~/git/sector-flow/reports /tmp`, `du -sh /tmp/* 2>/dev/null \| sort -h \| tail`, `ls -ld reports`. 비운 뒤 그 작업을 다시 |
+| `report 경고 (rc=75)` 08:20·10:20, 본문 `확정치를 확인하지 못했다` · `[확정치] … 아직 안 돌았거나 도는 중` · `성공으로 끝나지 않았다` | `daily_finalize` 가 늦거나 실패했다. 잠정 리포트는 그대로 둔다. 08:20 이 놓친 날은 10:20 이 한 번 더 본다 | quant-airflow `daily_finalize` 를 본다. 끝났으면 `KR_QUANT_FINAL=1 scripts/daily_report.sh`(10:20 이 이미 돌았거나 기다릴 수 없을 때) |
+| `report 경고 (rc=75)` 08:20·10:20, 본문 `확정치를 확인하지 못해 잠정치로 만들었다` | 그 기준일 리포트가 아직 없었다(전날 저녁 수집 미완) — 마지막 기회라 잠정치로라도 만들어 걸었다. 확정은 위와 같은 이유로 못 했다 | 위와 같다. 확정이 끝나면 `KR_QUANT_FINAL=1 scripts/daily_report.sh` 가 확정치로 다시 만든다 |
+| `report 경고 (rc=75)`, 본문 `[확정치] … 기록이 없다` · `로그 경로 형식이 바뀌었을 수 있다` · `태스크 이름이 바뀐 것이다` | 이쪽이 Airflow 로그를 못 읽는다 — 로그 경로나 `daily_finalize` 태스크 이름이 바뀌었다 | `uv run python scripts/finalize_done.py --asof <기준일>` 로 이유를 본다. `finalize_done.py` 의 경로 규칙·`TASKS` 를 quant-airflow `dags/daily_finalize.py` 에 맞춘다 |
+| `report 경고 (rc=75)`, 본문 `[확정치] … 덮지 않는다` | 기준일 뒤의 `daily_finalize` 실행 창이 그날을 덮지 않는다 — 확정 실행을 놓친 지난 날이다 | 그날 확정치는 재수집 없이는 없다. 잠정으로 두거나 quant-airflow 에서 그 날짜를 재수집한 뒤 지난 기준일 재구성 |
 | `report 경고 (rc=75)`, 본문 `다른 리포트 실행이 돌고 있다` | 손으로 돌린 실행과 크론이 겹쳤다 | 앞 실행이 끝난 뒤 필요하면 같은 명령을 다시 |
 | `fresh 실패 (rc=1)`, 본문 `오늘 리포트가 안 걸렸다` | 수급은 들어왔는데 리포트가 없다. 크론 줄이 빠졌거나 배포가 깨졌거나 관문이 막았다 | `grep "$(date +%F)" reports/cron.log`, `crontab -l \| grep sector-flow`. 고친 뒤 `scripts/daily_report.sh` |
 | `fresh 경고 (rc=75)`, 본문 `supply_demand 가 비었다` | 장중 틱(`ticks`, scalp-it)은 있는데 수급이 없다 — 수집 실패. 수급·틱이 모두 없는 평일은 휴장으로 보고 알리지 않는다. 본문이 `휴장일이면 무시` 면 틱 표를 못 읽어 못 가른 것이다 | quant-airflow `daily_collection` 을 본다. 휴장일이면 무시한다 |
-| `fresh 경고 (rc=75)`, 본문 `전 거래일(…)이 확정되지 않았다` | 그날 08:20 확정 모드가 안 돌았거나 `daily_finalize` 를 확인하지 못했다. 다음 거래일 수집이 들어와 08:20 은 그 날을 다시 안 본다 | `uv run python scripts/finalize_done.py --asof <그날>` 로 이유를 본다. 확정이 끝났으면 지난 기준일 재구성으로 그 날을 다시 만든다(`KR_QUANT_ASOF=<그날> scripts/daily_report.sh`, 여러 날은 `scripts/rebuild_history.py`) |
-| `fresh 경고 (rc=75)`, 본문 `ALERT_WEBHOOK_URL 이 비었다`(평일마다) | 알림 웹훅이 없어 위의 모든 알림이 로그에만 남는다 | 웹훅을 만들어 `~/git/quant-airflow/.env` 의 `ALERT_WEBHOOK_URL=` 에 넣는다 |
-| 알림이 안 온다 · `alerts.log` 에 `[alert.py] failed` · `fresh 경고`, 본문 `웹훅이 폐기됐거나 틀렸다` | 웹훅 전달 실패 — 채널에서 웹훅이 지워졌거나 주소가 틀렸거나 네트워크가 끊겼다. 알림 본문은 `~/logs/quant-airflow/alerts.log` 에 다 남아 있다 | `grep -A30 'failed' ~/logs/quant-airflow/alerts.log \| tail -n 60` 으로 놓친 알림을 읽는다. 웹훅을 새로 만들어 `ALERT_WEBHOOK_URL=` 을 바꾼다 |
-| (외부 감시) 하트비트가 안 왔다는 알림 | 20:30 점검이 깨끗하게 끝나지 않았거나 아예 안 돌았다 — 머신·크론·알림 통로가 통째로 죽은 날도 여기서 잡힌다 | `tail -n 40 reports/cron.log`. 켜는 법: 외부 감시(healthchecks.io 등, 평일 20:30 + 유예)를 만들어 `~/git/quant-airflow/.env` 에 `HEARTBEAT_URL=<주소>` 한 줄 — 주소만 넣으면 동작한다 |
+| `fresh 경고 (rc=75)`, 본문 `전 거래일(…)이 확정되지 않았다` | 그날 08:20·10:20 확정 모드가 안 돌았거나 `daily_finalize` 를 확인하지 못했다. 다음 거래일 수집이 들어와 확정 모드는 그 날을 다시 안 본다 | `uv run python scripts/finalize_done.py --asof <그날>` 로 이유를 본다. 확정이 끝났으면 지난 기준일 재구성으로 그 날을 다시 만든다(`KR_QUANT_ASOF=<그날> scripts/daily_report.sh`, 여러 날은 `scripts/rebuild_history.py`) |
+| `fresh 경고 (rc=75)`, 본문 `ALERT_WEBHOOK_URL 이 비었다`(평일마다) · `alert.sh 가 없다` · 크론 로그에 `알림 통로 없음` | 알림 웹훅이 없거나 `~/git/quant-airflow/scripts/alert.sh` 가 없어 위의 모든 알림이 로그에만 남는다 | 웹훅을 만들어 `~/git/quant-airflow/.env` 의 `ALERT_WEBHOOK_URL=` 에 넣는다. `ls -l ~/git/quant-airflow/scripts/alert.sh` |
+| 알림이 안 온다 · `alerts.log` 에 `[alert.py] failed` · `fresh 경고`, 본문 `웹훅이 폐기됐거나 틀렸다` · `웹훅이 HTTP N 로 답했다` · `200 으로 답했지만 JSON 이 아니다` · `초 안에 닿지 못했다` | 웹훅 전달 실패 — 채널에서 웹훅이 지워졌거나 주소가 틀렸거나(Discord 웹훅 주소가 아니다) 네트워크가 끊겼다. 알림 본문은 `~/logs/quant-airflow/alerts.log` 에 다 남아 있다 | `grep -A30 'failed' ~/logs/quant-airflow/alerts.log \| tail -n 60` 으로 놓친 알림을 읽는다. 웹훅을 새로 만들어 `ALERT_WEBHOOK_URL=` 을 바꾼다. `닿지 못했다` 가 하루뿐이면 네트워크가 잠깐 끊긴 것이다 |
+| (외부 감시) 하트비트가 안 왔다는 알림 | 20:30 점검에서 리포트·수급·확정 중 하나가 깨끗하지 않았거나, 정해 둔 알림 웹훅이 죽었거나(그날 경고는 아무에게도 안 갔다), 점검이 아예 안 돌았다 — 머신·크론이 통째로 죽은 날도 여기서 잡힌다 | `tail -n 40 reports/cron.log` 의 `[하트비트]` 줄이 안 보낸 이유다. 켜는 법: 외부 감시(healthchecks.io 등, 평일 20:30 + 유예)를 만들어 `~/git/quant-airflow/.env` 에 `HEARTBEAT_URL=<주소>` 한 줄 — 주소만 넣으면 동작한다. 웹훅 없이 하트비트만 써도 된다 |
 | `sector-flow-web 재시작 — /healthz 실패(pid N, 연속 n회)` | 떠 있는 서버가 5초 안에 대답하지 않거나 `/healthz` 가 503(리포트 폴더를 못 읽거나 목록이 안 그려진다)이라 `serve.sh` 가 끄고 다시 띄웠다. 본문이 이유다. 같은 일이 이어지면 5분마다 다시 띄우되 알림은 연속 첫 회와 12회(1시간)마다 | 본문의 이유를 본다. `curl -sS http://$(tailscale ip -4):8765/healthz`, `ls -ld reports`, `tail reports/serve.log` |
-| `web 실패 (rc=1)` · 웹이 안 열린다 | Tailscale 이 없거나 포트가 막힌 채 한 시간이 지났다(`reports/.serve.misses` 가 센다). 서버가 죽었다(rc 가 서버 종료코드) | `tail reports/serve.log`, `tailscale ip -4`, `ss -ltnp \| grep 8765`. 손으로 띄우려면 `scripts/serve.sh`. 대답 없는 서버는 크론이 5분 안에 끄고 다시 띄운다 |
+| `web 실패 (rc=137)` | `serve.sh` 가 TERM 을 5초 버틴 서버를 KILL 했다 — 그 서버를 띄웠던 래퍼의 알림이다. 위 재시작 알림과 같은 박자(연속 첫 회·12회마다)로만 온다 | 위 재시작 알림의 이유를 본다. 매번 KILL 까지 가면 서버가 TERM 에 끝나지 않는 것이다 — `tail reports/serve.log` |
+| `web 실패 (rc=1)`, 본문 `누구인지(.serve.pid) 몰라 못 끈다` | 잠금(`reports/.serve.lock`)을 쥔 프로세스가 `/healthz` 에 대답하지 않는데, `.serve.pid` 가 없거나 그 pid 가 이 서버가 아니라 안전하게 못 끈다. 한 시간 이어질 때 알린다 | `cat reports/.serve.pid`, `fuser -v reports/.serve.lock` 로 잠금 주인을 찾아 끈다. 다음 5분 크론이 다시 띄운다 |
+| `web 실패 (rc=1)`, 본문 `Tailscale 주소가 없다` · `에 못 묶었다` · 웹이 안 열린다 | Tailscale 이 없거나 포트가 막힌 채 한 시간이 지났다(`reports/.serve.misses` 가 센다). 서버가 죽었다(rc 가 서버 종료코드) | `tail reports/serve.log`, `tailscale ip -4`, `ss -ltnp \| grep 8765`. 손으로 띄우려면 `scripts/serve.sh`. 대답 없는 서버는 크론이 5분 안에 끄고 다시 띄운다 |
 | 고친 코드가 다음날에도 안 돈다 · `morning-sync` 알림에 `hold sector-flow` | 07:50 `pull-all --ci-gate` 가 CI 가 초록이 아닌 커밋을 받지 않았다 | GitHub Actions 를 초록으로 고친다. 확인했고 당장 필요하면 `git -C ~/git/sector-flow pull --ff-only` |
+
+크론 로그(`reports/cron.log`·`serve.log`)는 5MB 를 넘으면 `scripts/cron_run.sh` 가 `.1` 로 하나만 남기고 비운다.
 
 ## 4. 설치와 실행
 
@@ -435,7 +449,8 @@ http://<서버의 Tailscale 주소>:8765/latest/viewer.html   #            — �
 
 ```bash
 uv run --extra dev pytest -q                  # 네트워크·DB 불요
-uv run --extra dev ruff check src/ tests/ scripts/
+uv run --extra dev ruff check src/ tests/ scripts/ research/
+uv run python -m compileall -q research    # 연구 스크립트는 DB 가 있어야 돌아 문법만 본다
 uv run python scripts/verify_merge.py <워크트리>   # TUI 를 고친 뒤 — 실데이터 렌더·pty 구동·변이 검사 (수 분)
 ```
 

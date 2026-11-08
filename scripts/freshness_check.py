@@ -18,9 +18,11 @@ daily_report.sh 는 **제가 돈 날**만 알린다. 크론 줄이 빠졌거나,
 * 알림 통로 — quant-airflow ``alert.sh`` 가 **실제로 읽을 값**을 같은 방식으로 읽는다(:func:`alert_value`). 비었으면 75,
   있으면 GET 한 번(5초, 메시지는 안 보낸다 — Discord 웹훅은 GET 에 200 + JSON 으로 답한다)으로 살아 있나 본다.
   401·404 는 폐기됐거나 틀린 주소다. 주말·DB 실패여도 본다. 주소는 어디에도 찍지 않는다.
-* 하트비트(죽은 사람 스위치) — ``HEARTBEAT_URL``(웹훅과 같은 방식으로 읽는다)이 있으면 **모두 0 으로 끝난 날에만** GET 한 번.
-  외부 감시(healthchecks.io 등)가 정해진 시각에 이 핑을 못 받으면 알린다 — 이 머신·크론·알림 통로가 통째로 죽은 날도
-  잡힌다. 없으면 한 줄 적고 넘어간다(주소만 넣으면 동작한다). 핑 실패는 종료코드를 바꾸지 않는다 — 그 알림은 외부 감시의 몫이다.
+* 하트비트(죽은 사람 스위치) — ``HEARTBEAT_URL``(웹훅과 같은 방식으로 읽는다)이 있으면 **리포트·수급·확정 점검이 0 인 날에**
+  GET 한 번. 외부 감시(healthchecks.io 등)가 정해진 시각에 이 핑을 못 받으면 알린다 — 이 머신·크론·알림 통로가 통째로 죽은 날도
+  잡힌다. 웹훅과는 따로다: 웹훅이 **없어도** 보낸다(하트비트만 쓰는 설정). 다만 웹훅이 **있는데 죽었으면** 안 보낸다 —
+  그날은 경고가 아무에게도 안 가니 외부 감시가 유일한 통로다. 없으면 한 줄 적고 넘어간다(주소만 넣으면 동작한다).
+  핑 실패는 종료코드를 바꾸지 않는다 — 그 알림은 외부 감시의 몫이다.
 
 여러 개가 겹치면 더 심한 쪽(1 > 75 > 0)으로 끝난다. DB 접속 실패는 1.
 """
@@ -204,12 +206,12 @@ def check_webhook(webhook: str | None, *, probe_fn=probe) -> tuple[int, list[str
                   "이어지면 알림도 안 간다."]
 
 
-def heartbeat(url: str, ok: bool, *, probe_fn=probe) -> list[str]:
-    """죽은 사람 스위치 — 점검이 모두 0 인 날에만 핑. 종료코드는 바꾸지 않는다."""
+def heartbeat(url: str, ok: bool, *, probe_fn=probe, why: str = "점검이 깨끗하지 않다") -> list[str]:
+    """죽은 사람 스위치 — ``ok`` 인 날에만 핑(``why`` 는 안 보낸 이유). 종료코드는 바꾸지 않는다."""
     if not url:
         return ["[하트비트] HEARTBEAT_URL 없음 — 외부 감시가 꺼져 있다(주소만 넣으면 동작한다, README §3.1)"]
     if not ok:
-        return ["[하트비트] 안 보낸다 — 점검이 깨끗하지 않다(외부 감시가 핑이 빈 것을 알린다)"]
+        return [f"[하트비트] 안 보낸다 — {why}(외부 감시가 핑이 빈 것을 알린다)"]
     status, _, why = probe_fn(url)
     if status is not None and 200 <= status < 300:
         return ["[하트비트] 보냈다"]
@@ -274,15 +276,22 @@ def main(argv: list[str] | None = None) -> int:
             rc, lines = judge(Path(a.root), today, n, market_open=market_open)
             prc, plines = check_prev_final(Path(a.root), prev)
             rc, lines = worse(rc, prc), lines + plines
+    data_rc = rc
     # 알림 통로는 무슨 일이 있어도 본다 — 위가 실패한 날일수록 알림이 가야 한다.
     alert_sh = alert_sh_path(os.environ)
+    webhook = ""
     if os.access(alert_sh, os.X_OK):
-        wrc, wlines = check_webhook(alert_value("ALERT_WEBHOOK_URL", os.environ, alert_sh))
+        webhook = alert_value("ALERT_WEBHOOK_URL", os.environ, alert_sh)
+        wrc, wlines = check_webhook(webhook)
     else:
         wrc, wlines = WARN, [f"⚠️ [알림 통로] alert.sh 가 없다({alert_sh}) — cron_run.sh 가 모든 알림을 로그에만 남긴다."]
     rc = worse(rc, wrc)
     lines += wlines
-    lines += heartbeat(alert_value("HEARTBEAT_URL", os.environ, alert_sh), rc == 0)
+    # 하트비트는 웹훅과 따로 — 웹훅이 없어도(하트비트만 쓰는 설정) 데이터 점검이 깨끗하면 보낸다. 웹훅이 **있는데 죽은**
+    # 날은 안 보낸다: 그 경고가 죽은 웹훅으로 가 아무도 못 보니, 핑이 비는 것이 유일한 신호다.
+    dead_hook = bool(webhook) and wrc != 0
+    lines += heartbeat(alert_value("HEARTBEAT_URL", os.environ, alert_sh), data_rc == 0 and not dead_hook,
+                       why="알림 웹훅이 죽어 있다" if data_rc == 0 else "점검이 깨끗하지 않다")
     print("\n".join(lines))
     return rc
 

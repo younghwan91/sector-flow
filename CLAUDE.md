@@ -5,7 +5,7 @@
 
 ## 명령
 - 테스트: `uv run --extra dev pytest -q` — DB·네트워크 불요.
-- 린트: `uv run --extra dev ruff check src/ tests/ scripts/ research/` (CI 와 같은 범위)
+- 린트: `uv run --extra dev ruff check src/ tests/ scripts/ research/` 와 `uv run python -m compileall -q research` (CI 의 Lint·Research compiles 와 같다)
 - TUI 수정 뒤: `uv run python scripts/verify_merge.py <워크트리>` (수 분). 로컬 pre-push 는 바뀐 파일에 닿는 변이만 돈다 — 전체는 GitHub 이 4샤드로(`--help`).
 - 리포트 다시 만들기: `KR_QUANT_FORCE=1 scripts/daily_report.sh`. 다른 곳에 쓰려면 `KR_QUANT_REPORTS=<폴더>`.
 - 화면: `uv run sw-flow`, `uv run sw-ledger` (`reports/latest` 를 연다).
@@ -17,10 +17,10 @@
 - 크론 정본 `deploy/crontab.simnode` — dotfiles `cron-install` 이 `~/git/*/deploy/crontab.<호스트>` 를 훑어 설치한다. `crontab -e` 금지.
   07:50 `pull-all --ci-gate` 가 ff 한 뒤 설치하니 main 푸시가 곧 다음날 배포다. 당장은 `git -C ~/git/sector-flow pull --ff-only`.
 - 산출물은 `$REPO/reports/<기준일>`(gitignore) + `latest` 링크. 폴더 이름은 실행일이 아니라 데이터 기준일이다.
-- 크론은 평일 18:10·19:10, 화~토 08:20(확정 모드 `KR_QUANT_FINAL=1`)에 같은 `daily_report.sh` 를 부른다. 08:20 은 `daily_finalize` 성공을
-  Airflow 로그로 확인하고(`scripts/finalize_done.py`) 전날을 확정치로 다시 만든다(`FINAL.txt`). 확인 못 하면 75. 완전성 관문(`scripts/completeness_gate.py`)이 막으면
+- 크론은 평일 18:10·19:10, 화~토 08:20·10:20(확정 모드 `KR_QUANT_FINAL=1`, 10:20 은 재시도)에 같은 `daily_report.sh` 를 부른다. 08:20 은 `daily_finalize` 성공을
+  Airflow 로그로 확인하고(`scripts/finalize_done.py`) 전날을 확정치로 다시 만든다(`FINAL.txt`). 확인 못 하면 75, 이미 확정이면 0 으로 건너뛴다. 완전성 관문(`scripts/completeness_gate.py`)이 막으면
   폴더에 `INCOMPLETE.txt` 만 남기고 75 로 끝나며(`latest` 유지) 다음 실행이 그 기준일을 다시 만든다. `KR_QUANT_FORCE` 도 관문은 못 끈다.
-  이상 종료는 `scripts/cron_run.sh` 가 quant-airflow `alert.sh` 로 알린다. 평일 20:30 `scripts/freshness_check.sh` 가 결과(`latest`·알림 웹훅)를 본다.
+  이상 종료는 `scripts/cron_run.sh` 가 quant-airflow `alert.sh` 로 알리고, 크론 로그가 5MB 를 넘으면 `.1` 로 돌린다. 평일 20:30 `scripts/freshness_check.sh` 가 결과(`latest`·알림 웹훅)를 본다.
   상한: 크론 `timeout 40m`, `reports/.report.lock`(겹치면 75), DB 접속 10초·문장 10분(`storage.connect`). 알림별 대응은 README §3.1.
 - 이 레포는 PRIVATE 다. 공개 전환은 사용자가 정한다.
 
