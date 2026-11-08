@@ -1,5 +1,5 @@
 # sw-flow · sw-ledger 화면 값의 수식 정의
-<!-- refs-verified-at: f8aa763d4079ac070e900d4fda1aabbf8c2356cf -->
+<!-- refs-verified-at: 647978c2143da9eaf02b6d6127775b9fe9d2b8e4 -->
 
 두 터미널 화면(`sw-flow`·`sw-ledger`)에 뜨는 모든 값의 정의를 코드 위치와 함께 모은 **정본**이다. 식마다 그것을
 계산하는 `파일:줄` 이 붙어 있고, 지표마다 **근거 수준**(앞날 수익률에 대해 검증된 것이 있나)을 적었다.
@@ -50,7 +50,7 @@
 | `sw-flow` (`flow_view.py`) | `numbers.html` 의 JSON 을 읽어 섹터 표·종목 목록·전 종목 화면을 그린다. 주체 투영·종목 파생량·종목 선정은 여기서 낸다 | 터미널 |
 | `sw-ledger` (`ledger_view.py`) | `payload.json` 을 직접 읽는다(`sector_numbers` 를 거치지 않는다). 원장·전개·동시성·한계 | 터미널 |
 
-출처 — `scripts/sector_numbers.py:283`(`build`), `src/sectorflow/tui/ledger_view.py:118`(`load`), `scripts/daily_report.sh:186-188`.
+출처 — `scripts/sector_numbers.py:283`(`build`), `src/sectorflow/tui/ledger_view.py:121`(`load`), `scripts/daily_report.sh:186-188`.
 두 앱은 같은 폴더를 본다. 같은 (시장, 섹터, 구간)에 대해 두 화면이 다른 수를 말하면 정의가 갈린 것이지 데이터가 다른 것이 아니다.
 
 ### 0.2 기호
@@ -78,7 +78,7 @@
 
 두 앱이 공유하는 규칙: **뜻을 잃은 값은 고쳐 쓰지 않고 결측(`—`)으로 둔다. 결측은 정렬에서 어느 방향으로도 맨 뒤다** —
 값이 없는 것은 작은 값이 아니다. 구현 — `src/sectorflow/tui/flow_view.py:635-643`(섹터 정렬), `src/sectorflow/tui/flow_view.py:725-733`(종목 정렬),
-`src/sectorflow/tui/ledger_view.py:538`(원장 정렬), `src/sectorflow/tui/ledger_view.py:618-619`(동시성 nan 순서).
+`src/sectorflow/tui/ledger_view.py:637`(원장 정렬), `src/sectorflow/tui/ledger_view.py:717-718`(동시성 nan 순서).
 
 적용되는 자리: 포텐셜의 $k\le0$ 블록(§2.9), 수익률이 없는 종목·날(§1.3), 최근집중의 작은 분모·작은 몫(§3.6), 잔여몫·최대일몫의
 작은 분모(§4.3·§4.4), 상관의 분산 0 쌍(§4.7), 누적 기여율의 비-순매수 정렬(§3.3), 관문을 못 넘은 선정(§2.12·§3.9).
@@ -622,30 +622,30 @@ $\quad \phi_c>0\ \wedge\ \text{invtrt}_c\ge0\ \wedge\ \text{penfnd}_c\ge0\ \wedg
 
 원장은 `sector_numbers` 를 거치지 않고 `payload.json` 을 직접 읽는다. 관측된 것은 (날짜, 시장, 섹터, 주체)의 순매수 금액뿐이다. 그래서
 주체 ↔ 섹터 이분 그래프만 그리고 섹터→섹터·주체→주체는 그리지 않는다 — 둘 다 주변합이 쌍별 흐름을 결정하지 않는다(4주체 주변합의
-독립 3개로는 쌍별 6개가 3차원만큼 남는다). 그 문장이 모든 화면 최하단에 상주한다(`BANNER_TIERS` `src/sectorflow/tui/ledger_view.py:51-57`).
+독립 3개로는 쌍별 6개가 3차원만큼 남는다). 그 문장이 모든 화면 최하단에 상주한다(`BANNER_TIERS` `src/sectorflow/tui/ledger_view.py:54-60`).
 
 ### 4.1 원장 표
 
-구간은 5·20·60·120·260 거래일이고(`WINDOWS` `src/sectorflow/tui/ledger_view.py:43`), 페이로드보다 길면 잘린다(`src/sectorflow/tui/ledger_view.py:348-349`(`def window`)).
+구간은 5·20·60·120·260 거래일이고(`WINDOWS` `src/sectorflow/tui/ledger_view.py:46`), 페이로드보다 길면 잘린다(`src/sectorflow/tui/ledger_view.py:438-439`(`def window`)).
 
 **(52)** $\quad d^A_{s,i}=\sum_{m\in M}f^A_{m,s,i},\qquad \Phi^A_s=\sum_{i=N-W}^{N-1}d^A_{s,i}$ [억원]
 
-`daily` `src/sectorflow/tui/ledger_view.py:429-438` · `rows` `src/sectorflow/tui/ledger_view.py:491-544` · 열 `ledger_cols` `src/sectorflow/tui/ledger_view.py:749-768`.
+`daily` `src/sectorflow/tui/ledger_view.py:519-537` · `rows` `src/sectorflow/tui/ledger_view.py:590-643` · 열 `ledger_cols` `src/sectorflow/tui/ledger_view.py:828-847`.
 금액 열 넷은 주체 선택과 무관하게 늘 나온다 — 주체 선택은 막대·최대일몫·전개·동시성에만 쓰인다.
 
 ### 4.2 잔여[억]
 
 **(53)** $\quad \text{resid}_s=-\sum_{A\in\{\text{개인, 외국인, 기관, 기타법인}\}}\Phi^A_s$ [억원]
 
-`residual` `src/sectorflow/tui/ledger_view.py:164-174` · `src/sectorflow/tui/ledger_view.py:511`. 오차가 아니라 **다섯째 주체**다 — 우리가 안 싣는
+`residual` `src/sectorflow/tui/ledger_view.py:167-177` · `src/sectorflow/tui/ledger_view.py:610`. 오차가 아니라 **다섯째 주체**다 — 우리가 안 싣는
 KRX 주체(기타외국인 등)의 순매수 추정치에 결측과 식 (1)의 환산 오차가 섞인 것. 4주체에 안분해 0 으로 만들지 않는다.
-다섯을 다 담을 수 없는 폭(<71칸)에서는 표 대신 안내를 낸다(`LEDGER_MIN_W` `src/sectorflow/tui/ledger_view.py:744`, `src/sectorflow/tui/ledger_view.py:848-852`).
+다섯을 다 담을 수 없는 폭(<71칸)에서는 표 대신 안내를 낸다(`LEDGER_MIN_W` `src/sectorflow/tui/ledger_view.py:823`, `src/sectorflow/tui/ledger_view.py:927-931`).
 
 ### 4.3 잔여몫[%]
 
 **(54)** $\quad \text{gross}_s=\sum_A\sum_i|d^A_{s,i}|,\quad \text{rabs}_s=\sum_i\Big|\sum_A d^A_{s,i}\Big|,\quad \text{잔여몫}_s=\begin{cases}\text{rabs}_s/\text{gross}_s\times100 & \text{gross}_s\ge1\text{억}\\ \varnothing & \text{그 밖}\end{cases}$
 
-`src/sectorflow/tui/ledger_view.py:520-522` · `_MIN_RATIO_GROSS = 1.0` `src/sectorflow/tui/ledger_view.py:112`. 합계가 아니라 **일별 절댓값**으로 잰다 — 구간
+`src/sectorflow/tui/ledger_view.py:619-621` · `_MIN_RATIO_GROSS = 1.0` `src/sectorflow/tui/ledger_view.py:115`. 합계가 아니라 **일별 절댓값**으로 잰다 — 구간
 합계는 부호가 엇갈려 상쇄된다(20일·전시장 실측: 전기/전자 11배, IT 서비스 48배 차이).
 
 ### 4.4 최대일몫[%]과 `!` 마커
@@ -654,25 +654,25 @@ KRX 주체(기타외국인 등)의 순매수 추정치에 결측과 식 (1)의 �
 
 **(56)** $\quad \text{균등}=100/W$ [%], $\qquad \mathtt{!}=[\,\text{최대일몫}_s\ge3\times\text{균등}\,]$
 
-`src/sectorflow/tui/ledger_view.py:523-529` · `uniform_spike` `src/sectorflow/tui/ledger_view.py:484-489` · `SPIKE_MARK_MULT = 3` `src/sectorflow/tui/ledger_view.py:741` ·
-마커 `src/sectorflow/tui/ledger_view.py:871`. $A^\star$ 는 고른 주체다. 잔여몫의 분모는 4주체 전체 gross, 최대일몫의 분모는 고른 주체 gross 다 — 둘 다
+`src/sectorflow/tui/ledger_view.py:622-628` · `uniform_spike` `src/sectorflow/tui/ledger_view.py:583-588` · `SPIKE_MARK_MULT = 3` `src/sectorflow/tui/ledger_view.py:820` ·
+마커 `src/sectorflow/tui/ledger_view.py:950`. $A^\star$ 는 고른 주체다. 잔여몫의 분모는 4주체 전체 gross, 최대일몫의 분모는 고른 주체 gross 다 — 둘 다
 하한은 1억이다. 금액 열이 억 단위 정수라 분모가 1억 미만이면 그 비율을 이루는 금액이 화면에 하나도 안 보인다.
 
 ### 4.5 종목[수] · 막대 · 절대크기
 
 **(57)** $\quad n_s=\#\{c:\ \text{market}(c)\in M\ \wedge\ \text{sector}(c)=s\ \wedge\ \nu^{W}_c\ne\varnothing\}$, `~` $=[n_s<10]$
 
-`n_stocks`·`_count_names` `src/sectorflow/tui/ledger_view.py:440-479` · `THIN_N = 10` `src/sectorflow/tui/ledger_view.py:100`. sw-flow 의 (32)와 같은 집합이다.
+`n_stocks`·`_count_names` `src/sectorflow/tui/ledger_view.py:539-578` · `THIN_N = 10` `src/sectorflow/tui/ledger_view.py:103`. sw-flow 의 (32)와 같은 집합이다.
 페이로드에 그 창의 종목 집계가 없는 구간(260일)은 페이로드 전 구간이 곧 그 창이므로 그 (시장, 섹터)의 종목을 다 센다. `names` 자체가
 없는 옛 페이로드만 `n_by_sector` 로 떨어진다.
 
-**(58)** $\quad \text{abs}_s=\sum_A|\Phi^A_s|$ — 정렬 전용(`src/sectorflow/tui/ledger_view.py:512`)
+**(58)** $\quad \text{abs}_s=\sum_A|\Phi^A_s|$ — 정렬 전용(`src/sectorflow/tui/ledger_view.py:611`)
 
-정렬은 절대크기 · 선택주체 · 섹터명 · 최대일몫 · 종목수 다섯이고 역순 토글은 없다(`SORTS` `src/sectorflow/tui/ledger_view.py:45-46`, `src/sectorflow/tui/ledger_view.py:531-538`).
+정렬은 절대크기 · 선택주체 · 섹터명 · 최대일몫 · 종목수 다섯이고 역순 토글은 없다(`SORTS` `src/sectorflow/tui/ledger_view.py:48-49`, `src/sectorflow/tui/ledger_view.py:630-637`).
 
 **(59)** 오른쪽 끝 막대: $\ \text{scale}=\max_{s\in\text{화면}}|\Phi^{A^\star}_s|$, 반칸 단위 $=\min\!\big(\mathrm{round}(|\Phi|/\text{scale}\cdot2h),\,2h\big)$, $h=\min\!\big(12,\lfloor(\text{남는 칸}-2)/2\rfloor\big)$
 
-`signed_bar` `src/sectorflow/tui/ledger_view.py:241-260` · 폭 `src/sectorflow/tui/ledger_view.py:857` · 눈금 `src/sectorflow/tui/ledger_view.py:865`. 0 이 가운데이고
+`signed_bar` `src/sectorflow/tui/ledger_view.py:244-263` · 폭 `src/sectorflow/tui/ledger_view.py:936` · 눈금 `src/sectorflow/tui/ledger_view.py:944`. 0 이 가운데이고
 표시 폭은 늘 $2h$ 다. 한쪽 끝이 지금 화면 안의 최대 절댓값이라 화면이 바뀌면 눈금도 바뀐다.
 
 ### 4.6 전개 — 누적[억] · 눈금[억] · 스파크라인
@@ -685,8 +685,8 @@ KRX 주체(기타외국인 등)의 순매수 추정치에 결측과 식 (1)의 �
 
 **(63)** $\quad \ell_j=\begin{cases}+2\ (⠛) & \text{show}_j/\text{눈금}>0.5\\ +1\ (⠒) & 0<\cdot\le0.5\\ 0\ (⠐) & \text{show}_j=0\ \text{또는 눈금}\le0\\ -1\ (⠤) & -0.5\le\cdot<0\\ -2\ (⣤) & \cdot<-0.5\end{cases}$
 
-`timeline_lines` `src/sectorflow/tui/ledger_view.py:907-952`(폭 `src/sectorflow/tui/ledger_view.py:927`) · `downsample` `src/sectorflow/tui/ledger_view.py:221-238` ·
-`spark_scale`·`spark` `src/sectorflow/tui/ledger_view.py:177-207` · 글자표 `src/sectorflow/tui/ledger_view.py:85`(`SPARK_SIGNED`). 뒤만 남기는 `values[-n:]` 는 시작점을 잃어
+`timeline_lines` `src/sectorflow/tui/ledger_view.py:986-1031`(폭 `src/sectorflow/tui/ledger_view.py:1006`) · `downsample` `src/sectorflow/tui/ledger_view.py:224-241` ·
+`spark_scale`·`spark` `src/sectorflow/tui/ledger_view.py:180-210` · 글자표 `src/sectorflow/tui/ledger_view.py:88`(`SPARK_SIGNED`). 뒤만 남기는 `values[-n:]` 는 시작점을 잃어
 쓰지 않는다. 경계는 정수 산술이다(부동소수 반올림이 마지막 날을 떨어뜨린 적이 있다). **세로 한가운데가 0** 이다 — sw-flow 의
 추이(§2.5)와 다른 점이고, 회계 화면이라 부호가 전부여서다.
 
@@ -694,23 +694,23 @@ KRX 주체(기타외국인 등)의 순매수 추정치에 결측과 식 (1)의 �
 
 **(64)** $\quad y_{s,i}=d^{A^\star}_{s,i}/C_s\times100$ [%p], $C_s>0$ 인 섹터만
 
-`_norm_series` `src/sectorflow/tui/ledger_view.py:551-558`. $C_s$ 는 페이로드 기준일 섹터 시총이다(`def cap` `src/sectorflow/tui/ledger_view.py:481-482`).
+`_norm_series` `src/sectorflow/tui/ledger_view.py:650-657`. $C_s$ 는 페이로드 기준일 섹터 시총이다(`def cap` `src/sectorflow/tui/ledger_view.py:580-581`).
 
 **(65)** β제거(선택, 기본 꺼짐): $\ M_i=\dfrac{\sum_s C_s y_{s,i}}{\sum_s C_s},\quad \beta_s=\dfrac{\sum_i(M_i-\bar M)(y_{s,i}-\bar y_s)}{\sum_i(M_i-\bar M)^2},\quad \tilde y_{s,i}=y_{s,i}-\bar y_s-\beta_s(M_i-\bar M)$
 
-`_detrended` `src/sectorflow/tui/ledger_view.py:560-580` · 키 `d`. 기본이 꺼짐인 이유: β제거 뒤 가장 음의 상관 쌍이 전부 전기/전자 ↔ 나머지라
-구성적 인공물과 구분되지 않는다. 켜면 화면이 경고를 띄운다(`src/sectorflow/tui/ledger_view.py:1109-1110`).
+`_detrended` `src/sectorflow/tui/ledger_view.py:659-679` · 키 `d`. 기본이 꺼짐인 이유: β제거 뒤 가장 음의 상관 쌍이 전부 전기/전자 ↔ 나머지라
+구성적 인공물과 구분되지 않는다. 켜면 화면이 경고를 띄운다(`src/sectorflow/tui/ledger_view.py:1188-1189`).
 
 **(66)** $\quad r_{ab}=\begin{cases}\dfrac{\sum_i(y_{a,i}-\bar y_a)(y_{b,i}-\bar y_b)}{\sqrt{\sum_i(y_{a,i}-\bar y_a)^2\sum_i(y_{b,i}-\bar y_b)^2}} & \text{두 분산 모두}>0\\ \text{NaN} & \text{그 밖(잴 수 없다)}\end{cases}$
 
 **(67)** $\quad \bar r_a=$ NaN 이 아닌 $r_{ab}\ (b\ne a)$ 의 평균, $\quad$ 평균 열 $=\bar r_a\times100$
 
-`_corr` `src/sectorflow/tui/ledger_view.py:263-276` · `_corr_ordered` `src/sectorflow/tui/ledger_view.py:602-622` · 열 `src/sectorflow/tui/ledger_view.py:1128-1131`.
+`_corr` `src/sectorflow/tui/ledger_view.py:266-273`(식은 `_dev` `src/sectorflow/tui/ledger_view.py:276-285`·`_corr_of` `src/sectorflow/tui/ledger_view.py:288-293`) · `_corr_ordered_of` `src/sectorflow/tui/ledger_view.py:345-365` · 열 `src/sectorflow/tui/ledger_view.py:1207-1210`.
 분산 0 에서 0.0 이 아니라 NaN 을 돌려주는 것이 요점이다 — 0.0 은 `|r|<0.05` 와 같은 빈칸이라 "무상관" 과 "잴 수 없다" 가 구분되지 않았다.
-행·열 순서는 평균상관 내림차순이고 NaN 인 섹터는 맨 뒤다. 그래서 이 화면에는 정렬이 없다(헤더 칩이 `순서[평균상관]`, `src/sectorflow/tui/ledger_view.py:720`).
+행·열 순서는 평균상관 내림차순이고 NaN 인 섹터는 맨 뒤다. 그래서 이 화면에는 정렬이 없다(헤더 칩이 `순서[평균상관]`, `src/sectorflow/tui/ledger_view.py:799`).
 
 **히트맵 한 칸** — 2글자, 첫 글자가 부호, 둘째가 세기. $\mathrm{lv}(r)=\mathrm{clamp}(\mathrm{round}(10r),-5,+5)$
-(`heat_level` `src/sectorflow/tui/ledger_view.py:967-971`, `heat_cell` `src/sectorflow/tui/ledger_view.py:979-985`, `HEAT_RAMP` `src/sectorflow/tui/ledger_view.py:964`).
+(`heat_level` `src/sectorflow/tui/ledger_view.py:1046-1050`, `heat_cell` `src/sectorflow/tui/ledger_view.py:1058-1064`, `HEAT_RAMP` `src/sectorflow/tui/ledger_view.py:1043`).
 
 | 조건 | 칸 |
 |---|---|
@@ -727,25 +727,25 @@ KRX 주체(기타외국인 등)의 순매수 추정치에 결측과 식 (1)의 �
 
 **(70)** $\quad$ 판정 $=\begin{cases}\text{"로테이션은 우연보다 드물다"} & \text{관측}<\text{널}-0.03\\ \text{"널과 다르지 않다 — 무늬를 읽지 마라"} & \text{그 밖}\end{cases}$
 
-`neg_frac` `src/sectorflow/tui/ledger_view.py:279-291` · `null_neg_frac` `src/sectorflow/tui/ledger_view.py:624-657`(seed `src/sectorflow/tui/ledger_view.py:644`) ·
-`_NULL_SHIFTS = 20` `src/sectorflow/tui/ledger_view.py:113` · 판정 `comove_verdict_tiers` `src/sectorflow/tui/ledger_view.py:997-1019`. $W<20$ 이면 상관을 아예 내지
-않는다(`_MIN_CORR_N` `src/sectorflow/tui/ledger_view.py:101`). NaN 을 분자에서도 분모에서도 빼는 것이 (68)의 요점이다 — 관측·널·근거 스크립트
+`neg_frac` `src/sectorflow/tui/ledger_view.py:330-342` · `_null_neg_frac_of` `src/sectorflow/tui/ledger_view.py:368-380`(seed `src/sectorflow/tui/ledger_view.py:370`) ·
+`_NULL_SHIFTS = 20` `src/sectorflow/tui/ledger_view.py:116` · 판정 `comove_verdict_tiers` `src/sectorflow/tui/ledger_view.py:1076-1098`. $W<20$ 이면 상관을 아예 내지
+않는다(`_MIN_CORR_N` `src/sectorflow/tui/ledger_view.py:104`). NaN 을 분자에서도 분모에서도 빼는 것이 (68)의 요점이다 — 관측·널·근거 스크립트
 (`scripts/ledger_numbers.py`)가 같은 함수를 본다. 셋째 줄이 평균상관이 가장 낮은 4개 섹터를 이름과 값으로 남긴다(`comove_outliers`
-`src/sectorflow/tui/ledger_view.py:1022-1041`(`def comove_outliers`)).
+`src/sectorflow/tui/ledger_view.py:1101-1120`(`def comove_outliers`)).
 
 ### 4.8 헤더 · 상태줄 · 한계 화면
 
 **헤더** — `자금 원장 · 기준일 상태칩 · 시작~끝 (W거래일)` / `화면[·] 구간[·] 시장[·] 주체[·] 정렬[·]`(동시성이면 `순서[평균상관] β제거[켬/끔]`)
-(`header_lines` `src/sectorflow/tui/ledger_view.py:710-726`). 상태칩은 sw-flow 와 같은 함수다(§5).
+(`header_lines` `src/sectorflow/tui/ledger_view.py:789-805`). 상태칩은 sw-flow 와 같은 함수다(§5).
 
 **상태줄** — 표를 봐도 알 수 없는 것만 적는다. ① `최대일몫(주체) 17.9% · 균등 5.0%`(값과 앵커는 붙어 있어야 비교가 된다) ② 잔여·잔여몫 —
-그 열이 지금 화면에 없을 때만, 둘은 따로 판정 ③ 종목 수, 4주체 금액 — 역시 화면에 없을 때만. `status_line` `src/sectorflow/tui/ledger_view.py:1660-1717` ·
-판정 `visible_columns` `src/sectorflow/tui/ledger_view.py:1620-1633`. 커서가 없는 화면(동시성·한계)에서는 줄을 비운다.
+그 열이 지금 화면에 없을 때만, 둘은 따로 판정 ③ 종목 수, 4주체 금액 — 역시 화면에 없을 때만. `status_line` `src/sectorflow/tui/ledger_view.py:1739-1796` ·
+판정 `visible_columns` `src/sectorflow/tui/ledger_view.py:1699-1712`. 커서가 없는 화면(동시성·한계)에서는 줄을 비운다.
 
-**한계 화면(`v`)** — 여덟 항목의 산문(`LIMITS` `src/sectorflow/tui/ledger_view.py:1160-1214`): 섹터→섹터 미관측 · 주체→주체 미식별 · 순매수는 소유권
+**한계 화면(`v`)** — 여덟 항목의 산문(`LIMITS` `src/sectorflow/tui/ledger_view.py:1239-1293`): 섹터→섹터 미관측 · 주체→주체 미식별 · 순매수는 소유권
 이전이지 자금 유입이 아니다 · 종가 환산 근사 · 잔여의 정체와 크기 · 상관은 동시성이지 이동이 아니다 · 생존편향 · 주체 4분류의 거칢.
-6번의 관측 범위(`{C3}` 등)는 글에 박지 않고 리포트를 열 때 시장 × 구간(≥20일) 전수로 잰다(`comove_ranges` `src/sectorflow/tui/ledger_view.py:668-705`,
-`comove_claims` `src/sectorflow/tui/ledger_view.py:1283-1296`).
+6번의 관측 범위(`{C3}` 등)는 글에 박지 않고 리포트를 열 때 시장 × 구간(≥20일) 전수로 잰다(`comove_ranges` `src/sectorflow/tui/ledger_view.py:746-784`,
+`comove_claims` `src/sectorflow/tui/ledger_view.py:1362-1375`).
 
 ---
 
