@@ -46,8 +46,14 @@ def test_verify_summary_counts_failures_and_claims_separately(tmp_path):
     assert RH.verify_summary(tmp_path)[0] == "형식 불명"
 
 
+#: 임시 레포의 git 은 사용자 설정에 기대지 않는다 — CI·깨끗한 HOME 에는 전역 신원이 없고, 전역 훅·서명이 끼어들면
+#: 안 된다(tests/test_verify_merge.py 와 같은 방식). 신원은 그 임시 레포의 **로컬 설정**에만 둔다(시험 픽스처).
+GIT_ENV = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+
+
 def _git(cwd: Path, *args: str) -> str:
-    return subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, text=True, check=True).stdout.strip()
+    return subprocess.run(["git", "-C", str(cwd), *args], env=GIT_ENV, capture_output=True, text=True,
+                          check=True).stdout.strip()
 
 
 @pytest.fixture
@@ -56,6 +62,9 @@ def checkout(tmp_path, monkeypatch):
     r = tmp_path / "co"
     r.mkdir()
     _git(r, "init", "-q")
+    for k, v in (("user.name", "rebuild-history test"), ("user.email", "test@example.invalid"),
+                 ("commit.gpgsign", "false"), ("core.hooksPath", os.devnull)):
+        _git(r, "config", k, v)
     (r / "a.txt").write_text("1")
     _git(r, "add", "a.txt")
     c1 = _git(r, "commit-tree", _git(r, "write-tree"), "-m", "one")
