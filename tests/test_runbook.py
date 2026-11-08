@@ -49,6 +49,7 @@ MESSAGES: list[tuple[str, str, str]] = [
     ("scripts/daily_report.sh", "기준일이 없다", "기준일이 없다"),
     ("scripts/daily_report.sh", "확정치를 확인하지 못했다", "확정치를 확인하지 못했다"),
     ("scripts/daily_report.sh", "확정치를 확인하지 못해 잠정치로 만들었다", "확정치를 확인하지 못해 잠정치로 만들었다"),
+    ("scripts/freshness_check.py", "[외부 참값] 전 거래일", "[외부 참값] 전 거래일"),
     ("scripts/daily_report.sh", "수집 미완 — 게시하지 않는다", "수집 미완"),
     ("scripts/daily_report.sh", "는 오늘이 아닌데 수집 미완이다", "오늘이 아닌데 수집 미완"),
     ("scripts/daily_report.sh", "완전성 관문 오류(rc=", "완전성 관문 오류(rc=N)"),
