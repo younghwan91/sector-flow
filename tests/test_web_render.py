@@ -488,9 +488,9 @@ def test_viewer_rounds_like_the_tui(tmp_path):
 
 # ── #32 의 ±0 부류, 뷰어 창 합 경로(2026-09-02·09-28 재구성) — 상쇄된 창 합의 잔차 부호 ──────────────
 
-#: 네 값의 십진 합은 0 — 왼쪽부터 더하면(뷰어 JS) −2.8e-17, 보정 합(파이썬 3.12+ sum)은 0.0.
+#: 네 double 의 정확한 합은 0 — 왼쪽부터 더할 때만(뷰어 JS, 파이썬 3.11 sum) −2.8e-17 이 남는다(3.12+ sum 은 보정 합이라 0.0).
 _CANCEL_JS_NEG = [0.1, -0.5, 0.3, 0.1]
-#: 세 값 — 어느 쪽으로 더해도 음의 잔차(double 자체의 십진 오차). 블록(zsum 전)·검증기(rhu 전)가 '−0' 이 되는 쪽.
+#: 세 double 의 정확한 합 자체가 음수(십진 오차) — 어느 쪽으로 더해도 잔차가 남는다. 블록(zsum 전)·검증기(rhu 전)가 '−0' 이 되는 쪽.
 _CANCEL_BOTH_NEG = [-0.1, -0.2, 0.3]
 
 
@@ -516,9 +516,10 @@ def test_viewer_window_sum_that_cancels_is_plus_zero_everywhere(PD, tmp_path):
     P, _ = PD
     P2 = _flows_patch(P, "코스닥", {("금융", "etc"): _CANCEL_JS_NEG, ("반도체", "etc"): _CANCEL_BOTH_NEG})
     a = P2["flows"]["코스닥"]["금융"]["etc"]
-    assert functools.reduce(operator.add, a, 0.0) < 0 and sum(a) == 0.0, "픽스처가 JS 쪽 잔차를 안 만든다"
+    # 전제는 파이썬 판에 안 묶는 math.fsum(정확한 합)으로 적는다 — sum() 은 3.12 에서 보정 합으로 바뀌었다.
+    assert functools.reduce(operator.add, a, 0.0) < 0 and math.fsum(a) == 0.0, "픽스처가 JS 쪽 잔차를 안 만든다"
     b = P2["flows"]["코스닥"]["반도체"]["etc"]
-    assert functools.reduce(operator.add, b, 0.0) < 0 and sum(b) < 0, "픽스처가 양쪽 음의 잔차를 안 만든다"
+    assert functools.reduce(operator.add, b, 0.0) < 0 and math.fsum(b) < 0, "픽스처가 양쪽 음의 잔차를 안 만든다"
     D2 = SN.build(P2)
     for w in ("20", "60", "120"):
         blk = {r["sector"]: r for r in D2["blocks"][f"{w}|코스닥"]["rows"]}
