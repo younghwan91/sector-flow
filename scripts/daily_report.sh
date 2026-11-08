@@ -20,29 +20,21 @@ set -euo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT_ROOT="${KR_QUANT_REPORTS:-$REPO/reports}"
 DAYS="${KR_QUANT_REPORT_DAYS:-260}"
-# 크론의 PATH 에는 ~/.local/bin 이 없다 — PATH 에 없으면 uv 기본 설치 자리를 본다.
-UV="${KR_QUANT_UV:-$(command -v uv || echo "$HOME/.local/bin/uv")}"
-if ! command -v "$UV" >/dev/null 2>&1; then
-  echo "[$(date '+%F %T')] uv 를 찾지 못했다($UV) — 설치하거나 KR_QUANT_UV 로 경로를 지정하라: https://docs.astral.sh/uv/" >&2
-  exit 127
-fi
-# ⚠️ extra 를 명시한다. `uv run` 은 기본 의존성만 맞추므로, 누가 `uv sync --extra dev`
-# 를 돌리면 psycopg2(pg extra)가 사라지고 이 배치가 조용히 죽는다 — 실제로 그렇게
-# 한 번 빠졌다. 여기서 못박아 두면 실행 시점에 항상 복원된다.
-UVR=("$UV" run --quiet --extra pg)
-
 cd "$REPO"
-# 접속정보의 사본을 레포마다 두지 않는다 — 없으면 kr_quant 의 정본(quant-airflow/.env)을 불러 쓴다.
-ENV_FILE="$REPO/.env"
-[ -f "$ENV_FILE" ] || ENV_FILE="$REPO/../quant-airflow/.env"
-# 워크트리(~/orca/workspaces/...)에는 옆자리 quant-airflow 가 없다.
-[ -f "$ENV_FILE" ] || ENV_FILE="$HOME/git/quant-airflow/.env"
-if [ -f "$ENV_FILE" ]; then
-  set -a; . "$ENV_FILE"; set +a
-elif [ -z "${KR_QUANT_DB:-}" ]; then
-  echo "[$(date '+%F %T')] DB 접속정보가 없다 — .env 도 quant-airflow/.env 도 KR_QUANT_DB 도 없다." >&2
-  echo "    cp .env.example .env 뒤 KR_QUANT_DB 를 채워라. 리포트 폴더를 받아 화면만 볼 때는 이 배치가 필요 없다." >&2
-  exit 1
+# uv 찾기·.env 불러오기는 freshness_check.sh 와 같이 쓴다.
+. "$REPO/scripts/_env.sh"
+
+# **겹쳐 돌지 않는다.** 크론(18:10·19:10·08:20)끼리는 timeout 40m 이라 안 겹치지만, 손으로 돌린
+# KR_QUANT_FORCE 와 크론이 겹치면 같은 기준일을 둘이 옆에 지어 바꿔 끼우다 서로의 폴더를 지운다.
+# 잠금을 못 잡으면 75(경고)로 끝난다 — 0 으로 조용히 끝내면, 08:20 확정 모드가 손으로 돌린 잠정 실행에
+# 밀렸을 때 그 기준일이 영영 잠정으로 남는데 아무도 모른다. 크론끼리는 안 겹치므로 이 경고는 드물다.
+# 자식(파이썬)도 fd 9 를 물려받아, 셸이 죽어도 자식이 다 끝날 때까지 잠금이 남는다.
+mkdir -p "$OUT_ROOT"
+LOCK="$OUT_ROOT/.report.lock"
+exec 9>>"$LOCK"
+if ! flock -n 9; then
+  echo "[$(date '+%F %T')] ⚠️ 다른 리포트 실행이 돌고 있다($LOCK) — 이번 실행은 건너뛴다. 그쪽이 끝난 뒤 필요하면 다시 돌려라." >&2
+  exit 75
 fi
 
 # 실패 사유는 보여 준다 — 버리면 `set -e` 때문에 아래 안내까지 못 가고 빈 알림으로 끝난다.
@@ -87,23 +79,41 @@ DEST="$OUT_ROOT/$ASOF"
 #
 # **확정 모드(KR_QUANT_FINAL=1, 화~토 08:20 크론).** 18:10 리포트는 그날 잠정치로 만든다. 다음날
 # 새벽 daily_finalize 가 확정치를 덮은 것이 확인되면(scripts/finalize_done.py) 그 기준일을 확정치로
-# 다시 만들고 FINAL.txt 를 남긴다. 확인이 안 되면 잠정 리포트를 그대로 둔다. 게시본의 G 가
-# 잠정치에 흔들렸다(2026-11-08 지표 검증, 합격선 90% 에 62.5%).
+# 다시 만들고 FINAL.txt 를 남긴다. 게시본의 G 가 잠정치에 흔들렸다(2026-11-08 지표 검증, 합격선 90% 에 62.5%).
+#
+# 확인이 안 되면 잠정 리포트는 그대로 두되 **75(경고)로 끝난다.** 예전엔 0 으로 조용히 끝나, 확정 작업이
+# 깨진 날(또는 로그 경로가 바뀐 날)마다 그 기준일이 영영 잠정으로 남는데 아무도 몰랐다. 다음 거래일 수집이
+# 시작되면 기준일이 넘어가 그 날은 다시 확정 모드를 안 탄다 — 그래서 알려야 한다. 손으로 고치는 법은
+# 확인한 뒤 `KR_QUANT_FINAL=1 scripts/daily_report.sh`.
+#
+# FINAL_OK = 이번에 만들면 확정치다(--final·FINAL.txt). FINAL_REBUILD = 리포트가 있어도 확정치로 다시 만든다.
+# 이미 FINAL.txt 가 있는 기준일은 확정이 확인된 날이다 — 검증 실패 재시도·강제 재생성이 그 날을 잠정으로
+# 되돌리면 안 된다(휴장일 18:10 이 08:20 의 검증 실패 확정 리포트를 다시 만들며 잠정으로 내렸다).
 FINAL_OK=""
-if [ -n "${KR_QUANT_FINAL:-}" ]; then
-  if [ -f "$DEST/FINAL.txt" ] && [ ! -f "$DEST/VERIFY_FAILED.txt" ]; then
+FINAL_REBUILD=""
+FINAL_UNCONFIRMED=""
+if [ -f "$DEST/FINAL.txt" ]; then
+  FINAL_OK=1
+  if [ -n "${KR_QUANT_FINAL:-}" ] && [ ! -f "$DEST/VERIFY_FAILED.txt" ] && [ -z "${KR_QUANT_FORCE:-}" ]; then
     echo "[$(date '+%F %T')] $ASOF 는 이미 확정치로 만들었다 — 건너뛴다."
     exit 0
   fi
+elif [ -n "${KR_QUANT_FINAL:-}" ]; then
   if "${UVR[@]}" python scripts/finalize_done.py --asof "$ASOF"; then
     FINAL_OK=1
+    FINAL_REBUILD=1
   elif [ -f "$DEST/numbers.html" ]; then
-    echo "[$(date '+%F %T')] 확정치를 확인하지 못했다 — $ASOF 잠정 리포트를 그대로 둔다."
-    exit 0
+    echo "[$(date '+%F %T')] ⚠️ 확정치를 확인하지 못했다 — $ASOF 잠정 리포트를 그대로 둔다(위 [확정치] 줄이 이유)." >&2
+    echo "    daily_finalize 를 확인하고 끝났으면 손으로: KR_QUANT_FINAL=1 $0" >&2
+    echo "    다음 거래일 수집이 들어오면 기준일이 넘어가 이 날은 잠정으로 남는다." >&2
+    exit 75
+  else
+    # 아직 못 만든 기준일이다 — 잠정으로라도 만든다(마지막 기회). 다 만든 뒤 75 로 알린다.
+    FINAL_UNCONFIRMED=1
   fi
 fi
 if [ -f "$DEST/numbers.html" ] && [ ! -f "$DEST/VERIFY_FAILED.txt" ] && [ -z "${KR_QUANT_FORCE:-}" ] \
-   && [ -z "$FINAL_OK" ]; then
+   && [ -z "$FINAL_REBUILD" ]; then
   echo "[$(date '+%F %T')] $ASOF 리포트가 이미 있다 — 건너뛴다(휴장일이거나 재실행)."
   # 달력이 없어 휴장과 수집 실패를 못 가른다 — 갈라야 할 사람에게 사실을 준다.
   if [[ "$ASOF" < "$TODAY" ]]; then
@@ -163,7 +173,7 @@ echo "[$(date '+%F %T')] 생성 시작 — 기준일 $ASOF, 구간 ${DAYS}거래
 FINAL_ARGS=()
 if [ -n "$FINAL_OK" ]; then
   FINAL_ARGS=(--final)
-  echo "[$(date '+%F %T')] 확정치로 다시 만든다 — 제목이 '마감·확정' 이 된다"
+  echo "[$(date '+%F %T')] 확정치로 만든다 — 제목이 '마감·확정' 이 된다"
 fi
 "${UVR[@]}" python scripts/sector_flow.py    --days "$DAYS" --json "$BUILD/payload.json" "${FINAL_ARGS[@]}"
 "${UVR[@]}" python scripts/sector_flow.py    --from-json "$BUILD/payload.json" --html "$BUILD/viewer.html"
@@ -203,6 +213,10 @@ trap - EXIT
 ln -sfn "$DEST" "$OUT_ROOT/latest"
 if [ "$VERIFY_RC" -eq 0 ]; then
   echo "[$(date '+%F %T')] 완료 — $DEST 를 latest 로 게시했다"
+  if [ -n "$FINAL_UNCONFIRMED" ]; then
+    echo "[$(date '+%F %T')] ⚠️ 확정치를 확인하지 못해 잠정치로 만들었다 — daily_finalize 를 확인하고 끝났으면: KR_QUANT_FINAL=1 $0" >&2
+    VERIFY_RC=75
+  fi
 else
   echo "[$(date '+%F %T')] ⚠️ 게시했지만 검증에 걸렸다 — $DEST (latest). 화면과 HTML 이 ⚠ 로 표시하고, 같은 기준일이면 다음 크론이 다시 만든다."
 fi

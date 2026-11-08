@@ -80,7 +80,8 @@ def _seed(db: Path, today_kosdaq: int) -> None:
 def repo(tmp_path):
     r = tmp_path / "sector-flow"
     (r / "scripts").mkdir(parents=True)
-    for name in ("daily_report.sh", "cron_run.sh", "completeness_gate.py", "finalize_done.py"):
+    for name in ("daily_report.sh", "_env.sh", "cron_run.sh", "completeness_gate.py", "finalize_done.py",
+                 "freshness_check.sh", "freshness_check.py"):
         shutil.copy(REPO / "scripts" / name, r / "scripts" / name)
     (r / "scripts" / "sector_flow.py").write_text(FAKE_SECTOR_FLOW)
     (r / "scripts" / "sector_numbers.py").write_text(FAKE_NUMBERS)
@@ -251,6 +252,13 @@ def test_cron_run_marks_incomplete_as_warning(repo, tmp_path):
     assert alert.startswith("warn|")
 
 
+def test_cron_run_names_a_timeout(repo, tmp_path):
+    """크론 줄의 timeout 이 끊은 것(124)을 '실패' 로만 부르면 어디를 볼지 모른다."""
+    p, alert = _cron_run(repo, tmp_path, "sh", "-c", "exit 124")
+    assert p.returncode == 124
+    assert alert.startswith("error|") and "시간 초과" in alert
+
+
 def test_cron_run_survives_missing_alert_channel(repo, tmp_path):
     p = subprocess.run([str(repo / "scripts" / "cron_run.sh"), "rpt", "--", "sh", "-c", "exit 4"],
                        capture_output=True, text=True, timeout=30,
@@ -273,7 +281,21 @@ def test_every_report_cron_line_makes_the_log_dir_and_wraps():
     for ln in lines:
         assert re.search(r"mkdir -p \S+/reports && ", ln), ln
         assert "scripts/cron_run.sh" in ln, ln
-        assert "scripts/daily_report.sh" in ln or "scripts/serve.sh" in ln, ln
+        assert any(f"scripts/{x}" in ln for x in ("daily_report.sh", "serve.sh", "freshness_check.sh")), ln
+
+
+def test_report_cron_lines_are_time_bounded():
+    """DB 가 걸려 멈춘 배치가 다음 크론과 겹치고 알림도 없이 매달린다 — 크론 줄이 상한을 건다."""
+    for ln in _cron_lines():
+        if "daily_report.sh" in ln or "freshness_check.sh" in ln:
+            assert re.search(r"cron_run\.sh \S+ -- timeout (-k \S+ )?\d+m \S+/scripts/", ln), ln
+
+
+def test_freshness_check_runs_on_weekday_evenings_through_cron_run():
+    """제가 안 돈 날은 아무도 안 알린다 — 결과(latest)를 보는 점검이 평일 저녁에 따로 돈다."""
+    fresh = [ln for ln in _cron_lines() if "scripts/freshness_check.sh" in ln]
+    assert len(fresh) == 1 and fresh[0].split()[:5] == ["30", "20", "*", "*", "1-5"], fresh
+    assert "scripts/cron_run.sh" in fresh[0]
 
 
 def test_web_service_is_kept_alive_by_cron():
@@ -385,10 +407,14 @@ def test_skip_on_a_later_day_mentions_the_collection(repo):
 
 # ── 확정 모드(08:20) — daily_finalize 를 확인하고 전날 리포트를 확정치로 다시 만든다 ──────────
 
-def _finalize_logs(root: Path, ok: bool = True, ended: str = "2026-11-03 07:20") -> Path:
+FINALIZE_TASKS = ("finalize_sector", "finalize_both", "rebuild_adjusted")
+
+
+def _finalize_logs(root: Path, ok: bool = True, ended: str = "2026-11-03 07:20",
+                   tasks: tuple[str, ...] = FINALIZE_TASKS) -> Path:
     import time
     run = root / "dag_id=daily_finalize" / "run_id=scheduled__2026-11-01T21:30:00+00:00"
-    for task in ("finalize_both", "rebuild_adjusted"):
+    for task in tasks:
         d = run / f"task_id={task}"
         d.mkdir(parents=True, exist_ok=True)
         f = d / "attempt=1.log"
@@ -421,16 +447,79 @@ def test_final_mode_rebuilds_with_final_data_once_finalize_is_done(repo, tmp_pat
 
 @pytest.mark.parametrize("logs_ok", [False, None])
 def test_final_mode_keeps_the_provisional_report_when_finalize_is_not_confirmed(repo, tmp_path, logs_ok):
+    """잠정 리포트는 지키되 **경고로 끝난다** — 0 이면 확정이 깨진 날이 영영 잠정으로 남아도 아무도 모른다."""
     _seed(repo.parent / "db.sqlite", today_kosdaq=50)
     dest = _published_today(repo)
     logs = tmp_path / "airflow"
     if logs_ok is not None:
         _finalize_logs(logs, ok=logs_ok)
     p = _run(repo, today="2026-11-03", KR_QUANT_FINAL="1", KR_QUANT_AIRFLOW_LOGS=str(logs))
-    assert p.returncode == 0, p.stdout + p.stderr
+    assert p.returncode == 75, p.stdout + p.stderr
     assert (dest / "numbers.html").read_text() == "<provisional>"
     assert not (dest / "FINAL.txt").exists()
-    assert "잠정 리포트를 그대로" in p.stdout
+    assert "잠정 리포트를 그대로" in p.stderr
+    assert "KR_QUANT_FINAL=1" in p.stderr, "손으로 고치는 법을 안 적었다"
+
+
+def test_final_mode_without_a_report_builds_provisional_and_still_warns(repo, tmp_path):
+    """아직 못 만든 기준일이면 잠정으로라도 만들되(마지막 기회), 확정이 아니라는 사실은 알린다."""
+    _seed(repo.parent / "db.sqlite", today_kosdaq=50)
+    p = _run(repo, today="2026-11-03", KR_QUANT_FINAL="1", KR_QUANT_AIRFLOW_LOGS=str(tmp_path / "없음"))
+    assert p.returncode == 75, p.stdout + p.stderr
+    dest = repo / "reports" / TODAY
+    assert (dest / "numbers.html").is_file() and not (dest / "FINAL.txt").exists()
+    assert (repo / "reports" / "latest").resolve() == dest.resolve()
+
+
+def test_final_mode_waits_for_the_sector_index_task(repo, tmp_path):
+    """리포트는 sector_index 도 읽는다 — finalize_sector 가 안 끝났으면 확정이 아니다."""
+    _seed(repo.parent / "db.sqlite", today_kosdaq=50)
+    dest = _published_today(repo)
+    logs = _finalize_logs(tmp_path / "airflow", tasks=("finalize_both", "rebuild_adjusted"))
+    p = _run(repo, today="2026-11-03", KR_QUANT_FINAL="1", KR_QUANT_AIRFLOW_LOGS=str(logs))
+    assert p.returncode == 75, p.stdout + p.stderr
+    assert not (dest / "FINAL.txt").exists()
+    assert "finalize_sector" in p.stdout
+
+
+def test_finalize_log_layout_change_is_named_not_called_not_yet_run(tmp_path):
+    """Airflow 가 로그 배치를 바꾸면 매일 '아직 안 돌았다' 로 보여 아무도 의심하지 않는다."""
+    run = tmp_path / "dag_id=daily_finalize" / "run_id=scheduled__2026-11-01T21:30:00+00:00"
+    (run / "finalize_both").mkdir(parents=True)            # task_id= 접두가 없는 새 배치
+    (run / "finalize_both" / "1.log").write_text("Task exited with return code 0\n")
+    p = subprocess.run([sys.executable, str(REPO / "scripts" / "finalize_done.py"), "--asof", TODAY,
+                        "--logs", str(tmp_path)], capture_output=True, text=True, timeout=30)
+    assert p.returncode == 1
+    assert "경로 형식이 바뀌었을 수 있다" in p.stdout
+
+
+def test_retrying_a_final_report_keeps_it_final(repo, tmp_path):
+    """휴장일 18:10 이 08:20 의 검증 실패 확정 리포트를 다시 만들며 잠정으로 내렸다."""
+    _seed(repo.parent / "db.sqlite", today_kosdaq=50)
+    _published_today(repo)
+    logs = _finalize_logs(tmp_path / "airflow")
+    p = _run(repo, today="2026-11-03", KR_QUANT_FINAL="1", KR_QUANT_AIRFLOW_LOGS=str(logs), FAKE_VERIFY_RC="1")
+    dest = repo / "reports" / TODAY
+    assert p.returncode == 1 and (dest / "VERIFY_FAILED.txt").is_file() and (dest / "FINAL.txt").is_file()
+    p = _run(repo, today="2026-11-03")                      # 확정 모드가 아닌 재시도
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert not (dest / "VERIFY_FAILED.txt").exists()
+    assert (dest / "FINAL.txt").is_file(), "재시도가 확정 리포트를 잠정으로 내렸다"
+    assert (dest / "ARGS_FINAL").is_file(), "재시도가 --final 을 안 넘겼다"
+
+
+def test_overlapping_run_is_refused_with_a_warning(repo):
+    """손으로 돌린 실행과 크론이 겹치면 같은 기준일을 둘이 바꿔 끼운다 — 뒤의 것은 경고로 물러난다."""
+    import fcntl
+    _seed(repo.parent / "db.sqlite", today_kosdaq=50)
+    (repo / "reports").mkdir()
+    with open(repo / "reports" / ".report.lock", "a") as held:
+        fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        p = _run(repo)
+    assert p.returncode == 75, p.stdout + p.stderr
+    assert "다른 리포트 실행이 돌고 있다" in p.stderr
+    assert not (repo / "reports" / TODAY).exists()
+    assert _run(repo).returncode == 0                       # 잠금이 풀리면 정상으로 돈다
 
 
 def test_finalize_that_ran_before_the_report_day_does_not_count(repo, tmp_path):
@@ -439,5 +528,5 @@ def test_finalize_that_ran_before_the_report_day_does_not_count(repo, tmp_path):
     dest = _published_today(repo)
     logs = _finalize_logs(tmp_path / "airflow", ended="2026-11-02 07:20")
     p = _run(repo, today="2026-11-03", KR_QUANT_FINAL="1", KR_QUANT_AIRFLOW_LOGS=str(logs))
-    assert p.returncode == 0
+    assert p.returncode == 75
     assert not (dest / "FINAL.txt").exists()
