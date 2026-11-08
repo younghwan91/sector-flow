@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>오늘의 수급 · __DATE__</title>
+<!--
+  scripts/digest.py 가 밑줄 두 겹으로 감싼 자리를 채우고 Playwright Chromium 이 __CARD_W__×__CARD_H__ 로 찍는다.
+  외부 자원 없음(글꼴은 시스템 것) — 찍을 때 네트워크를 막는다. 스크립트 없음.
+  색: 순매수 = 빨강(#e34948), 순매도 = 파랑(#2a78d6) — 국내 시세 관례. 부호는 숫자(+/−)가 같이 말한다(색만으로 말하지 않는다).
+  dataviz 검증기: 두 색 모두 대비 3:1 이상, CVD ΔE 21.6.
+-->
+<style>
+  :root {
+    --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --ink-3: #8a8984;
+    --rule: #e4e3df; --mid: #f0efec; --buy: #e34948; --sell: #2a78d6; --warn: #b26b00;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: __CARD_W__px; height: __CARD_H__px; overflow: hidden; background: var(--surface); }
+  body {
+    font-family: "Noto Sans KR", "Noto Sans CJK KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+    color: var(--ink); padding: 44px 64px 36px; display: flex; flex-direction: column; gap: 16px;
+    font-variant-numeric: tabular-nums;
+  }
+  header { display: flex; align-items: baseline; justify-content: space-between; border-bottom: 3px solid var(--ink); padding-bottom: 12px; }
+  header h1 { font-size: 48px; font-weight: 800; letter-spacing: -1px; }
+  header .meta { text-align: right; }
+  header .date { font-size: 28px; font-weight: 700; }
+  .chip { display: inline-block; font-size: 22px; font-weight: 700; padding: 4px 12px; border-radius: 6px; margin-top: 6px; }
+  .chip.final { background: var(--ink); color: var(--surface); }
+  .chip.prov { border: 2px solid var(--ink-2); color: var(--ink-2); }
+  .chip.warn { border: 2px solid var(--warn); color: var(--warn); margin-left: 8px; }
+  h2 { font-size: 24px; font-weight: 700; color: var(--ink-2); margin-bottom: 6px; }
+  h2 small { font-weight: 400; font-size: 20px; color: var(--ink-3); margin-left: 8px; }
+  .net-row { display: grid; grid-template-columns: 120px 1fr 150px 70px; align-items: center; height: 36px; font-size: 25px; }
+  .net-ko { font-weight: 700; }
+  .net-track { position: relative; height: 24px; background: var(--mid); border-radius: 4px; margin-right: 18px; }
+  .net-track .zero { position: absolute; left: 50%; top: -4px; bottom: -4px; width: 2px; background: var(--ink-3); }
+  .net-track .bar { position: absolute; top: 2px; bottom: 2px; border-radius: 4px; }
+  .bar.buy { background: var(--buy); } .bar.sell { background: var(--sell); }
+  .net-v { text-align: right; font-weight: 700; }
+  .net-p { text-align: right; color: var(--ink-2); font-size: 22px; }
+  table { width: 100%; border-collapse: collapse; font-size: 22px; }
+  th, td { padding: 3px 8px; border-bottom: 1px solid var(--rule); text-align: left; }
+  thead th { color: var(--ink-3); font-weight: 400; font-size: 18px; }
+  td.num, thead th.num { text-align: right; }
+  .cols { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
+  .col h3 { font-size: 24px; font-weight: 800; border-bottom: 2px solid var(--ink); padding-bottom: 6px; margin-bottom: 6px; white-space: nowrap; }
+  .col h3 .dom { font-style: normal; font-size: 16px; font-weight: 700; color: var(--ink-2); border: 1.5px solid var(--ink-3); border-radius: 4px; padding: 1px 6px; margin-left: 8px; vertical-align: 3px; }
+  .col h4 { font-size: 17px; color: var(--ink-3); font-weight: 400; margin: 4px 0 0; }
+  .col ol { list-style: none; }
+  .col li { display: grid; grid-template-columns: 14px 1fr auto 46px; gap: 6px; align-items: center; font-size: 20px; height: 28px; }
+  .col .sn { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .col .sv { font-weight: 700; text-align: right; }
+  .col .sp { color: var(--ink-2); text-align: right; font-size: 17px; }
+  .dot { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+  .dot.buy { background: var(--buy); } .dot.sell { background: var(--sell); } .dot.flat { background: var(--ink-3); }
+  ul.facts { list-style: none; font-size: 20px; line-height: 1.45; }
+  ul.facts b { margin-right: 6px; }
+  .sep { color: var(--ink-3); }
+  .legend { font-size: 18px; color: var(--ink-2); margin: -2px 0 4px; }
+  .legend .dot { margin: 0 6px 0 0; } .legend .dot.sell { margin-left: 18px; }
+  .notes p { font-size: 20px; color: var(--ink-2); }
+  footer { margin-top: auto; border-top: 1px solid var(--rule); padding-top: 10px; font-size: 18px; color: var(--ink-2); line-height: 1.45; }
+</style>
+</head>
+<body>
+<header>
+  <h1>오늘의 수급</h1>
+  <div class="meta"><div class="date">__DATE__</div><span class="chip __STATUS_CLASS__">__STATUS__</span>__GAPS__</div>
+</header>
+
+<section>
+  <h2>시장 순매수[억] · __MARKET__(거래소+코스닥)<small>괄호는 1년 일별 %ile</small></h2>
+  <p class="legend"><i class="dot buy"></i>빨강 = 순매수 <i class="dot sell"></i>파랑 = 순매도</p>
+  __NET_ROWS__
+</section>
+
+<section>
+  <h2>수익률<small>KRX 지수 = 정규장 15:30 · 바구니 = ~20시 통합 종가(시총 가중)</small></h2>
+  <table>
+    <thead><tr><th></th><th>KRX 지수</th><th class="num">1일</th><th class="num">20일</th><th class="num">바구니 1일</th><th class="num">20일</th></tr></thead>
+    <tbody>__RET_ROWS__</tbody>
+  </table>
+</section>
+
+<section>
+  <h2>오늘 섹터 순매수[억(1년%ile)]</h2>
+  <div class="cols">__SECTOR_COLS__</div>
+</section>
+
+<section>
+  <h2>1년 분위 상단(≥__PCT_HI__)·하단(≤__PCT_LO__)<small>오늘 값이 1년 일별 분포의 어디인가</small></h2>
+  <ul class="facts">__EXTREMES__</ul>
+</section>
+
+<section>
+  <h2>__CHANGE_HEAD__</h2>
+  <ul class="facts">__CHANGE__</ul>
+</section>
+
+<section class="notes">__NOTES__</section>
+
+<footer>
+  <div>__DISCLAIMER__</div>
+  <div>__SOURCE__</div>
+</footer>
+</body>
+</html>

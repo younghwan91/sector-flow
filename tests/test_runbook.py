@@ -106,6 +106,8 @@ MESSAGES: list[tuple[str, str, str]] = [
     ("scripts/completeness_gate.py", "[FAIL]", "[FAIL]"),
     ("scripts/completeness_gate.py", "daily_price_adjust", "daily_price_adjust"),
     ("scripts/completeness_gate.py", "시장 목록이 비었다", "시장 목록이 비었다"),
+    # daily_report.sh — 다이제스트(선택 기능, KR_QUANT_DIGEST=1)
+    ("scripts/daily_report.sh", "다이제스트를 못 만들었다", "다이제스트를 못 만들었다"),
 ]
 
 #: 긁힌 줄 가운데 운영자에게 가지 않거나 런북 줄이 필요 없는 것 — (원천 파일, 문구, 이유).
