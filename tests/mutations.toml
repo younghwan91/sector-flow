@@ -1961,3 +1961,27 @@ guards = ["tests/test_freshness_check.py::test_cron_path_db_failure_is_an_error_
 file = "scripts/freshness_check.py"
 find = """        msg = re.sub(r"://[^@ ]*@", "://***@", f"{type(e).__name__}: {e}".strip())"""
 replace = """        msg = f"{e} {os.environ.get('KR_QUANT_DB')}\""""
+
+[[mutation]]
+id = "web-hung-server-left-running"
+why = "프로세스만 살아 있고 대답이 없는 서버를 잠금만 보고 그대로 둔다 — 며칠이고 아무도 모른다"
+guards = ["tests/test_serve_reports.py::test_serve_sh_restarts_a_server_that_stops_answering"]
+file = "scripts/serve.sh"
+find = """if ! flock -n "$LOCK" true; then"""
+replace = """if false; then"""
+
+[[mutation]]
+id = "web-healthy-server-killed"
+why = "대답하는 서버를 5분마다 죽였다 살려 그 틈의 요청이 끊긴다"
+guards = ["tests/test_serve_reports.py::test_serve_sh_leaves_a_healthy_server_alone"]
+file = "scripts/serve.sh"
+find = """     || curl -fsS -m 5 -o /dev/null "http://$HOST:$PORT/healthz" 2>/dev/null; then"""
+replace = """     || false; then"""
+
+[[mutation]]
+id = "web-server-writes-no-pid"
+why = "서버가 pid 를 안 남기면 serve.sh 가 멈춘 서버를 누구인지 몰라 못 끈다"
+guards = ["tests/test_serve_reports.py::test_serve_sh_restarts_a_server_that_stops_answering"]
+file = "scripts/serve_reports.py"
+find = "            f.write(str(os.getpid()))"
+replace = "            pass"

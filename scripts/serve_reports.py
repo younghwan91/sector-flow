@@ -333,6 +333,12 @@ def main(argv=None) -> int:
         os.remove(os.path.join(Handler.root, ".serve.misses"))
     except OSError:
         pass
+    # serve.sh 가 "떠 있는데 대답이 없다" 일 때 죽일 대상을 안다(잠금 주인은 flock 래퍼라 pid 를 모른다).
+    try:
+        with open(os.path.join(Handler.root, ".serve.pid"), "w", encoding="utf-8") as f:
+            f.write(str(os.getpid()))
+    except OSError:
+        pass
     srv.daemon_threads = True
     # 재부팅·손으로 끈 것(SIGTERM)은 고장이 아니다 — 0 으로 끝나 알림을 안 보낸다.
     signal.signal(signal.SIGTERM, lambda *_: threading.Thread(target=srv.shutdown, daemon=True).start())
