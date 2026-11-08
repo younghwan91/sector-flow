@@ -5593,3 +5593,174 @@ guards = ["tests/test_verify_merge.py::test_render_smoke_expects_the_g_column_ro
 file = "scripts/verify_merge.py"
 find = "    \"G\": (\"G\", \"rhu2\"), \"선정\": (\"pick\", \"f2\"),"
 replace = "    \"G\": (\"G\", \"f2\"), \"선정\": (\"pick\", \"f2\"),"
+
+
+# ── KRX 공식 거래대금 대조 (D1-m2, scripts/krx_truth.py) ──
+
+[[mutation]]
+id = "krx-truth-won-commas-break-parse"
+why = "공표 금액은 쉼표 구분 문자열이다 — 쉼표를 안 벗기면 첫 fetch 가 float 변환에서 죽는다"
+guards = ["tests/test_krx_truth.py::test_parse_body_converts_comma_won_strings"]
+file = "scripts/krx_truth.py"
+find = "    t = str(s).replace(\",\", \"\").strip()"
+replace = "    t = str(s).strip()"
+
+[[mutation]]
+id = "krx-truth-logout-looks-like-format-drift"
+why = "LOGOUT(로그인 장벽)을 따로 안 가르면 '형식이 바뀌었다' 로 보고된다 — 런북이 다른 처방을 가리킨다"
+guards = ["tests/test_krx_truth.py::test_parse_body_logout_is_a_fetch_error_naming_the_login_wall"]
+file = "scripts/krx_truth.py"
+find = "    if \"LOGOUT\" in text[:200]:"
+replace = "    if False:"
+
+[[mutation]]
+id = "krx-truth-official-stays-in-won"
+why = "공표치(원)를 억으로 안 나누면 오차가 전부 ~100% 로 적힌다 — 근사가 멀쩡해도 늘 경고다"
+guards = ["tests/test_krx_truth.py::test_fetch_official_converts_won_to_eok_and_keeps_raw_rows"]
+file = "scripts/krx_truth.py"
+find = "        out[\"markets\"][m] = {a: round(_actor_won(rows, a) / EOK, 2) for a in ACTOR_ROWS}"
+replace = "        out[\"markets\"][m] = {a: round(_actor_won(rows, a), 2) for a in ACTOR_ROWS}"
+
+[[mutation]]
+id = "krx-truth-foreign-drops-other-foreigners"
+why = "외국인에서 기타외국인을 빼면 공식 쪽 합이 모자라 외국인 오차가 상시 부풀려진다"
+guards = ["tests/test_krx_truth.py::test_actor_mapping_sums_foreign_rows_and_inst_falls_back_to_subtotals"]
+file = "scripts/krx_truth.py"
+find = "ACTOR_ROWS = {\"inst\": (\"기관합계\",), \"forgn\": (\"외국인\", \"기타외국인\"),"
+replace = "ACTOR_ROWS = {\"inst\": (\"기관합계\",), \"forgn\": (\"외국인\",),"
+
+[[mutation]]
+id = "krx-truth-gap-relative-to-approx"
+why = "오차의 분모를 근사값으로 잡으면 근사가 부풀수록 오차가 작아 보인다 — 분모는 공식 공표치다"
+guards = ["tests/test_krx_truth.py::test_compare_gap_is_relative_to_the_official_value"]
+file = "scripts/krx_truth.py"
+find = "                      \"gap_pct\": round(abs(v - o) / abs(o) * 100.0, 2) if gated else None}"
+replace = "                      \"gap_pct\": round(abs(v - o) / abs(v) * 100.0, 2) if gated else None}"
+
+[[mutation]]
+id = "krx-truth-no-denominator-gate"
+why = "0 근처 순매수(코스닥 기타법인 수십억)에 % 를 내면 수십 % 오차가 뜬다 — 분모 게이트(CLAUDE.md 비율 열 규칙)"
+guards = ["tests/test_krx_truth.py::test_compare_gates_small_official_amounts_to_none"]
+file = "scripts/krx_truth.py"
+find = "            gated = tv is not None and abs(o) >= GAP_MIN_TV_SHARE * tv and o != 0"
+replace = "            gated = o != 0"
+
+[[mutation]]
+id = "krx-truth-always-on"
+why = "옵트인 검사를 빼면 모든 리포트에 skip 블록이 붙는다 — 선택 기능이 기본 화면·검증 출력을 바꾼다"
+guards = ["tests/test_krx_truth.py::test_attach_is_silent_when_not_opted_in"]
+file = "scripts/krx_truth.py"
+find = "    if not want_fetch and not (cache and os.path.isfile(cache)):\n        return None                              # 선택 기능 — 안 켰으면 흔적도 없다"
+replace = "    if False:\n        return None                              # 선택 기능 — 안 켰으면 흔적도 없다"
+
+[[mutation]]
+id = "krx-truth-cache-ignored"
+why = "같은 기준일 캐시를 무시하면 재빌드마다 KRX 를 다시 때린다 — 기준일당 한 번(이용 범위 가드)이 깨진다"
+guards = ["tests/test_krx_truth.py::test_attach_uses_same_day_cache_without_fetching"]
+file = "scripts/krx_truth.py"
+find = "            if c.get(\"date\") == date and c.get(\"markets\"):"
+replace = "            if False:"
+
+[[mutation]]
+id = "krx-truth-expected-failure-escapes"
+why = "망·로그인 장벽이 예외로 새면 '내부 오류' 로 보고된다 — 런북이 버그 처방을 가리키고 원인이 숨는다"
+guards = ["tests/test_krx_truth.py::test_attach_network_failure_is_a_skip_block_not_an_exception"]
+file = "scripts/krx_truth.py"
+find = "        except (KrxFetchError, OSError) as e:\n            reason = str(e)"
+replace = "        except () as e:\n            reason = str(e)"
+
+[[mutation]]
+id = "krx-truth-bug-escapes-the-build"
+why = "선택 기능의 버그가 리포트 빌드를 통째로 죽인다 — 'never FAIL the report' 가 깨진다"
+guards = ["tests/test_krx_truth.py::test_attach_contains_its_own_bugs_as_internal_error_skip"]
+file = "scripts/krx_truth.py"
+find = "    except Exception as e:  # noqa: BLE001 — 선택 기능의 버그가 본 리포트를 죽이면 안 된다"
+replace = "    except (KrxFetchError, OSError) as e:  # noqa: BLE001 — 선택 기능의 버그가 본 리포트를 죽이면 안 된다"
+
+[[mutation]]
+id = "krx-truth-sidecar-not-written"
+why = "공표치를 폴더에 안 재우면 검증기가 재계산할 근거가 없고, 재빌드가 캐시 없이 또 받는다"
+guards = ["tests/test_krx_truth.py::test_attach_writes_the_sidecar_with_the_usage_guard"]
+file = "scripts/krx_truth.py"
+find = "        if build_dir:\n            try:\n                with open(os.path.join(build_dir, \"krx_truth.json\"), \"w\", encoding=\"utf-8\") as f:"
+replace = "        if False:\n            try:\n                with open(os.path.join(build_dir, \"krx_truth.json\"), \"w\", encoding=\"utf-8\") as f:"
+
+[[mutation]]
+id = "krx-truth-cli-forgets-to-save"
+why = "CLI 가 바꾼 payload 를 제자리에 안 쓰면 손 실행이 조용히 아무것도 안 한 것이 된다"
+guards = ["tests/test_krx_truth.py::test_cli_rewrites_payload_in_place_and_exits_zero"]
+file = "scripts/krx_truth.py"
+find = "    os.replace(tmp, path)"
+replace = "    os.remove(tmp)"
+
+[[mutation]]
+id = "krx-truth-verifier-trusts-the-producer"
+why = "검증기가 오차 재계산 비교를 안 하면 producer 가 어떤 숫자를 적어도 초록이다"
+guards = ["tests/test_krx_truth.py::test_verifier_recomputes_the_gap_from_the_raw_published_rows"]
+file = "scripts/verify_report.py"
+find = "                if (g is None) != (exp is None) or (exp is not None and abs(g - exp) > 0.011):"
+replace = "                if False:"
+
+[[mutation]]
+id = "krx-truth-skip-counted-as-failure"
+why = "망·로그인 장벽 skip 을 실패로 세면 KRX 가 막힌 날마다 VERIFY_FAILED 가 쌓인다"
+guards = ["tests/test_krx_truth.py::test_verifier_skip_block_is_a_note_not_a_failure"]
+file = "scripts/verify_report.py"
+find = "    if isinstance(kt, dict) and kt.get(\"status\") != \"ok\":\n        print(f\"       SKIP KRX 공식 거래대금 대조 — {kt.get('reason') or '이유 없음'}\")\n        return"
+replace = "    if isinstance(kt, dict) and kt.get(\"status\") != \"ok\":\n        print(f\"       SKIP KRX 공식 거래대금 대조 — {kt.get('reason') or '이유 없음'}\")"
+
+[[mutation]]
+id = "krx-truth-verifier-nags-when-feature-off"
+why = "기능을 안 켠 리포트에서 '블록이 없다' 실패가 나면 모든 평일 리포트가 빨개진다"
+guards = ["tests/test_krx_truth.py::test_verifier_is_silent_when_the_feature_is_off"]
+file = "scripts/verify_report.py"
+find = "    if kt is None and not have_file:\n        return"
+replace = "    if False:\n        return"
+
+[[mutation]]
+id = "krx-truth-verifier-misses-vanished-file"
+why = "블록은 ok 인데 근거 파일이 사라진 리포트를 통과시키면 재계산 불가능한 주장(오차 수치)이 남는다"
+guards = ["tests/test_krx_truth.py::test_verifier_flags_an_ok_block_whose_truth_file_vanished"]
+file = "scripts/verify_report.py"
+find = "    elif not have_file:\n        bad.append(\"today.krx_truth 는 ok 인데 폴더에 krx_truth.json 이 없다\")"
+replace = "    elif False:\n        bad.append(\"today.krx_truth 는 ok 인데 폴더에 krx_truth.json 이 없다\")"
+
+[[mutation]]
+id = "krx-truth-help-hides-the-gate"
+why = "도움말이 게이트 칸(—)에 0% 를 적으면 '오차 없음' 으로 읽힌다 — 결측과 0 이 섞인다"
+guards = ["tests/test_krx_truth.py::test_help_tail_lists_the_measured_gaps_per_market"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "        v = (row or {}).get(\"gap_pct\")\n        return \"—\" if v is None else f\"{rhu(v, 1):.1f}%\""
+replace = "        v = (row or {}).get(\"gap_pct\")\n        return f\"{rhu(v or 0, 1):.1f}%\""
+
+[[mutation]]
+id = "krx-truth-help-tail-dropped"
+why = "도움말 조립에서 공식 대조 절이 빠지면 TUI 에서 측정값을 볼 길이 없다 — 첫 화면엔 안 싣기로 한 값이다"
+guards = ["tests/test_krx_truth.py::test_help_entries_append_the_krx_truth_tail"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "    return HELP + final_diff_help(st.d) + krx_truth_help(st.d)"
+replace = "    return HELP + final_diff_help(st.d)"
+
+[[mutation]]
+id = "krx-truth-build-hook-dropped"
+why = "sector_flow 빌드가 attach 를 안 부르면 KR_QUANT_KRX_TRUTH=1 로 만들어도 아무 일도 안 일어난다"
+guards = ["tests/test_krx_truth.py::test_sector_flow_build_calls_attach_before_writing_outputs"]
+file = "scripts/sector_flow.py"
+find = "    _krx_truth().attach(payload,\n                        os.path.dirname(os.path.abspath(a.json or a.html)) if (a.json or a.html) else None,\n                        root)"
+replace = "    pass"
+
+[[mutation]]
+id = "web-today-hides-krx-truth"
+why = "웹 오늘 패널이 공식 대조 줄을 안 그리면 측정한 오차가 브라우저에서 안 보인다"
+guards = ["tests/test_report_pages.py::test_numbers_today_panel_shows_the_official_gap_line"]
+file = "scripts/templates/sector_numbers.html"
+find = "  if(KT&&KT.status===\"ok\"){ const kg=v=>v==null?\"—\":RHU(v,1).toFixed(1)+\"%\";"
+replace = "  if(false){ const kg=v=>v==null?\"—\":RHU(v,1).toFixed(1)+\"%\";"
+
+[[mutation]]
+id = "web-today-silent-krx-truth-skip"
+why = "건너뛴 날 웹이 침묵하면 빈 자리가 고장인지 꺼짐인지 못 가른다 — SKIP 은 이유와 함께 보인다"
+guards = ["tests/test_report_pages.py::test_numbers_today_panel_names_the_krx_truth_skip_reason"]
+file = "scripts/templates/sector_numbers.html"
+find = "  else if(KT){ c2.append(el(\"div\",\"tnote\",\"KRX 공식 거래대금 대조: 건너뜀 — \"+(KT.reason||\"이유 없음\"))); }"
+replace = "  else if(false){ c2.append(el(\"div\",\"tnote\",\"KRX 공식 거래대금 대조: 건너뜀 — \"+(KT.reason||\"이유 없음\"))); }"
