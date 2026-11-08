@@ -3032,3 +3032,22 @@ def test_help_says_tested_not_never_validated():
     text = "\n".join(d for _n, d in HELP)
     for stale in ("검증된 적 없", "심사된 적 없", "검증 안 된", "사면 오른다", "급하게 산", "(눌림)"):
         assert stale not in text, f"도움말에 낡은 문구가 남았다: {stale!r}"
+
+
+def test_long_stock_names_end_with_an_ellipsis(data):
+    """이름 열에 안 들어가는 종목명은 `…` 로 끝난다 — 소리 없이 잘리면 다른 이름으로 읽힌다.
+
+    주입: `clip` 이 말줄임표 없이 자르면 실패한다.
+    """
+    from sectorflow.tui.flow_view import clip, names_lines
+
+    assert clip("블리츠웨이엔터테인먼트", 14).endswith("…")
+    assert _w(clip("블리츠웨이엔터테인먼트", 14)) <= 14
+    assert clip("삼성전자", 14) == "삼성전자"
+    d = json.loads(json.dumps(data))
+    d["names"]["035420"]["name"] = "아주아주긴이름의종목주식회사"
+    st = State(d)
+    st.row = [r["sector"] for r in st.rows()].index("IT 서비스")
+    st.drill = True
+    body = "\n".join(names_lines(st, 120)[0])
+    assert "아주아주긴이…" in body, body

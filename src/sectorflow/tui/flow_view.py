@@ -297,6 +297,27 @@ def tier_for(tiers: tuple[str, ...], width: int) -> str:
     return next((t for t in tiers if cell_len(t) <= width), tiers[-1])
 
 
+def clip(text: str, width: int) -> str:
+    """``width`` 칸에 안 들어가면 **말줄임표를 붙여** 자른다 — 이름 열 전용.
+
+    `pad` 는 넘치면 소리 없이 자른다. 종목명이 그렇게 잘리면 `블리츠웨이엔터테`
+    처럼 다른 이름으로 읽힌다(잘린 줄 모른다). 말줄임표 폭은 `cell_width` 에 묻는다 —
+    `…` 는 'A' 글자라 터미널에 따라 두 칸이다.
+    """
+    if cell_len(text) <= width:
+        return text
+    ell = "…"
+    room = width - cell_width(ell)
+    out, used = "", 0
+    for c in text:
+        w = cell_width(c)
+        if used + w > room:
+            break
+        out += c
+        used += w
+    return out + ell
+
+
 def pad(text: str, width: int, right: bool = False) -> str:
     """표시 폭 기준 패딩(한글 2칸). 넘치면 자른다."""
     out = ""
@@ -1339,7 +1360,7 @@ def _lead(side: str):
         t = arr[0] if arr else None
         if not t:
             return pad("—", 13) + " " + pad("", 9, right=True)
-        return pad(t["name"], 13) + " " + pad(fmt_amt(t["flow"]) + "억", 9, right=True)
+        return pad(clip(t["name"], 13), 13) + " " + pad(fmt_amt(t["flow"]) + "억", 9, right=True)
     return fn
 
 
@@ -1497,7 +1518,7 @@ def sort_span(st: State, width: int) -> tuple[int, int] | None:
 #: 종목 목록의 열. 누적 기여율이 순매수 바로 옆에 붙고, 80% 를 처음 넘긴 행에
 #: 가로 마커가 선다 — 그 위가 "이 섹터를 움직인 종목", 아래는 스크롤할 0 이다.
 _NAME_COLS = (
-    Col("종목", 14, False, lambda t, st: t.get("name", "—")),
+    Col("종목", 14, False, lambda t, st: clip(t.get("name", "—"), 14)),
     # 코드는 6자리고 헤더 `코드` 는 4칸이라 6이면 충분하다. 7이던 시절 그 한 칸이
     # 폭 79(=80칸 터미널)에서 `상대수익[%p]` 을 통째로 밀어냈다.
     Col("코드", 6, False, lambda t, st: t.get("code", "")),
@@ -1724,7 +1745,7 @@ def _actors_line(r: dict, width: int, note: str = "", actor: str | None = None) 
 #: 그 곱을 함께 보인다 — 곱만 보이면 "섹터가 좋아서인가 종목이 좋아서인가" 를
 #: 못 묻는다. 나머지는 종목 목록과 같은 열을 같은 순서로 쓴다.
 _ALL_COLS = (
-    Col("종목", 14, False, lambda t, st: t.get("name", "—")),
+    Col("종목", 14, False, lambda t, st: clip(t.get("name", "—"), 14)),
     Col("섹터", 13, False, lambda t, st: t.get("sector", "—")),
     Col("곱", 5, True, lambda t, st: f"{t['both']:.2f}"),
     Col("섹터G", 9, True, lambda t, st: f"{t['gsec']:.2f}"),

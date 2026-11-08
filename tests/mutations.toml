@@ -2429,3 +2429,27 @@ guards = ["tests/test_report_pages.py::test_viewer_driver_names_follow_the_tui_r
 file = "scripts/templates/sector_flow.html"
 find = "  rows.sort((x,y)=>y.v-x.v);"
 replace = "  rows.sort((x,y)=>(y.a??-1e9)-(x.a??-1e9));"
+
+[[mutation]]
+id = "name-clip-silent"
+why = "종목명을 말줄임표 없이 자른다 — 잘린 이름이 다른 종목명으로 읽힌다"
+guards = ["tests/test_tui_flow_view.py::test_long_stock_names_end_with_an_ellipsis"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "    return out + ell\n"
+replace = "    return out\n"
+
+[[mutation]]
+id = "pass-marker-never-drawn"
+why = "탐색 모드에서도 `*` 를 안 찍는다 — G 열과 통과 표시가 갈린다"
+guards = ["tests/test_tui_flow_view.py::test_pass_marker_survives_rendering"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "        (\"*\" if st.explore and r.get(\"G_pass\") else \"\")),"
+replace = "        \"\"),"
+
+[[mutation]]
+id = "name-sort-span-ignores-explore"
+why = "정렬 하이라이트가 탐색 모드 열 배치를 모른다 — 선정 열이 낀 화면에서 엉뚱한 열을 칠한다"
+guards = ["tests/test_tui_flow_view.py::test_name_sort_highlight_matches_columns"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "    return col_span(names_cols(st.explore), header) if header else None"
+replace = "    return col_span(names_cols(), header) if header else None"
