@@ -1271,7 +1271,7 @@ id = "viewer-claims-krx"
 why = "수익률은 자체 바구니인데 KRX 지수라고 적는다"
 guards = ["tests/test_report_pages.py::test_viewer_does_not_claim_krx_index_returns"]
 file = "scripts/templates/sector_flow.html"
-find = "실제 Δv (자체 바구니)"
+find = "수익률 (자체 바구니)"
 replace = "실제 Δv (KRX지수)"
 
 [[mutation]]
@@ -2381,3 +2381,51 @@ guards = ["tests/test_tui_flow_view.py::test_every_footer_tier_that_names_enter_
 file = "src/sectorflow/tui/flow_view.py"
 find = "    \" PgUp/PgDn:쪽 Enter:종목 e:탐색 ?:도움말 q:종료\","
 replace = "    \" PgUp/PgDn:쪽 Enter:종목 t:전종목 ?:도움말 q:종료\","
+
+[[mutation]]
+id = "web-evidence-diverges"
+why = "수치표가 가속에 TUI 와 다른 증거 표지를 단다 — 두 화면이 같은 열의 지위를 다르게 말한다"
+guards = ["tests/test_report_pages.py::test_web_evidence_badges_match_the_tui"]
+file = "scripts/templates/sector_numbers.html"
+find = "const EV={\"accel\":\"[앞날 증거 없음]\","
+replace = "const EV={\"accel\":\"[측정]\","
+
+[[mutation]]
+id = "numbers-default-sort-g"
+why = "수치표 기본 정렬이 G 로 돌아간다 — 판정 불가 점수가 표 순서를 정한다"
+guards = ["tests/test_report_pages.py::test_numbers_page_defaults_to_flow_and_hides_g_behind_the_exploration_label"]
+file = "scripts/templates/sector_numbers.html"
+find = "let sortKey = \"accel\", sortDir = -1;"
+replace = "let sortKey = \"G\", sortDir = -1;"
+
+[[mutation]]
+id = "viewer-resid-metric-back"
+why = "뷰어에 \"미반응\" 기준이 돌아온다 — 많이 빠진 순을 신호처럼 이름 붙인다"
+guards = ["tests/test_report_pages.py::test_pages_carry_no_stale_or_timing_language"]
+file = "scripts/templates/sector_flow.html"
+find = "const METRICS=[[\"amt\",\"임펄스 억\"],[\"share\",\"가속 %p\"]];"
+replace = "const METRICS=[[\"amt\",\"임펄스 억\"],[\"share\",\"가속 %p\"],[\"resid\",\"미반응\"]];"
+
+[[mutation]]
+id = "numbers-link-broken"
+why = "수치표에서 뷰어로 가는 링크가 깨진다"
+guards = ["tests/test_report_pages.py::test_pages_link_each_other_and_the_index"]
+file = "scripts/templates/sector_numbers.html"
+find = "<a href=\"viewer.html\">흐름 뷰어 →</a>"
+replace = "<a href=\"flow.html\">흐름 뷰어 →</a>"
+
+[[mutation]]
+id = "numbers-header-drops-asof"
+why = "수치표 머리가 기준일 대신 1년 범위를 먼저 적는다 — 그 범위가 숫자들의 날짜로 읽힌다"
+guards = ["tests/test_report_pages.py::test_pages_lead_with_the_report_day_and_spell_out_the_chip"]
+file = "scripts/templates/sector_numbers.html"
+find = "document.getElementById(\"asof\").textContent = \"기준일 \"+D.asof;"
+replace = "document.getElementById(\"asof\").textContent = D.dates[0]+\" ~ \"+D.dates[1];"
+
+[[mutation]]
+id = "viewer-drivers-by-share"
+why = "뷰어 견인주를 시총 대비로 줄세운다 — 분모 하한이 없어 스팩이 섹터 1위로 뜬다(금융 KB제34호스팩)"
+guards = ["tests/test_report_pages.py::test_viewer_driver_names_follow_the_tui_rule"]
+file = "scripts/templates/sector_flow.html"
+find = "  rows.sort((x,y)=>y.v-x.v);"
+replace = "  rows.sort((x,y)=>(y.a??-1e9)-(x.a??-1e9));"
