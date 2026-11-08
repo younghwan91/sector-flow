@@ -2009,3 +2009,189 @@ guards = ["tests/test_freshness_check.py::test_set_webhook_is_silent"]
 file = "scripts/freshness_check.py"
 find = """        return 0, []"""
 replace = """        return WARN, []"""
+
+# ── 오늘(1일·1년 백분위·시장 합계·직전 대비·잠정→확정) — tests/test_payload_today.py ──
+
+[[mutation]]
+id = "today-shows-yesterday"
+why = "오늘 칸에 어제 값을 싣는다 — 화면이 '오늘 누가 샀나' 에 하루 늦은 답을 한다"
+guards = ["tests/test_payload_today.py::test_today_is_the_last_day_and_the_verifier_agrees"]
+file = "scripts/sector_flow.py"
+find = """    return {"v": round(ser[-1], 2), "pct": None if p is None else round(p, 1)}"""
+replace = """    return {"v": round(ser[-2], 2), "pct": None if p is None else round(p, 1)}"""
+
+[[mutation]]
+id = "today-pct-ties-count-as-below"
+why = "동률을 '아래' 로 세면 값이 다 같은 조용한 줄이 100 백분위(1년 최고)로 뜬다"
+guards = ["tests/test_payload_today.py::test_quiet_series_is_not_read_as_a_record_day"]
+file = "scripts/sector_flow.py"
+find = """    return 100.0 * (below + (ties - 1) / 2.0) / (n - 1)"""
+replace = """    return 100.0 * (below + (ties - 1)) / (n - 1)"""
+
+[[mutation]]
+id = "today-pct-looks-back-too-far"
+why = "1년보다 앞의 날이 분포에 섞이면 '1년 중 몇 등' 이 거짓이 된다"
+guards = ["tests/test_payload_today.py::test_percentile_looks_back_one_year_only"]
+file = "scripts/sector_flow.py"
+find = """    n = min(len(ser), TODAY_LOOKBACK)"""
+replace = """    n = len(ser)"""
+
+[[mutation]]
+id = "today-pct-without-live-gate"
+why = "0(미보고)이 대부분인 줄에 백분위를 내면 결측의 모양을 순위로 읽는다"
+guards = ["tests/test_payload_today.py::test_quiet_series_is_not_read_as_a_record_day"]
+file = "scripts/sector_flow.py"
+find = """    if sum(1 for v in s if v) < TODAY_MIN_LIVE * n:"""
+replace = """    if False:"""
+
+[[mutation]]
+id = "market-total-drops-a-market"
+why = "'전체' 시장 합계가 한 시장만 더한다"
+guards = ["tests/test_payload_today.py::test_today_is_the_last_day_and_the_verifier_agrees"]
+file = "scripts/sector_flow.py"
+find = """        sub = df[df["market"].isin(mks)]"""
+replace = """        sub = df[df["market"].isin(mks[:1])]"""
+
+[[mutation]]
+id = "market-return-equal-weighted"
+why = "시장 수익률을 등가중으로 내면 섹터 수익률(전일 시총 가중)과 다른 정의가 된다"
+guards = ["tests/test_payload_today.py::test_market_totals_and_returns_come_from_the_stocks"]
+file = "scripts/sector_flow.py"
+find = """                ret[di[d]] = float(num[d] / w)"""
+replace = """                ret[di[d]] = float(g[g["date"] == d]["ret"].mean())"""
+
+[[mutation]]
+id = "change-reads-the-same-day"
+why = "직전 대비가 바꿔 끼울 같은 날 리포트를 '어제' 로 읽는다"
+guards = ["tests/test_payload_today.py::test_change_compares_with_the_previous_trading_days_report"]
+file = "scripts/sector_flow.py"
+find = """    prev_date = P["dates"][-2]"""
+replace = """    prev_date = P["dates"][-1]"""
+
+[[mutation]]
+id = "change-entered-inverted"
+why = "상위 5 에 새로 든 섹터 대신 남아 있는 섹터를 '들어옴' 으로 적는다"
+guards = ["tests/test_payload_today.py::test_change_compares_with_the_previous_trading_days_report"]
+file = "scripts/sector_flow.py"
+find = """"entered": None if top_p is None else [s for s in top_c if s not in top_p],"""
+replace = """"entered": None if top_p is None else [s for s in top_c if s in top_p],"""
+
+[[mutation]]
+id = "final-diff-ignores-rounding"
+why = "반올림 차까지 '바뀜' 으로 적으면 FINAL.txt 가 수백 줄 소음이 된다"
+guards = ["tests/test_payload_today.py::test_final_diff_lists_only_changes_beyond_rounding"]
+file = "scripts/sector_flow.py"
+find = """                    if vo is None or abs(vn - vo) > FINAL_DIFF_TOL:"""
+replace = """                    if True:"""
+
+[[mutation]]
+id = "no-one-day-stock-window"
+why = "종목 1일 칸이 없으면 뷰어의 1일 프리셋이 종목 목록을 비워 낸다"
+guards = ["tests/test_payload_today.py::test_stocks_have_a_one_day_window"]
+file = "scripts/sector_flow.py"
+find = """NAME_WINDOWS = (1, 5, 20, 60, 120)"""
+replace = """NAME_WINDOWS = (5, 20, 60, 120)"""
+
+[[mutation]]
+id = "numbers-drop-today"
+why = "화면이 읽는 numbers.html 에 오늘 블록이 안 간다"
+guards = ["tests/test_payload_today.py::test_numbers_page_carries_today_for_the_terminal"]
+file = "scripts/sector_numbers.py"
+find = """    for k in ("today", "change", "change_reason", "final_diff", "final_diff_reason"):"""
+replace = """    for k in ():"""
+
+[[mutation]]
+id = "final-txt-without-diff"
+why = "확정에서 바뀐 값이 FINAL.txt 에 안 붙어 사람이 못 본다"
+guards = ["tests/test_daily_report_flow.py::test_final_mode_rebuilds_with_final_data_once_finalize_is_done"]
+file = "scripts/daily_report.sh"
+find = """  if [ -f "$BUILD/final_diff.txt" ]; then cat "$BUILD/final_diff.txt" >> "$BUILD/FINAL.txt"; fi"""
+replace = ""
+
+[[mutation]]
+id = "verify-today-value-blind"
+why = "오늘 값이 일별 배열 마지막 칸과 달라도 검증이 모른다"
+guards = ["tests/test_payload_today.py::test_verifier_catches_a_wrong_today"]
+file = "scripts/verify_report.py"
+find = """    chk("T", "오늘 섹터×주체 순매수 = 일별 배열 마지막 칸", not bad_v,"""
+replace = """    chk("T", "오늘 섹터×주체 순매수 = 일별 배열 마지막 칸", True,"""
+
+[[mutation]]
+id = "verify-today-pct-blind"
+why = "백분위가 틀려도 검증이 모른다"
+guards = ["tests/test_payload_today.py::test_verifier_catches_a_wrong_today"]
+file = "scripts/verify_report.py"
+find = """    chk("T", "오늘 섹터×주체 1년 백분위 재계산", not bad_p,"""
+replace = """    chk("T", "오늘 섹터×주체 1년 백분위 재계산", True,"""
+
+[[mutation]]
+id = "verify-today-sector-set-blind"
+why = "오늘 표에서 섹터가 통째로 빠져도 검증이 모른다"
+guards = ["tests/test_payload_today.py::test_verifier_catches_a_wrong_today"]
+file = "scripts/verify_report.py"
+find = """    chk("T", "오늘 섹터 칸 = 그 시장(들)에 종목이 있는 섹터", not bad_set,"""
+replace = """    chk("T", "오늘 섹터 칸 = 그 시장(들)에 종목이 있는 섹터", True,"""
+
+[[mutation]]
+id = "verify-market-total-blind"
+why = "시장 합계가 틀려도 검증이 모른다"
+guards = ["tests/test_payload_today.py::test_verifier_catches_a_wrong_today"]
+file = "scripts/verify_report.py"
+find = """    chk("T", "오늘 시장 합계 = 섹터 마지막 칸의 합", not bad_m,"""
+replace = """    chk("T", "오늘 시장 합계 = 섹터 마지막 칸의 합", True,"""
+
+[[mutation]]
+id = "verify-market-pct-blind"
+why = "시장 합계의 백분위가 틀려도 검증이 모른다"
+guards = ["tests/test_payload_today.py::test_verifier_catches_a_wrong_today"]
+file = "scripts/verify_report.py"
+find = """    chk("T", "오늘 시장 합계 1년 백분위 재계산", not bad_mp,"""
+replace = """    chk("T", "오늘 시장 합계 1년 백분위 재계산", True,"""
+
+[[mutation]]
+id = "verify-market-return-blind"
+why = "시장 수익률이 틀려도 검증이 모른다"
+guards = ["tests/test_payload_today.py::test_verifier_catches_a_wrong_today"]
+file = "scripts/verify_report.py"
+find = """    chk("T", "시장 수익률 1·20일 = 섹터 ret×retw 재가중의 기하누적", not bad_mr,"""
+replace = """    chk("T", "시장 수익률 1·20일 = 섹터 ret×retw 재가중의 기하누적", True,"""
+
+[[mutation]]
+id = "verify-name-window-blind"
+why = "종목 1일 칸이 통째로 없어도 검증이 모른다"
+guards = ["tests/test_payload_today.py::test_verifier_catches_a_wrong_today"]
+file = "scripts/verify_report.py"
+find = """    chk("T", "종목 1일 집계가 있는가", bool(win1), f"{len(win1)}종목")"""
+replace = """    chk("T", "종목 1일 집계가 있는가", True, f"{len(win1)}종목")"""
+
+[[mutation]]
+id = "verify-prev-rank-blind"
+why = "직전 순위를 틀리게 적어도 검증이 직전 리포트에서 다시 세지 않는다"
+guards = ["tests/test_payload_today.py::test_change_compares_with_the_previous_trading_days_report"]
+file = "scripts/verify_report.py"
+find = """                not bad_p2 and not bad_t,"""
+replace = """                True,"""
+
+[[mutation]]
+id = "verify-missing-change-blind"
+why = "직전 리포트가 옆에 있는데 대비가 비어도 검증이 모른다"
+guards = ["tests/test_payload_today.py::test_change_is_null_with_a_reason_when_the_previous_report_is_missing"]
+file = "scripts/verify_report.py"
+find = """        chk("T", "직전 리포트가 옆에 있는데 대비가 비지 않았는가", old is None,"""
+replace = """        chk("T", "직전 리포트가 옆에 있는데 대비가 비지 않았는가", True,"""
+
+[[mutation]]
+id = "verify-final-diff-blind"
+why = "잠정→확정 표의 확정값이 페이로드와 달라도 검증이 모른다"
+guards = ["tests/test_payload_today.py::test_final_diff_lists_only_changes_beyond_rounding"]
+file = "scripts/verify_report.py"
+find = """            not bad_f and F.get("n_changed") == len(F.get("changed") or []),"""
+replace = """            True,"""
+
+[[mutation]]
+id = "verify-final-without-diff-blind"
+why = "확정 리포트에 잠정 대비가 통째로 빠져도 검증이 모른다"
+guards = ["tests/test_payload_today.py::test_final_diff_without_a_provisional_report_says_so"]
+file = "scripts/verify_report.py"
+find = """            "final_diff" in P and (P["final_diff"] is not None or bool(P.get("final_diff_reason"))))"""
+replace = """            True)"""

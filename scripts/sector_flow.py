@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import warnings
 from datetime import datetime, timedelta, timezone
 
@@ -42,8 +43,10 @@ warnings.filterwarnings("ignore", message="pandas only supports SQLAlchemy", cat
 EOK = 1e8                 # 원 → 억원
 INDEX_RET: dict = {}
 DEFAULT_DAYS = 260        # 거래일 ≈ 1년
-#: 종목 집계를 낼 구간(거래일). 수치표·TUI 의 프리셋과 같아야 한다.
-NAME_WINDOWS = (5, 20, 60, 120)
+#: 종목 집계를 낼 구간(거래일). 수치표·TUI 의 프리셋과 같아야 한다. 1 은 "오늘" — 뷰어의 1일 프리셋이
+#: 종목을 비워 내던 칸이다. 1일 창에는 사실(순매수·거래대금·수익률)만 있다 — x·G·가속 같은 파생값은
+#: 원래 종목 집계에 없고, 섹터 쪽 1일(``today``)에도 싣지 않는다.
+NAME_WINDOWS = (1, 5, 20, 60, 120)
 #: 이 시각 전의 "오늘" 은 장중으로 친다. 수집이 끝났다는 보장이 **아니다**(끝나는 시각은 18:47 까지
 #: 갔다, 2026-10-27) — 그 판정은 ``completeness_gate.py`` 몫이다.
 FINALIZED_KST_HOUR = 17
@@ -353,7 +356,7 @@ def build_payload(df: pd.DataFrame, dates: list[str], caps: pd.DataFrame,
         if m in counts:
             counts[m][sec] = int(g["code"].nunique())
 
-    return {
+    out = {
         "dates": dates,
         "sectors": sectors,
         "n_by_sector": counts,
@@ -370,6 +373,341 @@ def build_payload(df: pd.DataFrame, dates: list[str], caps: pd.DataFrame,
         "finalized": _finalized(dates[-1]),
         "detail_labels": {k: ko for k, ko in INST_DETAIL},
     }
+    out["today"] = today_block(out, _market_daily(df, dates, markets))
+    return out
+
+
+# ─────────────────────────────────────────────── 오늘 — 무엇이 바뀌었나 (사실만, 점수 없음)
+#
+# 화면이 답할 질문: "오늘 누가 어디를 샀고 팔았나, 그게 얼마나 드문가, 어제 리포트와 무엇이 달라졌나".
+# 아래는 전부 페이로드에 이미 있는 일별 배열의 **마지막 날**과 그 1년 분포, 그리고 직전 리포트와의 대조다.
+# 판정·점수는 없다(CLAUDE.md 화면·리포트 규칙).
+
+#: 오늘 이상도를 재는 되돌아보기(거래일, 오늘 포함). 수치표의 `1년[%ile]`(``sector_numbers.PCT_LOOKBACK``)과 같다.
+TODAY_LOOKBACK = 260
+#: 값이 있는(0 이 아닌) 날이 되돌아보기의 이 몫 미만이면 백분위를 안 낸다(분모 게이트). 0 은 "0 또는
+#: 미보고"라, 거의 다 0 인 줄의 midrank 백분위는 "1년 중 몇 등" 이 아니라 결측의 모양을 말한다.
+TODAY_MIN_LIVE = 0.25
+#: 오늘 표의 주체. ``invpen`` = 투신+연기금 — 기관 안에서 방향성이 있는 둘(CLAUDE.md 수급 신뢰 순서).
+TODAY_ACTORS = (("inst", "기관"), ("invtrt", "투신"), ("penfnd_etc", "연기금"),
+                ("invpen", "투신+연기금"), ("forgn", "외국인"), ("indiv", "개인"))
+#: 시장 합계에 싣는 주체 — 4주체(합 ≈ 0)와 투신·연기금.
+MARKET_ACTORS = ("inst", "forgn", "indiv", "etc", "invtrt", "penfnd_etc", "invpen")
+#: 시장 맥락 수익률의 구간(거래일).
+MARKET_RET_WINDOWS = (1, 20)
+#: 직전 리포트 대비 — 이 구간 순매수 순위와 상위 몇 섹터의 들고 남.
+CHANGE_WINDOW = 20
+CHANGE_ACTORS = ("inst", "invpen")
+CHANGE_TOP = 5
+#: 잠정 → 확정 비교 칸. 일별 값이 소수 2자리라 5일 합의 반올림 차는 양쪽 합쳐 최대 0.05억이다.
+FINAL_DIFF_WINDOWS = (1, 5)
+FINAL_DIFF_ACTORS = ("inst", "invtrt", "penfnd_etc", "forgn", "indiv", "etc")
+FINAL_DIFF_TOL = 0.05
+_DETAIL_KEYS = {k for k, _ in INST_DETAIL}
+_DATE_DIR = re.compile(r"\d{4}-\d{2}-\d{2}(\.building\.\d+)?")
+
+
+def _mkeys(P: dict) -> list[tuple[str, list[str]]]:
+    """수치표와 같은 시장 키 — ``전체`` 는 두 시장의 합."""
+    return [("전체", list(P["markets"]))] + [(m, [m]) for m in P["markets"]]
+
+
+def _present(P: dict, markets: list[str], sec: str) -> bool:
+    """그 시장(들)에 종목이 하나라도 있는 섹터인가 — 없는 칸은 0 이 아니라 해당 없음이다."""
+    return sum(int((P.get("n_by_sector") or {}).get(m, {}).get(sec, 0) or 0) for m in markets) > 0
+
+
+def _series(P: dict, markets: list[str], sec: str, key: str) -> "list[float] | None":
+    """시장을 합친 (섹터, 주체) 일별 순매수[억]. 투신·연기금은 ``detail``, ``invpen`` 은 그 합.
+
+    값은 소수 2자리(페이로드 자릿수)로 맞춘다 — 백분위의 동률 판정이 합하는 순서의 부동소수
+    잔차에 흔들리지 않게(검증기는 다른 순서로 더한다).
+    """
+    if key == "invpen":
+        a, b = (_series(P, markets, sec, k) for k in ("invtrt", "penfnd_etc"))
+        return None if a is None or b is None else [round(x + y, 2) for x, y in zip(a, b)]
+    src = P.get("detail" if key in _DETAIL_KEYS else "flows") or {}
+    n = len(P["dates"])
+    out, seen = [0.0] * n, False
+    for m in markets:
+        arr = src.get(m, {}).get(sec, {}).get(key)
+        if arr is None:
+            continue
+        seen = True
+        for i, v in enumerate(arr[:n]):
+            out[i] += v or 0.0
+    return [round(v, 2) for v in out] if seen else None
+
+
+def day_pct(ser: list[float]) -> "float | None":
+    """마지막 날 값의 백분위(0~100) — 오늘 포함 최근 ``TODAY_LOOKBACK`` 일 일별 값 안에서.
+
+    ``sector_numbers.rolling_pct`` 의 1일 창과 같은 정의다: 동률은 중간순위(midrank), 자기 자신을
+    분포에 넣는다. 페이로드에는 기준일 이하의 날만 있으므로 미래를 볼 수 없다.
+    """
+    n = min(len(ser), TODAY_LOOKBACK)
+    if n < 2:
+        return None
+    s = ser[-n:]
+    if sum(1 for v in s if v) < TODAY_MIN_LIVE * n:
+        return None
+    cur = s[-1]
+    below = sum(1 for v in s if v < cur)
+    ties = sum(1 for v in s if v == cur)           # 자기 자신 포함
+    return 100.0 * (below + (ties - 1) / 2.0) / (n - 1)
+
+
+def _fact(ser: list[float]) -> dict:
+    p = day_pct(ser)
+    return {"v": round(ser[-1], 2), "pct": None if p is None else round(p, 1)}
+
+
+def _market_daily(df: pd.DataFrame, dates: list[str], markets: list[str]) -> dict:
+    """시장 단위 일별 순매수와 자체 바구니 수익률 — **종목에서 바로** 모은다(섹터 배열을 거치지 않는다).
+
+    수익률 정의는 섹터 수익률과 같다: 그날 조정 종가 비 수익률의 **전일 시총** 가중 평균, 수익률이나
+    전일 시총이 없는 종목은 가중치에서도 뺀다. 가중치가 0 인 날은 ``None``.
+    """
+    di = {d: i for i, d in enumerate(dates)}
+    n = len(dates)
+    keys = [k for k in MARKET_ACTORS if k != "invpen"] + ["tv"]
+    out: dict = {}
+    for mkey, mks in [("전체", markets)] + [(m, [m]) for m in markets]:
+        sub = df[df["market"].isin(mks)]
+        flows = {k: [0.0] * n for k in keys}
+        for d, row in sub.groupby("date")[keys].sum().iterrows():
+            if d in di:
+                for k in keys:
+                    flows[k][di[d]] = float(row[k])
+        flows["invpen"] = [a + b for a, b in zip(flows["invtrt"], flows["penfnd_etc"])]
+        ret: list = [None] * n
+        g = sub.dropna(subset=["cap_lag", "ret"])
+        num = (g["ret"] * g["cap_lag"]).groupby(g["date"]).sum()
+        den = g.groupby("date")["cap_lag"].sum()
+        for d, w in den.items():
+            if d in di and w:
+                ret[di[d]] = float(num[d] / w)
+        out[mkey] = {"flows": flows, "ret": ret}
+    return out
+
+
+def today_block(P: dict, mkt: dict) -> dict:
+    """``payload["today"]`` — 기준일 하루의 섹터×주체 순매수와 그 1년 백분위, 시장 합계·시장 수익률.
+
+    섹터 값은 페이로드의 일별 배열(``flows``·``detail``) 마지막 칸 그대로다. 1일 창에는 x·G·가속을
+    싣지 않는다 — 회귀·2차 차분이 하루치에서 정의되지 않는다.
+    """
+    dates = P["dates"]
+    secs: dict = {}
+    for mkey, mks in _mkeys(P):
+        rows = {}
+        for s in P["sectors"]:
+            if not _present(P, mks, s):
+                continue
+            row = {}
+            for a, _ in TODAY_ACTORS:
+                ser = _series(P, mks, s, a)
+                if ser is not None:
+                    row[a] = _fact(ser)
+            row["tv"] = round(_series(P, mks, s, "tv")[-1], 2)
+            num = den = 0.0
+            for m in mks:
+                r = P["ret"].get(m, {}).get(s)
+                w = P["retw"].get(m, {}).get(s)
+                if r and w and r[-1] is not None and w[-1]:
+                    num += r[-1] * w[-1]
+                    den += w[-1]
+            row["ret"] = round(num / den, 3) if den else None
+            rows[s] = row
+        secs[mkey] = rows
+
+    market: dict = {}
+    for mkey, d in mkt.items():
+        net = {a: _fact([round(v, 2) for v in d["flows"][a]]) for a in MARKET_ACTORS}
+        ret = {}
+        for w in MARKET_RET_WINDOWS:
+            span = d["ret"][-w:] if w <= len(dates) else []
+            if not span or span[-1] is None:
+                ret[str(w)] = None
+                continue
+            acc = 1.0
+            for r in span:                       # 가중치가 0 인 날은 0% — sector_numbers.agg 와 같다
+                acc *= 1.0 + (r or 0.0) / 100.0
+            ret[str(w)] = round((acc - 1.0) * 100.0, 3)
+        market[mkey] = {"net": net, "tv": round(d["flows"]["tv"][-1], 2), "ret": ret}
+
+    return {
+        "date": dates[-1],
+        "lookback": min(len(dates), TODAY_LOOKBACK),
+        "min_live": TODAY_MIN_LIVE,
+        "actors": {a: ko for a, ko in TODAY_ACTORS},
+        "sectors": secs,
+        "market": market,
+    }
+
+
+def _ranks(P: dict, mks: list[str], actor: str, win: int):
+    """섹터의 ``win`` 일 순매수 순위(1 = 가장 많이 샀다). 동률은 섹터 이름순. 못 세면 ``None``."""
+    if len(P.get("dates") or []) < win:
+        return None
+    vals = {}
+    for s in P["sectors"]:
+        if not _present(P, mks, s):
+            continue
+        ser = _series(P, mks, s, actor)
+        if ser is None:
+            return None
+        vals[s] = round(sum(ser[-win:]), 2)
+    order = sorted(vals, key=lambda s: (-vals[s], s))
+    return {s: i + 1 for i, s in enumerate(order)}, order
+
+
+def reports_root(path: "str | None") -> "str | None":
+    """``<root>/<기준일>[.building.<pid>]/payload.json`` 꼴이면 ``<root>``. 아니면 ``None``.
+
+    리포트 폴더 밖(임시 파일 등)에서 만든 페이로드가 엉뚱한 옆 폴더를 "직전 리포트" 로 읽지 않게
+    폴더 이름이 날짜 꼴일 때만 인정한다.
+    """
+    if not path:
+        return None
+    d = os.path.dirname(os.path.abspath(path))
+    return os.path.dirname(d) if _DATE_DIR.fullmatch(os.path.basename(d)) else None
+
+
+def _read_report(root: "str | None", date: str) -> "tuple[dict | None, str | None]":
+    if not root:
+        return None, "리포트 폴더 밖에서 만들었다(--reports-root 없음)"
+    folder = os.path.join(root, date)
+    if not os.path.isdir(folder):
+        return None, f"{date} 리포트 폴더가 없다"
+    path = os.path.join(folder, "payload.json")
+    if not os.path.isfile(path):
+        why = "수집 미완(INCOMPLETE)" if os.path.isfile(os.path.join(folder, "INCOMPLETE.txt")) else "없음"
+        return None, f"{date} 폴더에 payload.json 이 없다 — {why}"
+    try:
+        with open(path, encoding="utf-8") as f:
+            old = json.load(f)
+    except (OSError, ValueError) as e:
+        return None, f"{date}/payload.json 을 못 읽었다: {type(e).__name__}"
+    if (old.get("dates") or [None])[-1] != date:
+        return None, f"{date}/payload.json 의 기준일이 {(old.get('dates') or [None])[-1]} 다"
+    return old, None
+
+
+def change_block(P: dict, root: "str | None") -> "tuple[dict | None, str | None]":
+    """``payload["change"]`` — **직전 거래일 리포트**(``<root>/<dates[-2]>/payload.json``) 대비.
+
+    섹터의 ``CHANGE_WINDOW`` 일 순매수 순위(기관·투신+연기금)의 이동과 상위 ``CHANGE_TOP`` 의 들고 남.
+    직전 순위는 그 리포트가 **게시한 그대로의** 페이로드로 센다 — 그 뒤 확정치로 바뀐 것까지 섞여
+    있을 수 있어 ``prev_final`` 을 같이 싣는다. 직전 거래일은 이 페이로드의 바로 앞 날짜라 기준일보다
+    뒤의 것은 읽을 수 없다. 못 읽으면 ``(None, 이유)``.
+    """
+    if len(P["dates"]) < 2:
+        return None, "거래일이 하루뿐이다"
+    prev_date = P["dates"][-2]
+    old, why = _read_report(root, prev_date)
+    if old is None:
+        return None, why
+    out = {
+        "prev_date": prev_date,
+        "prev_final": bool(old.get("final")),
+        "prev_verify_failed": os.path.isfile(os.path.join(root, prev_date, "VERIFY_FAILED.txt")),
+        "window": CHANGE_WINDOW, "top_n": CHANGE_TOP,
+        "rank": {}, "top": {},
+    }
+    for mkey, mks in _mkeys(P):
+        for a in CHANGE_ACTORS:
+            cur = _ranks(P, mks, a, CHANGE_WINDOW)
+            if cur is None:
+                continue
+            prev = _ranks(old, mks, a, CHANGE_WINDOW) if set(mks) <= set(old.get("markets") or []) else None
+            out["rank"].setdefault(mkey, {})[a] = {
+                s: [prev[0].get(s) if prev else None, cur[0][s]] for s in cur[1]}
+            top_c = cur[1][:CHANGE_TOP]
+            top_p = prev[1][:CHANGE_TOP] if prev else None
+            out["top"].setdefault(mkey, {})[a] = {
+                "cur": top_c, "prev": top_p,
+                "entered": None if top_p is None else [s for s in top_c if s not in top_p],
+                "exited": None if top_p is None else [s for s in top_p if s not in top_c],
+            }
+    return out, None
+
+
+def final_diff_block(P: dict, root: "str | None") -> "tuple[dict | None, str | None]":
+    """``payload["final_diff"]`` — 같은 기준일의 **바꿔 끼워질** 리포트(보통 잠정) 대비 확정치의 차이.
+
+    머리 숫자만 본다: (시장, 섹터, 주체) 의 1일·5일 순매수와 시장 합계. 반올림(``FINAL_DIFF_TOL``)을
+    넘는 칸만 ``changed`` 에 싣는다. 시장 합계는 다 싣는다(몇 줄 안 된다).
+    """
+    asof = P["dates"][-1]
+    old, why = _read_report(root, asof)
+    if old is None:
+        return None, why.replace(f"{asof} 리포트 폴더가 없다", "같은 기준일의 잠정 리포트가 없었다")
+    built = os.path.getmtime(os.path.join(root, asof, "payload.json"))
+    changed, totals, n_cells = [], [], 0
+
+    def win_sum(ser, w):
+        return None if ser is None or len(ser) < w else round(sum(ser[-w:]), 2)
+
+    for m in P["markets"]:
+        for a in FINAL_DIFF_ACTORS:
+            tn = [0.0] * len(FINAL_DIFF_WINDOWS)
+            to: list = [0.0] * len(FINAL_DIFF_WINDOWS)
+            for s in P["sectors"]:
+                if not _present(P, [m], s):
+                    continue
+                sn = _series(P, [m], s, a)
+                so = _series(old, [m], s, a) if m in (old.get("markets") or []) else None
+                if sn is None:
+                    continue
+                for j, w in enumerate(FINAL_DIFF_WINDOWS):
+                    vn, vo = win_sum(sn, w), win_sum(so, w)
+                    n_cells += 1
+                    tn[j] += vn
+                    to[j] = None if to[j] is None or vo is None else to[j] + vo
+                    if vo is None or abs(vn - vo) > FINAL_DIFF_TOL:
+                        changed.append({"market": m, "sector": s, "actor": a, "win": w, "old": vo,
+                                        "new": vn, "diff": None if vo is None else round(vn - vo, 2)})
+            for j, w in enumerate(FINAL_DIFF_WINDOWS):
+                vo = None if to[j] is None else round(to[j], 2)
+                totals.append({"market": m, "actor": a, "win": w, "old": vo, "new": round(tn[j], 2),
+                               "diff": None if vo is None else round(tn[j] - vo, 2)})
+    changed.sort(key=lambda r: -(abs(r["diff"]) if r["diff"] is not None else float("inf")))
+    return {
+        "base_final": bool(old.get("final")),
+        "base_built": datetime.fromtimestamp(built, timezone(timedelta(hours=9))).strftime("%Y-%m-%d %H:%M"),
+        "windows": list(FINAL_DIFF_WINDOWS), "tol": FINAL_DIFF_TOL,
+        "n_cells": n_cells, "n_changed": len(changed),
+        "changed": changed, "market_totals": totals,
+    }, None
+
+
+def final_diff_text(P: dict, top: int = 15) -> str:
+    """``final_diff.txt`` — ``FINAL.txt`` 뒤에 붙일 사람이 읽는 요약."""
+    fd, why = P.get("final_diff"), P.get("final_diff_reason")
+    ko = {a: k for a, k in TODAY_ACTORS} | {"etc": "기타법인"}
+    if fd is None:
+        return f"잠정 → 확정 비교 없음: {why}\n"
+    base = "확정" if fd["base_final"] else "잠정"
+    lines = [f"잠정 → 확정 비교 — 바꿔 끼운 {base} 리포트({fd['base_built']} KST 생성) 대비, "
+             f"순매수[억] 1일·5일, 반올림 ±{fd['tol']}억 초과만"]
+    moved = [t for t in fd["market_totals"] if t["diff"] is None or abs(t["diff"]) > fd["tol"]]
+    lines.append(f"시장 합계: {len(fd['market_totals'])}칸 중 {len(moved)}칸 바뀜")
+
+    def fmt(v):
+        return "—" if v is None else f"{v:+,.2f}"
+
+    for t in moved:
+        lines.append(f"  {t['market']} {ko.get(t['actor'], t['actor'])} {t['win']}일  "
+                     f"{fmt(t['old'])} → {fmt(t['new'])} ({fmt(t['diff'])})")
+    lines.append(f"섹터 칸: {fd['n_cells']}칸 중 {fd['n_changed']}칸 바뀜"
+                 + (f" — 큰 순 {min(top, fd['n_changed'])}" if fd["n_changed"] else ""))
+    for r in fd["changed"][:top]:
+        lines.append(f"  {r['market']}/{r['sector']} {ko.get(r['actor'], r['actor'])} {r['win']}일  "
+                     f"{fmt(r['old'])} → {fmt(r['new'])} ({fmt(r['diff'])})")
+    if fd["n_changed"] > top:
+        lines.append(f"  외 {fd['n_changed'] - top}칸 — payload.json 의 final_diff")
+    return "\n".join(lines) + "\n"
 
 
 def script_json(payload: dict) -> str:
@@ -386,6 +724,8 @@ def main():
     ap.add_argument("--from-json", help="이미 만든 페이로드를 읽어 HTML 만 낸다")
     ap.add_argument("--final", action="store_true",
                     help="daily_finalize 확인 뒤 확정치로 만든다(daily_report.sh 확정 모드가 붙인다)")
+    ap.add_argument("--reports-root",
+                    help="직전 리포트를 찾을 리포트 루트(기본: --json 이 <루트>/<기준일>[.building.N]/ 안이면 그 루트)")
     a = ap.parse_args()
 
     if a.from_json:
@@ -412,9 +752,18 @@ def main():
     cap_monthly = sector_cap_monthly(con, df, dates)
     con.close()
     payload = build_payload(df, dates, caps, cap_monthly)
+    # 직전 리포트·바꿔 끼울 리포트는 **쓰기 전에** 읽는다 — --json 이 그 폴더의 payload.json 일 수 있다.
+    root = a.reports_root or reports_root(a.json or a.html)
+    payload["change"], payload["change_reason"] = change_block(payload, root)
     if a.final:
-        # 키를 확정일 때만 싣는다 — 잠정 리포트의 페이로드는 예전과 바이트가 같다.
+        # 키를 확정일 때만 싣는다.
         payload["final"] = True
+        payload["final_diff"], payload["final_diff_reason"] = final_diff_block(payload, root)
+        # FINAL.txt 는 daily_report.sh 가 쓴다 — 거기 덧붙일 글을 산출물 옆에 둔다.
+        if a.json or a.html:
+            with open(os.path.join(os.path.dirname(os.path.abspath(a.json or a.html)),
+                                   "final_diff.txt"), "w", encoding="utf-8") as f:
+                f.write(final_diff_text(payload))
     covered = sum(1 for m in payload["markets"] for s in payload["sectors"]
                   if payload["iret"][m].get(s))
     print(f"업종지수 커버리지: {covered} / "
