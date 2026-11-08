@@ -7,7 +7,7 @@ from __future__ import annotations
 import calendar
 import importlib.util
 import os
-import time
+from datetime import datetime
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -17,14 +17,15 @@ _spec.loader.exec_module(fd)
 
 
 def _run(root: Path, run_id: str, started_utc: str, ended_local: str, ok: bool = True) -> None:
-    """``started_utc`` 는 Airflow 가 첫 줄에 찍는 시각(UTC), ``ended_local`` 은 파일 시각(이 머신 시간대)."""
+    """``started_utc`` 는 Airflow 가 첫 줄에 찍는 시각(UTC), ``ended_local`` 은 파일 시각(**KST** — 이 머신의 시간대와
+    무관하게. ``time.mktime`` 으로 읽으면 CI(UTC)에서 9시간 밀린다)."""
     for task in fd.TASKS:
         d = root / "dag_id=daily_finalize" / f"run_id={run_id}" / f"task_id={task}"
         d.mkdir(parents=True, exist_ok=True)
         f = d / "attempt=1.log"
         f.write_text(f"[{started_utc}.005+0000] {{local_task_job_runner.py:123}} INFO - ::group::Pre task\n"
                      f"... Task exited with return code {0 if ok else 1}\n")
-        t = time.mktime(time.strptime(ended_local, "%Y-%m-%d %H:%M"))
+        t = datetime.strptime(ended_local, "%Y-%m-%d %H:%M").replace(tzinfo=fd.KST).timestamp()
         os.utime(f, (t, t))
 
 
@@ -75,3 +76,17 @@ def test_run_day_falls_back_to_file_time_without_a_stamp(tmp_path):
     t = calendar.timegm((2026, 11, 6, 22, 20, 0))      # = 2026-11-07 07:20 KST — 이 머신 시간대와 무관
     os.utime(f, (t, t))
     assert fd.run_day(str(f)).isoformat() == "2026-11-06"
+
+
+def test_no_test_reads_the_machine_timezone():
+    """시험의 시각은 시간대를 박아 쓴다 — ``time.mktime``·``time.localtime`` 은 이 머신의 시간대로 읽어, KST 에서
+    초록이던 확정 창 시험이 CI(UTC)에서 하루 밀려 빨개졌다(2026-11-08, PR #28 머지 뒤)."""
+    import re
+    bad = []
+    for p in sorted((Path(__file__).parent).glob("test_*.py")):
+        if p.name == Path(__file__).name:
+            continue                                  # 이 검사 자신은 금지어를 적는다
+        for i, line in enumerate(p.read_text("utf-8").splitlines(), 1):
+            if re.search(r"\btime\.(mktime|localtime)\(", line):
+                bad.append(f"{p.name}:{i}")
+    assert not bad, f"로컬 시간대로 시각을 바꾸는 시험: {bad} — datetime(..., tzinfo=KST/UTC).timestamp() 를 쓴다"
