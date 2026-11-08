@@ -137,7 +137,7 @@ def test_partial_day_is_not_published_and_keeps_latest(repo):
 
 
 def test_partial_day_that_is_no_longer_today_exits_1_and_keeps_latest(repo):
-    """다음날 07:30 도 못 만들면 마지막 기회를 놓친 것이다 — 재시도 경고(75)로 묻히면 안 된다."""
+    """다음날 08:20 도 못 만들면 마지막 기회를 놓친 것이다 — 재시도 경고(75)로 묻히면 안 된다."""
     _seed(repo.parent / "db.sqlite", today_kosdaq=1)
     prev = _publish_previous(repo)
     p = _run(repo, today="2026-11-03")

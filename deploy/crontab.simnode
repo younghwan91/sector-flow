@@ -2,7 +2,7 @@
 # 매일 07:50 동기화(pull-all --ci-gate → cron-install)가 origin/main 기준으로 반영한다.
 # 크론을 바꾸려면 crontab -e 가 아니라 이 파일을 고쳐 커밋·푸시할 것 — 손으로 고친 건 다음 설치에 덮인다.
 
-# 섹터 자금흐름 일일 리포트 — 평일 18:10, 못 만들었으면 19:10 에 다시, 다음날 08:20 은 확정 모드로 부른다.
+# 섹터 자금흐름 일일 리포트 — 평일 18:10, 못 만들었으면 19:10 에 다시, 다음날 08:20 은 확정 모드로 부르고 10:20 에 한 번 더.
 #
 # daily_collection(16:00)이 끝나는 시각은 고정이 아니다 — 18:47 까지 간 날이 있었다(2026-10-27).
 # 그래서 daily_report.sh 가 만들기 전에 완전성 관문을 보고, 수집이 덜 끝났으면 폴더에 INCOMPLETE.txt
@@ -14,6 +14,8 @@
 #
 # 생성 직후 verify_report.py 가 수식·데이터·계산을 점검하고, 실패하면 폴더에 VERIFY_FAILED.txt 를 남긴다.
 # 당일 수급은 잠정값이다. 확정치는 다음날 새벽 daily_finalize 가 DB 에 덮어쓰고, 08:20 이 그 기준일을 다시 만든다.
+# 10:20 은 같은 확정 모드의 재시도다 — daily_finalize 가 늦게 끝난 날(08:20 이 75 로 경고한 날)이 손 없이 확정된다.
+# 이미 FINAL.txt 가 있으면 daily_report.sh 가 "이미 확정치로 만들었다" 며 0 으로 건너뛰니 평소엔 비용이 없다.
 # reports/ 는 gitignore 라 새 clone 에 없다 — 리다이렉트가 먼저 터지지 않게 mkdir 부터.
 #
 # 상한: timeout 40m(실측 2~5분). DB 가 걸려 멈춘 배치가 다음 크론과 겹치지 않고, 끊기면 124 로 오류 알림이 간다.
@@ -24,13 +26,17 @@
 #
 10 18,19 * * 1-5 mkdir -p /home/young/git/sector-flow/reports && /home/young/git/sector-flow/scripts/cron_run.sh sector-flow-report -- timeout -k 2m 40m /home/young/git/sector-flow/scripts/daily_report.sh >> /home/young/git/sector-flow/reports/cron.log 2>&1
 20 8 * * 2-6 mkdir -p /home/young/git/sector-flow/reports && KR_QUANT_FINAL=1 /home/young/git/sector-flow/scripts/cron_run.sh sector-flow-report -- timeout -k 2m 40m /home/young/git/sector-flow/scripts/daily_report.sh >> /home/young/git/sector-flow/reports/cron.log 2>&1
+20 10 * * 2-6 mkdir -p /home/young/git/sector-flow/reports && KR_QUANT_FINAL=1 /home/young/git/sector-flow/scripts/cron_run.sh sector-flow-report -- timeout -k 2m 40m /home/young/git/sector-flow/scripts/daily_report.sh >> /home/young/git/sector-flow/reports/cron.log 2>&1
 
 # 신선도 점검 — 평일 20:30(19:10 재시도·18:47 까지 간 수집 뒤). 결과만 본다(scripts/freshness_check.py):
 # 오늘 수급이 왔는데 latest 가 오늘이 아니면 1, 수급이 없는데 장중 틱이 있으면 75(틱도 없으면 휴장으로 0),
 # 전 거래일에 FINAL.txt 가 없으면 75, alert.sh 가 읽을 ALERT_WEBHOOK_URL 이 비었거나 GET 에 죽어 있으면 75 —
-# 그러면 위의 모든 알림이 로그에만 남는다. 모두 0 이면 HEARTBEAT_URL(있으면)로 하트비트를 보낸다.
+# 그러면 위의 모든 알림이 로그에만 남는다. 리포트·수급·확정 점검이 0 이면 HEARTBEAT_URL(있으면)로 하트비트를 보낸다 —
+# 웹훅이 없어도 보낸다(하트비트만 써도 된다). 웹훅이 **있는데 죽었으면** 안 보낸다 — 그날은 외부 감시가 유일한 통로다.
 30 20 * * 1-5 mkdir -p /home/young/git/sector-flow/reports && /home/young/git/sector-flow/scripts/cron_run.sh sector-flow-fresh -- timeout -k 1m 10m /home/young/git/sector-flow/scripts/freshness_check.sh >> /home/young/git/sector-flow/reports/cron.log 2>&1
 
 # 리포트 웹 서비스 — 5분마다 "안 떠 있으면 띄운다"(scripts/serve.sh, 이미 떠 있으면 잠금을 못 잡고 바로 0).
 # 재부팅·서버 사망·배포(서버가 제 코드가 바뀌면 스스로 끝난다) 뒤 5분 안에 다시 뜬다. Tailscale 주소에만 연다.
-*/5 * * * * mkdir -p /home/young/git/sector-flow/reports && /home/young/git/sector-flow/scripts/cron_run.sh sector-flow-web -- /home/young/git/sector-flow/scripts/serve.sh >> /home/young/git/sector-flow/reports/serve.log 2>&1
+# SECTOR_FLOW_KILL_STREAK: serve.sh 가 TERM 을 버틴 서버를 KILL 하면 그 서버의 래퍼가 137 로 알린다 — 재시작 연속 횟수로
+# 솎아 serve.sh 의 재시작 알림과 같은 박자(연속 첫 회·12회마다)로만 보낸다(scripts/cron_run.sh).
+*/5 * * * * mkdir -p /home/young/git/sector-flow/reports && SECTOR_FLOW_KILL_STREAK=/home/young/git/sector-flow/reports/.serve.restarts /home/young/git/sector-flow/scripts/cron_run.sh sector-flow-web -- /home/young/git/sector-flow/scripts/serve.sh >> /home/young/git/sector-flow/reports/serve.log 2>&1

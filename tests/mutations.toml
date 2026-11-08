@@ -881,7 +881,7 @@ replace = "    return [str(r[0]) for r in cur.fetchall()]"
 
 [[mutation]]
 id = "cron-loses-1910-retry"
-why = "19:10 재시도가 빠지면 18:47 까지 도는 수집을 놓치고 다음날 07:30 까지 latest 가 전날에 머문다"
+why = "19:10 재시도가 빠지면 18:47 까지 도는 수집을 놓치고 다음날 08:20 까지 latest 가 전날에 머문다"
 guards = ["tests/test_daily_report_flow.py::test_cron_retries_after_the_longest_seen_collection_and_before_next_day"]
 file = "deploy/crontab.simnode"
 find = "10 18,19 * * 1-5 mkdir"
@@ -901,7 +901,7 @@ replace = """    exit 1
 
 [[mutation]]
 id = "report-stale-day-stays-warning"
-why = "오늘이 아닌 기준일의 미완을 75 로 끝내면 07:30 포기가 재시도 경고로 묻힌다"
+why = "오늘이 아닌 기준일의 미완을 75 로 끝내면 08:20 포기가 재시도 경고로 묻힌다"
 guards = ["tests/test_daily_report_flow.py::test_partial_day_that_is_no_longer_today_exits_1_and_keeps_latest",
           "tests/test_daily_report_flow.py::test_giving_up_on_a_past_day_alerts_as_error_through_cron_run"]
 file = "scripts/daily_report.sh"
@@ -1898,7 +1898,8 @@ replace = """pass"""
 [[mutation]]
 id = "pandas-warning-noise-completeness-gate"
 why = "read_sql 마다 같은 UserWarning 이 크론 로그를 덮어 진짜 경고를 묻는다"
-guards = ["tests/test_ops_guards.py::test_pandas_dbapi_warning_is_silenced_in_report_scripts[completeness_gate]"]
+guards = ["tests/test_ops_guards.py::test_pandas_dbapi_warning_is_silenced_in_report_scripts[completeness_gate]",
+          "tests/test_runbook.py::test_every_script_reading_sql_through_pandas_silences_the_dbapi_warning"]
 file = "scripts/completeness_gate.py"
 find = """warnings.filterwarnings("ignore", message="pandas only supports SQLAlchemy", category=UserWarning)"""
 replace = """pass"""
@@ -2902,17 +2903,17 @@ why = "점검이 실패한 날에도 하트비트를 보내면 외부 감시가 
 guards = ["tests/test_freshness_check.py::test_heartbeat_pings_only_a_clean_check"]
 file = "scripts/freshness_check.py"
 find = """    if not ok:
-        return ["[하트비트] 안 보낸다"""
+        return [f"[하트비트] 안 보낸다"""
 replace = """    if False:
-        return ["[하트비트] 안 보낸다"""
+        return [f"[하트비트] 안 보낸다"""
 
 [[mutation]]
 id = "heartbeat-never-sent"
 why = "HEARTBEAT_URL 을 넣어도 핑이 안 가 외부 감시가 매일 경보를 낸다"
 guards = ["tests/test_freshness_check.py::test_cron_path_clean_day_passes_and_pings_the_heartbeat"]
 file = "scripts/freshness_check.py"
-find = """    lines += heartbeat(alert_value("HEARTBEAT_URL", os.environ, alert_sh), rc == 0)"""
-replace = """    lines += heartbeat("", rc == 0)"""
+find = """    lines += heartbeat(alert_value("HEARTBEAT_URL", os.environ, alert_sh), data_rc == 0 and not dead_hook,"""
+replace = """    lines += heartbeat("", data_rc == 0 and not dead_hook,"""
 
 [[mutation]]
 id = "prev-day-final-unchecked"
@@ -3000,7 +3001,7 @@ id = "cron-run-tail-only-in-tmp"
 why = "꼬리 임시 파일을 /tmp 에만 만든다 — 할당량 tmpfs 가 차면 알림 본문이 빈다(2026-11-08 리허설: tail: cannot open '')"
 guards = ["tests/test_daily_report_flow.py::test_cron_run_keeps_the_tail_when_tmp_is_unusable"]
 file = "scripts/cron_run.sh"
-find = """tmp="$(mktemp -p "$REPO/reports" .cron_run.XXXXXX 2>/dev/null || mktemp 2>/dev/null || true)\""""
+find = """tmp="$(mktemp -p "$REPO/reports" ".cron_run.$$.XXXXXX" 2>/dev/null || mktemp 2>/dev/null || true)\""""
 replace = """tmp="$(mktemp 2>/dev/null || true)\""""
 
 [[mutation]]
@@ -3100,10 +3101,13 @@ replace = """    exit 0"""
 [[mutation]]
 id = "cron-run-stale-tails-kept"
 why = "KILL 로 끝난 크론의 꼬리 파일이 reports/ 에 영영 쌓인다"
-guards = ["tests/test_daily_report_flow.py::test_cron_run_sweeps_tail_files_left_by_a_kill"]
+guards = ["tests/test_daily_report_flow.py::test_cron_run_sweeps_tail_files_left_by_a_kill",
+          "tests/test_runbook.py::test_cron_run_sweeps_a_stale_tail_whose_owner_is_gone_or_someone_else"]
 file = "scripts/cron_run.sh"
-find = """find "$REPO/reports" -maxdepth 1 -name '.cron_run.*' -mtime +0 -delete 2>/dev/null || true"""
-replace = """true"""
+find = """    rm -f "$old"
+done"""
+replace = """    true
+done"""
 
 [[mutation]]
 id = "report-stale-asof-err-kept"
@@ -4308,3 +4312,188 @@ guards = ["tests/test_tui_ledger_view.py::test_null_memo_key_carries_n_and_each_
 file = "src/sectorflow/tui/ledger_view.py"
 find = "    return (_ser_key(keys, ser), n, tuple(len(ser[s]) for s in keys))"
 replace = "    return _ser_key(keys, ser)"
+
+# ── 운영 검토 3회차(ops-r3): 크론 래퍼·런북·문서 경로 ─────────────────────────
+
+[[mutation]]
+id = "cron-run-sweeps-a-live-wrappers-tail"
+why = """하루 넘은 꼬리 쓸기가 아직 도는 래퍼(며칠 도는 웹 서버)의 꼬리를 지운다 — 서버가 죽은 날 알림 본문이
+"임시 파일을 못 만들었다" 로 나간다."""
+guards = ["tests/test_runbook.py::test_cron_run_keeps_a_live_wrappers_tail_and_alerts_with_it"]
+file = "scripts/cron_run.sh"
+find = """    if [[ "$owner" =~ ^[0-9]+$ ]] && tr"""
+replace = """    if false && [[ "$owner" =~ ^[0-9]+$ ]] && tr"""
+
+[[mutation]]
+id = "cron-run-tail-name-without-pid"
+why = "꼬리 파일 이름에 주인 pid 가 없으면 쓸기가 살아 있는 래퍼의 것을 가려내지 못한다"
+guards = ["tests/test_runbook.py::test_cron_run_keeps_a_live_wrappers_tail_and_alerts_with_it"]
+file = "scripts/cron_run.sh"
+find = """".cron_run.$$.XXXXXX""""
+replace = """.cron_run.XXXXXX"""
+
+[[mutation]]
+id = "cron-run-sweep-trusts-any-live-pid"
+why = "pid 가 살아 있기만 하면 두면, 그 pid 를 다른 프로세스가 물려받은 옛 꼬리가 영영 남는다"
+guards = ["tests/test_runbook.py::test_cron_run_sweeps_a_stale_tail_whose_owner_is_gone_or_someone_else"]
+file = "scripts/cron_run.sh"
+find = """tr '\\0' ' ' < "/proc/$owner/cmdline" 2>/dev/null | grep -q 'cron_run\\.sh'; then"""
+replace = """[ -d "/proc/$owner" ]; then"""
+
+[[mutation]]
+id = "cron-run-kill-alert-unthrottled"
+why = "TERM 을 버티는 서버를 serve.sh 가 5분마다 KILL 하면 137 알림이 시간당 12건이다"
+guards = ["tests/test_runbook.py::test_kill_alerts_follow_the_serve_restart_streak"]
+file = "scripts/cron_run.sh"
+find = """    if [ "$rc" -eq 137 ] && [ -n "${SECTOR_FLOW_KILL_STREAK:-}" ]; then"""
+replace = """    if false; then"""
+
+[[mutation]]
+id = "cron-run-kill-alert-off-beat"
+why = "12회마다 한 번도 안 알리면 한 시간 넘게 이어지는 KILL 이 첫 회 뒤로 조용하다"
+guards = ["tests/test_runbook.py::test_kill_alerts_follow_the_serve_restart_streak"]
+file = "scripts/cron_run.sh"
+find = """[ $((streak % KILL_ALERT_EVERY)) -ne 0 ]"""
+replace = """true"""
+
+[[mutation]]
+id = "cron-run-streak-quiets-every-failure"
+why = "연속 횟수 파일이 있다고 KILL 이 아닌 실패(서버가 1 로 죽음)까지 솎으면 진짜 고장이 묻힌다"
+guards = ["tests/test_runbook.py::test_kill_streak_only_quiets_kills"]
+file = "scripts/cron_run.sh"
+find = """[ "$rc" -eq 137 ] && [ -n "${SECTOR_FLOW_KILL_STREAK:-}" ]"""
+replace = """[ -n "${SECTOR_FLOW_KILL_STREAK:-}" ]"""
+
+[[mutation]]
+id = "cron-kill-streak-env-dropped"
+why = "웹 크론 줄이 연속 횟수 파일을 안 넘기면 KILL 알림 솎기가 통째로 꺼진다"
+guards = ["tests/test_runbook.py::test_kill_streak_matches_serve_sh_and_the_web_cron_line"]
+file = "deploy/crontab.simnode"
+find = """&& SECTOR_FLOW_KILL_STREAK=/home/young/git/sector-flow/reports/.serve.restarts /home"""
+replace = """&& /home"""
+
+[[mutation]]
+id = "cron-kill-alert-beat-drifts-from-serve"
+why = "KILL 알림 박자가 serve.sh 재시작 알림과 어긋나면 둘이 따로 논다"
+guards = ["tests/test_runbook.py::test_kill_streak_matches_serve_sh_and_the_web_cron_line"]
+file = "scripts/cron_run.sh"
+find = """    KILL_ALERT_EVERY=12 """
+replace = """    KILL_ALERT_EVERY=6 """
+
+[[mutation]]
+id = "cron-log-never-rotates"
+why = "크론 로그가 끝없이 자란다"
+guards = ["tests/test_runbook.py::test_cron_log_rotates_past_5mb_and_keeps_one_old_copy"]
+file = "scripts/cron_run.sh"
+find = """-gt "$LOG_MAX_BYTES" ]"""
+replace = """-gt 999999999999 ]"""
+
+[[mutation]]
+id = "cron-log-rotates-by-move"
+why = """mv 로 돌리면 파일을 열어 둔 웹 서버가 .1 에 계속 쓰고, 다음 회전에 지워진 파일로 디스크만 먹는다.
+이번 실행의 출력도 새 로그가 아니라 .1 로 간다."""
+guards = ["tests/test_runbook.py::test_cron_log_rotates_past_5mb_and_keeps_one_old_copy"]
+file = "scripts/cron_run.sh"
+find = """cp -p "$log" "$log.1" 2>/dev/null && : > "$log""""
+replace = """mv "$log" "$log.1""""
+
+[[mutation]]
+id = "cron-log-rotates-without-append"
+why = "`>` 리다이렉트(O_APPEND 아님)를 비우면 다음 쓰기가 옛 오프셋에 써 앞이 0 바이트 구멍이 된다"
+guards = ["tests/test_runbook.py::test_cron_log_under_the_cap_or_not_appending_is_left_alone"]
+file = "scripts/cron_run.sh"
+find = """   && [ $(( 0$(sed -n 's/^flags:[[:space:]]*//p' "/proc/$$/fdinfo/1" 2>/dev/null) & 02000 )) -ne 0 ]; then"""
+replace = """   && true; then"""
+
+[[mutation]]
+id = "cron-final-retry-dropped"
+why = "daily_finalize 가 08:20 뒤에 끝난 날은 손으로 돌리기 전까지 잠정으로 남는다"
+guards = ["tests/test_runbook.py::test_final_mode_is_retried_late_morning"]
+file = "deploy/crontab.simnode"
+find = "20 10 * * 2-6 mkdir"
+replace = "# 20 10 * * 2-6 mkdir"
+
+[[mutation]]
+id = "heartbeat-tied-to-the-webhook"
+why = "웹훅이 비면 하트비트도 안 가 하트비트만 쓰는 설정에서 외부 감시가 매일 같은 이유로 울린다"
+guards = ["tests/test_freshness_check.py::test_cron_path_heartbeat_works_without_a_webhook",
+          "tests/test_freshness_check.py::test_heartbeat_follows_the_data_checks_not_the_webhook_in_process"]
+file = "scripts/freshness_check.py"
+find = """data_rc == 0 and not dead_hook,"""
+replace = """rc == 0,"""
+
+[[mutation]]
+id = "heartbeat-despite-a-dead-webhook"
+why = "웹훅이 있는데 죽은 날 핑을 보내면 그 경고는 아무에게도 안 가고 외부 감시도 조용하다"
+guards = ["tests/test_freshness_check.py::test_cron_path_dead_webhook_withholds_the_heartbeat",
+          "tests/test_freshness_check.py::test_heartbeat_follows_the_data_checks_not_the_webhook_in_process"]
+file = "scripts/freshness_check.py"
+find = """    dead_hook = bool(webhook) and wrc != 0"""
+replace = """    dead_hook = False"""
+
+[[mutation]]
+id = "runbook-row-missing"
+why = "알림 문구에 할 일 줄이 없으면 새벽에 코드를 읽어야 한다"
+guards = ["tests/test_runbook.py::test_every_operator_message_has_a_runbook_row"]
+file = "README.md"
+find = "| `report 실패 (rc=1)`, 본문 `기준일이 없다` |"
+replace = "| `report 실패 (rc=1)`, 본문 `기준일 없음` |"
+
+[[mutation]]
+id = "runbook-new-message-unlisted"
+why = "새 ⚠️ 문구를 넣고 런북 줄을 안 쓴다"
+guards = ["tests/test_runbook.py::test_new_operator_messages_need_a_runbook_entry"]
+file = "scripts/daily_report.sh"
+find = """  echo "[$(date '+%F %T')] 완전성 관문 오류(rc=$GATE_RC) — 중단." >&2"""
+replace = """  echo "[$(date '+%F %T')] ⚠️ 관문 결과가 이상하다 — 중단." >&2
+  echo "[$(date '+%F %T')] 완전성 관문 오류(rc=$GATE_RC) — 중단." >&2"""
+
+[[mutation]]
+id = "runbook-exemption-rots"
+why = "면제한 문구가 바뀌면 면제는 남고 새 문구는 런북 없이 나간다"
+guards = ["tests/test_runbook.py::test_exemptions_still_point_at_real_lines",
+          "tests/test_runbook.py::test_new_operator_messages_need_a_runbook_entry"]
+file = "scripts/cron_run.sh"
+find = """cron_run.sh: 이름이 없다"""
+replace = """cron_run.sh: 이름 없음"""
+
+[[mutation]]
+id = "runbook-scraper-goes-blind"
+why = "원천의 꼴이 바뀌어 긁개가 한 파일에서 아무것도 못 긁으면 새 문구 검사가 빈손으로 초록이다"
+guards = ["tests/test_runbook.py::test_scraper_still_finds_messages_in_every_source"]
+file = "scripts/serve_reports.py"
+find = """            return soft_fail(Handler.root, f"{a.host}:{a.port} 에 못 묶었다({e.strerror})")"""
+replace = """            why = f"{a.host}:{a.port} 에 못 묶었다({e.strerror})"
+            return soft_fail(Handler.root, why)"""
+
+[[mutation]]
+id = "doc-path-points-nowhere"
+why = "문서가 옮겨진·없는 스크립트를 가리킨다 — 장애 대응 중 없는 명령을 친다"
+guards = ["tests/test_doc_paths.py::test_every_repo_path_in_the_docs_exists"]
+file = "CLAUDE.md"
+find = "`scripts/finalize_done.py`"
+replace = "`scripts/finalize_dne.py`"
+
+[[mutation]]
+id = "doc-link-points-nowhere"
+why = "상대 링크가 없는 파일을 가리킨다"
+guards = ["tests/test_doc_paths.py::test_every_repo_path_in_the_docs_exists"]
+file = "README.md"
+find = "가이드](docs/trading-guide.md) 를 보라"
+replace = "가이드](docs/trading-guid.md) 를 보라"
+
+[[mutation]]
+id = "doc-path-allowance-outlives-its-mention"
+why = "문서에서 사라진 허용 항목이 남아 같은 이름의 진짜 오타를 덮는다"
+guards = ["tests/test_doc_paths.py::test_allowed_entries_are_still_mentioned"]
+file = "CLAUDE.md"
+find = "`CLAUDE.md` §3·`docs/schema.md`"
+replace = "`CLAUDE.md` §3·schema 문서"
+
+[[mutation]]
+id = "doc-lint-line-drifts-from-ci"
+why = "문서의 린트 줄이 CI 범위(research/)를 빠뜨려 로컬 초록이 CI 빨강이 된다"
+guards = ["tests/test_runbook.py::test_documented_lint_commands_match_ci"]
+file = "CLAUDE.md"
+find = "ruff check src/ tests/ scripts/ research/` 와"
+replace = "ruff check src/ tests/ scripts/` 와"
