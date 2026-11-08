@@ -4895,8 +4895,8 @@ id = "verify-one-day-list-tie-order"
 why = "같은 금액의 두 종목 순서를 뷰어와 맞대 검증 실패를 낸다 — JS 는 0 으로 시작하지 않는 코드를 숫자 순으로 앞에 돈다"
 guards = ["tests/test_web_render.py::test_web_layer_one_day_list_does_not_care_how_ties_are_ordered"]
 file = "scripts/verify_report.py"
-find = "                    peers = [(n, _sub(iv, pf)) for n, v2, iv, pf in everyone if round(v2, 1) == round(v, 1)]"
-replace = "                    peers = [(_n, _sub(_i, _p))]"
+find = "                    peers = [(n, _sub(iv, pf), rt) for n, v2, iv, pf, rt in everyone if round(v2, 1) == round(v, 1)]"
+replace = "                    peers = [(_n, _sub(_i, _p), _r)]"
 
 [[mutation]]
 id = "verify-external-truth-ignores-universe-drift"
@@ -5489,8 +5489,8 @@ id = "verify-one-day-list-tie-cut-at-six"
 why = "동률이 6번째 자리를 걸칠 때 뷰어가 고른 잘린 밖의 종목을 불일치로 낸다(2026-10-30 유통 에스에이엠티 등 재구성 7일)"
 guards = ["tests/test_web_render.py::test_web_layer_one_day_list_tie_across_the_sixth_place"]
 file = "scripts/verify_report.py"
-find = "                    peers = [(n, _sub(iv, pf)) for n, v2, iv, pf in everyone if round(v2, 1) == round(v, 1)]"
-replace = "                    peers = [(n, _sub(iv, pf)) for n, v2, iv, pf in want if round(v2, 1) == round(v, 1)]"
+find = "                    peers = [(n, _sub(iv, pf), rt) for n, v2, iv, pf, rt in everyone if round(v2, 1) == round(v, 1)]"
+replace = "                    peers = [(n, _sub(iv, pf), rt) for n, v2, iv, pf, rt in want if round(v2, 1) == round(v, 1)]"
 
 [[mutation]]
 id = "tui-trust-sum-keeps-binary-residue"
@@ -7332,6 +7332,89 @@ file = "src/sectorflow/collect/dart.py"
 find = "                (code, OK)).fetchall():"
 replace = "                (code, \"none\")).fetchall():"
 
+# ── 2026-11-09 리뷰 4차 D1 — 숫자 경로의 독립 검사 ─────────────────────────────────
+
+[[mutation]]
+id = "cbm-mean"
+why = "웹 흐름 페이지 가속의 분모(월별 섹터 시총)가 합이 아니라 평균이면 가속이 수십 배가 된다(11월 금융 60,920 vs 4,751,770)"
+guards = ["tests/test_pipeline_e2e.py::test_pipeline_db_recount_matches_stock_and_monthly_caps"]
+file = "scripts/sector_flow.py"
+find = """out.setdefault(mk, {}).setdefault(sec, {})[ym] = round(float(g["cap"].sum()), 1)"""
+replace = """out.setdefault(mk, {}).setdefault(sec, {})[ym] = round(float(g["cap"].mean()), 1)"""
+
+[[mutation]]
+id = "cbm-first-day"
+why = "월별 시총이 월말이 아니라 월초 값이면 임의 구간의 분모 시점이 한 달 어긋난다"
+guards = ["tests/test_pipeline_e2e.py::test_pipeline_db_recount_matches_stock_and_monthly_caps"]
+file = "scripts/sector_flow.py"
+find = """months[d[:7]] = d                      # 각 월의 마지막 거래일"""
+replace = """months.setdefault(d[:7], d)"""
+
+[[mutation]]
+id = "name-cap-scaled"
+why = "종목 시총(시총대비의 분모)만 틀려도 섹터 시총은 맞아 아무도 모른다"
+guards = ["tests/test_pipeline_e2e.py::test_pipeline_db_recount_matches_stock_and_monthly_caps"]
+file = "scripts/sector_flow.py"
+find = """"cap": (round(float(ncap), 1) if ncap is not None and ncap == ncap else None),"""
+replace = """"cap": (round(float(ncap) * 1.1, 1) if ncap is not None and ncap == ncap else None),"""
+
+[[mutation]]
+id = "name-a-scale"
+why = "화면의 시총대비가 ×0.1 이어도 그려진 글자 = 열 함수 대조는 같이 틀려 초록이다"
+guards = ["tests/test_pipeline_e2e.py::test_pipeline_screen_share_of_cap_is_recomputed_from_the_payload"]
+file = "src/sectorflow/tui/flow_view.py"
+find = """"a": ((v or 0) / cap * 100) if cap else None,"""
+replace = """"a": ((v or 0) / cap * 10) if cap else None,"""
+
+[[mutation]]
+id = "verify-viewer-share-of-cap-blind"
+why = "W 층이 뷰어 시총대비 칸을 안 보면 ×0.1 눈금·표지 누락이 통과한다"
+guards = ["tests/test_web_render.py::test_web_layer_catches_a_viewer_share_of_cap_on_the_wrong_scale"]
+file = "scripts/verify_report.py"
+find = """(g.get("name") or "").startswith(n or "") and sub == g.get("sub") and rt == g.get("rt")"""
+replace = """(g.get("name") or "").startswith(n or "") and sub == g.get("sub")"""
+
+[[mutation]]
+id = "today-sector-tv-yesterday"
+why = "오늘 패널의 섹터 거래대금이 어제 값이어도 시장 합계·주체 칸은 맞아 아무도 모른다"
+guards = ["tests/test_pipeline_e2e.py::test_pipeline_today_sector_turnover_is_the_last_daily_cell"]
+file = "scripts/sector_flow.py"
+find = """row["tv"] = round(_series(P, mks, s, "tv")[-1], 2)"""
+replace = """row["tv"] = round(_series(P, mks, s, "tv")[-2], 2)"""
+
+[[mutation]]
+id = "pct1y-short-lookback"
+why = "1년 백분위의 되돌아보기가 줄어도 픽스처(130일)에서는 안 드러나 실 DB 에서 처음 빨개진다"
+guards = ["tests/test_validation_fixes.py::test_one_year_percentile_really_looks_back_260_days"]
+file = "scripts/sector_numbers.py"
+find = "PCT_LOOKBACK = 260"
+replace = "PCT_LOOKBACK = 200"
+
+[[mutation]]
+id = "shares-nearest"
+why = "주식수를 가까운 스냅샷에서 고르면 앞을 본다 — 이벤트 없는 주식수 변화가 없던 픽스처에선 값이 같아 실 DB 에서만 잡혔다"
+guards = ["tests/test_pipeline_e2e.py::test_pipeline_db_recount_matches_returns_and_weights"]
+file = "src/sectorflow/storage.py"
+find = """right_on="s_date", by="code", direction="backward")"""
+replace = """right_on="s_date", by="code", direction="nearest")"""
+
+[[mutation]]
+id = "events-add-rights"
+why = "권리락을 주식수 이벤트로 세면 신주 상장 전 주식수를 지어내고 유상에서 배율이 틀린다(SK디앤디 1.47 vs 3.4)"
+guards = ["tests/test_pipeline_e2e.py::test_pipeline_db_recount_matches_returns_and_weights",
+          "tests/test_validation_fixes.py::test_rights_are_not_counted_into_the_market_cap"]
+file = "src/sectorflow/storage.py"
+find = "SHARE_EVENTS = 8 | 16 | 64"
+replace = "SHARE_EVENTS = 8 | 16 | 64 | 256"
+
+[[mutation]]
+id = "events-drop-reduction"
+why = "감자를 빼면 늦은 스냅샷 동안 시총이 배수로 틀린다 — 픽스처에 감자가 없어 실 DB 에서만 잡혔다"
+guards = ["tests/test_pipeline_e2e.py::test_pipeline_db_recount_matches_returns_and_weights"]
+file = "src/sectorflow/storage.py"
+find = "SHARE_EVENTS = 8 | 16 | 64"
+replace = "SHARE_EVENTS = 8 | 16"
+
 [[mutation]]
 id = "finalize-ended-max"
 why = "실행이 끝난 때를 가장 늦은 태스크로 재면 기준일 안에 끝난 태스크가 확정으로 넘어간다"
@@ -7371,3 +7454,76 @@ guards = ["tests/test_finalize_done.py::test_a_log_without_the_completion_line_i
 file = "scripts/finalize_done.py"
 find = """        return "완료 줄(done=… fail=…)이 없다 — 수집기 출력이 바뀌었으면 finalize_done._DONE_LINE 을 맞춰라\""""
 replace = """        return None"""
+
+[[mutation]]
+id = "rights-pending-not-attached"
+why = "표지를 페이로드에 안 실으면 신주 상장 전 종목의 시총대비가 최대 2배로 부푼 채 표지 없이 나간다"
+guards = ["tests/test_pipeline_e2e.py::test_pipeline_rights_pending_mark_is_recounted_from_the_db"]
+file = "scripts/sector_flow.py"
+find = """payload["names"][code]["cap_pending"] = pending"""
+replace = """pass"""
+
+[[mutation]]
+id = "rights-pending-never-catches-up"
+why = "신주가 들어온 뒤에도 표지가 남으면 멀쩡한 시총을 의심하게 만든다"
+guards = ["tests/test_pipeline_e2e.py::test_pipeline_rights_pending_mark_is_recounted_from_the_db",
+          "tests/test_validation_fixes.py::test_rights_pending_marks_only_what_has_not_caught_up"]
+file = "src/sectorflow/storage.py"
+find = "after[-1] < before[-1] * RIGHTS_CAUGHT_UP"
+replace = "after[-1] < before[-1] * 1000"
+
+[[mutation]]
+id = "rights-pending-reads-future"
+why = "지난 기준일 재구성이 그 뒤 스냅샷을 읽으면 그날의 표지가 사라진다"
+guards = ["tests/test_validation_fixes.py::test_rights_pending_does_not_read_past_the_report_day"]
+file = "src/sectorflow/storage.py"
+find = """f"WHERE code IN ({','.join([ph] * len(keys))}) AND date <= {ph}", (*keys, asof))"""
+replace = """f"WHERE code IN ({','.join([ph] * len(keys))}) AND date <= {ph}", (*keys, "9999-12-31"))"""
+
+[[mutation]]
+id = "rights-pending-tui-mark-dropped"
+why = "시총 칸에 표지가 없으면 부푼 시총대비를 사실로 읽는다"
+guards = ["tests/test_pipeline_e2e.py::test_pipeline_screen_share_of_cap_is_recomputed_from_the_payload"]
+file = "src/sectorflow/tui/flow_view.py"
+find = """return CAP_PENDING_MARK if t.get("cap_pending") else \"\""""
+replace = """return \"\""""
+
+[[mutation]]
+id = "rights-pending-viewer-mark-dropped"
+why = "뷰어의 시총 대비 칸에 표지가 없으면 TUI 와 다른 말을 한다"
+guards = ["tests/test_web_render.py::test_viewer_marks_the_share_of_cap_of_a_rights_pending_stock"]
+file = "scripts/templates/sector_flow.html"
+find = """pp(t.a)+"%p"+(t.pend?"!":"")"""
+replace = """pp(t.a)+"%p\""""
+
+[[mutation]]
+id = "rights-pending-numbers-note-dropped"
+why = "수치표 섹터 표의 시총·가속 분모가 작게 나오는 까닭을 안 적는다"
+guards = ["tests/test_web_render.py::test_pages_name_the_rights_pending_stocks_and_stay_silent_without_them"]
+file = "scripts/templates/sector_numbers.html"
+find = """const pend=Object.values(D.names||{}).filter(r=>r.cap_pending);"""
+replace = """const pend=[];"""
+
+[[mutation]]
+id = "cap-index-ratio-silent"
+why = "주식수 일괄 갱신(코스닥 비 +10.5%)이 와도 검증기가 말이 없다"
+guards = ["tests/test_validation_fixes.py::test_cap_to_index_jump_on_the_report_day_warns_but_does_not_fail"]
+file = "scripts/verify_report.py"
+find = """if abs(jumps[-1][1]) > VF_CAP_INDEX_JUMP:"""
+replace = """if False:"""
+
+[[mutation]]
+id = "cap-index-ratio-any-day-in-window"
+why = "창 안의 옛 점프로 경고하면 1년 내내 매일 울려 아무도 안 본다"
+guards = ["tests/test_validation_fixes.py::test_old_cap_to_index_jump_in_the_window_does_not_warn_every_day"]
+file = "scripts/verify_report.py"
+find = """if abs(jumps[-1][1]) > VF_CAP_INDEX_JUMP:"""
+replace = """if abs(top[1]) > VF_CAP_INDEX_JUMP:"""
+
+[[mutation]]
+id = "cap-index-ratio-threshold-too-loose"
+why = "문턱이 일괄 갱신일 3.52% 위로 가면 07-09 같은 날을 못 본다"
+guards = ["tests/test_validation_fixes.py::test_cap_to_index_threshold_sits_above_the_largest_normal_day"]
+file = "scripts/verify_report.py"
+find = "VF_CAP_INDEX_JUMP = 3.0"
+replace = "VF_CAP_INDEX_JUMP = 5.0"
