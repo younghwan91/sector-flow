@@ -216,16 +216,13 @@ def real_repo(tmp_path):
 
 
 def _finalize_runs(root: Path, *ended: str) -> Path:
-    """실행마다 따로 둔 daily_finalize 기록 — 창(달력 3일)이 기준일을 덮어야 확정이다(finalize_done)."""
-    import time
+    """실행마다 따로 둔 daily_finalize 기록(끝난 때는 KST) — 창(달력 3일)이 기준일을 덮어야 확정이다."""
     for i, when in enumerate(ended):
         run = root / "dag_id=daily_finalize" / f"run_id=scheduled__{i}"
         for task in FLOW.FINALIZE_TASKS:
             f = run / f"task_id={task}" / "attempt=1.log"
             f.parent.mkdir(parents=True, exist_ok=True)
-            f.write_text("... Task exited with return code 0\n")
-            t = time.mktime(time.strptime(when, "%Y-%m-%d %H:%M"))
-            os.utime(f, (t, t))
+            FLOW.write_attempt(f, when)
     return root
 
 

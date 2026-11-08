@@ -478,17 +478,31 @@ def test_skip_on_a_later_day_mentions_the_collection(repo):
 FINALIZE_TASKS = ("finalize_sector", "finalize_both", "rebuild_adjusted")
 
 
+def kst_epoch(when: str) -> float:
+    """``YYYY-MM-DD HH:MM`` **KST** → epoch. 이 머신의 시간대와 무관하다 — ``time.mktime`` 은 로컬 시간대로 읽어
+    CI(UTC)에서 확정 실행의 날이 하루 밀렸다(2026-11-08 CI: 10-30 이 창 밖이 됐다)."""
+    from datetime import datetime, timedelta, timezone
+    return datetime.strptime(when, "%Y-%m-%d %H:%M").replace(tzinfo=timezone(timedelta(hours=9))).timestamp()
+
+
+def write_attempt(f: Path, ended_kst: str, ok: bool = True) -> None:
+    """Airflow 시도 기록 — 첫 줄은 Airflow 처럼 **UTC** 타임스탬프(finalize_done 이 그 날로 창을 센다), 파일 시각은 끝난 때."""
+    from datetime import datetime, timezone
+    t = kst_epoch(ended_kst)
+    stamp = datetime.fromtimestamp(t, timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+    f.write_text(f"[{stamp}.000+0000] {{local_task_job_runner.py:123}} INFO - ::group::Pre task\n"
+                 f"... Task exited with return code {0 if ok else 1}\n")
+    os.utime(f, (t, t))
+
+
 def _finalize_logs(root: Path, ok: bool = True, ended: str = "2026-11-03 07:20",
                    tasks: tuple[str, ...] = FINALIZE_TASKS) -> Path:
-    import time
+    """``ended`` 는 KST — 07:20 KST 는 UTC 로 전날이고 수집기 창은 그 UTC 날에서 센다."""
     run = root / "dag_id=daily_finalize" / "run_id=scheduled__2026-11-01T21:30:00+00:00"
     for task in tasks:
         d = run / f"task_id={task}"
         d.mkdir(parents=True, exist_ok=True)
-        f = d / "attempt=1.log"
-        f.write_text("... Task exited with return code 0\n" if ok else "... Task exited with return code 1\n")
-        t = time.mktime(time.strptime(ended, "%Y-%m-%d %H:%M"))
-        os.utime(f, (t, t))
+        write_attempt(d / "attempt=1.log", ended, ok)
     return root
 
 

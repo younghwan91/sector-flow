@@ -4912,3 +4912,12 @@ guards = ["tests/test_web_render.py::test_external_truth_skips_a_rebuilt_day_who
 file = "scripts/verify_report.py"
 find = "    if P.get(\"rebuilt\") and gone:"
 replace = "    if False:"
+
+[[mutation]]
+id = "fixture-time-in-local-timezone"
+why = """확정 기록 시험의 시각을 이 머신 시간대로 읽는다 — KST 에서는 초록, CI(UTC)에서는 실행 날이 하루 밀려
+빨개진다(2026-11-08 PR #28 머지 뒤 CI). 정적 검사가 time.mktime 을 막는다."""
+guards = ["tests/test_finalize_done.py::test_no_test_reads_the_machine_timezone"]
+file = "tests/test_daily_report_flow.py"
+find = "    return datetime.strptime(when, \"%Y-%m-%d %H:%M\").replace(tzinfo=timezone(timedelta(hours=9))).timestamp()"
+replace = "    import time\n    return time.mktime(time.strptime(when, \"%Y-%m-%d %H:%M\"))"
