@@ -115,7 +115,7 @@ def comovement(d) -> None:
         ok = lambda v: [c for c in v if c == c]             # noqa: E731
         print(f"  {k:<8}{st.mean(ok(raw)):>+10.3f}{neg_frac(raw):>8.2f}"
               f"{st.mean(ok(dt)):>+10.3f}{neg_frac(dt):>8.2f}{neg_frac(nul):>10.2f}")
-    print("  → 널은 0.50. 관측이 그보다 낮으면 로테이션은 우연보다 드물다.")
+    print("  → 널은 0.50. 관측이 그보다 낮으면 반대로 간 쌍이 널보다 드물다(이 시장·구간·주체).")
     print()
 
 

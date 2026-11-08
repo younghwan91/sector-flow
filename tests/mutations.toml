@@ -3685,7 +3685,7 @@ replace = "기준은 내렸다.</b>(수치표에서도 같은 이유로 내렸�
 [[mutation]]
 id = "viewer-heatmap-opens-at-oldest"
 why = """폰(390px)에서 히트맵이 가장 옛날 칸부터 보여 오늘이 화면 밖이었다."""
-guards = ["tests/test_viewer_page.py::test_viewer_scrolls_the_heatmap_to_today_and_draws_the_line_in_pixels"]
+guards = ["tests/test_viewer_page.py::test_heatmap_opens_at_the_latest_column"]
 file = "scripts/templates/sector_flow.html"
 find = "  box.scrollLeft=box.scrollWidth;"
 replace = ""
@@ -3722,3 +3722,75 @@ guards = ["tests/test_tui_ledger_view.py::test_comove_verdict_states_the_measure
 file = "src/sectorflow/tui/ledger_view.py"
 find = "    long = (\"반대로 간 쌍이 널보다 드물다(이 시장·구간·주체)\" if low"
 replace = "    long = (\"로테이션은 우연보다 드물다\" if low"
+
+[[mutation]]
+id = "viewer-thin-at-ten"
+why = """얇은 섹터 문턱을 `<=` 로 잡아 10종목 섹터까지 `~` 가 붙는다 — TUI·수치표(`< 10`)와 갈린다."""
+guards = ["tests/test_viewer_page.py::test_thin_threshold_is_below_ten_not_at_ten"]
+file = "scripts/templates/sector_flow.html"
+find = "const thin=sec=>nOf(sec)<THIN_MIN;"
+replace = "const thin=sec=>nOf(sec)<=THIN_MIN;"
+
+[[mutation]]
+id = "viewer-heat-scale-includes-thin"
+why = """히트맵 농도의 최대를 얇은 섹터까지 넣어 잰다 — 3종목 섹터의 %p 가 척도를 먹어 나머지가 다 옅어진다."""
+guards = ["tests/test_viewer_page.py::test_heat_scale_and_context_lines_leave_thin_sectors_out"]
+file = "scripts/templates/sector_flow.html"
+find = "vals.set(s,row); if(!thin(s)) row.forEach(v=>mx=Math.max(mx,Math.abs(v)));});"
+replace = "vals.set(s,row); row.forEach(v=>mx=Math.max(mx,Math.abs(v)));});"
+
+[[mutation]]
+id = "viewer-thin-lines-drawn"
+why = """누적 추이에 얇은 섹터의 회색 선을 다시 그린다 — 회색으로 죽인 섹터가 그림을 채운다."""
+guards = ["tests/test_viewer_page.py::test_heat_scale_and_context_lines_leave_thin_sectors_out"]
+file = "scripts/templates/sector_flow.html"
+find = "series.filter(o=>o.s!==focus&&!thin(o.s))"
+replace = "series.filter(o=>o.s!==focus)"
+
+[[mutation]]
+id = "viewer-thin-fallback-cut"
+why = """종목 값이 없는 구간(전체·직접 지정)에서 종목 수를 못 세어 아무것도 얇다고 하지 않는다."""
+guards = ["tests/test_viewer_page.py::test_whole_range_counts_names_from_n_by_sector"]
+file = "scripts/templates/sector_flow.html"
+find = "    }else if(D.n_by_sector&&ms.every(m=>D.n_by_sector[m]&&typeof D.n_by_sector[m]===\"object\")){"
+replace = "    }else if(false){"
+
+[[mutation]]
+id = "viewer-thin-ignores-market"
+why = """종목 수를 시장과 무관하게 센다 — 거래소 6 + 코스닥 6 섹터가 거래소 화면에서도 12로 세어져 `~` 를 못 받는다."""
+guards = ["tests/test_viewer_page.py::test_thin_count_follows_the_selected_market"]
+file = "scripts/templates/sector_flow.html"
+find = "        if(!ms.includes(r.market)||!(r.win&&r.win[w])) continue;"
+replace = "        if(!(r.win&&r.win[w])) continue;"
+
+[[mutation]]
+id = "viewer-one-day-table-accel"
+why = """1일 표의 기관 가속 열에 값을 낸다 — TUI 1일 창은 `—` 다."""
+guards = ["tests/test_viewer_page.py::test_one_day_table_has_no_accel_and_no_badge_on_it"]
+file = "scripts/templates/sector_flow.html"
+find = "sh=nDays()===1?null:(c?iv/c*100:0);"
+replace = "sh=(c?iv/c*100:0);"
+
+[[mutation]]
+id = "viewer-one-day-accel-badge"
+why = """1일 가속 열 머리에 표지를 단다 — 값이 전부 `—` 인 열에 증거 지위를 붙인다."""
+guards = ["tests/test_viewer_page.py::test_one_day_table_has_no_accel_and_no_badge_on_it"]
+file = "scripts/templates/sector_flow.html"
+find = "  if(kind===\"share\"&&nDays()===1) return \"\";"
+replace = ""
+
+[[mutation]]
+id = "viewer-badge-ignores-market"
+why = """거래소·코스닥 화면에도 [앞날 증거 없음] 을 단다 — 검정은 전체 시장에서만 했다."""
+guards = ["tests/test_viewer_page.py::test_badges_follow_the_tested_metric_and_market"]
+file = "scripts/templates/sector_flow.html"
+find = "  return market===EV_MARKET?b:MARKET_NOTE; }"
+replace = "  return b; }"
+
+[[mutation]]
+id = "viewer-badge-amount-as-ratio"
+why = """금액(임펄스)을 가속(÷ 시총)과 같은 범위로 본다 — 외국인 금액은 검정하지 않았는데 [앞날 증거 없음] 이 붙는다."""
+guards = ["tests/test_viewer_page.py::test_badges_follow_the_tested_metric_and_market"]
+file = "scripts/templates/sector_flow.html"
+find = "  const kind=k===\"accel\"?\"share\":\"amt\";"
+replace = "  const kind=\"share\";"
