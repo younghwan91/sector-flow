@@ -102,7 +102,7 @@ src/sectorflow/
     └── ledger_app.py
 scripts/                 # daily_report.sh · sector_flow · sector_numbers · verify_report
                          # ledger_numbers · verify_merge
-docs/                    # kqflow-formulas.pdf · trading-guide.md
+docs/                    # formulas.md · trading-guide.md · validation/
 ```
 
 ## 3. 일일 배치 — 언제 무엇이 도나
@@ -438,9 +438,9 @@ dW/dt 174 · 종목[수] 183. 앞의 넷(섹터·마커·가속·임펄스)은 4
 | ẋ, ẍ (풀림 속도·가속도) | 구간을 셋으로 갈라 x 를 중앙차분(부호 반전) | %p/일, %p/일² |
 | G (성장 점수) | a·x·ẍ 가 모두 양수인(10종목 이상) 섹터끼리 매긴 세 순위의 평균. 그런 섹터가 하나뿐이면 0.5 | 0~1 |
 
-정확한 수식과 그 검토는 별도 문서에 있다. 각 식을 코드에서 그대로 옮겨 적고 그것이
-실제로 무엇을 재는지(그리고 물리 용어가 비유일 뿐 성립하는 운동방정식이 아니라는 것)를
-확인한 [kqflow 섹터 자금흐름 지표의 수식 정의](docs/kqflow-formulas.pdf) (PDF).
+정확한 수식은 [`docs/formulas.md`](docs/formulas.md) 가 정본이다. 식마다 계산하는 코드 위치와
+지표별 근거 수준(앞날 수익률에 대해 검증된 것이 있나)을 같이 적었다. 물리 용어는 비유일 뿐
+성립하는 운동방정식이 아니다.
 
 ## 8. 주의 — 이 숫자들은 예측이 아니다
 
@@ -503,7 +503,9 @@ uv run python scripts/verify_merge.py <워크트리>   # TUI 를 고친 뒤 — 
 | 문서 | 내용 |
 |---|---|
 | [`docs/trading-guide.md`](docs/trading-guide.md) | 섹터에서 종목까지 3단계로 고르는 법, 실제 예제 |
-| [`docs/kqflow-formulas.pdf`](docs/kqflow-formulas.pdf) | §7 의 수식을 코드에서 그대로 옮겨 적고 무엇을 재는지 검토한 문서 |
+| [`docs/formulas.md`](docs/formulas.md) | **수식 정본.** 두 화면의 모든 열·표시의 식과 코드 위치, 지표별 근거 수준 |
+| [`docs/validation/`](docs/validation/) | 지표 검증과 수급 쓸모 검정 — 사전등록과 결과 |
+| [`docs/kqflow-formulas.pdf`](docs/kqflow-formulas.pdf) | 2026-08-31 판 — 낡음, `docs/formulas.md` 가 정본 |
 
 ## 12. 관련 프로젝트 — 오픈소스 퀀트 스택
 
