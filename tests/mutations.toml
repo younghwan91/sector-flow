@@ -6455,3 +6455,11 @@ guards = ["tests/test_packaging.py::test_shipped_code_talks_only_to_kiwoom"]
 file = "src/sectorflow/collect/kiwoom.py"
 find = "PROD_URL = \"https://api.kiwoom.com\"\n"
 replace = "PROD_URL = \"https://api.kiwoom.com\"\nSTATS_URL = \"https://stats.example.com/ping\"\n"
+
+[[mutation]]
+id = "byo-busy-guard-never-raises"
+why = "창 안이어도 검사 함수가 멈추지 않아 창 목록이 있으나 마나다"
+guards = ["tests/test_collect_busy.py::test_guard_raises_inside_a_window_and_byo_default_is_empty"]
+file = "src/sectorflow/collect/busy.py"
+find = "        if w is not None:\n"
+replace = "        if False:\n"
