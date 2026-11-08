@@ -398,7 +398,7 @@ why = """그림을 못 보는 사람(폭이 좁거나 스크롤 아래거나 평
 보험이 나머지와 따로 논다"), 그러면 글자로도 남겨야 한다."""
 guards = ["tests/test_tui_ledger_view.py::test_comove_prints_the_mean_column_and_names_the_outliers"]
 file = "src/sectorflow/tui/ledger_view.py"
-find = """    lines.append(pad(tier_for(comove_outliers(keys, mean), width), width))"""
+find = """    lines.append(pad(tier_for(comove_outliers(keys, mean, thin=thin), width), width))"""
 replace = "    lines.append(pad(\"\", width))"
 
 [[mutation]]
@@ -1272,7 +1272,7 @@ id = "viewer-claims-krx"
 why = "수익률은 자체 바구니인데 KRX 지수라고 적는다"
 guards = ["tests/test_report_pages.py::test_viewer_does_not_claim_krx_index_returns"]
 file = "scripts/templates/sector_flow.html"
-find = "수익률 (자체 바구니·~20시 종가)"
+find = "수익률 (자체 바구니·\"+retLabel(true)+\")"
 replace = "실제 Δv (KRX지수)"
 
 [[mutation]]
@@ -3636,3 +3636,177 @@ guards = ["tests/test_pipeline_e2e.py::test_verifier_flags_a_leftover_basis_slot
 file = "scripts/verify_report.py"
 find = """"__DATA__" not in html and "__BASIS__" not in html)"""
 replace = """"__DATA__" not in html)"""
+
+# ── r2: 웹 뷰어·원장이 TUI·수치표와 같은 문턱·표지·출발점으로 말한다 ──
+
+[[mutation]]
+id = "viewer-thin-sector-mixed-in"
+why = """뷰어가 얇은 섹터(10종목 미만)를 섞어 줄세운다. 1일 가속 2등이 부동산(3종목), 20일 14등이
+출판/매체복제(2종목)였다 — TUI·수치표는 회색·맨 아래인데 웹만 맨 위에 올렸다."""
+guards = ["tests/test_viewer_page.py::test_viewer_sinks_thin_sectors_and_greys_them"]
+file = "scripts/templates/sector_flow.html"
+find = "  let order=D.sectors.filter(present).sort((a,b)=>(thin(a)-thin(b))||(windowVal(b,actor)-windowVal(a,actor)));"
+replace = "  let order=D.sectors.filter(present).sort((a,b)=>windowVal(b,actor)-windowVal(a,actor));"
+
+[[mutation]]
+id = "viewer-one-day-accel"
+why = """1일 구간에서 가속(파생값)을 내고 그 순으로 줄세운다. TUI 1일 창은 가속을 `—` 로 둔다."""
+guards = ["tests/test_viewer_page.py::test_viewer_has_no_accel_on_one_day"]
+file = "scripts/templates/sector_flow.html"
+find = "const M=()=>nDays()===1?\"amt\":metric;"
+replace = "const M=()=>metric;"
+
+[[mutation]]
+id = "viewer-badge-ignores-tested-window"
+why = """종목 투신·연기금에 창과 무관하게 [음의 순위 정보·쓸 수 없음] 을 단다. 검정은 20일뿐이라
+5·60·120일에 달면 검정하지 않은 것을 검정했다고 말한다."""
+guards = ["tests/test_viewer_page.py::test_viewer_badges_are_scoped_to_the_tested_windows"]
+file = "scripts/templates/sector_flow.html"
+find = "  return e[1].includes(nDays())?e[0]:scopeNote(e[1]); }"
+replace = "  return e[0]; }"
+
+[[mutation]]
+id = "viewer-legend-drops-negative-badge"
+why = """범례가 [측정]·[앞날 증거 없음] 둘만 설명해 종목 투신·연기금의 [음의 순위 정보·쓸 수 없음] 이
+무슨 뜻인지 웹에 없었다."""
+guards = ["tests/test_viewer_page.py::test_viewer_shares_the_thin_threshold_and_badge_set_with_the_tui"]
+file = "scripts/templates/sector_flow.html"
+find = "<b>[음의 순위 정보·쓸 수 없음]</b> 종목"
+replace = "<b>[음의 순위]</b> 종목"
+
+[[mutation]]
+id = "viewer-claims-numbers-dropped-x"
+why = """뷰어가 "수치표에서도 같은 이유로 내렸다" 고 적었는데 수치표는 x 를 내리지 않았다(표지를 달았다)."""
+guards = ["tests/test_viewer_page.py::test_viewer_does_not_say_the_numbers_page_dropped_x"]
+file = "scripts/templates/sector_flow.html"
+find = "순위는 이 화면에서 내렸다.</b>"
+replace = "기준은 내렸다.</b>(수치표에서도 같은 이유로 내렸다)"
+
+[[mutation]]
+id = "viewer-heatmap-opens-at-oldest"
+why = """폰(390px)에서 히트맵이 가장 옛날 칸부터 보여 오늘이 화면 밖이었다."""
+guards = ["tests/test_viewer_page.py::test_heatmap_opens_at_the_latest_column"]
+file = "scripts/templates/sector_flow.html"
+find = "  box.scrollLeft=box.scrollWidth;"
+replace = ""
+
+[[mutation]]
+id = "ledger-starts-on-individuals"
+why = """원장만 개인으로 시작해 sw-flow(기관)와 오가면 같은 섹터의 막대가 다른 돈을 말한다."""
+guards = ["tests/test_tui_ledger_view.py::test_ledger_starts_on_institution_like_sw_flow"]
+file = "src/sectorflow/tui/ledger_view.py"
+find = "        self.ai = ACTOR_KEYS.index(\"inst\")"
+replace = "        self.ai = 0"
+
+[[mutation]]
+id = "ledger-thin-sector-mid-list"
+why = """얇은 섹터(`~`)가 정렬에 섞여 거래소/부동산(3종목)이 절대크기 순 한가운데에 있었다."""
+guards = ["tests/test_tui_ledger_view.py::test_thin_sectors_sink_to_the_bottom_under_every_sort"]
+file = "src/sectorflow/tui/ledger_view.py"
+find = "        out.sort(key=lambda r: r[\"n\"] < THIN_N)"
+replace = "        pass"
+
+[[mutation]]
+id = "ledger-outliers-name-thin-sector"
+why = """"시장 공통요인과 따로 논다" 줄에 2종목짜리 출판/매체복제가 올라 두 종목의 사정이 섹터의 성질처럼 읽혔다."""
+guards = ["tests/test_tui_ledger_view.py::test_comove_outlier_line_leaves_out_thin_sectors"]
+file = "src/sectorflow/tui/ledger_view.py"
+find = """    lines.append(pad(tier_for(comove_outliers(keys, mean, thin=thin), width), width))"""
+replace = """    lines.append(pad(tier_for(comove_outliers(keys, mean), width), width))"""
+
+[[mutation]]
+id = "ledger-verdict-claims-rotation"
+why = """판정줄이 "로테이션은 우연보다 드물다" 는, 검정 문서에 없는 결론을 적는다. 잰 것은 고른 시장·구간·주체에서
+음의 상관 쌍이 널보다 적다는 사실뿐이다."""
+guards = ["tests/test_tui_ledger_view.py::test_comove_verdict_states_the_measured_fact_with_its_scope"]
+file = "src/sectorflow/tui/ledger_view.py"
+find = "    long = (\"반대로 간 쌍이 널보다 드물다(이 시장·구간·주체)\" if low"
+replace = "    long = (\"로테이션은 우연보다 드물다\" if low"
+
+[[mutation]]
+id = "viewer-thin-at-ten"
+why = """얇은 섹터 문턱을 `<=` 로 잡아 10종목 섹터까지 `~` 가 붙는다 — TUI·수치표(`< 10`)와 갈린다."""
+guards = ["tests/test_viewer_page.py::test_thin_threshold_is_below_ten_not_at_ten"]
+file = "scripts/templates/sector_flow.html"
+find = "const thin=sec=>nOf(sec)<THIN_MIN;"
+replace = "const thin=sec=>nOf(sec)<=THIN_MIN;"
+
+[[mutation]]
+id = "viewer-heat-scale-includes-thin"
+why = """히트맵 농도의 최대를 얇은 섹터까지 넣어 잰다 — 3종목 섹터의 %p 가 척도를 먹어 나머지가 다 옅어진다."""
+guards = ["tests/test_viewer_page.py::test_heat_scale_and_context_lines_leave_thin_sectors_out"]
+file = "scripts/templates/sector_flow.html"
+find = "vals.set(s,row); if(!thin(s)) row.forEach(v=>mx=Math.max(mx,Math.abs(v)));});"
+replace = "vals.set(s,row); row.forEach(v=>mx=Math.max(mx,Math.abs(v)));});"
+
+[[mutation]]
+id = "viewer-thin-lines-drawn"
+why = """누적 추이에 얇은 섹터의 회색 선을 다시 그린다 — 회색으로 죽인 섹터가 그림을 채운다."""
+guards = ["tests/test_viewer_page.py::test_heat_scale_and_context_lines_leave_thin_sectors_out"]
+file = "scripts/templates/sector_flow.html"
+find = "series.filter(o=>o.s!==focus&&!thin(o.s))"
+replace = "series.filter(o=>o.s!==focus)"
+
+[[mutation]]
+id = "viewer-thin-fallback-cut"
+why = """종목 값이 없는 구간(전체·직접 지정)에서 종목 수를 못 세어 아무것도 얇다고 하지 않는다."""
+guards = ["tests/test_viewer_page.py::test_whole_range_counts_names_from_n_by_sector"]
+file = "scripts/templates/sector_flow.html"
+find = "    }else if(D.n_by_sector&&ms.every(m=>D.n_by_sector[m]&&typeof D.n_by_sector[m]===\"object\")){"
+replace = "    }else if(false){"
+
+[[mutation]]
+id = "viewer-thin-ignores-market"
+why = """종목 수를 시장과 무관하게 센다 — 거래소 6 + 코스닥 6 섹터가 거래소 화면에서도 12로 세어져 `~` 를 못 받는다."""
+guards = ["tests/test_viewer_page.py::test_thin_count_follows_the_selected_market"]
+file = "scripts/templates/sector_flow.html"
+find = "        if(!ms.includes(r.market)||!(r.win&&r.win[w])) continue;"
+replace = "        if(!(r.win&&r.win[w])) continue;"
+
+[[mutation]]
+id = "viewer-one-day-table-accel"
+why = """1일 표의 기관 가속 열에 값을 낸다 — TUI 1일 창은 `—` 다."""
+guards = ["tests/test_viewer_page.py::test_one_day_table_has_no_accel_and_no_badge_on_it"]
+file = "scripts/templates/sector_flow.html"
+find = "sh=nDays()===1?null:(c?iv/c*100:0);"
+replace = "sh=(c?iv/c*100:0);"
+
+[[mutation]]
+id = "viewer-one-day-accel-badge"
+why = """1일 가속 열 머리에 표지를 단다 — 값이 전부 `—` 인 열에 증거 지위를 붙인다."""
+guards = ["tests/test_viewer_page.py::test_one_day_table_has_no_accel_and_no_badge_on_it"]
+file = "scripts/templates/sector_flow.html"
+find = "  if(kind===\"share\"&&nDays()===1) return \"\";"
+replace = ""
+
+[[mutation]]
+id = "viewer-badge-ignores-market"
+why = """거래소·코스닥 화면에도 [앞날 증거 없음] 을 단다 — 검정은 전체 시장에서만 했다."""
+guards = ["tests/test_viewer_page.py::test_badges_follow_the_tested_metric_and_market"]
+file = "scripts/templates/sector_flow.html"
+find = "  return market===EV_MARKET?b:MARKET_NOTE; }"
+replace = "  return b; }"
+
+[[mutation]]
+id = "viewer-badge-amount-as-ratio"
+why = """금액(임펄스)을 가속(÷ 시총)과 같은 범위로 본다 — 외국인 금액은 검정하지 않았는데 [앞날 증거 없음] 이 붙는다."""
+guards = ["tests/test_viewer_page.py::test_badges_follow_the_tested_metric_and_market"]
+file = "scripts/templates/sector_flow.html"
+find = "  const kind=k===\"accel\"?\"share\":\"amt\";"
+replace = "  const kind=\"share\";"
+
+[[mutation]]
+id = "viewer-provisional-says-20h"
+why = """잠정 리포트(18:10)의 수익률을 "전일 20:00→당일 20:00" 이라 적는다 — 마지막 날은 수집 시각 스냅숏이고 애프터마켓이 아직 돈다."""
+guards = ["tests/test_viewer_page.py::test_return_label_follows_report_status_and_this_reports_numbers"]
+file = "scripts/templates/sector_flow.html"
+find = "const retLabel=short=>D.final?(short?RET_LABEL_SHORT:RET_LABEL):(short?RET_LABEL_PROV_SHORT:RET_LABEL_PROV);"
+replace = "const retLabel=short=>short?RET_LABEL_SHORT:RET_LABEL;"
+
+[[mutation]]
+id = "viewer-ret-example-not-from-payload"
+why = """바구니 vs KRX 예를 이 리포트 값이 아닌 것으로 적는다(예전엔 11-06 숫자를 박아 두었다) — 여기서는 바구니 칸에 지수 값을 넣는다."""
+guards = ["tests/test_viewer_page.py::test_return_label_follows_report_status_and_this_reports_numbers"]
+file = "scripts/templates/sector_flow.html"
+find = "    const b=(((T.market||{})[m]||{}).ret||{})[\"1\"], k=(T.krx_index||{})[m]||{}, kv=(k.ret||{})[\"1\"];"
+replace = "    const k=(T.krx_index||{})[m]||{}, kv=(k.ret||{})[\"1\"], b=kv;"
