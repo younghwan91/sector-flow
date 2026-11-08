@@ -3608,3 +3608,31 @@ guards = ["tests/test_pipeline_e2e.py::test_rendered_pages_carry_the_data_basis"
 file = "scripts/sector_numbers.py"
 find = "                .replace(BASIS_SLOT, DATA_BASIS))"
 replace = "                )"
+
+[[mutation]]
+id = "viewer-db-path-leaves-basis-slot"
+why = "sector_flow.py 를 DB 에서 바로 돌려(--db … --html) 지은 뷰어에 __BASIS__ 가 그대로 찍힌다"
+guards = ["tests/test_pipeline_e2e.py::test_db_path_viewer_carries_the_data_basis"]
+file = "scripts/sector_flow.py"
+find = """            f.write(html.replace("__DATA__", script_json(payload)).replace(BASIS_SLOT, DATA_BASIS))
+        print(f"wrote {a.html}  ({dates[0]}"""
+replace = """            f.write(html.replace("__DATA__", script_json(payload)))
+        print(f"wrote {a.html}  ({dates[0]}"""
+
+[[mutation]]
+id = "viewer-from-json-leaves-basis-slot"
+why = "배치 경로(--from-json)의 뷰어에 __BASIS__ 가 그대로 찍힌다"
+guards = ["tests/test_pipeline_e2e.py::test_rendered_pages_carry_the_data_basis"]
+file = "scripts/sector_flow.py"
+find = """            f.write(html.replace("__DATA__", script_json(payload)).replace(BASIS_SLOT, DATA_BASIS))
+        print(f"wrote {a.html}  (재사용"""
+replace = """            f.write(html.replace("__DATA__", script_json(payload)))
+        print(f"wrote {a.html}  (재사용"""
+
+[[mutation]]
+id = "verifier-ignores-basis-slot"
+why = "검증기가 __DATA__ 만 보고 갈리지 않은 __BASIS__ 자리표시를 통과시킨다"
+guards = ["tests/test_pipeline_e2e.py::test_verifier_flags_a_leftover_basis_slot"]
+file = "scripts/verify_report.py"
+find = """"__DATA__" not in html and "__BASIS__" not in html)"""
+replace = """"__DATA__" not in html)"""

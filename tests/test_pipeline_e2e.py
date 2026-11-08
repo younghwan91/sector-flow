@@ -351,3 +351,34 @@ def test_rendered_pages_carry_the_data_basis(report):
     for page in ("viewer.html", "numbers.html"):
         html = (report["dir"] / page).read_text("utf-8")
         assert DATA_BASIS in html and BASIS_SLOT not in html, f"{page} 에 자료 범위 표지가 없다"
+
+
+def test_db_path_viewer_carries_the_data_basis(tmp_path, report):
+    """``sector_flow.py --db … --html`` (``--from-json`` 이 아닌 길)도 자리표시를 간다.
+
+    배치는 ``--from-json`` 으로 뷰어를 짓지만 손으로 돌리는 DB 경로는 따로 ``write`` 한다 — 한쪽만
+    고치면 다른 쪽 페이지에 ``__BASIS__`` 가 찍힌다. 주입: DB 경로의 ``.replace(BASIS_SLOT, …)`` 를 빼면 실패한다.
+    """
+    from sectorflow.basis import BASIS_SLOT, DATA_BASIS
+
+    page = tmp_path / "viewer_db.html"
+    p = _run(str(SCRIPTS / "sector_flow.py"), "--db", str(report["db"]), "--days", str(REPORT_DAYS),
+             "--html", str(page))
+    assert p.returncode == 0, p.stderr[-3000:]
+    html = page.read_text("utf-8")
+    assert DATA_BASIS in html and BASIS_SLOT not in html
+
+
+def test_verifier_flags_a_leftover_basis_slot(report):
+    """검증기 C 층이 ``__DATA__`` 만 보던 자리표시 검사를 ``__BASIS__`` 에도 건다.
+
+    주입: ``verify_report.layer_c`` 의 자리표시 검사에서 ``__BASIS__`` 를 빼면 실패한다.
+    """
+    VR = _mod("verify_report")
+    html = (report["dir"] / "numbers.html").read_text("utf-8")
+    VR.FAILS.clear()
+    VR.layer_c(report["D"], html)
+    assert "C/템플릿 자리표시자 없음" not in VR.FAILS, VR.FAILS
+    VR.FAILS.clear()
+    VR.layer_c(report["D"], html + "<p>__BASIS__</p>")
+    assert "C/템플릿 자리표시자 없음" in VR.FAILS, VR.FAILS
