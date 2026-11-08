@@ -9,7 +9,7 @@
   `uv run python scripts/docs_refs.py --fix` — 그 커밋과 지금 코드를 diff 해 옮기고 표시를 갱신한다. 새 인용은 기호를 같이 적는다.
 - 대상 소스 — `scripts/sector_flow.py` · `scripts/sector_numbers.py` · `src/sectorflow/storage.py` ·
   `src/sectorflow/tui/flow_view.py` · `src/sectorflow/tui/ledger_view.py` · `scripts/daily_report.sh`.
-- `docs/kqflow-formulas.pdf` 는 **2026-08-31 판으로 낡았다.** 시총·수익률·k·G 정의가 그 뒤 바뀌었다. 바뀐 자리는
+- 옛 PDF 판(2026-08-31, `docs/kqflow-formulas.pdf`)은 2026-11-08 지웠다(git 이력에 있다). 그 판 대비 바뀐 자리는
   [부록 A](#부록-a-2026-08-31-pdf-대비-바뀐-것).
 - 화면의 `?` 도움말이 열마다 한 줄 정의를 싣는다. 이 문서는 그 뒤의 식과 결측 규칙과 근거다.
 
