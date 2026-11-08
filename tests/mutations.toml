@@ -7834,3 +7834,135 @@ guards = ["tests/test_session_guards.py::test_a_hung_session_is_killed_red_with_
 file = "tests/conftest.py"
 find = "file=os.dup(sys.__stderr__.fileno()))"
 replace = "file=sys.__stderr__.fileno())"
+
+# ── 조합 리허설(scripts/rehearse_merge.py) ──
+[[mutation]]
+id = "rehearsal-stops-after-the-first-branch"
+why = "두 번째 브랜치부터 안 합쳐 조합을 안 재고 통과한다"
+guards = ["tests/test_rehearse_merge.py::test_gates_see_every_branch_merged_and_the_repo_is_untouched"]
+file = "scripts/rehearse_merge.py"
+find = """        done.append(f"{name} {sha[:10]}")"""
+replace = """        done.append(f"{name} {sha[:10]}")
+        break"""
+
+[[mutation]]
+id = "rehearsal-ignores-a-failing-gate"
+why = "관문이 빨개도 통과로 끝난다"
+guards = ["tests/test_rehearse_merge.py::test_a_failing_gate_fails_the_run_and_later_gates_still_run"]
+file = "scripts/rehearse_merge.py"
+find = """    bad = [r["name"] for r in rows if r["rc"] != 0]"""
+replace = """    bad = []"""
+
+[[mutation]]
+id = "rehearsal-stops-at-the-first-red-gate"
+why = "첫 실패에서 멈춰 나머지 관문의 상태를 모른다"
+guards = ["tests/test_rehearse_merge.py::test_a_failing_gate_fails_the_run_and_later_gates_still_run"]
+file = "scripts/rehearse_merge.py"
+find = """        out.append(row)
+"""
+replace = """        out.append(row)
+        if row["rc"]:
+            break
+"""
+
+[[mutation]]
+id = "rehearsal-runs-gates-on-a-half-merged-tree"
+why = "충돌을 무시하고 합쳐지지 않은 트리를 잰다"
+guards = ["tests/test_rehearse_merge.py::test_a_conflict_names_the_file_and_runs_no_gate"]
+file = "scripts/rehearse_merge.py"
+find = """    if conflict:
+        print(f"충돌"""
+replace = """    if False:
+        print(f"충돌"""
+
+[[mutation]]
+id = "rehearsal-passes-the-production-db-to-gates"
+why = "변이 주입·테스트가 실 DB 접속정보를 물려받는다"
+guards = ["tests/test_rehearse_merge.py::test_gates_never_see_the_production_db_or_reports"]
+file = "scripts/rehearse_merge.py"
+find = """SCRUB_ENV = ("KR_QUANT_DB", "KR_QUANT_REPORTS", "UV_PROJECT_ENVIRONMENT", "VIRTUAL_ENV", "PYTHONPATH")"""
+replace = """SCRUB_ENV = ("UV_PROJECT_ENVIRONMENT", "VIRTUAL_ENV", "PYTHONPATH")"""
+
+[[mutation]]
+id = "rehearsal-keeps-no-repo-identity"
+why = "클론에 신원이 없어 병합 커밋이 실패하거나 다른 신원이 된다"
+guards = ["tests/test_rehearse_merge.py::test_branches_merge_in_the_given_order_with_the_repo_identity"]
+file = "scripts/rehearse_merge.py"
+find = """            git(wt, "config", key, v)"""
+replace = """            pass"""
+
+[[mutation]]
+id = "rehearsal-merges-against-the-repo-instead-of-a-clone"
+why = "원래 레포 HEAD 를 움직인다 — 운영 체크아웃이면 크론이 그 트리를 돈다"
+guards = ["tests/test_rehearse_merge.py::test_gates_see_every_branch_merged_and_the_repo_is_untouched"]
+file = "scripts/rehearse_merge.py"
+find = """    done, conflict = merge_all(wt, pinned)  # type: ignore[arg-type]"""
+replace = """    done, conflict = merge_all(repo, pinned)  # type: ignore[arg-type]"""
+
+[[mutation]]
+id = "rehearsal-leaves-doc-ref-fix-uncommitted"
+why = "인용 보정을 커밋하지 않으면 관문이 다른 트리를 잰 것이 된다"
+guards = ["tests/test_rehearse_merge.py::test_shifted_doc_refs_are_fixed_and_reported"]
+file = "scripts/rehearse_merge.py"
+find = """    git(wt, "commit", "-q", "-m", "rehearsal: docs_refs --fix")"""
+replace = """    pass"""
+
+[[mutation]]
+id = "rehearsal-default-gates-drop-the-mutation-gate"
+why = "변이 주입을 뺀 리허설이 전체 관문 통과라고 말한다"
+guards = ["tests/test_rehearse_merge.py::test_default_gates_match_the_ci_steps"]
+file = "scripts/rehearse_merge.py"
+find = """    ("verify-merge", "uv run --extra dev python scripts/verify_merge.py . --base {base} --only mutations --scope all"),
+"""
+replace = ""
+
+# ── 무작위 변이 표본 도구 ──
+[[mutation]]
+id = "sampler-counts-collection-errors-as-killed"
+why = "문법을 깬 변이를 잡았다고 세면 표본 숫자가 부푼다"
+guards = ["tests/test_mutation_sample.py::test_only_a_test_failure_counts_as_killed"]
+file = "scripts/mutation_sample.py"
+find = """    return {0: "survived", 1: "killed", "timeout": "timeout"}.get(rc, "invalid")"""
+replace = """    return {0: "survived", "timeout": "timeout"}.get(rc, "killed")"""
+
+[[mutation]]
+id = "sampler-never-runs-the-full-suite"
+why = "묶음 검사만 보면 다른 파일의 검사가 잡는 변이를 생존으로 센다"
+guards = ["tests/test_mutation_sample.py::test_judge_runs_the_group_then_everything_and_restores_the_source"]
+file = "scripts/mutation_sample.py"
+find = """        if rc == 0:
+            rc, first = pytest_once(root, [], deselect, timeout)"""
+replace = """        if rc == 2:
+            rc, first = pytest_once(root, [], deselect, timeout)"""
+
+[[mutation]]
+id = "sampler-does-not-restore-the-source"
+why = "앞 변이가 남아 뒤 변이의 판정이 전부 틀린다"
+guards = ["tests/test_mutation_sample.py::test_judge_runs_the_group_then_everything_and_restores_the_source"]
+file = "scripts/mutation_sample.py"
+find = """        (root / m["file"]).write_bytes(orig)"""
+replace = """        pass"""
+
+[[mutation]]
+id = "sampler-applies-to-a-stale-place"
+why = "코드가 바뀐 뒤 replay 가 엉뚱한 자리에 넣는다"
+guards = ["tests/test_mutation_sample.py::test_apply_puts_each_mutant_in_place_and_stale_ones_refuse"]
+file = "scripts/mutation_sample.py"
+find = """    if ln[m["c0"]:m["c1"]].decode() != m["old"]:"""
+replace = """    if False:"""
+
+[[mutation]]
+id = "sampler-draws-from-unexecuted-lines"
+why = "실행 안 된 줄의 변이는 커버리지가 이미 말한다 — 생존률만 부푼다"
+guards = ["tests/test_mutation_sample.py::test_mutants_cover_each_operator_and_skip_unexecuted_lines"]
+file = "scripts/mutation_sample.py"
+find = """        if (executed is not None and lno not in executed) or (only is not None and lno not in only):"""
+replace = """        if only is not None and lno not in only:"""
+
+[[mutation]]
+id = "sampler-ignores-the-seed"
+why = "시드가 안 먹으면 재현도, 새 표본도 안 된다"
+guards = ["tests/test_mutation_sample.py::test_draw_is_deterministic_per_seed_and_respects_coverage_and_diff"]
+file = "scripts/mutation_sample.py"
+find = """        rnd.shuffle(pool)"""
+replace = """        rnd.shuffle(pool) if False else None"""
