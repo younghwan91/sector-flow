@@ -43,7 +43,7 @@ def PD():
     return P, SN.build(P)
 
 
-def _write(tmp: Path, P: dict, D: dict, numbers_patch=None) -> Path:
+def _write(tmp: Path, P: dict, D: dict, numbers_patch=None, viewer_patch=None) -> Path:
     tpl = (REPO / "scripts" / "templates" / "sector_numbers.html").read_text("utf-8")
     if numbers_patch:
         old, new = numbers_patch
@@ -51,6 +51,10 @@ def _write(tmp: Path, P: dict, D: dict, numbers_patch=None) -> Path:
         tpl = tpl.replace(old, new)
     (tmp / "numbers.html").write_text(tpl.replace("__DATA__", json.dumps(D, ensure_ascii=False)), "utf-8")
     vt = (REPO / "scripts" / "templates" / "sector_flow.html").read_text("utf-8")
+    if viewer_patch:
+        old, new = viewer_patch
+        assert old in vt
+        vt = vt.replace(old, new)
     (tmp / "viewer.html").write_text(vt.replace("__DATA__", SF.script_json(P)), "utf-8")
     return tmp
 
@@ -147,6 +151,61 @@ def test_today_sector_items_carry_the_same_day_return_on_web_and_terminal(PD, tm
     assert any(f"{sec} " in t and t.endswith(" +1.01%") for t in
                (strip.sub("", i) for c in out["today"]["거래소"] if c["id"] == "t-rank" for ln in c["lines"]
                 for i in ln["items"])), "1.005 가 +1.01% 로 올라가지 않았다"
+
+
+@pytest.fixture(scope="module")
+def PH():
+    """반올림이 갈리는 흐름 — 마지막 날 기관 971.4999999999999억(JS `toLocaleString` 971, RHU 972)."""
+    import copy
+    P = copy.deepcopy(PT._payload())
+    m = P["markets"][0]
+    sec = next(iter(P["flows"][m]))
+    P["flows"][m][sec]["inst"][-1] = 971.4999999999999
+    P["flows"][m][sec]["forgn"][-1] = -14810.5
+    return P, SN.build(P)
+
+
+@node
+def test_web_layer_reads_the_whole_viewer_and_is_green_when_rounding_is_one_rule(PH, tmp_path, capsys):
+    """뷰어 전체 표·KPI 카드·랭킹 막대·종목 표지까지 그려 대조한다 — 멀쩡하면 초록(3차 리뷰 D5-M1)."""
+    P, D = PH
+    out = _w_fails(P, D, _write(tmp_path, P, D))
+    assert out == [], out
+    printed = capsys.readouterr().out
+    for name in ("뷰어 전체 표 = 페이로드", "뷰어 KPI 카드", "뷰어 랭킹 막대", "뷰어 전체 표 금액", "종목 표지 TUI = 뷰어"):
+        assert f"[OK  ] W · {name}" in printed, name
+
+
+@node
+def test_web_layer_catches_viewer_amounts_rounded_by_tolocalestring(PH, tmp_path):
+    """뷰어 금액이 수치표·TUI 와 다른 반올림(`toLocaleString`)이면 빨갛다 — 금속 +971 vs +972, 금융 −14,810 vs −14,811."""
+    P, D = PH
+    patch = ('const amt=n=>sgn(n)+Math.abs(RHU(n)).toLocaleString', 'const amt=n=>sgn(n)+Math.abs(n).toLocaleString')
+    fails = _w_fails(P, D, _write(tmp_path, P, D, viewer_patch=patch))
+    assert "W/뷰어 전체 표 = 페이로드(표시 반올림, 창×시장)" in fails, fails
+    assert "W/뷰어 랭킹 막대 값 = 페이로드(창×시장×주체)" in fails, fails
+    assert "W/뷰어 전체 표 금액 = 수치표·TUI 블록 글자" in fails, fails
+
+
+@node
+def test_web_layer_catches_viewer_kpi_cards_and_bars_drawing_the_wrong_value(PD, tmp_path):
+    P, D = PD
+    patch = ('D.sectors.forEach(s=>t+=sum(flow(s,k),i0,i1));', 'D.sectors.forEach(s=>t+=sum(flow(s,"inst"),i0,i1));')
+    assert "W/뷰어 KPI 카드 = 페이로드(창×시장×주체)" in _w_fails(P, D, _write(tmp_path, P, D, viewer_patch=patch))
+    patch = ('val.append(el("span","num "+cls(v),fmt(v)));', 'val.append(el("span","num "+cls(v),amt(v)));')
+    assert "W/뷰어 랭킹 막대 값 = 페이로드(창×시장×주체)" in _w_fails(P, D, _write(tmp_path, P, D, viewer_patch=patch))
+
+
+@node
+def test_web_layer_catches_stock_badges_that_differ_between_tui_and_viewer(PD, tmp_path, monkeypatch):
+    """종목 층 표지 — 뷰어가 창을 안 보거나, TUI 드릴다운 헤더가 표지를 박아 두면 빨갛다(3차 리뷰 D2-M1)."""
+    from sectorflow.tui import flow_view as FV
+    P, D = PD
+    patch = ("  return (!e[0].length||e[0].includes(nDays()))?e[1]:scopeNote(e[0]); }", "  return e[1]; }")
+    name = "W/종목 표지 TUI = 뷰어(창별·주체별) · 섹터 표 표지 = evidence_at"
+    assert name in _w_fails(P, D, _write(tmp_path, P, D, viewer_patch=patch))
+    monkeypatch.setattr(FV, "name_head", lambda h, st: h + "[음]" if h in FV.NAME_EV_COLS else h)
+    assert name in _w_fails(P, D, _write(tmp_path, P, D))
 
 
 def test_without_node_the_layer_fails_rather_than_passing(PD, tmp_path, monkeypatch):

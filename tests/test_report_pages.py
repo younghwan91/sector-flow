@@ -461,6 +461,7 @@ def test_numbers_today_panel_counts_the_unclassified_members(tmp_path):
     D["n_by_sector"] = {"거래소": {"금융": 9}}
     assert not any("(미분류)" in t and "종목" in t for t in _page("sector_numbers.html", D, tmp_path))
 
+
 @pytest.mark.parametrize("tpl", ["sector_flow.html", "sector_numbers.html"])
 def test_rebuilt_report_says_so_in_the_page_chip(tpl, tmp_path):
     """재구성 리포트(KR_QUANT_ASOF)를 페이지가 '다음날 아침 확정치를 확인한 뒤 다시 만든 리포트' 로만 말하면 안 된다."""
@@ -500,3 +501,19 @@ def test_numbers_page_return_label_is_final_style_for_a_rebuilt_day_outside_the_
     joined = " ".join(_page("sector_numbers.html", SN.build(P), tmp_path))
     assert "전일 20:00→당일 20:00" in joined, "라벨이 아예 안 그려졌다 — 시험이 헛돈다"
     assert "애프터마켓 진행 중" not in joined and "수집시각 잠정" not in joined, joined[:300]
+
+
+def test_numbers_explore_notes_say_what_was_tested_and_what_feeds_g():
+    """수치표 탐색 설명 — G 의 입력은 a·x·ẍ 셋뿐이고, 앞날을 검정한 것은 x(20일)뿐이다(ẋ·ẍ·dW/dt 는 [측정]).
+    k·t·절편은 탐색 영역이 열렸을 때만 [측정] 표지와 함께 적는다(3차 리뷰 MINOR).
+
+    주입: "모두 앞날 증거 없음" 이나 "x 계열(…)은 G 의 입력" 을 되살리거나, k 를 늘 적으면 실패한다.
+    """
+    html = (REPO / "scripts" / "templates" / "sector_numbers.html").read_text("utf-8")
+    assert "모두 앞날 증거 없음" not in html
+    assert "은 G 의 입력이고" not in html
+    assert "G 의 입력은 <b>가속 a · 미실현 x · 풀림가속 ẍ</b> 셋이다" in html
+    assert "ẋ·ẍ·dW/dt·예상Δv 는 앞날을 검정하지 않은 <b>[측정]</b>" in html
+    k = re.search(r'" · k="\+B\.k', html)
+    assert k and html[max(0, k.start() - 12):k.start()].endswith("(expOpen()?"), "k 가 탐색 영역 밖에서도 적힌다"
+    assert "[측정] · 동시기 적합(Q3c: |t|<2 비율 42~70%)" in html

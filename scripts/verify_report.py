@@ -2706,6 +2706,60 @@ __out(out);
 """
 
 
+#: viewer.html — 프리셋 창 × 시장 × 주체마다 KPI 카드·랭킹 막대·전체 표·종목 층 표지(리뷰 D5-M1·D2-M1).
+#: 예전 W 층은 뷰어의 1일 종목 목록만 그려 봐서, 본표·막대·카드가 다른 반올림(`toLocaleString`)을 써도 초록이었다.
+_W_PROBE_VIEWER_FULL = r"""
+const txt=e=>e?e.textContent:null;
+const cl=e=>(e&&e.className)||"";
+const out={views:[]};
+const MK=["전체",...D.markets];
+for(const [w] of PRESETS){ if(!w||w>NDATE) continue;
+  for(const m of MK) for(const [a] of ACTORS){
+    i1=NDATE-1; i0=NDATE-w; market=m; actor=a; metric="share"; picked=null; render();
+    const v={win:w, mkt:m, actor:a};
+    v.tiles=document.getElementById("tiles").children.map(t=>({k:txt(t.children[0]), v:txt(t.children[1])}));
+    v.bars=document.getElementById("rows").children.map(b=>({name:txt(b.children[0].children[0].children[0]),
+      val:txt(b.children[2].children[0]), sub:txt(b.children[2].children[1])}));
+    v.ev={amt:txt(document.getElementById("ev-buy-amt")), share:txt(document.getElementById("ev-buy-share")),
+          trust:txt(document.getElementById("ev-buy-trust")),
+          sell:[txt(document.getElementById("ev-sell-amt")), txt(document.getElementById("ev-sell-share")),
+                txt(document.getElementById("ev-sell-trust"))]};
+    if(a==="inst"){ const t=document.getElementById("tbl"); const [thead,tbody]=t.children;
+      v.head=thead.children[0].children.map(th=>({h:txt(th.children[0]), ev:txt(th.children.find(c=>cl(c)==="ev"))}));
+      v.rows=tbody.children.map(tr=>tr.children.map(td=>txt(td))); }
+    out.views.push(v); } }
+__out(out);
+"""
+
+
+def _w_viewer_expect(P: dict, w: int, m: str) -> dict:
+    """뷰어가 그릴 글자 — **템플릿 JS 를 읽지 않고** 페이로드에서 다시 계산한다(구간말 월 시총, 얇은 섹터 무관)."""
+    nd = len(P["dates"])
+    i0, i1 = nd - w, nd - 1
+    mks = list(P["markets"]) if m == "전체" else [m]
+    ym = P["dates"][i1][:7]
+    nb = P.get("n_by_sector") or {}
+
+    def tot(sec, k):
+        return sum(sum(((P["flows"].get(mk) or {}).get(sec) or {}).get(k, [0.0] * nd)[i0:i1 + 1]) for mk in mks)
+
+    def cap(sec):
+        c = 0.0
+        for mk in mks:
+            bym = ((P.get("cap_by_month") or {}).get(mk) or {}).get(sec) or {}
+            c += bym[ym] if bym.get(ym) is not None else ((P.get("cap") or {}).get(mk) or {}).get(sec, 0.0)
+        return c
+    shaped = bool(nb) and all(isinstance(nb.get(mk), dict) for mk in mks)
+    present = [s for s in P["sectors"] if not shaped or any((nb[mk].get(s) or 0) > 0 for mk in mks)]
+    out = {"tot": {k: sum(tot(s, k) for s in P["sectors"]) for k in ("inst", "forgn", "indiv", "etc", "tv")},
+           "sec": {}}
+    for s in present:
+        c = cap(s)
+        out["sec"][s] = {k: tot(s, k) for k in ("inst", "forgn", "indiv", "etc", "tv")}
+        out["sec"][s]["cap"] = c
+    return out
+
+
 def _w_node() -> "str | None":
     import shutil
     return shutil.which("node") or ("/usr/bin/node" if os.path.exists("/usr/bin/node") else None)
@@ -3021,6 +3075,100 @@ def layer_w(D: dict, P: dict, folder: str) -> None:
                         break
         chk("W", "뷰어 1일 종목 목록 = names.win['1'](금액·투신·연기금)", not bad_v and n_v > 0,
             f"{len(secs)}섹터 {n_v}종목  " + "; ".join(bad_v[:2]))
+    if os.path.isfile(vpath):
+        _w_viewer_full(D, P, node, vpath, FV)
+
+
+def _w_viewer_full(D: dict, P: dict, node: str, vpath: str, FV) -> None:
+    """뷰어 전 화면(카드·막대·전체 표)의 숫자 = 페이로드(표시 반올림) = TUI 블록, 종목 층 표지 = TUI(창·주체별)."""
+    vo = _w_run(node, vpath, _W_PROBE_VIEWER_FULL)
+    ACT = (("inst", "기관"), ("forgn", "외국인"), ("indiv", "개인"), ("etc", "기타법인"))
+    bad_c, bad_tile, bad_bar, bad_tui, bad_ev = [], [], [], [], []
+    n_c = n_bar = n_ev = 0
+    exp_cache: dict = {}
+    for v in vo["views"]:
+        w, m, a = v["win"], v["mkt"], v["actor"]
+        if (w, m) not in exp_cache:
+            exp_cache[(w, m)] = _w_viewer_expect(P, w, m)
+        E = exp_cache[(w, m)]
+        tag = f"{w}|{m}|{a}"
+        # KPI 카드 — 구간 거래대금(부호 없음)과 4주체 누적.
+        want_t = [("구간 거래대금", _w_A(E["tot"]["tv"]).replace("+", ""))] + [(ko, _w_A(E["tot"][k])) for k, ko in ACT]
+        if [(t["k"], t["v"]) for t in v["tiles"]] != want_t:
+            bad_tile.append(f"{tag} {[(t['k'], t['v']) for t in v['tiles']][:2]} vs {want_t[:2]}")
+        # 랭킹 막대 — 가속(1일은 금액) 값과 옆의 다른 단위.
+        for b in v["bars"]:
+            sec = (b["name"] or "").rstrip("~")
+            x = E["sec"].get(sec)
+            if x is None:
+                bad_bar.append(f"{tag} {sec} 페이로드에 없다")
+                continue
+            n_bar += 1
+            t, c = x[a], x["cap"]
+            sh = (t / c * 100) if c else 0.0
+            if w == 1:
+                want = (_w_A(t), "—")
+            else:
+                want = (_w_P(sh), _w_A(t) + "억")
+            if (b["val"], b["sub"]) != want:
+                bad_bar.append(f"{tag} {sec} 웹 {(b['val'], b['sub'])} vs {want}")
+        # 종목 층 표지 — TUI `name_evidence`(창·주체)와 같은 글자, 드릴다운 헤더의 짧은 꼴과 같은 표지.
+        n_ev += 1
+        want_ev = {"amt": " " + FV.name_evidence(a, "amt", w), "share": " " + FV.name_evidence(a, "share", w)}
+        iv, pf = FV.name_evidence("invtrt", "amt", w), FV.name_evidence("penfnd", "amt", w)
+        want_ev["trust"] = " " + (iv if iv == pf else f"투신 {iv} · 연기금 {pf}")
+        got_ev = {k: v["ev"][k] for k in ("amt", "share", "trust")}
+        if got_ev != want_ev or v["ev"]["sell"] != [want_ev["amt"], want_ev["share"], want_ev["trust"]]:
+            bad_ev.append(f"{tag} 웹 {got_ev} vs TUI {want_ev}")
+        if str(w) in FV.WINDOWS:
+            st = FV.State(D)
+            st.wi, st.ai = FV.WINDOWS.index(str(w)), [k for k, _ in FV.ACTORS].index(a)
+            heads = {c.header: FV.name_head(c.header, st) for c in FV.names_cols(True)}
+            for hdr, web in (("순매수[억]", got_ev["amt"]), ("시총대비[%p]", got_ev["share"]),
+                             (FV.COL_INVTRT, iv), (FV.COL_PENFND, pf)):
+                want_h = hdr + FV.B_SHORT[FV.name_badge(web.strip())]
+                if heads.get(hdr) != want_h:
+                    bad_ev.append(f"{tag} TUI 헤더 {heads.get(hdr)!r} vs 뷰어 {web.strip()!r}")
+        if "head" not in v:
+            continue
+        # 전체 표 — 열 머리·표지(섹터 `evidence_at`), 칸 = 페이로드, 금액 칸 = TUI 블록.
+        want_head = ["섹터", "기관", "외국인", "개인", "기타법인", "기관 가속 %p", "거래대금", "시가총액"]
+        if [h["h"] for h in v["head"]] != want_head:
+            bad_c.append(f"{tag} 머리 {[h['h'] for h in v['head']]}")
+            continue
+        for h, (ek, act) in zip(v["head"][1:6], (("inst", "inst"), ("forgn", "forgn"), ("indiv", "indiv"),
+                                                 ("etc", "etc"), ("accel", "inst"))):
+            e = FV.evidence_at(ek, str(w), act, m) if str(w) in FV.WINDOWS else None
+            want = None if e is None else e[0] + (f" · {e[1]}" if e[1] else "")
+            if (h["ev"] or None) != want:
+                bad_ev.append(f"{tag} 표 {h['h']} 웹 {h['ev']} vs TUI {want}")
+        # 1일은 블록이 없다(오늘 블록과 일별 흐름의 일치는 T 층이 본다).
+        blk = {r["sector"]: r for r in (D["blocks"].get(f"{w}|{m}") or {}).get("rows", [])}
+        for row in v["rows"]:
+            sec = row[0].rstrip("~")
+            x = E["sec"].get(sec)
+            if x is None:
+                bad_c.append(f"{tag} {sec} 페이로드에 없다")
+                continue
+            c = x["cap"]
+            want = [_w_A(x[k]) for k, _ in ACT] + ["—" if w == 1 else _w_P((x["inst"] / c * 100) if c else 0.0),
+                                                   _w_A(x["tv"]).replace("+", ""), _w_A(c).replace("+", "")]
+            n_c += len(want)
+            if row[1:] != want:
+                bad_c.append(f"{tag} {sec} 웹 {row[1:]} vs {want}")
+            b = blk.get(sec)
+            if b:
+                for (k, ko), web in zip(ACT, row[1:5]):
+                    if b.get(k) is not None and _w_A(b[k]) != web:
+                        bad_tui.append(f"{tag} {sec} {ko} 뷰어 {web} vs 블록 {_w_A(b[k])}")
+    chk("W", "뷰어 전체 표 = 페이로드(표시 반올림, 창×시장)", not bad_c and n_c > 0,
+        f"{len(bad_c)}건/{n_c}칸  " + "; ".join(bad_c[:2]))
+    chk("W", "뷰어 KPI 카드 = 페이로드(창×시장×주체)", not bad_tile, "; ".join(bad_tile[:2]))
+    chk("W", "뷰어 랭킹 막대 값 = 페이로드(창×시장×주체)", not bad_bar and n_bar > 0,
+        f"{n_bar}줄  " + "; ".join(bad_bar[:2]))
+    chk("W", "뷰어 전체 표 금액 = 수치표·TUI 블록 글자", not bad_tui, "; ".join(bad_tui[:3]))
+    chk("W", "종목 표지 TUI = 뷰어(창별·주체별) · 섹터 표 표지 = evidence_at", not bad_ev and n_ev > 0,
+        f"{n_ev}화면  " + "; ".join(bad_ev[:2]))
 
 
 # ─────────────────────────────────────────────── H. 화면·키

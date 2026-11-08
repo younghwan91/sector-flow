@@ -15,7 +15,7 @@ sys.path.insert(0, str(REPO / "src"))
 
 from test_report_pages import _page, _viewer_payload, node  # noqa: E402
 
-from sectorflow.tui.flow_view import B_MEAS, B_NEG, B_NONE, BADGES, THIN_MIN  # noqa: E402
+from sectorflow.tui.flow_view import B_MEAS, B_NEG, B_NONE, BADGES, NAME_EV, THIN_MIN  # noqa: E402
 
 HTML = REPO / "scripts" / "templates" / "sector_flow.html"
 
@@ -57,7 +57,7 @@ for(const [id,k] of actions){
 }
 const ser=e=>e instanceof Text?{t:e.textContent}:{tag:e.tag,cls:e.className,text:e._t,bg:e.style.background||"",
   attrs:e.attrs,scrollLeft:e.scrollLeft,scrollWidth:e.scrollWidth,kids:e.children.map(ser)};
-const out={}; for(const id of ["hm","rows","tbl","line","rk-title","ev-buy-amt","ev-buy-trust","rangeinfo","ret-note"])
+const out={}; for(const id of ["hm","rows","tbl","line","rk-title","ev-buy-amt","ev-buy-share","ev-buy-trust","rangeinfo","ret-note"])
   out[id]=ser(document.getElementById(id));
 console.log(JSON.stringify(out));
 """
@@ -135,8 +135,22 @@ def test_viewer_shares_the_thin_threshold_and_badge_set_with_the_tui():
     assert leg, "증거 표지 범례가 없다"
     for b in BADGES:
         assert f"<b>{b}</b>" in leg.group(1), f"범례에 {b} 가 없다"
-    names = json.loads(re.search(r"const EV_NAME=(\{.*?\});", html).group(1))
-    assert names["trust"][0] == B_NEG and names["trust"][1] == [20]
+    # 종목 층 검정 범위 — TUI `flow_view.NAME_EV` 와 글자째 같은 표(3차 리뷰 D2-M1).
+    names = json.loads(re.search(r"const NAME_EV=(\{.*?\});", html).group(1))
+    assert names == NAME_EV, "뷰어 NAME_EV 가 TUI 와 다르다"
+    assert names["invpen|share"] == [[20], B_NEG]
+
+
+def test_viewer_table_header_keeps_the_unit_case_and_no_removed_potential():
+    """전체 표 머리는 대문자 변환을 하지 않는다(`기관 가속 %p` 가 `%P` 로 보였다), 지운 포텐셜을 말하지 않는다.
+
+    주입: `thead th` 에 `text-transform:uppercase` 를 되살리거나 '포텐셜' 을 되살리면 실패한다.
+    """
+    html = _html()
+    th = re.search(r"thead th\{([^}]*)\}", html).group(1)
+    assert "uppercase" not in th, th
+    notes = re.search(r'<div class="notes">(.*?)</div>', html, re.S).group(1)
+    assert "포텐셜" not in notes
 
 
 def test_viewer_does_not_say_the_numbers_page_dropped_x():
@@ -188,14 +202,20 @@ def test_viewer_has_no_accel_on_one_day(tmp_path):
 def test_viewer_badges_are_scoped_to_the_tested_windows(tmp_path):
     """표지는 **검정한 창·주체**에만 붙는다.
 
-    * 20일(첫 화면): 종목 투신·연기금 = [음의 순위 정보·쓸 수 없음], 기관 = [앞날 증거 없음].
-    * 5일(단추): 같은 자리가 [측정] + "앞날 검정은 20일만" 이다 — 5일은 검정하지 않았다.
+    * 20일(첫 화면): 종목 기관 시총 대비 = [앞날 증거 없음](K2 미확인), 금액·투신/연기금 개별 = [측정] + 검정 범위.
+    * 5일(단추): 시총 대비가 [측정] + "앞날 검정은 20일만" 이다 — 5일은 검정하지 않았다.
     주입: `evName` 이 창과 무관하게 표지를 돌려주게 하면 실패한다.
     """
+    def ev(out):
+        return {k: _text(out[f"ev-buy-{k}"]) for k in ("amt", "share", "trust")}
+    d20 = ev(_render(_viewer_payload(), tmp_path))
+    assert d20 == {"amt": f" {B_MEAS} · ÷시총 기준으로만 검정(K1/K2/K3)", "share": " " + B_NONE + "(K2 미확인)",
+                   "trust": f" {B_MEAS} · 투신+연기금 합 ÷시총만 검정(K1)"}, d20
+    assert B_NEG not in "".join(d20.values()), "이 화면에 없는 투신+연기금 합 표지를 개별 값에 달았다"
+    d5 = ev(_render(_viewer_payload(), tmp_path, [("seg-preset", 5)]))
+    assert d5["share"] == f" {B_MEAS} · 앞날 검정은 20일만", d5
+    assert d5["amt"] == d20["amt"] and d5["trust"] == d20["trust"]
     texts = _page("sector_flow.html", _viewer_payload(), tmp_path)
-    assert " " + B_NEG in texts, "20일 종목 투신·연기금 표지가 없다"
-    assert " " + B_NONE in texts
-    assert f" {B_MEAS} · 앞날 검정은 20일만" in texts, "검정 안 한 창에 범위 표기가 없다"
     assert any(t.endswith(f"{B_MEAS} · 앞날 검정은 20·60일만") for t in texts), "기관 5일 범위 표기가 없다"
 
 

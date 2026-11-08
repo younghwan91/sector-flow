@@ -2329,8 +2329,8 @@ id = "help-hardcodes-k"
 why = "도움말에 k 숫자를 박는다 — 다음 리포트에서 화면 헤더와 다른 k 를 말한다"
 guards = ["tests/test_tui_flow_view.py::test_help_has_no_hardcoded_k_and_no_dead_doc_links"]
 file = "src/sectorflow/tui/flow_view.py"
-find = "    (\"\", \"  k=…(t=…) 다. 도움말에 숫자로 적어 두면 다음 리포트에서 틀린 말이 된다.\"),"
-replace = "    (\"\", \"  k=…(t=…) 다. 예: 20일 k 14.7 · 60일 9.2.\"),"
+find = "    (\"\", \"  헤더 줄의 k=…(t=…) 다. 도움말에 숫자로 적어 두면 다음 리포트에서 틀린\"),"
+replace = "    (\"\", \"  헤더 줄의 k=…(t=…) 다. 예: 20일 k 14.7 · 60일 9.2.\"),"
 
 [[mutation]]
 id = "help-links-missing-doc"
@@ -2611,8 +2611,8 @@ id = "banner-net-cut-when-narrow"
 why = "좁은 폭에서 4주체 순매수를 한 줄에 우겨 넣는다 — 개인·기타법인이 '외 2' 로 사라져 합 ≈ 0 의 그림이 틀린다"
 guards = ["tests/test_tui_flow_view.py::test_banner_market_net_is_the_payload_today_total"]
 file = "src/sectorflow/tui/flow_view.py"
-find = "        lines.append(_items_line(head, parts[:2], width))\n        lines.append(_items_line(\"   \", parts[2:], width))"
-replace = "        lines.append(_items_line(head, parts, width))"
+find = "    else:                                   # 더 좁으면 머리말을 따로 한 줄에 둔다\n        lines.append(pad(head.rstrip(), width))\n        lines.append(_items_line(\"   \", parts[:2], width))\n        lines.append(_items_line(\"   \", parts[2:], width))"
+replace = "    else:\n        lines.append(_items_line(head, parts, width))"
 
 [[mutation]]
 id = "banner-today-bottom-is-top"
@@ -3227,8 +3227,8 @@ guards = ["tests/test_tui_flow_view.py::test_pick_score_leads_the_row_like_the_s
 file = "src/sectorflow/tui/flow_view.py"
 find = """    Col("선정", 4, True,
         lambda t, st: "—" if t.get("pick") is None else f"{t['pick']:.2f}"),
-    Col("순매수[억]", 13, True, lambda t, st: fmt_amt(t.get("flow"))),"""
-replace = """    Col("순매수[억]", 13, True, lambda t, st: fmt_amt(t.get("flow"))),
+    Col("순매수[억]", 14, True, lambda t, st: fmt_amt(t.get("flow"))),"""
+replace = """    Col("순매수[억]", 14, True, lambda t, st: fmt_amt(t.get("flow"))),
     Col("선정", 4, True,
         lambda t, st: "—" if t.get("pick") is None else f"{t['pick']:.2f}"),"""
 
@@ -3666,8 +3666,8 @@ why = """종목 투신·연기금에 창과 무관하게 [음의 순위 정보·
 5·60·120일에 달면 검정하지 않은 것을 검정했다고 말한다."""
 guards = ["tests/test_viewer_page.py::test_viewer_badges_are_scoped_to_the_tested_windows"]
 file = "scripts/templates/sector_flow.html"
-find = "  return e[1].includes(nDays())?e[0]:scopeNote(e[1]); }"
-replace = "  return e[0]; }"
+find = "  return (!e[0].length||e[0].includes(nDays()))?e[1]:scopeNote(e[0]); }"
+replace = "  return e[1]; }"
 
 [[mutation]]
 id = "viewer-legend-drops-negative-badge"
@@ -4208,14 +4208,6 @@ guards = ["tests/test_tui_flow_view.py::test_detail_panel_does_not_repeat_what_t
 file = "src/sectorflow/tui/flow_view.py"
 find = "                f\" · 종목 {n}개 · Enter 로 전체\", width),"
 replace = "                f\" · 종목 {n}개 · Enter 로 전체 · 미실현 {fmt_pct(r.get('x'), 1)}%p\", width),"
-
-[[mutation]]
-id = "drilldown-trust-headers-lose-the-negative-badge"
-why = "드릴다운 투신·연기금 헤더에서 [음] 이 빠진다 — 검정 부호가 음인 순위를 좋게 읽는다"
-guards = ["tests/test_tui_flow_view.py::test_drilldown_trust_and_pension_headers_carry_the_negative_badge"]
-file = "src/sectorflow/tui/flow_view.py"
-find = "COL_INVTRT, COL_PENFND = \"투신[억][음]\", \"연기금[억][음]\""
-replace = "COL_INVTRT, COL_PENFND = \"투신[억]\", \"연기금[억][음]\""
 
 [[mutation]]
 id = "sort-col-names-a-renamed-header"
@@ -5380,3 +5372,156 @@ find = '''    마감 값(확정, 또는 창 밖 재구성 ``finalize_unverified`
 replace = '''    마감 값(확정, 또는 창 밖 재구성 ``finalize_unverified``)이면 None — 웹 ``CLOSED`` 와 같은 기준이다.
     """
     if d.get("final"):'''
+# ── names-badges(3차 리뷰 D2-M1·D5-M1·MINOR) ──────────────────────────────────────
+
+[[mutation]]
+id = "name-evidence-ignores-the-window"
+why = "종목 층 표지가 창을 안 본다 — 1·5·60일 시총대비에도 [무] 를 달아 검정하지 않은 창을 검정했다고 말한다"
+guards = ["tests/test_tui_flow_view.py::test_drilldown_badges_follow_the_tested_scope_per_window_and_actor"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "    if not days or (str(window).isdigit() and int(window) in days):"
+replace = "    if True:"
+
+[[mutation]]
+id = "drilldown-header-hardcodes-a-badge"
+why = "드릴다운 헤더가 창·주체와 무관하게 [음] 을 박는다 — 3차 리뷰 전의 결함(투신·연기금 개별 값·모든 창에 [음])"
+guards = ["tests/test_tui_flow_view.py::test_drilldown_badges_follow_the_tested_scope_per_window_and_actor"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "    return header + B_SHORT[name_badge(name_evidence(actor or st.actor, kind, names_window(st)))]"
+replace = "    return header + \"[음]\""
+
+[[mutation]]
+id = "drilldown-header-drops-the-badges"
+why = "드릴다운 헤더가 표지 없는 열 이름만 그린다 — 종목 층 증거 범위가 화면에서 사라진다"
+guards = ["tests/test_tui_flow_view.py::test_drilldown_badges_follow_the_tested_scope_per_window_and_actor"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "    head = pad(\" \".join(pad(name_head(c.header, st), c.width, c.right) for c in cols), width)"
+replace = "    head = pad(\" \".join(pad(c.header, c.width, c.right) for c in cols), width)"
+
+[[mutation]]
+id = "block-meta-shows-k-outside-explore"
+why = "k·t 가 표지 없이 기본 화면 헤더에 돌아온다 — 동시기 적합(|t|<2 42~70%)을 사실처럼 적는다"
+guards = ["tests/test_tui_flow_view.py::test_block_meta_shows_k_only_in_explore_mode"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "        return span + (f\" · k={b.get('k', '?')} (t={b.get('t', '?')})\" if self.explore else \"\")"
+replace = "        return span + f\" · k={b.get('k', '?')} (t={b.get('t', '?')})\""
+
+[[mutation]]
+id = "banner-drops-the-flip-note"
+why = "첫 화면 부호 반전 목록에 '판정하지 않는다' 가 없다 — 웹과 다른 말, 목록이 판정으로 읽힌다"
+guards = ["tests/test_tui_flow_view.py::test_first_screen_states_what_it_does_not_judge"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "    lines.append(pad(_first_fitting(width, list(FLIP_NOTE)), width))\n"
+replace = ""
+
+[[mutation]]
+id = "banner-disclaimer-80-loses-sector-scope"
+why = "80칸 맺음말이 무엇을 검정했는지(섹터 수급) 빠뜨린다"
+guards = ["tests/test_tui_flow_view.py::test_first_screen_states_what_it_does_not_judge"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "    \" 사실 요약 — 추천 아님. 섹터 수급의 앞날 관계는 검정함 — 증거 없음.\","
+replace = "    \" 사실 요약 — 추천 아님. 앞날 관계는 검정함 — 증거 없음.\","
+
+[[mutation]]
+id = "banner-change-reason-cut-at-120"
+why = "120칸에서 직전 대비 '비교 없음' 의 이유가 통째로 잘린다"
+guards = ["tests/test_tui_flow_view.py::test_first_screen_states_what_it_does_not_judge"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "                                                f\" 직전 대비 없음: {why}\",\n                                                f\" 직전 대비 없음: {why.split(' — ')[0]}\",\n"
+replace = ""
+
+[[mutation]]
+id = "flow-help-ime-note-drifts"
+why = "흐름 도움말의 한영 역방향 설명이 원장·README 와 다른 (틀린) 말로 돌아간다"
+guards = ["tests/test_tui_flow_view.py::test_ime_reverse_key_note_is_one_sentence_in_both_helps_and_the_readme"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "    (\"\", \"        자리가 q·w·e·r·t 뿐이라 한글에서 대문자 역방향은 W(구간)뿐이다 —\"),"
+replace = "    (\"\", \"        자리가 q·w·e·r·t 뿐이라 대문자 역방향은 w·r 만 된다 —\"),"
+
+[[mutation]]
+id = "banner-unit-old-form"
+why = "첫 화면 시장 순매수 단위가 `[억(%ile)]` 으로 돌아가 섹터 줄·웹과 다른 꼴이 된다"
+guards = ["tests/test_tui_flow_view.py::test_amount_and_percentile_unit_is_written_one_way"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "    head = f\" 오늘 {mk} 순매수[억(1년%ile)]: \""
+replace = "    head = f\" 오늘 {mk} 순매수[억(%ile)]: \""
+
+[[mutation]]
+id = "viewer-name-ev-drifts-from-tui"
+why = "뷰어 종목 표지 표가 TUI 와 다른 글자가 된다(K2 미확인을 뺀다)"
+guards = ["tests/test_viewer_page.py::test_viewer_shares_the_thin_threshold_and_badge_set_with_the_tui"]
+file = "scripts/templates/sector_flow.html"
+find = "\"inst|share\":[[20],\"[앞날 증거 없음](K2 미확인)\"]"
+replace = "\"inst|share\":[[20],\"[앞날 증거 없음]\"]"
+
+[[mutation]]
+id = "viewer-th-uppercase"
+why = "전체 표 머리가 대문자 변환으로 `%p` 를 `%P` 로 그린다"
+guards = ["tests/test_viewer_page.py::test_viewer_table_header_keeps_the_unit_case_and_no_removed_potential"]
+file = "scripts/templates/sector_flow.html"
+find = "  font-size:10.5px; letter-spacing:.04em; border-bottom:1px solid var(--line)}"
+replace = "  font-size:10.5px; letter-spacing:.04em; text-transform:uppercase; border-bottom:1px solid var(--line)}"
+
+[[mutation]]
+id = "viewer-amt-loses-rhu"
+why = "뷰어 금액이 `toLocaleString` 반올림으로 돌아가 수치표·TUI 와 갈린다(금속 +971 vs +972)"
+guards = ["tests/test_web_render.py::test_web_layer_reads_the_whole_viewer_and_is_green_when_rounding_is_one_rule"]
+file = "scripts/templates/sector_flow.html"
+find = "const amt=n=>sgn(n)+Math.abs(RHU(n)).toLocaleString(\"ko-KR\",{maximumFractionDigits:0});"
+replace = "const amt=n=>sgn(n)+Math.abs(n).toLocaleString(\"ko-KR\",{maximumFractionDigits:0});"
+
+[[mutation]]
+id = "verify-viewer-table-unchecked"
+why = "뷰어 전체 표가 다르게 반올림해도 검증이 초록이다"
+guards = ["tests/test_web_render.py::test_web_layer_catches_viewer_amounts_rounded_by_tolocalestring"]
+file = "scripts/verify_report.py"
+find = "            if row[1:] != want:"
+replace = "            if False:"
+
+[[mutation]]
+id = "verify-viewer-bars-unchecked"
+why = "뷰어 랭킹 막대가 다른 값을 그려도 검증이 초록이다"
+guards = ["tests/test_web_render.py::test_web_layer_catches_viewer_kpi_cards_and_bars_drawing_the_wrong_value"]
+file = "scripts/verify_report.py"
+find = "            if (b[\"val\"], b[\"sub\"]) != want:"
+replace = "            if False:"
+
+[[mutation]]
+id = "verify-viewer-tiles-unchecked"
+why = "뷰어 KPI 카드가 다른 주체의 합을 그려도 검증이 초록이다"
+guards = ["tests/test_web_render.py::test_web_layer_catches_viewer_kpi_cards_and_bars_drawing_the_wrong_value"]
+file = "scripts/verify_report.py"
+find = "        if [(t[\"k\"], t[\"v\"]) for t in v[\"tiles\"]] != want_t:"
+replace = "        if False:"
+
+[[mutation]]
+id = "verify-viewer-vs-blocks-unchecked"
+why = "뷰어 금액이 수치표·TUI 블록과 다른 글자여도 검증이 초록이다"
+guards = ["tests/test_web_render.py::test_web_layer_catches_viewer_amounts_rounded_by_tolocalestring"]
+file = "scripts/verify_report.py"
+find = "                    if b.get(k) is not None and _w_A(b[k]) != web:"
+replace = "                    if False:"
+
+[[mutation]]
+id = "verify-stock-badges-viewer-unchecked"
+why = "뷰어가 창을 안 보고 종목 표지를 달아도 검증이 초록이다"
+guards = ["tests/test_web_render.py::test_web_layer_catches_stock_badges_that_differ_between_tui_and_viewer"]
+file = "scripts/verify_report.py"
+find = "        if got_ev != want_ev or v[\"ev\"][\"sell\"] != [want_ev[\"amt\"], want_ev[\"share\"], want_ev[\"trust\"]]:"
+replace = "        if False:"
+
+[[mutation]]
+id = "verify-stock-badges-tui-unchecked"
+why = "TUI 드릴다운 헤더가 뷰어와 다른 표지를 박아도 검증이 초록이다"
+guards = ["tests/test_web_render.py::test_web_layer_catches_stock_badges_that_differ_between_tui_and_viewer"]
+file = "scripts/verify_report.py"
+find = "                if heads.get(hdr) != want_h:"
+replace = "                if False:"
+
+[[mutation]]
+id = "numbers-k-outside-explore"
+why = "수치표가 k·t·절편을 탐색 영역 밖에서도 적는다"
+guards = ["tests/test_report_pages.py::test_numbers_explore_notes_say_what_was_tested_and_what_feeds_g"]
+file = "scripts/templates/sector_numbers.html"
+find = "(expOpen()?\" · k=\""
+replace = "(true?\" · k=\""
