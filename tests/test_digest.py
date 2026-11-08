@@ -102,7 +102,7 @@ EXPECTED = """\
 
 시장 순매수[억] · 전체(거래소+코스닥) · 괄호는 1년 일별 %ile
 - 기관 +2,500(88) · 외국인 -4,200(6) · 개인 +1,500(70) · 기타법인 +200(51)
-- 금액 근사 오차 큼(코스닥 6.2%)
+- 종가·VWAP 환산 차 큼(코스닥 6.2%)
 
 1일 수익률 — KRX 지수(정규장 15:30) | 자체 바구니(~20시 통합 종가)
 - 거래소: 코스피 -6.02% | 바구니 -4.37%
@@ -140,6 +140,17 @@ def test_snapshot_from_fixture():
     """같은 페이로드면 같은 글 — 줄 순서는 금액 크기, %ile 은 페이로드 값 그대로, 외국인이 금액 최대 주체."""
     _F, text, _pages = dg.build(fixture_payload())
     assert text == EXPECTED
+
+
+def test_published_error_chip_follows_krx_truth_hot():
+    """다이제스트 경고 줄 — 공표치 기준 오차가 판정 기준이다. hot 인 시장만, 내부 VWAP 차와 이름을 가른다."""
+    P = fixture_payload()
+    P["today"]["krx_truth"] = {"status": "ok", "markets": {"거래소": {"total_pct": 7.14, "hot": True},
+                                                          "코스닥": {"total_pct": 3.0, "hot": False}}}
+    gaps = dg.collect(P)["approx_gap"]
+    assert {"market": "거래소", "pct": 7.14, "label": "공표 시장값과 오차 큼"} in gaps
+    assert not any(g["label"] == "공표 시장값과 오차 큼" and g["market"] == "코스닥" for g in gaps)
+    assert any(g["label"] == "종가·VWAP 환산 차 큼" for g in gaps)
 
 
 def test_dominant_actor_is_by_absolute_amount():
@@ -296,7 +307,7 @@ def test_card_html_is_card_sized_and_carries_facts():
     assert "width: 1080px; height: 1350px" in page
     assert "<script" not in page and "http://" not in page and "https://" not in page
     for s in ("+2,500", "-4,200", "-6.02%", "-3.81%", "오늘 금액 최대", "상위5에 새로 든 섹터: 유통",
-              "금액 근사 오차 큼 코스닥 6.2%", "빨강 = 순매수", "파랑 = 순매도", "상단(≥95)·하단(≤5)"):
+              "종가·VWAP 환산 차 큼 코스닥 6.2%", "빨강 = 순매수", "파랑 = 순매도", "상단(≥95)·하단(≤5)"):
         assert s in page, s
     # 외국인 막대(순매도)는 sell, 기관(순매수)은 buy — 0 기준선 왼쪽으로 뻗는다
     rows = page.split('<div class="net-row">')[1:]

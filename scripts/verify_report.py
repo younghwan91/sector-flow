@@ -1848,11 +1848,13 @@ REPORT_DIR: "str | None" = None
 _DAY_DIR = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 
-def external_skip_streak(folder: "str | None", asof: str) -> int:
+def external_skip_streak(folder: "str | None", asof: str, skip_mark: str = VF_SKIP_MARK,
+                         done_mark: str = "외부 참값:") -> int:
     """``asof`` 앞(미만) 기준일 폴더들이 외부 참값 대조를 **연달아** SKIP 한 수 — 최근부터 거슬러 센다.
 
     VERIFY.txt 에 SKIP 표지가 있으면 센다, 대조 줄(``외부 참값:``)이 있으면 멈춘다. 둘 다 없는 폴더(잠정만 남은 날·
     DB 대조 없이 돈 검증·리포트가 없는 날)는 대조를 시도하지 않은 것이라 세지도 끊지도 않는다.
+    공표치 대조(:func:`_vt_krx_truth`)도 표지만 바꿔 같은 규칙으로 센다.
     """
     if not folder:
         return 0
@@ -1868,9 +1870,9 @@ def external_skip_streak(folder: "str | None", asof: str) -> int:
                 text = f.read()
         except OSError:
             continue
-        if VF_SKIP_MARK in text:
+        if skip_mark in text:
             n += 1
-        elif "외부 참값:" in text:
+        elif done_mark in text:
             break
     return n
 
@@ -1885,6 +1887,59 @@ def _external_skip(P: dict, why: str) -> None:
                        "quant-airflow 의 regular_close 를 보라")
     else:
         print(f"       {msg}")
+
+
+#: 대량 체결 의심의 문턱 — producer(sector_flow.BLOCK_*)를 읽지 않고 따로 적는다.
+VF_BLOCK_OFF_MIN = 0.5
+VF_BLOCK_SHARE_MIN = 0.01
+VF_BLOCK_MIN_COVER = 0.95
+
+
+def _f_block_suspects(P: dict, cur, ph: str, meta: dict, d1: str, bars: dict) -> None:
+    """대량 체결 의심 = DB 재계산 — 분봉 합·수량·종가에서 목록과 skip 을 다시 만든다. 옛 리포트(블록 없음)는 침묵."""
+    got = (P.get("today") or {}).get("block_suspects")
+    if got is None:
+        return
+    from datetime import date, timedelta  # noqa: PLC0415
+    nxt = (date.fromisoformat(d1) + timedelta(days=1)).isoformat()
+    try:
+        cur.execute(f"SELECT code, SUM(volume) FROM minute_bars WHERE ts >= {ph} AND ts < {ph} GROUP BY code", (d1, nxt))
+        vm = {c: float(v) for c, v in cur.fetchall() if v is not None}
+    except Exception:  # noqa: BLE001 — 표가 없는 DB(픽스처·BYO). 트랜잭션을 되돌려 뒤 검사가 돌게 한다.
+        cur.connection.rollback()
+        vm = None
+    ratios = sorted(vm[c] / b[0] for c, b in bars.items() if b[0] > 0 and c in vm) if vm else []
+    n = len(ratios)
+    cover = (ratios[n // 2] if n % 2 else (ratios[n // 2 - 1] + ratios[n // 2]) / 2) if n else 0.0
+    if not vm or cover < VF_BLOCK_MIN_COVER:
+        chk("F", "대량 체결 의심 = DB 재계산(분봉 없음·미완이면 skip)", got.get("status") == "skip",
+            f"분봉 합÷거래량 중앙 {cover:.3f} 인데 status={got.get('status')}")
+        return
+    cur.execute("SELECT s.code, abs(s.close), coalesce(s.individual,0), coalesce(s.foreign_,0), coalesce(s.institution,0) "
+                f"FROM supply_demand s WHERE s.source='kiwoom' AND s.date={ph}", (d1,))
+    per: dict = {}
+    for c, close, *q in cur.fetchall():
+        if c in meta and close is not None:
+            per.setdefault(meta[c][0], []).append((c, [float(x) * float(close) / 1e8 for x in q]))
+    bad = []
+    unjudged = 0
+    for m in P["markets"]:
+        den = sum(abs(sum(a[i] for _c, a in per.get(m, []))) for i in range(3))
+        exp = set()
+        for c, a in per.get(m, []):
+            if not den or max(abs(x) for x in a) < VF_BLOCK_SHARE_MIN * den:
+                continue
+            vol = bars.get(c, (0.0, 0.0))[0]
+            if vol <= 0 or c not in vm:
+                unjudged += 1
+            elif max(0.0, vol - vm[c]) / vol >= VF_BLOCK_OFF_MIN:
+                exp.add(c)
+        have = {x["code"] for x in ((got.get("markets") or {}).get(m) or [])}
+        if exp != have:
+            bad.append(f"{m} 빠짐 {sorted(exp - have)[:3]} 더함 {sorted(have - exp)[:3]}")
+    if got.get("unjudged") != unjudged:
+        bad.append(f"판정 못 한 종목 {got.get('unjudged')} vs {unjudged}")
+    chk("F", "대량 체결 의심 = DB 재계산(분봉 없음·미완이면 skip)", got.get("status") == "ok" and not bad, "; ".join(bad[:2]))
 
 
 def _f_today_context(P: dict, cur, ph: str, meta: dict, px: dict, cap_at) -> None:
@@ -1954,6 +2009,7 @@ def _f_today_context(P: dict, cur, ph: str, meta: dict, px: dict, cap_at) -> Non
             if (sm is None) != (top is None) or (top and (sm["sector"] != top[1] or abs(sm["pct"] - top[0]) > 0.011)):
                 bad.append(f"{mkey} 섹터 최대 {sm} vs {top}")
     chk("F", "금액 근사 오차(시장·섹터 최대) = DB 재계산", not bad and n_cmp > 0, "; ".join(bad[:2]))
+    _f_block_suspects(P, cur, ph, meta, d1, bars)
 
     # ── 외부 참값: 전 거래일 자체 바구니(정규장 종가) ≈ KRX 지수 ──
     if not (P.get("final") or P.get("finalize_unverified")):
@@ -2771,19 +2827,39 @@ def _vt_streak_check(P: dict) -> None:
     chk("T", "연속 순매매 — 시장·주체별 최장 섹터 재계산", not bad_l, "; ".join(bad_l[:2]))
 
 
-#: KRX 공식 대조의 분모 게이트 — producer(krx_truth.GAP_MIN_TV_SHARE)를 읽지 않고 따로 적는다.
+#: 공표치 대조의 분모 게이트·칩 문턱 — producer(krx_truth)를 읽지 않고 따로 적는다.
 VT_KRX_MIN_TV_SHARE = 0.002
-#: 페이로드 주체 → krx_truth.json 원시 행(공표 투자자구분) — 역시 독립 사본.
+VT_KRX_WARN = 5.0
+#: 페이로드 주체 → krx_truth.json 공표 행 — 역시 독립 사본. 네이버는 기타법인 행이 없다(그 주체는 비교 없음).
 VT_KRX_ROWS = {"inst": ("기관합계",), "forgn": ("외국인", "기타외국인"),
                "indiv": ("개인",), "etc": ("기타법인",)}
+#: VERIFY.txt 표지 — ``freshness_check.py`` 가 **같은 글**을 찾는다(``tests/test_freshness_check.py``).
+VT_SKIP_MARK = "SKIP 공표치 대조"
+VT_SKIP_STREAK_MARK = "공표치 대조 연속 SKIP"
+VT_DONE_MARK = "공표치 대조 — 오차가"
+#: 공표 수치가 페이로드에 새지 않았나 — 블록 안에 이 키가 있으면 실패다(약관 미확인, 오차만 싣는다).
+VT_KRX_LEAK_KEYS = ("official", "approx", "diff", "rows")
+
+
+def _vt_krx_skip(P: dict, folder: "str | None", why: str) -> None:
+    """공표치 대조를 건너뛴다 — 사유와 연속 횟수를 남기고 :data:`VF_SKIP_WARN` 회째부터 WARN(실패가 아니다)."""
+    print(f"       {VT_SKIP_MARK} — {why}")
+    streak = 1 + external_skip_streak(folder, P["dates"][-1], VT_SKIP_MARK, VT_DONE_MARK)
+    msg = f"{VT_SKIP_STREAK_MARK} {streak}회(이 리포트 포함)"
+    if streak >= VF_SKIP_WARN:
+        warn("T", msg, "공표 시장값을 며칠째 못 받았다 — 화면 칩이 공표치 기준 오차로 판정하지 못한다. "
+                       "VERIFY.txt 의 사유를 보라")
+    else:
+        print(f"       {msg}")
 
 
 def _vt_krx_truth(P: dict, folder: "str | None") -> None:
-    """선택 기능: ``krx_truth.json`` (KRX 공식 투자자별 거래대금) ↔ ``today.krx_truth``.
+    """``krx_truth.json`` (공표치, 사이드카) ↔ ``today.krx_truth`` (오차만).
 
-    공식값은 파일의 **원시 공표 행**(원)에서 다시 억으로 만들고, 오차·분모 게이트도 따로 다시
-    센다. 기능이 꺼진 리포트(파일도 블록도 없음)는 침묵, skip 블록은 SKIP 한 줄이다 — 실패가 아니다
-    (망·로그인 장벽은 리포트 품질이 아니다). 파일은 있는데 블록이 없거나 수가 안 맞으면 실패다.
+    공표값은 파일의 **공표 행**(원)에서 다시 억으로 만들고, 근사값은 ``today.market[m].net`` 에서 읽어 주체 칸·
+    시장 합계 오차·게이트·부호 반대·칩 판정(``hot``)을 따로 다시 센다. 기능이 꺼진 리포트(파일도 블록도 없음)는
+    침묵, skip 블록은 SKIP 한 줄이고 연속이면 경고다 — 실패가 아니다(망·로그인 장벽은 리포트 품질이 아니다).
+    파일은 있는데 블록이 없거나 수가 안 맞거나 공표 수치가 블록에 새면 실패다.
     """
     T = P.get("today") or {}
     kt = T.get("krx_truth")
@@ -2792,7 +2868,7 @@ def _vt_krx_truth(P: dict, folder: "str | None") -> None:
     if kt is None and not have_file:
         return
     if isinstance(kt, dict) and kt.get("status") != "ok":
-        print(f"       SKIP KRX 공식 거래대금 대조 — {kt.get('reason') or '이유 없음'}")
+        _vt_krx_skip(P, folder, kt.get("reason") or "이유 없음")
         return
     bad: list[str] = []
     if not isinstance(kt, dict):
@@ -2803,35 +2879,49 @@ def _vt_krx_truth(P: dict, folder: "str | None") -> None:
         official = json.load(open(path, encoding="utf-8"))
         if kt.get("date") != P["dates"][-1] or official.get("date") != P["dates"][-1]:
             bad.append(f"기준일 불일치: 블록 {kt.get('date')} · 파일 {official.get('date')} · 페이로드 {P['dates'][-1]}")
+        leak = sorted({k for m in (kt.get("markets") or {}).values() for row in m.values()
+                       if isinstance(row, dict) for k in row if k in VT_KRX_LEAK_KEYS})
+        if leak or any(k in kt for k in VT_KRX_LEAK_KEYS + ("markets_raw",)):
+            bad.append(f"공표 수치가 페이로드에 새었다: {leak}")
         n_cells = 0
         for m, rows in (official.get("rows") or {}).items():
             M = (T.get("market") or {}).get(m) or {}
             tv = M.get("tv")
+            gate = None if tv is None else VT_KRX_MIN_TV_SHARE * tv
             got_m = (kt.get("markets") or {}).get(m) or {}
+            err = den = 0.0
             for a, names in VT_KRX_ROWS.items():
-                if a == "inst" and "기관합계" not in rows:
-                    continue                      # 소분류 합 대체는 producer 몫 — 여기선 공표 합계 행만 본다
+                if not any(x in rows for x in names):
+                    continue                      # 그 소스에 없는 주체 — 비교할 공표 행이 없다
                 won = sum(float(str(rows.get(x, 0)).replace(",", "") or 0) for x in names if x in rows)
                 off = round(won / 1e8, 2)
                 got = got_m.get(a) or {}
-                v = got.get("approx")
+                v = ((M.get("net") or {}).get(a) or {}).get("v")
                 n_cells += 1
-                if got.get("official") != off:
-                    bad.append(f"{m}/{a} 공식 {got.get('official')} vs 행 재계산 {off}")
-                    continue
                 if v is None:
-                    bad.append(f"{m}/{a} approx 없음")
+                    bad.append(f"{m}/{a} 근사값 없음")
                     continue
-                gated = tv is not None and abs(off) >= VT_KRX_MIN_TV_SHARE * tv and off != 0
-                exp = round(abs(v - off) / abs(off) * 100.0, 2) if gated else None
+                err += abs(v - off)
+                den += abs(off)
+                big = gate is not None and abs(off) >= gate and off != 0
+                exp = round(abs(v - off) / abs(off) * 100.0, 2) if big else None
                 g = got.get("gap_pct")
                 if (g is None) != (exp is None) or (exp is not None and abs(g - exp) > 0.011):
                     bad.append(f"{m}/{a} 오차 {g} vs {exp}")
-                if abs((got.get("diff") or 0) - round(v - off, 2)) > 0.011:
-                    bad.append(f"{m}/{a} diff {got.get('diff')} vs {round(v - off, 2)}")
+                flip = bool(gate is not None and off * v < 0 and max(abs(off), abs(v)) >= gate)
+                if bool(got.get("flip")) != flip:
+                    bad.append(f"{m}/{a} 부호 반대 {got.get('flip')} vs {flip}")
+            total = round(err / den * 100.0, 2) if gate is not None and den and den >= gate else None
+            t = got_m.get("total_pct")
+            if (t is None) != (total is None) or (total is not None and abs(t - total) > 0.011):
+                bad.append(f"{m} 합계 오차 {t} vs {total}")
+            if bool(got_m.get("hot")) != bool(total is not None and total > VT_KRX_WARN):
+                bad.append(f"{m} 칩 판정 {got_m.get('hot')} — 합계 {total} · 문턱 {VT_KRX_WARN}")
+            print(f"       공표치 기준 오차 {m}: {'—' if total is None else f'{total:.2f}%'}"
+                  f" (문턱 {VT_KRX_WARN:g}%, 소스 {official.get('source')})")
         if not n_cells:
             bad.append("대조한 칸이 0 — 파일 rows 가 비었다")
-    chk("T", "KRX 공식 거래대금 대조 — 오차가 공표 행에서 다시 나오는가", not bad, "; ".join(bad[:3]))
+    chk("T", f"{VT_DONE_MARK} 공표 행에서 다시 나오는가", not bad, "; ".join(bad[:3]))
 
 
 # ─────────────────────────────────────────────── W. 웹 — 그려진 페이지의 숫자

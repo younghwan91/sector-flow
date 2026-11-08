@@ -184,6 +184,28 @@ def check_external_truth(root: Path, prev: str | None) -> tuple[int, list[str]]:
     return 0, []
 
 
+#: verify_report.py 의 공표치 대조 표지 — 역시 **같은 글**.
+PUB_SKIP_MARK = "SKIP 공표치 대조"
+PUB_SKIP_STREAK_MARK = "공표치 대조 연속 SKIP"
+
+
+def check_published_truth(root: Path, prev: str | None) -> tuple[int, list[str]]:
+    """전 거래일 검증이 공표 시장값 대조를 했나 — 연속 SKIP 경고(``[WARN]``)가 있으면 75, 한 번 SKIP 은 한 줄."""
+    if not prev:
+        return 0, []
+    try:
+        text = (root / prev / "VERIFY.txt").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return 0, []
+    hit = next((ln.strip() for ln in text.splitlines() if "[WARN]" in ln and PUB_SKIP_STREAK_MARK in ln), None)
+    if hit:
+        return WARN, [f"⚠️ [공표치] 전 거래일({prev}) 검증: {hit}",
+                      f"    {root / prev / 'VERIFY.txt'} 의 '{PUB_SKIP_MARK}' 사유를 보라 — 시장 합계를 공표치에 며칠째 못 댔다."]
+    if PUB_SKIP_MARK in text:
+        return 0, [f"[공표치] 전 거래일({prev}) 검증이 공표 시장값 대조를 건너뛰었다(SKIP) — 3번 이어지면 경고한다"]
+    return 0, []
+
+
 # ── 알림 통로 — quant-airflow scripts/alert.sh 가 읽는 그대로 ─────────────────────
 
 def alert_sh_path(environ) -> Path:
@@ -348,6 +370,8 @@ def main(argv: list[str] | None = None) -> int:
             rc, lines = worse(rc, prc), lines + plines
             xrc, xlines = check_external_truth(Path(a.root), prev)
             rc, lines = worse(rc, xrc), lines + xlines
+            trc, tlines = check_published_truth(Path(a.root), prev)
+            rc, lines = worse(rc, trc), lines + tlines
             src, slines = check_slo(Path(a.root), prev)
             rc, lines = worse(rc, src), lines + slines
     data_rc = rc

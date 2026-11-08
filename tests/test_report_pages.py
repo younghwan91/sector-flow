@@ -399,36 +399,57 @@ def test_numbers_today_panel_says_when_the_report_has_no_today(tmp_path):
 @node
 def test_numbers_gap_chip_only_above_threshold(tmp_path):
     D = _today_numbers()
-    assert not any("금액 근사 오차 큼" in t for t in _page("sector_numbers.html", D, tmp_path))
+    assert not any("환산 차 큼" in t for t in _page("sector_numbers.html", D, tmp_path))
     D["today"]["market"]["코스닥"]["approx_gap"]["pct"] = 6.1
-    assert any("금액 근사 오차 큼(코스닥 6.1%)" in t for t in _page("sector_numbers.html", D, tmp_path))
+    assert any("종가·VWAP 환산 차 큼(코스닥 6.1%)" in t for t in _page("sector_numbers.html", D, tmp_path))
 
 
 @node
 def test_numbers_today_panel_shows_the_official_gap_line(tmp_path):
-    """오늘 패널 — KRX 공식 거래대금 대비 근사 오차 줄(시장별, 게이트 칸은 —). 기능 꺼짐이면 침묵.
+    """오늘 패널 — 공표 시장값 대비 오차 줄(합계·주체, 게이트 칸은 —, 부호 반대 표지). 기능 꺼짐이면 침묵.
 
     주입: 줄을 안 그리게 하면 실패한다.
     """
     D = _today_numbers()
-    assert not any("공식 거래대금 대비" in t for t in _page("sector_numbers.html", D, tmp_path))
-    D["today"]["krx_truth"] = {"status": "ok", "date": "2026-08-28", "warn": 5.0, "markets": {
-        "거래소": {"inst": {"gap_pct": 3.73}, "forgn": {"gap_pct": 1.7},
-                "indiv": {"gap_pct": 2.29}, "etc": {"gap_pct": 0.07}},
-        "코스닥": {"inst": {"gap_pct": 4.02}, "forgn": {"gap_pct": 8.17},
-                "indiv": {"gap_pct": 2.43}, "etc": {"gap_pct": None}}}}
+    assert not any("공표 시장값" in t for t in _page("sector_numbers.html", D, tmp_path))
+    D["today"]["krx_truth"] = {"status": "ok", "date": "2026-08-28", "warn": 5.0, "label": "네이버 시장값, 내부 대조용", "markets": {
+        "거래소": {"total_pct": 2.3, "hot": False, "inst": {"gap_pct": 3.73, "flip": False}, "forgn": {"gap_pct": 1.7, "flip": False},
+                "indiv": {"gap_pct": 2.29, "flip": False}, "etc": None},
+        "코스닥": {"total_pct": 6.04, "hot": True, "inst": {"gap_pct": 4.02, "flip": False}, "forgn": {"gap_pct": 8.17, "flip": True},
+                "indiv": {"gap_pct": None, "flip": False}, "etc": None}}}
     joined = "\n".join(_page("sector_numbers.html", D, tmp_path))
-    assert "공식 거래대금 대비 근사 오차(거래소): 기관 3.7% · 외국인 1.7% · 개인 2.3% · 기타법인 0.1% (KRX 공표치, 내부 검증용)" in joined
-    assert "공식 거래대금 대비 근사 오차(코스닥): 기관 4.0% · 외국인 8.2% · 개인 2.4% · 기타법인 — (KRX 공표치, 내부 검증용)" in joined
+    assert "공표 시장값 대비 오차(거래소): 합계 2.3% · 기관 3.7% · 외국인 1.7% · 개인 2.3% (네이버 시장값, 내부 대조용)" in joined
+    assert "공표 시장값 대비 오차(코스닥): 합계 6.0% · 기관 4.0% · 외국인 8.2% 부호 반대 · 개인 — (네이버 시장값, 내부 대조용)" in joined
+    # 칩은 공표치 기준 hot 인 시장에만 — 내부 VWAP 차가 작아도 뜬다
+    assert "⚠ 공표 시장값과 오차 큼(코스닥 6.0%)" in joined
+    assert "오차 큼(거래소" not in joined
 
 
 @node
 def test_numbers_today_panel_names_the_krx_truth_skip_reason(tmp_path):
-    """공식 대조를 건너뛴 리포트는 침묵이 아니라 이유를 적는다 — 빈 자리가 고장인지 꺼짐인지 갈리게."""
+    """공표치 대조를 건너뛴 리포트는 침묵이 아니라 칩과 이유를 적는다 — 빈 자리가 고장인지 꺼짐인지 갈리게."""
     D = _today_numbers()
-    D["today"]["krx_truth"] = {"status": "skip", "reason": "LOGOUT — 로그인 장벽"}
+    D["today"]["krx_truth"] = {"status": "skip", "reason": "네이버 접속 실패"}
     joined = "\n".join(_page("sector_numbers.html", D, tmp_path))
-    assert "KRX 공식 거래대금 대조: 건너뜀 — LOGOUT — 로그인 장벽" in joined
+    assert "공표치 대조: 건너뜀 — 네이버 접속 실패" in joined
+    assert "⚠ 공표치 대조 건너뜀" in joined
+
+
+@node
+def test_numbers_block_suspect_chip_names_the_stock_with_evidence(tmp_path):
+    """대량 체결 의심 칩 — 종목과 분봉 밖 몫, 증거 표지. 목록이 비었거나 skip 이면 없다."""
+    D = _today_numbers()
+    D["today"]["block_suspects"] = {"status": "ok", "markets": {"거래소": [], "코스닥": []}}
+    assert not any("대량 체결 의심" in t for t in _page("sector_numbers.html", D, tmp_path))
+    D["today"]["block_suspects"]["markets"]["거래소"] = [
+        {"code": "034730", "name": "SK", "off_pct": 91.8, "actor": "indiv", "amt": -8841.8},
+        {"code": "2", "name": "B", "off_pct": 60.0, "actor": "indiv", "amt": 5.0},
+        {"code": "3", "name": "C", "off_pct": 55.4, "actor": "indiv", "amt": 4.0},
+        {"code": "4", "name": "D", "off_pct": 55.0, "actor": "indiv", "amt": 3.0}]
+    joined = "\n".join(_page("sector_numbers.html", D, tmp_path))
+    assert "⚠ 대량 체결 의심 — 근사 오차 큼(거래소: SK 분봉 밖 92%·B 분봉 밖 60%·C 분봉 밖 55% 외 1종목) [측정]" in joined
+    D["today"]["block_suspects"] = {"status": "skip", "reason": "분봉 표(minute_bars)가 없다"}
+    assert not any("대량 체결 의심 —" in t for t in _page("sector_numbers.html", D, tmp_path))
 
 
 @node

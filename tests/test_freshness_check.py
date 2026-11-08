@@ -432,6 +432,19 @@ def test_cron_path_flags_a_previous_day_external_truth_skip_streak(repo, hook):
     assert "[외부 참값]" in p.stdout and "연속 SKIP 4회" in p.stdout, p.stdout
 
 
+def test_cron_path_flags_a_previous_day_published_truth_skip_streak(repo, hook):
+    """20:30 점검의 실제 경로 — 공표치 대조 연속 SKIP 경고가 75 로 이어진다(검사 함수를 안 부르면 조용히 죽는다)."""
+    _reports(repo, TODAY)
+    prev = repo / "reports" / "2026-11-05"
+    prev.mkdir()
+    (prev / "FINAL.txt").write_text("x")
+    (prev / "VERIFY.txt").write_text("  [WARN] T · 공표치 대조 연속 SKIP 3회(이 리포트 포함)\n", "utf-8")
+    _qa_env(repo, f"ALERT_WEBHOOK_URL={hook(200, b'{}')[0]}\n")
+    p = _run(repo)
+    assert p.returncode == 75, p.stdout + p.stderr
+    assert "[공표치]" in p.stdout and "연속 SKIP 3회" in p.stdout, p.stdout
+
+
 def test_cron_path_holiday_without_ticks_is_quiet(repo, hook):
     """평일 휴장 — 수급도 틱도 없다. 틱 표가 있는 DB 에서만 휴장이라 말한다."""
     con = sqlite3.connect(repo.parent / "db.sqlite")
@@ -463,3 +476,25 @@ def test_cron_path_db_failure_is_an_error_and_hides_the_password(repo, hook):
     assert p.returncode == 1, p.stdout + p.stderr
     assert "못 셌다" in p.stdout
     assert "s3cret" not in p.stdout + p.stderr
+
+
+def test_previous_day_published_skip_streak_warns_and_a_single_skip_is_a_note(tmp_path):
+    """공표치 대조 연속 SKIP 경고는 75, 한 번 SKIP 은 한 줄(0) — verify_report 표지와 같은 글이어야 한다."""
+    root = tmp_path
+    day = root / "2026-11-05"
+    day.mkdir()
+    assert fc.check_published_truth(root, "2026-11-04") == (0, [])
+    assert fc.check_published_truth(root, None) == (0, [])
+    (day / "VERIFY.txt").write_text("       SKIP 공표치 대조 — 망\n", "utf-8")
+    rc, lines = fc.check_published_truth(root, "2026-11-05")
+    assert rc == 0 and "3번 이어지면" in lines[0]
+    (day / "VERIFY.txt").write_text("       SKIP 공표치 대조 — 망\n  [WARN] T · 공표치 대조 연속 SKIP 3회(이 리포트 포함)\n", "utf-8")
+    rc, lines = fc.check_published_truth(root, "2026-11-05")
+    assert rc == fc.WARN and "공표치 대조 연속 SKIP" in lines[0]
+
+
+def test_published_marks_match_the_verifier():
+    """freshness 가 찾는 표지와 verify_report 가 남기는 표지가 어긋나면 경고가 조용히 죽는다."""
+    src = (REPO / "scripts" / "verify_report.py").read_text("utf-8")
+    assert f'VT_SKIP_MARK = "{fc.PUB_SKIP_MARK}"' in src
+    assert f'VT_SKIP_STREAK_MARK = "{fc.PUB_SKIP_STREAK_MARK}"' in src
