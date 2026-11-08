@@ -452,7 +452,7 @@ G 관문(§2.12) 둘 다에서 쓰인다. 얇은 행은 회색으로 그린다. 
 `src/sectorflow/tui/flow_view.py:2112-2117`(`def _per_win`).
 
 - G 가 이제 관문 통과 섹터에만 있으므로 **종합 G 는 그 섹터가 통과한 창들만의 평균**이다. 한 창만 통과한 섹터가 세 창 모두
-  통과한 섹터보다 위에 올 수 있다(도움말 `src/sectorflow/tui/flow_view.py:3031` 이 그렇게 적는다).
+  통과한 섹터보다 위에 올 수 있다(도움말 `src/sectorflow/tui/flow_view.py:3030` 이 그렇게 적는다).
 - 그날 통과 섹터가 하나도 없는 창은 $\mathcal W$ 에서 빠진다. 5일 창은 ẍ 가 없어 늘 빠진다(§2.10). 남는 창이 2개 미만이면 종합이
   없고 화면이 그 사유를 적는다(`src/sectorflow/tui/flow_view.py:639-643`(`def empty_reason`)). "20·60·120 세 창" 은 관측 결과이지 상수가 아니다.
 - 종합의 `*` 는 판정할 수 있었던 창(얇지 않고 a·x·ẍ 가 다 있다) **모두**에서 통과했을 때 붙는다(`G_pass` `scripts/sector_numbers.py:512`).
