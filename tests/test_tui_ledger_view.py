@@ -428,11 +428,18 @@ def test_banner_is_on_screen_not_in_a_footnote(data):
     assert "미관측" in BANNER and "섹터→섹터" in BANNER
     # 배너는 **모든 화면**의 마지막 줄이다. 주입해 보라: screen() 에서 배너를 빼고
     # 앱이 붙이게 되돌리면, 순수 함수로는 못 잡아 이 검사가 실패한다.
+    #
+    # 폭 120 에서는 바꾸는 키(v w m a s d)를 다 적느라 배너가 한 단계 줄어든다
+    # (`banner_footer`) — 그래도 "미관측: 섹터→섹터" 는 남는다. 가장 긴 배너는
+    # 키와 같이 들어가는 폭(200)에서 본다.
     for vi in range(len(VIEWS)):
         mo.vi = vi
         s = screen(mo, 120, 30)
-        assert BANNER in s["lines"][s["banner_y"]], VIEWS[vi][0]
+        bottom = s["lines"][s["banner_y"]]
+        assert "미관측" in bottom and "섹터→섹터" in bottom, VIEWS[vi][0]
         assert len(s["lines"]) == 30
+        s = screen(mo, 200, 30)
+        assert BANNER in s["lines"][s["banner_y"]], VIEWS[vi][0]
     mo.vi = [v for v, _ in VIEWS].index("limits")
     body = screen(mo, 100, 40)["lines"]
     assert any("돈에 꼬리표가 없다" in line for line in body)
@@ -2041,3 +2048,94 @@ def test_each_screen_keeps_its_own_place_so_v_does_not_lose_the_selection(data):
     assert mo.scroll_attr == "hrow"
     _key(mo, curses.KEY_DOWN, 10)
     assert mo.hrow == 1 and mo.row == 3 and mo.crow == 4
+
+
+# ------------------------------------------------------- 하단 줄 · 위치 · 막대 머리
+
+def _keys_on(line: str) -> set[str]:
+    """한 줄이 **적은** 키 글자 — 토큰 첫 글자가 ASCII 글자나 ``?`` 인 것.
+
+    배너(한글)·위치(숫자)는 걸리지 않는다. ``v화면``·``v:화면``·``v`` 모두 ``v`` 다.
+    """
+    return {t[0] for t in line.split() if t[0].isascii() and (t[0].isalpha() or t[0] == "?")}
+
+
+@pytest.mark.parametrize("width", [80, 100, 120, 160])
+def test_bottom_line_keeps_every_changing_key_at_common_widths(data, width):
+    """회귀 — 폭 100 에서 하단 줄이 ``?:도움말 q:종료`` 로 주저앉았다(실측 100x30).
+
+    배너가 가장 긴 단계를 끝까지 지켜서 ``v w m a s d`` 가 화면 어디에도 없었다.
+    배너는 어느 단계에서도 "미관측" 을 지키므로 **배너가 먼저 줄어야** 한다.
+    위치 표시(``1-3/8``)가 붙어도 마찬가지다 — 낮은 창이라 행이 숨는다.
+
+    주입: `banner_footer` 가 키 목표 없이 가장 긴 배너부터 고르게 되돌리면 실패한다.
+    """
+    mo = Model(data)
+    for vi in range(len(VIEWS)):
+        mo.vi = vi
+        for height in (8, 30):
+            line = screen(mo, width, height)["lines"][-1]
+            assert _w(line) == width, (width, height, repr(line))
+            assert "미관측" in line, (width, VIEWS[vi][0], line)
+            missing = set("vwmasd?q") - _keys_on(line)
+            assert not missing, f"폭{width}·{VIEWS[vi][0]}: {sorted(missing)} 가 없다 — {line!r}"
+
+
+def test_bottom_line_gives_up_the_position_before_the_warning_or_help():
+    """좁은 폭에서는 위치를 통째로 뺀다 — 경고(미관측)와 ``?`` 가 먼저다. 위치는 자르지 않는다."""
+    from sectorflow.tui.ledger_view import banner_footer
+
+    mark = " 12-23/27 "
+    for width in range(34, 202):
+        line = banner_footer(width, mark)
+        assert _w(line) == width, width
+        assert "미관측" in line and "?" in line and "q" in line, (width, line)
+        assert line.endswith(mark) or "/27" not in line, f"폭{width}: 위치가 잘렸다 {line!r}"
+    assert banner_footer(100, mark).endswith(mark)
+
+
+def test_hidden_rows_show_where_you_are_in_the_list(data):
+    """표가 화면보다 길면 맨 아래 줄 오른끝에 ``처음-끝/전체`` 를 적는다(``sw-flow`` 와 같다).
+
+    없으면 100x30 에서 27개 중 23개만 보여도 그게 전부처럼 읽힌다. 다 보이면 안 적는다.
+
+    주입: `screen()` 에서 위치 계산을 지우면(빈 문자열) 실패한다.
+    """
+    mo = Model(data)
+    total = len(mo.rows())
+    assert total > 3, "합성 데이터가 너무 작다"
+    s = screen(mo, 120, 30)
+    assert f"/{total}" not in s["lines"][-1], "다 보이는데 위치를 적었다"
+    # 높이 10: 헤더 2 + 열 이름 1 + 여백 1 + 하단 3 → 표 3행.
+    s = screen(mo, 120, 10)
+    shown = sum(1 for ln in s["lines"][s["head"]:s["hint_y"]] if ln.strip())
+    assert 0 < shown < total
+    assert s["lines"][-1].rstrip().endswith(f"1-{shown}/{total}"), s["lines"][-1]
+    mo.row = 10 ** 6                              # 끝으로
+    s = screen(mo, 120, 10)
+    assert s["lines"][-1].rstrip().endswith(f"{total - shown + 1}-{total}/{total}"), s["lines"][-1]
+
+
+def test_the_bar_header_is_never_cut_into_a_lone_minus(data):
+    """막대 열 머리가 폭 100 에서 ``−`` 한 글자로 잘렸다(막대가 두 칸뿐인 자리).
+
+    잘린 머리는 "음수 열" 로 읽힌다. ``−`` 가 있으면 ``+`` 도 있고, 주체 이름은
+    통째로 있거나 아예 없다 — 그리고 ``−``·``+`` 는 막대의 두 끝에 선다.
+
+    주입: 머리를 `pad(f"−  {mo.actor_ko}  +", 2 * half)` 로 되돌리면 폭 100 에서 실패한다.
+    """
+    import re
+
+    mo = Model(data)
+    for ai, (_k, ko) in enumerate(ACTORS):
+        mo.ai = ai
+        for width in range(LEDGER_MIN_W, 202):
+            head = ledger_lines(mo, width)[0][0]
+            # 표 열이 끝나는 표시 칸 — 그 뒤가 막대 머리다.
+            used = sum(c[1] + 1 for c in _fit(ledger_cols(), width)) - 1
+            i = next(i for i in range(len(head) + 1) if _w(head[:i]) >= used)
+            bar = head[i:].strip()
+            if not bar:
+                continue
+            assert re.fullmatch(rf"−\s*(?:{re.escape(ko)})?\s*\+", bar), (width, ko, repr(bar))
+            assert head.rstrip().endswith("+")

@@ -3,11 +3,11 @@
 
     python3 scripts/serve_reports.py --host 100.x.y.z --port 8765
 
-``reports/<기준일>/`` 의 두 화면(``numbers.html``·``viewer.html``)과 검증 기록만 내보낸다.
+``reports/<기준일>/`` 의 두 화면(``numbers.html``·``viewer.html``)과 검증·확정·미완 기록만 내보낸다.
 ``payload.json``·``cron.log``·짓는 중인 ``*.building.*`` 폴더는 목록에 없으면 안 보인다 — 경로를
 정규식으로 고르므로 ``..`` 같은 것은 애초에 도달하지 못한다.
 
-- ``/`` 는 기준일 목록. 최신·검증 실패·수집 미완을 표시한다.
+- ``/`` 는 기준일 목록. 최신·확정/잠정·검증 실패·수집 미완을 표시한다.
 - ``/latest/…`` 는 지금의 ``latest`` 가 가리키는 기준일로 넘긴다(302). 즐겨찾기가 늘 최신을 연다.
 - HTML 은 ``no-cache`` + ETag — 리포트가 다시 만들어지면 새로고침 한 번에 바뀐다.
 - 3MB 짜리 페이지라 gzip 으로 보낸다(약 10분의 1).
@@ -40,6 +40,7 @@ FILES = {
     "VERIFY.txt": "text/plain; charset=utf-8",
     "VERIFY_FAILED.txt": "text/plain; charset=utf-8",
     "INCOMPLETE.txt": "text/plain; charset=utf-8",
+    "FINAL.txt": "text/plain; charset=utf-8",
 }
 PAGES = (("numbers.html", "수치표"), ("viewer.html", "흐름"))
 #: 화면(`flow_view.STALE_DAYS`)·페이지(`staleChip`)와 같은 문턱.
@@ -78,48 +79,83 @@ def latest_date(root: str) -> str | None:
     return ds[0] if ds else None
 
 
+def day_tags(root: str, d: str) -> list[str]:
+    """한 기준일의 상태 표 — ``확정``/``잠정``, ``검증 실패``/``검증 통과``, ``수집 미완``.
+
+    ``확정`` 은 08:20 확정 모드가 확정치로 다시 만든 날(``FINAL.txt``)뿐이다. 그 표시가
+    없는 날은 18:10 의 잠정치로 만든 그대로다 — 확정 모드가 확정치를 확인하지 못했거나
+    그 모드가 생기기 전의 리포트다. 리포트가 없는 날(수집 미완)에는 둘 다 안 붙인다.
+    """
+    p = os.path.join(root, d)
+    has = {f: os.path.exists(os.path.join(p, f)) for f in FILES}
+    tags = []
+    if not has["numbers.html"]:
+        if has["INCOMPLETE.txt"]:
+            tags.append(f'<a class="tag warn" href="/{d}/INCOMPLETE.txt">수집 미완</a>')
+        return tags
+    if has["FINAL.txt"]:
+        tags.append(f'<a class="tag ok" href="/{d}/FINAL.txt">확정</a>')
+    else:
+        tags.append('<span class="tag prov">잠정</span>')
+    if has["VERIFY_FAILED.txt"]:
+        tags.append(f'<a class="tag warn" href="/{d}/VERIFY_FAILED.txt">검증 실패</a>')
+    elif has["VERIFY.txt"]:
+        tags.append(f'<a class="tag" href="/{d}/VERIFY.txt">검증 통과</a>')
+    return tags
+
+
 def index_html(root: str, today: date | None = None) -> str:
     today = today or date.today()
     latest = latest_date(root)
     rows = []
     for d in report_dates(root):
         p = os.path.join(root, d)
-        has = {f: os.path.exists(os.path.join(p, f)) for f in FILES}
-        links = " · ".join(f'<a href="/{d}/{f}">{ko}</a>' for f, ko in PAGES if has[f])
-        tags = []
+        links = " ".join(f'<a class="pg" href="/{d}/{f}">{ko}</a>' for f, ko in PAGES
+                         if os.path.exists(os.path.join(p, f)))
+        tags = day_tags(root, d)
+        cls = ' class="latest"' if d == latest else ""
         if d == latest:
-            tags.append('<span class="tag new">최신</span>')
-        if has["INCOMPLETE.txt"] and not has["numbers.html"]:
-            tags.append(f'<a class="tag warn" href="/{d}/INCOMPLETE.txt">수집 미완</a>')
-        if has["VERIFY_FAILED.txt"]:
-            tags.append(f'<a class="tag warn" href="/{d}/VERIFY_FAILED.txt">검증 실패</a>')
-        elif has["VERIFY.txt"]:
-            tags.append(f'<a class="tag" href="/{d}/VERIFY.txt">검증 통과</a>')
-        rows.append(f"<tr><td>{d}</td><td>{links or '—'}</td><td>{' '.join(tags)}</td></tr>")
+            tags.insert(0, '<span class="tag new">최신</span>')
+        rows.append(f'<li{cls}><span class="d">{d}</span>'
+                    f'<span class="pgs">{links or "—"}</span>'
+                    f'<span class="tags">{" ".join(tags)}</span></li>')
     head = "<p>리포트가 아직 없다 — 크론이 평일 18:10 에 만든다.</p>"
     if latest:
         age = (today - date.fromisoformat(latest)).days
-        stale = (f' <span class="tag warn">⚠ {age}일 지난 리포트 — 배치가 멈췄는지 '
-                 f'<code>reports/cron.log</code> 를 보라</span>') if age >= STALE_DAYS else ""
-        head = (f'<p class="big">최신 {latest}{stale}<br>'
-                + " ".join(f'<a class="btn" href="/latest/{f}">{ko}</a>' for f, ko in PAGES)
-                + "</p><p class=dim>위 단추는 즐겨찾기해도 늘 최신을 연다.</p>")
+        stale = (f'<p><span class="tag warn">⚠ {age}일 지난 리포트 — 배치가 멈췄는지 '
+                 f'<code>reports/cron.log</code> 를 보라</span></p>') if age >= STALE_DAYS else ""
+        head = (f'<div class="hero"><p class="big">최신 <b>{latest}</b> '
+                f'<span class="tags">{" ".join(day_tags(root, latest))}</span></p>{stale}'
+                + "<p>" + " ".join(f'<a class="btn" href="/latest/{f}">{ko}</a>' for f, ko in PAGES)
+                + "</p><p class=dim>위 단추는 즐겨찾기해도 늘 최신을 연다.</p></div>")
     return f"""<!DOCTYPE html>
 <html lang="ko"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>섹터 자금흐름 리포트</title>
 <style>
-body{{font:15px/1.5 system-ui,sans-serif;margin:24px auto;max-width:760px;padding:0 16px;color:#1d2433;background:#f7f8fa}}
-h1{{font-size:20px}} table{{border-collapse:collapse;width:100%}} td{{padding:6px 8px;border-bottom:1px solid #e2e5ea}}
-a{{color:#2457c5}} .big{{font-size:18px}} .dim{{color:#6b7280;font-size:13px}}
-.btn{{display:inline-block;margin:8px 8px 0 0;padding:8px 16px;border-radius:6px;background:#2457c5;color:#fff;text-decoration:none}}
-.tag{{font-size:12px;padding:1px 6px;border-radius:4px;background:#e8ecf3;color:#374151;text-decoration:none}}
-.tag.new{{background:#dcfce7;color:#166534}} .tag.warn{{background:#fef3c7;color:#92400e}}
+body{{font:15px/1.5 system-ui,sans-serif;margin:24px auto;max-width:760px;padding:0 12px;color:#1d2433;background:#f7f8fa}}
+h1{{font-size:20px;margin:0 0 12px}} a{{color:#2457c5}} .big{{font-size:18px;margin:0 0 4px}}
+.dim{{color:#6b7280;font-size:13px}} code{{font-size:12px}}
+.hero{{background:#fff;border:2px solid #2457c5;border-radius:8px;padding:12px 14px;margin:0 0 12px}}
+.hero p{{margin:4px 0}}
+.btn{{display:inline-block;margin:4px 8px 0 0;padding:8px 16px;border-radius:6px;background:#2457c5;color:#fff;text-decoration:none}}
+.tag{{display:inline-block;font-size:12px;line-height:1.6;padding:0 6px;border-radius:4px;background:#e8ecf3;color:#374151;text-decoration:none;white-space:nowrap}}
+.tag.new{{background:#2457c5;color:#fff;font-weight:600}} .tag.ok{{background:#dcfce7;color:#166534}}
+.tag.prov{{background:#f1f5f9;color:#475569;border:1px dashed #94a3b8}}
+.tag.warn{{background:#fef3c7;color:#92400e;font-weight:600}}
+ul.days{{list-style:none;margin:0;padding:0;background:#fff;border:1px solid #e2e5ea;border-radius:8px}}
+ul.days li{{display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px;padding:8px 10px;border-bottom:1px solid #e2e5ea}}
+ul.days li:last-child{{border-bottom:0}}
+ul.days li.latest{{background:#eef3fd;border-left:4px solid #2457c5;font-weight:600}}
+.d{{font-variant-numeric:tabular-nums;min-width:6.2em}} .pgs a{{margin-right:10px}}
+.tags{{display:inline-flex;flex-wrap:wrap;gap:4px}}
+@media (max-width:480px){{body{{margin:12px auto}} .d{{min-width:0;width:100%}}}}
 </style></head><body>
 <h1>섹터 자금흐름 리포트</h1>
 {head}
-<p class=dim>당일 값은 잠정이다 — 확정치는 다음날 새벽 DB 에 덮이고, 만들어 둔 리포트는 안 바뀐다.</p>
-<table>{''.join(rows)}</table>
+<p class=dim>평일 18:10 리포트는 그날 <b>잠정치</b>로 만든다. 다음날 08:20 에 그 기준일을 확정치로 다시 만들면
+<b>확정</b> 표시가 붙는다(확정치가 확인되지 않으면 잠정 그대로 둔다). 크론은 그보다 앞선 날을 다시 만들지 않는다.</p>
+<ul class="days">{''.join(rows)}</ul>
 </body></html>"""
 
 
