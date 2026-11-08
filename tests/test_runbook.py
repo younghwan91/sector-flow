@@ -50,6 +50,11 @@ MESSAGES: list[tuple[str, str, str]] = [
     ("scripts/daily_report.sh", "확정치를 확인하지 못했다", "확정치를 확인하지 못했다"),
     ("scripts/daily_report.sh", "확정치를 확인하지 못해 잠정치로 만들었다", "확정치를 확인하지 못해 잠정치로 만들었다"),
     ("scripts/freshness_check.py", "[외부 참값] 전 거래일", "[외부 참값] 전 거래일"),
+    # SLO(docs/slo.md) — 원장(events.jsonl)으로 재는 기한 위반과 원장 기록 실패
+    ("scripts/freshness_check.py", "잠정 리포트가 기한(", "잠정 리포트가 기한"),
+    ("scripts/freshness_check.py", "확정이 기한(", "확정이 기한"),
+    ("scripts/_ledger.sh", "운영 사건을 기록하지 못했다", "운영 사건을 기록하지 못했다"),
+    ("scripts/ops_ledger.py", "운영 사건을 기록하지 못했다", "운영 사건을 기록하지 못했다"),
     ("scripts/daily_report.sh", "수집 미완 — 게시하지 않는다", "수집 미완"),
     ("scripts/daily_report.sh", "는 오늘이 아닌데 수집 미완이다", "오늘이 아닌데 수집 미완"),
     ("scripts/daily_report.sh", "완전성 관문 오류(rc=", "완전성 관문 오류(rc=N)"),
@@ -121,6 +126,7 @@ SH_SCRAPE: dict[str, list[str]] = {
     "scripts/_env.sh": [r'echo "([^"]+)"[^\n]*>&2'],
     "scripts/daily_report.sh": [r'echo "([^"]+)"[^\n]*>&2', r'echo "([^"]*⚠️[^"]*)"'],
     "scripts/serve.sh": [r'--soft-fail "([^"]+)"', r'"\$ALERT" \w+ "([^"]+)"'],
+    "scripts/_ledger.sh": [r'echo "([^"]+)"[^\n]*>&2'],
 }
 
 
@@ -165,7 +171,7 @@ def _py_messages(rel: str) -> list[str]:
 
 
 PY_SCRAPE = ["scripts/freshness_check.py", "scripts/finalize_done.py", "scripts/completeness_gate.py",
-             "scripts/serve_reports.py", "scripts/krx_truth.py"]
+             "scripts/serve_reports.py", "scripts/krx_truth.py", "scripts/ops_ledger.py"]
 
 
 def _src(rel: str) -> str:

@@ -1790,8 +1790,10 @@ why = "08:20 이 확정을 확인 못 하고 0 으로 끝나면 그 기준일이
 guards = ["tests/test_daily_report_flow.py::test_final_mode_keeps_the_provisional_report_when_finalize_is_not_confirmed"]
 file = "scripts/daily_report.sh"
 find = """    echo "    다음 거래일 수집이 들어오면 기준일이 넘어가 이 날은 잠정으로 남는다." >&2
+    EV_OUTCOME="skipped"
     exit 75"""
 replace = """    echo "    다음 거래일 수집이 들어오면 기준일이 넘어가 이 날은 잠정으로 남는다." >&2
+    EV_OUTCOME="skipped"
     exit 0"""
 
 [[mutation]]
@@ -5764,3 +5766,232 @@ guards = ["tests/test_report_pages.py::test_numbers_today_panel_names_the_krx_tr
 file = "scripts/templates/sector_numbers.html"
 find = "  else if(KT){ c2.append(el(\"div\",\"tnote\",\"KRX 공식 거래대금 대조: 건너뜀 — \"+(KT.reason||\"이유 없음\"))); }"
 replace = "  else if(false){ c2.append(el(\"div\",\"tnote\",\"KRX 공식 거래대금 대조: 건너뜀 — \"+(KT.reason||\"이유 없음\"))); }"
+
+# ── 운영 사건 원장(events.jsonl) — 쓰기·회전·통계·백필·SLO ───────────────────────
+
+[[mutation]]
+id = "ledger-append-loses-o-append"
+why = """O_APPEND 를 빼면 각 쓰기가 오프셋 0 에 떨어진다 — 크론 겹침·수동 실행이 서로의
+사건을 덮어 원장이 조용히 줄어든다(추가 전용이라는 전제가 통째로 깨진다)"""
+guards = ["tests/test_ops_ledger.py::test_append_lands_whole_lines_that_read_back",
+          "tests/test_ops_ledger.py::test_concurrent_writers_lose_nothing"]
+file = "scripts/ops_ledger.py"
+find = "        fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)"
+replace = "        fd = os.open(path, os.O_WRONLY | os.O_CREAT, 0o644)"
+
+[[mutation]]
+id = "ledger-rotation-never-continues"
+why = "상한에서 연속 파일을 안 시작하면 events.jsonl 이 끝없이 자라거나(최악) 누가 자르고 싶어진다"
+guards = ["tests/test_ops_ledger.py::test_rotation_continues_without_truncating"]
+file = "scripts/ops_ledger.py"
+find = "    if cur.exists() and cur.stat().st_size >= MAX_BYTES:"
+replace = "    if False:"
+
+[[mutation]]
+id = "ledger-append-error-crashes"
+why = "원장 기록 실패(디스크·권한)가 예외로 올라가면 freshness_check 가 그날 점검째 죽는다 — 원장은 리포트를 못 멈춘다"
+guards = ["tests/test_ops_ledger.py::test_append_failure_is_a_stderr_note_not_a_crash"]
+file = "scripts/ops_ledger.py"
+find = """        print(f"⚠️ [원장] 운영 사건을 기록하지 못했다({type(e).__name__}) — 리포트·점검은 계속한다. "
+              "reports/events.jsonl 의 디스크·권한을 보라(README §3.1).", file=sys.stderr)
+        return False"""
+replace = """        raise"""
+
+[[mutation]]
+id = "ledger-reader-dies-on-torn-line"
+why = "동시 기록·손 편집으로 깨진 줄 하나가 읽기를 던지게 하면 통계·SLO 점검이 통째로 못 돈다"
+guards = ["tests/test_ops_ledger.py::test_reader_skips_torn_lines"]
+file = "scripts/ops_ledger.py"
+find = """            try:
+                e = json.loads(line)
+            except ValueError:
+                continue"""
+replace = """            try:
+                e = json.loads(line)
+            except ValueError:
+                raise"""
+
+[[mutation]]
+id = "ledger-leaks-to-web"
+why = "운영 원장이 웹 허용 목록에 들어가면 비공개 운영 기록(실패·커밋 sha)이 밖으로 샌다"
+guards = ["tests/test_ops_ledger.py::test_ledger_is_not_in_the_web_allowlist"]
+file = "scripts/serve_reports.py"
+find = """    "REBUILT.txt": "text/plain; charset=utf-8",
+}"""
+replace = """    "REBUILT.txt": "text/plain; charset=utf-8",
+    "events.jsonl": "application/json",
+}"""
+
+[[mutation]]
+id = "slo-prov-deadline-drifts-from-doc"
+why = "코드의 기한이 docs/slo.md 와 어긋나면 19:12 게시가 '제때' 가 된다 — 문서와 측정이 다른 SLO 를 말한다"
+guards = ["tests/test_ops_ledger.py::test_slo_constants_match_the_doc",
+          "tests/test_ops_ledger.py::test_stats_measures_punctuality_gate_verify_final_delays_and_rebuilds"]
+file = "scripts/ops_ledger.py"
+find = "PROV_SLO_KST = time(18, 30)"
+replace = "PROV_SLO_KST = time(19, 30)"
+
+[[mutation]]
+id = "stats-final-slo-never-exceeded"
+why = "확정 기한 비교가 죽으면 며칠 뒤의 확정도 '재시도로 SLO 내' 가 된다 — 지연이 통계에서 사라진다"
+guards = ["tests/test_ops_ledger.py::test_stats_measures_punctuality_gate_verify_final_delays_and_rebuilds",
+          "tests/test_ops_ledger.py::test_render_speaks_the_numbers"]
+file = "scripts/ops_ledger.py"
+find = "        elif f <= final_deadline(a):"
+replace = "        elif True:"
+
+[[mutation]]
+id = "stats-window-ignores-days"
+why = "창이 안 걸러지면 30일 통계에 옛날 사건이 섞인다 — 최근 운영이 좋아져도 숫자가 안 바뀐다"
+guards = ["tests/test_ops_ledger.py::test_stats_window_cuts_old_events"]
+file = "scripts/ops_ledger.py"
+find = "    since = now - timedelta(days=days)"
+replace = "    since = now - timedelta(days=3650)"
+
+[[mutation]]
+id = "errata-ignores-rebuilds"
+why = "재구성은 게시된 숫자를 바꿔 끼운 날이다 — 정정 목록에서 빠지면 신뢰 페이지가 거짓말한다"
+guards = ["tests/test_ops_ledger.py::test_errata_lists_rebuilds_and_changed_finals_only"]
+file = "scripts/ops_ledger.py"
+find = """        if e.get("event") == "report" and e.get("outcome") == "rebuilt":"""
+replace = """        if False:"""
+
+[[mutation]]
+id = "errata-counts-unchanged-finals"
+why = "diff=0(한 칸도 안 바뀐 확정)까지 정정으로 세면 매일이 정정이 된다 — 목록이 무의미해진다"
+guards = ["tests/test_ops_ledger.py::test_errata_lists_rebuilds_and_changed_finals_only"]
+file = "scripts/ops_ledger.py"
+find = """        elif is_final_confirmation(e) and isinstance(e.get("diff"), int) and e["diff"] > 0:"""
+replace = """        elif is_final_confirmation(e) and isinstance(e.get("diff"), int):"""
+
+[[mutation]]
+id = "backfill-forgets-provenance"
+why = "복원 사건에 source=backfill 이 빠지면 mtime 기반 추정이 실측 기록인 척 통계에 섞인다"
+guards = ["tests/test_ops_ledger.py::test_backfill_seeds_from_relics_with_provenance"]
+file = "scripts/ops_ledger.py"
+find = """                        "started": run["started"], "source": "backfill", "origin": "cron.log"})"""
+replace = """                        "started": run["started"], "origin": "cron.log"})"""
+
+[[mutation]]
+id = "backfill-reads-kst-as-utc"
+why = "cron.log 의 벽시계는 KST 다 — UTC 로 읽으면 모든 복원 사건이 9시간 늦어 보여 준시성 통계가 전부 지각이 된다"
+guards = ["tests/test_ops_ledger.py::test_backfill_seeds_from_relics_with_provenance",
+          "tests/test_ops_ledger.py::test_cli_backfill_stats_json_and_errata"]
+file = "scripts/ops_ledger.py"
+find = "    dt = datetime.strptime(stamp, fmt).replace(tzinfo=KST)"
+replace = "    dt = datetime.strptime(stamp, fmt).replace(tzinfo=timezone.utc)"
+
+[[mutation]]
+id = "backfill-double-seeds"
+why = "백필을 두 번 돌리면 같은 날이 두 배로 센다 — 거부(--force 만 예외)가 죽으면 통계가 조용히 부푼다"
+guards = ["tests/test_ops_ledger.py::test_backfill_refuses_to_double_seed"]
+file = "scripts/ops_ledger.py"
+find = """    if not force and any(e.get("source") == "backfill" for e in iter_events(root)):"""
+replace = """    if False:"""
+
+[[mutation]]
+id = "slo-prov-breach-stays-quiet"
+why = "잠정이 기한을 넘긴 기록이 있는데 경고(75)가 안 나가면 SLO 는 측정만 있고 감시가 없다"
+guards = ["tests/test_ops_ledger.py::test_slo_check_warns_on_late_provisional"]
+file = "scripts/freshness_check.py"
+find = "    if prov is not None and prov > ops_ledger.prov_deadline(prev):"
+replace = "    if False:"
+
+[[mutation]]
+id = "slo-final-breach-stays-quiet"
+why = "확정이 다음날 10:40 을 넘긴 날을 안 알리면 확정 지연이 원장에만 남고 아무도 모른다"
+guards = ["tests/test_ops_ledger.py::test_slo_check_warns_on_late_final"]
+file = "scripts/freshness_check.py"
+find = "    if fin is not None and fin > ops_ledger.final_deadline(prev):"
+replace = "    if False:"
+
+[[mutation]]
+id = "slo-unrecorded-day-false-alarms"
+why = "원장에 기록이 없는 날(도입 전·백필 공백)은 측정 불가지 위반이 아니다 — 경고로 울리면 늑대 소년이 된다"
+guards = ["tests/test_ops_ledger.py::test_slo_check_is_quiet_when_on_time_or_unrecorded"]
+file = "scripts/freshness_check.py"
+find = """        return 0, [f"[SLO] 원장에 전 거래일({prev}) 기록이 없다 — 재지 않는다(기록은 reports/events.jsonl, """
+replace = """        return WARN, [f"[SLO] 원장에 전 거래일({prev}) 기록이 없다 — 재지 않는다(기록은 reports/events.jsonl, """
+
+[[mutation]]
+id = "freshness-forgets-its-verdict"
+why = "점검 자신의 판정이 원장에 안 남으면 '점검이 돌긴 했나' 를 나중에 셀 수 없다(죽은 크론 줄과 구분 불가)"
+guards = ["tests/test_ops_ledger.py::test_freshness_main_appends_its_verdict"]
+file = "scripts/freshness_check.py"
+find = """    ops_ledger.append_event(Path(a.root), {"ts": ops_ledger.utc_now_iso(), "event": "freshness",
+                                           "today": today, "rc": rc})"""
+replace = ""
+
+[[mutation]]
+id = "report-run-leaves-no-ledger-event"
+why = "EXIT 트랩이 빠지면 실행 결말이 원장에 안 남는다 — 준시성·차단·정정 전부 셀 수 없게 된다"
+guards = ["tests/test_ops_ledger.py::test_daily_report_ledger_records_publish_skip_and_gate_block"]
+file = "scripts/daily_report.sh"
+find = "trap '_dr_event $?' EXIT"
+replace = "true"
+
+[[mutation]]
+id = "ledger-outcome-never-says-incomplete"
+why = "관문 차단이 outcome=error 로 남으면 '수집이 몇 번 막았나' 가 '스크립트가 몇 번 죽었나' 와 섞인다"
+guards = ["tests/test_ops_ledger.py::test_daily_report_ledger_records_publish_skip_and_gate_block"]
+file = "scripts/daily_report.sh"
+find = '''  EV_GATE="blocked" EV_OUTCOME="incomplete"'''
+replace = '''  EV_GATE="blocked"'''
+
+[[mutation]]
+id = "final-event-not-marked"
+why = "확정 재생성이 final=false 로 남으면 확정 준시성(08:40 목표·10:40 SLO)을 영영 못 잰다"
+guards = ["tests/test_ops_ledger.py::test_daily_report_ledger_records_a_final_rebuild"]
+file = "scripts/daily_report.sh"
+find = '''[ -z "$FINAL_OK" ] || EV_FINAL=true'''
+replace = '''true'''
+
+[[mutation]]
+id = "job-event-missing"
+why = "잡 수준 사건(이름·rc·걸린 시간)이 빠지면 '점검·리포트가 그날 돌긴 했나' 를 원장으로 답할 수 없다"
+guards = ["tests/test_ops_ledger.py::test_cron_run_appends_a_job_event"]
+file = "scripts/cron_run.sh"
+find = '''sf_event_append "$REPO/reports" "{\"ts\":\"$(date -u +%FT%TZ)\",\"event\":\"job\",\"job\":\"${name//[\"\\]/}\",\"rc\":$rc,\"duration_s\":$(( $(date +%s) - t0 ))}"'''
+replace = ''':'''
+
+[[mutation]]
+id = "probe-event-missing"
+why = "5분 프로브가 원장에 안 남으면 SLO 의 '웹 가용' 은 정의만 있고 측정이 없다"
+guards = ["tests/test_ops_ledger.py::test_serve_probe_appends_one_event_while_the_server_is_up"]
+file = "scripts/serve.sh"
+find = '''    sf_event_append "$REPO/reports" "{\"ts\":\"$(date -u +%FT%TZ)\",\"event\":\"probe\",\"status\":$_PS,\"ok\":$([ "$CODE" = "200" ] && echo true || echo false)}"'''
+replace = '''    :'''
+
+[[mutation]]
+id = "sh-ledger-rotation-dead"
+why = "셸 쪽 회전이 죽으면 파이썬 규칙과 갈라져 50MB 상한이 안 지켜진다(cron_run·serve 가 셸로 쓴다)"
+guards = ["tests/test_ops_ledger.py::test_ledger_sh_rotation_matches_python_and_failure_is_quiet"]
+file = "scripts/_ledger.sh"
+find = '''  if [ -e "$cur" ] && [ "$(stat -c %s "$cur" 2>/dev/null || echo 0)" -ge "$SF_LEDGER_MAX_BYTES" ]; then
+    cur="$next"
+  fi'''
+replace = '''  if false; then
+    cur="$next"
+  fi'''
+
+[[mutation]]
+id = "sh-ledger-append-failure-breaks-caller"
+why = "기록 실패가 종료코드로 새 나가면 원장이 리포트·크론 래퍼를 죽인다 — 관측이 운영을 망가뜨리는 최악의 꼴"
+guards = ["tests/test_ops_ledger.py::test_ledger_sh_rotation_matches_python_and_failure_is_quiet"]
+file = "scripts/_ledger.sh"
+find = '''  if ! { printf '%s\n' "$line" >> "$f"; } 2>/dev/null; then
+    echo "[$(date '+%F %T')] [원장] 운영 사건을 기록하지 못했다($f) — 리포트·점검은 계속한다. 디스크·권한을 보라(README §3.1)." >&2
+  fi
+  return 0'''
+replace = '''  printf '%s\n' "$line" >> "$f"'''
+
+[[mutation]]
+id = "rebuild-counts-as-final-confirmation"
+why = """재구성(final=true)을 확정 확인 시각으로 세면, 흔적이 지워진 날의 일괄 재구성(2026-11-08)이
+전부 '확정 SLO 초과' 로 둔갑한다 — 백필 리허설에서 20일이 그렇게 나왔다"""
+guards = ["tests/test_ops_ledger.py::test_stats_measures_punctuality_gate_verify_final_delays_and_rebuilds"]
+file = "scripts/ops_ledger.py"
+find = """    return e.get("event") == "report" and (e.get("outcome") == "final"
+                                           or (e.get("final") is True and e.get("mode") == "final"))"""
+replace = """    return e.get("event") == "report" and (e.get("outcome") == "final"
+                                           or e.get("final") is True)"""

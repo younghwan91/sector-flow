@@ -273,7 +273,7 @@ def test_error_outranks_warning():
 def repo(tmp_path):
     r = tmp_path / "sector-flow"
     (r / "scripts").mkdir(parents=True)
-    for name in ("_env.sh", "freshness_check.sh", "freshness_check.py"):
+    for name in ("_env.sh", "freshness_check.sh", "freshness_check.py", "ops_ledger.py"):
         shutil.copy(REPO / "scripts" / name, r / "scripts" / name)
     db = tmp_path / "db.sqlite"
     con = sqlite3.connect(db)

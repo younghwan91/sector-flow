@@ -32,6 +32,13 @@ if ! flock -n "$LOCK" true; then
   command -v curl >/dev/null 2>&1 || exit 0
   OUT="$(curl -sS -m 5 -w '\n%{http_code}' "http://$HOST:$PORT/healthz" 2>&1)"
   CODE="${OUT##*$'\n'}"
+  # 웹 가용 프로브를 원장에 한 줄 — SLO(docs/slo.md)의 "5분 프로브 200" 을 나중에 셀 수 있게(scripts/ops_ledger.py).
+  # 서버가 내려가 있으면(잠금이 비어 이 분기에 안 온다) 줄 자체가 없다 — 공백이 곧 재기동 주기다.
+  if [ -f "$REPO/scripts/_ledger.sh" ]; then
+    . "$REPO/scripts/_ledger.sh"
+    case "$CODE" in [0-9][0-9][0-9]) _PS="$CODE" ;; *) _PS=null ;; esac
+    sf_event_append "$REPO/reports" "{\"ts\":\"$(date -u +%FT%TZ)\",\"event\":\"probe\",\"status\":$_PS,\"ok\":$([ "$CODE" = "200" ] && echo true || echo false)}"
+  fi
   if [ "$CODE" = "200" ]; then
     rm -f "$RESTARTS"
     exit 0

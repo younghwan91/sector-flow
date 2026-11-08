@@ -86,8 +86,8 @@ def _seed(db: Path, today_kosdaq: int) -> None:
 def repo(tmp_path):
     r = tmp_path / "sector-flow"
     (r / "scripts").mkdir(parents=True)
-    for name in ("daily_report.sh", "_env.sh", "cron_run.sh", "completeness_gate.py", "finalize_done.py",
-                 "freshness_check.sh", "freshness_check.py"):
+    for name in ("daily_report.sh", "_env.sh", "_ledger.sh", "cron_run.sh", "completeness_gate.py",
+                 "finalize_done.py", "freshness_check.sh", "freshness_check.py", "ops_ledger.py"):
         shutil.copy(REPO / "scripts" / name, r / "scripts" / name)
     (r / "scripts" / "sector_flow.py").write_text(FAKE_SECTOR_FLOW)
     (r / "scripts" / "sector_numbers.py").write_text(FAKE_NUMBERS)

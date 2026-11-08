@@ -15,6 +15,10 @@
 set -u
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ALERT="${SECTOR_FLOW_ALERT:-$REPO/../quant-airflow/scripts/alert.sh}"
+# 운영 사건 원장(reports/events.jsonl) — 잡 하나의 (이름, rc, 걸린 시간)을 끝에 한 줄 남긴다(scripts/ops_ledger.py).
+# 헬퍼가 없는 부분 사본에서는 조용히 건너뛰고, 기록 실패는 잡의 종료코드를 바꾸지 않는다(_ledger.sh).
+if [ -f "$REPO/scripts/_ledger.sh" ]; then . "$REPO/scripts/_ledger.sh"; fi
+declare -F sf_event_append >/dev/null 2>&1 || sf_event_append() { :; }
 
 name="${1:-}"
 [ -n "$name" ] || { echo "cron_run.sh: 이름이 없다 — cron_run.sh <이름> -- <명령...>" >&2; exit 2; }
@@ -50,6 +54,7 @@ done
 tmp="$(mktemp -p "$REPO/reports" ".cron_run.$$.XXXXXX" 2>/dev/null || mktemp 2>/dev/null || true)"
 trap '[ -n "$tmp" ] && rm -f "$tmp"' EXIT
 
+t0=$(date +%s)
 if [ -n "$tmp" ]; then
     "$@" 2>&1 | tee "$tmp"
     rc=${PIPESTATUS[0]}
@@ -57,6 +62,8 @@ else
     "$@" 2>&1
     rc=$?
 fi
+# 잡 사건 — 이름은 크론 정본(deploy/crontab.simnode)이 주는 식별자라 따옴표가 없지만, 혹시 몰라 떼고 싣는다.
+sf_event_append "$REPO/reports" "{\"ts\":\"$(date -u +%FT%TZ)\",\"event\":\"job\",\"job\":\"${name//[\"\\]/}\",\"rc\":$rc,\"duration_s\":$(( $(date +%s) - t0 ))}"
 
 if [ "$rc" -ne 0 ]; then
     if [ "$rc" -eq 75 ]; then
