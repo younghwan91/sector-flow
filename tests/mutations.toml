@@ -7601,3 +7601,11 @@ guards = ["tests/test_verify_merge.py::test_identity_section_rejects_another_add
 file = "scripts/verify_merge.py"
 find = "        if not (_ok_identity(ae, want_mail) and _ok_identity(ce, want_mail)):"
 replace = "        if not _ok_identity(ae, want_mail):"
+
+[[mutation]]
+id = "ci-plan-never-judges-docs"
+why = "문서 판정이 죽으면 문서 커밋도 전체 변이를 돈다 — 잡은 초록이고 분만 조용히 샌다"
+guards = ["tests/test_ci_plan.py::test_docs_commit_on_top_of_a_verified_tree_skips"]
+file = "scripts/ci_plan.py"
+find = "    return {\"kind\": \"docs\" if docs else \"code\", \"python\": json.dumps(py)}"
+replace = "    return {\"kind\": \"code\", \"python\": json.dumps(py)}"

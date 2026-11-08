@@ -515,7 +515,7 @@ uv run --extra dev ruff check src/ tests/ scripts/ research/
 uv run python -m compileall -q research    # 연구 스크립트는 DB 가 있어야 돌아 문법만 본다
 uv run python scripts/verify_merge.py <워크트리> --only render,pty   # TUI 를 고친 뒤 — 실데이터 렌더·pty 구동 (수 분)
 uv run python scripts/verify_merge.py <워크트리> --scope changed     # 바뀐 파일에 닿는 변이까지
-uv run python scripts/verify_merge.py <워크트리>                     # 변이 전부 (약 47분)
+uv run python scripts/verify_merge.py <워크트리>                     # 변이 전부 (23~47분, 부하에 따라)
 ```
 
 렌더는 순수함수(`flow_view.py`·`ledger_view.py`)라 curses 없이 단위테스트한다. 웹 두 장은 진짜 브라우저로도 연다 —
