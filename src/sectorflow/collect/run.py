@@ -255,6 +255,8 @@ def cmd_dart_shares(args) -> int:
         rows = {"dart": applied["rows"], "dart_moved": applied["moved"], "seed": reseed(con, codes)}
         for code, d, n in applied["dropped"]:
             notes.append([code, "dart", f"단위 오류로 버림 {d} {n}"])
+        for code, d in applied["unresolved"]:
+            notes.append([code, "dart", f"{d} 값이 뒤 기업행동을 다시 세도 안 세도 다음 실측과 안 맞는다(병합·증자 겹침)"])
         failed = [[c, "dart", "corp_code 없음"] for c in stats.get("no_corp", [])]
         write.finish_run(con, run_id, calls={f"dart:{k}": v for k, v in client.calls.items()}, rows=rows,
                          failed=failed, ok=ok, notes=notes)

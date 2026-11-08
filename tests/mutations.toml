@@ -6713,3 +6713,11 @@ guards = ["tests/test_collect_dart.py::test_pre_listing_value_of_a_new_listing_i
 file = "src/sectorflow/collect/dart.py"
 find = "        listed_from = first if first and start and first > start else \"\""
 replace = "        listed_from = first or \"\""
+
+[[mutation]]
+id = "byo-dart-unresolved-gap-silent"
+why = "병합과 증자가 겹쳐 어느 해석과도 안 맞는 DART 점을 표지 없이 넘긴다 — ×N 오류가 원장에 안 드러난다"
+guards = ["tests/test_collect_dart.py::test_pre_merger_value_or_an_ambiguous_gap_is_left_alone"]
+file = "src/sectorflow/collect/dart.py"
+find = "            unresolved.append(d)"
+replace = "            pass"

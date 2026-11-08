@@ -291,7 +291,8 @@ SAME_SHARES_LOG = 0.02
 
 
 def align_to_listing(points: list[tuple[str, int]], kiwoom: list[tuple[str, int]],
-                     events: list[tuple[str, str, "float | None"]]) -> list[tuple[str, int, str]]:
+                     events: list[tuple[str, str, "float | None"]],
+                     unresolved: "list[str] | None" = None) -> list[tuple[str, int, str]]:
     """DART 점이 **이미 반영한** 분할·병합·감자를 ``market_cap_asof_bulk`` 가 한 번 더 세지 않게 한다.
 
     발행주식총수(DART)는 효력발생일에, 상장주식수와 가격 조정(키움 이벤트일)은 변경상장일에 바뀐다. 그 사이에
@@ -301,7 +302,8 @@ def align_to_listing(points: list[tuple[str, int]], kiwoom: list[tuple[str, int]
     판정: 점 ``p`` 와 다음 실측 ``q``(DART·키움) 사이에 주식수 이벤트가 있고, ``p`` 가 다시 세기 **전** 값으로 ``q`` 와
     같고(로그 차 ≤ :data:`SAME_SHARES_LOG`) 다시 센 값으로는 다르면 — ``p`` 를 그 구간 마지막 이벤트일로 옮긴다(출처
     ``dart_moved``). 그 날부터 가격도 조정돼 있으니 시총이 맞고, 그 전은 앞 점이 덮는다. 둘 다 아니면(사이에 증자까지
-    겹쳐 어느 쪽과도 안 맞으면) 손대지 않는다 — 추측하지 않는다. 뒤 점부터 본다(옮긴 점이 앞 점의 ``q`` 가 된다).
+    겹쳐 어느 쪽과도 안 맞으면) 손대지 않는다 — 추측하지 않는다. 그런 점의 날짜는 ``unresolved`` 에 더한다(병합 뒤 값이면
+    ×N 오류가 남을 수 있다 — 원장 메모로 드러낸다). 뒤 점부터 본다(옮긴 점이 앞 점의 ``q`` 가 된다).
     Returns: ``[(날짜, 주식수, "dart"|"dart_moved")]`` — 키움 날짜와 겹치게 옮겨질 점은 뺀다.
     """
     from .shares import _c_at, _share_event
@@ -321,6 +323,8 @@ def align_to_listing(points: list[tuple[str, int]], kiwoom: list[tuple[str, int]
         recount = abs(math.log(n / qn) + _c_at(events, qd) - _c_at(events, d))
         if raw <= SAME_SHARES_LOG < recount:
             out[i] = (between[-1], n, "dart_moved")
+        elif min(raw, recount) > SAME_SHARES_LOG and unresolved is not None:
+            unresolved.append(d)
     seen: set[str] = set()
     kept = []
     for row in sorted(out):
@@ -382,14 +386,15 @@ def apply_history(con, codes: "list[str] | None" = None) -> dict:
     - 단위 오류는 버리고 개수를 돌려준다.
     - 구간 안에서 상장한 종목의 상장 전 값(공모 신주가 빠진 주식수)은 쓰지 않는다.
     - 이미 반영한 병합·감자를 다시 세지 않게 변경상장일로 옮긴다(:func:`align_to_listing`).
-    Returns: ``{"rows": n, "dropped": [(code, date, shares)…], "moved": n}``.
+    Returns: ``{"rows": n, "dropped": [(code, date, shares)…], "moved": n, "unresolved": [(code, date)…]}`` —
+    ``unresolved`` 는 그 뒤 이벤트를 다시 세도 안 세도 다음 실측과 안 맞는 점(병합과 증자가 겹친 구간).
     """
     from . import write
 
     if codes is None:
         codes = [r[0] for r in con.execute("SELECT DISTINCT code FROM dart_fetch").fetchall()]
     start = con.execute("SELECT min(date) FROM supply_demand").fetchone()[0]
-    rows, dropped, moved = 0, [], 0
+    rows, dropped, moved, unresolved = 0, [], 0, []
     for code in codes:
         old = [r[0] for r in con.execute(
             "SELECT date FROM shares_provenance WHERE code = ? AND source IN ('dart', 'dart_moved')",
@@ -415,9 +420,11 @@ def apply_history(con, codes: "list[str] | None" = None) -> dict:
         dropped += [(code, d, n) for d, n in drop]
         events = [(str(d), str(tp), rt) for d, tp, rt in con.execute(
             "SELECT date, upd_stkpc_tp, upd_rt FROM corporate_actions WHERE code = ?", (code,)).fetchall()]
-        aligned = align_to_listing(keep, sorted(others.items()), events)
+        loose: list[str] = []
+        aligned = align_to_listing(keep, sorted(others.items()), events, loose)
+        unresolved += [(code, d) for d in loose]
         for d, n, src in aligned:
             rows += write.upsert_shares(con, [(code, d, n)], src)
             moved += src == "dart_moved"
     con.commit()
-    return {"rows": rows, "dropped": dropped, "moved": moved}
+    return {"rows": rows, "dropped": dropped, "moved": moved, "unresolved": unresolved}
