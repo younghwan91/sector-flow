@@ -1,7 +1,8 @@
 # sector-flow — Claude 작업 지침
 
 코스피·코스닥 섹터 자금흐름 일일 리포트(`scripts/daily_report.sh`)와 터미널 화면(`sw-flow`·`sw-ledger`). 2026-11-02 swing-it 에서
-히스토리째 분리했다. 수집은 quant-airflow, 알파 심사·전략은 swing-it 소관이다. 여기는 관측만 한다.
+히스토리째 분리했다. 일일 배치의 수집은 quant-airflow, 알파 심사·전략은 swing-it 소관이다. 여기는 관측만 한다.
+`src/sectorflow/collect/` 는 자기 키움 키로 sqlite 를 채우는 BYO 수집기로 일일 배치와 별개다(`docs/byo/`).
 
 ## 명령
 - 테스트: `uv run --extra dev pytest -q` — DB·네트워크 불요.
@@ -12,7 +13,7 @@
   `scripts/rebuild_history.py --root <폴더> --from … --to …`(오래된 날부터 — `change` 가 직전 폴더를 읽는다). 폴더에 `REBUILT.txt`(`commit:` 전체 sha·`finalize:`).
   origin/main 의 깨끗한 체크아웃에서만 돈다(`--allow-unmerged` 는 리허설). daily_finalize 창(3일) 밖의 날은 `finalize: unverified`
   — FINAL.txt 없이 '확정 기록 없음' 으로 표시한다.
-- 화면: `uv run sw-flow`, `uv run sw-ledger` (`reports/latest` 를 연다).
+- 화면: `uv run sw-flow`, `uv run sw-ledger` (`reports/latest` 를 연다). 데이터 없이는 `--demo`(합성, `src/sectorflow/demo.py`). 문서·그림의 예는 실데이터 대신 데모로 만든다.
 - 검증·품질 페이지: `uv run python scripts/trust_page.py` → `reports/latest/trust.html`(웹 `/latest/trust.html`). 배치에 붙이는 법은 그 머리말.
 - DB(TimescaleDB `kr_quant`, **읽기 전용**): `set -a; . ~/git/quant-airflow/.env; set +a` 뒤 `$KR_QUANT_DB`, psycopg2 는 `--extra pg`.
   `daily_report.sh` 는 `.env` 가 없으면 같은 파일을 불러 쓴다. 접속정보 사본을 이 레포에 두지 않는다.

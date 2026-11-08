@@ -4477,8 +4477,8 @@ id = "doc-link-points-nowhere"
 why = "상대 링크가 없는 파일을 가리킨다"
 guards = ["tests/test_doc_paths.py::test_every_repo_path_in_the_docs_exists"]
 file = "README.md"
-find = "가이드](docs/trading-guide.md) 를 보라"
-replace = "가이드](docs/trading-guid.md) 를 보라"
+find = "가이드](docs/reading-guide.md) 를 보라"
+replace = "가이드](docs/reading-guid.md) 를 보라"
 
 [[mutation]]
 id = "doc-path-allowance-outlives-its-mention"
@@ -7427,3 +7427,131 @@ guards = ["tests/test_runbook.py::test_runbook_stays_out_of_the_readme_and_point
 file = "scripts/_ledger.sh"
 find = "디스크·권한을 보라(docs/runbook.md)."
 replace = "디스크·권한을 보라(README §3.1)."
+
+[[mutation]]
+id = "readme-tree-misses-a-script"
+why = "§2 트리에서 스크립트가 빠진다 — 있는 도구를 독자가 모른다"
+guards = ["tests/test_first_reader.py::test_every_script_is_in_the_readme_tree"]
+file = "README.md"
+find = "├── digest.py               # (선택) 다이제스트 글·카드 — 폴더에만 쓴다\n"
+replace = ""
+
+[[mutation]]
+id = "glossary-misses-a-term"
+why = "용어집에서 K1 이 빠진다 — 도움말 표지의 말을 찾을 곳이 없다"
+guards = ["tests/test_first_reader.py::test_glossary_defines_the_term"]
+file = "docs/glossary.md"
+find = "| K1 | 종목 투신+연기금"
+replace = "| 케이원 | 종목 투신+연기금"
+
+[[mutation]]
+id = "glossary-misses-short-mark"
+why = "좁은 헤더 표지의 뜻이 어디에도 없다"
+guards = ["tests/test_first_reader.py::test_glossary_defines_every_short_evidence_mark"]
+file = "docs/glossary.md"
+find = "| `[무]` |"
+replace = "| 무 |"
+
+[[mutation]]
+id = "readers-cant-find-glossary"
+why = "용어집을 가리키는 링크가 가이드에서 사라진다"
+guards = ["tests/test_first_reader.py::test_readers_can_find_the_glossary"]
+file = "docs/reading-guide.md"
+find = "[용어집](glossary.md)"
+replace = "용어집"
+
+[[mutation]]
+id = "comparison-drops-moneyrecipe"
+why = "더 빠른 경쟁자를 비교표에서 뺀다 — 고유 항목이 부풀려진다"
+guards = ["tests/test_first_reader.py::test_comparison_table_names_what_competitors_do"]
+file = "README.md"
+find = "| 머니레시피 업종별 투자자 수급 분석 | KRX·WICS 중분류 × 외국인·기관·개인·금융투자·투신·연기금·사모, 12M~1M 누적, 평일 16:10 잠정·21:30 확정 | 잠정 게시가 여기(18:10)보다 빠르고, WICS 분류를 쓴다. 오늘의 강세·약세 Top3 는 있지만 1년 %ile 은 못 찾았다 |\n"
+replace = ""
+
+[[mutation]]
+id = "comparison-says-nothing-else-exists"
+why = "'못 찾았다' 를 '없다' 로 쓴다 — 조사 범위를 넘는 주장"
+guards = ["tests/test_first_reader.py::test_comparison_table_names_what_competitors_do"]
+file = "README.md"
+find = "못 찾았다는 말이지 없다는 말은 아니다."
+replace = "다른 곳에는 없다."
+
+[[mutation]]
+id = "folder-sharing-warning-gone"
+why = "§4.3 에서 회신 전 제3자 전달 금지가 빠진다 — 실데이터를 넘기라는 안내가 된다"
+guards = ["tests/test_first_reader.py::test_received_folder_warning_is_at_both_entrances"]
+file = "README.md"
+find = "> ⚠️ **회신 전 제3자 전달 금지.** 폴더에는 실제 종목별 수급이 들어 있다. KRX·키움 이용 범위 질의\n"
+replace = "> 폴더에는 실제 종목별 수급이 들어 있다.\n"
+
+[[mutation]]
+id = "quick-start-needs-a-folder"
+why = "Quick start 첫 블록이 다시 리포트 폴더를 요구한다 — 첫 실행이 막힌다"
+guards = ["tests/test_first_reader.py::test_quick_start_starts_with_something_that_runs"]
+file = "README.md"
+find = "uv run sw-flow --demo      # 섹터 자금 흐름 — DB·데이터 없이 바로 뜬다"
+replace = "uv run sw-flow --dir <리포트 폴더>"
+
+[[mutation]]
+id = "readme-regrows-ci-badge"
+why = "비공개 저장소 배지는 익명에게 404 로 깨진다"
+guards = ["tests/test_first_reader.py::test_readme_has_no_badge_that_private_repo_breaks"]
+file = "README.md"
+find = "[![Python 3.11+]"
+replace = "[![CI](https://github.com/younghwan91/sector-flow/actions/workflows/ci.yml/badge.svg)]()\n[![Python 3.11+]"
+
+[[mutation]]
+id = "guide-names-a-gone-column"
+why = "가이드가 없어진 열을 가리킨다"
+guards = ["tests/test_first_reader.py::test_docs_do_not_name_columns_that_are_gone"]
+file = "docs/reading-guide.md"
+find = "`투신+연기금5일[억]`"
+replace = "`투신+연금5일[억]`"
+
+[[mutation]]
+id = "guide-uses-a-real-stock-name"
+why = "가이드 예시에 실종목명이 돌아온다 — 이용 범위 회신 전이다"
+guards = ["tests/test_first_reader.py::test_docs_use_no_real_stock_name"]
+file = "docs/reading-guide.md"
+find = "가상유통거09   +4,743"
+replace = "SK하이닉스   +4,743"
+
+[[mutation]]
+id = "readme-explore-label-misquoted"
+why = "README 의 탐색 표지 인용이 화면 글자와 다르다"
+guards = ["tests/test_first_reader.py::test_exploration_label_quote_matches_the_screen"]
+file = "README.md"
+find = "`[탐색 — 검정 결과 앞날 증거 없음(G 판정 불가) · 종목 투신+연기금 축은 검정 부호와 반대]`"
+replace = "`[탐색 — 검정 결과 앞날 증거 없음(G 판정 불가)]`"
+
+[[mutation]]
+id = "readme-counts-unclassified-as-vendor"
+why = "27 칸을 벤더 분류 27개로 적는다 — (미분류) 가 들어 있다"
+guards = ["tests/test_first_reader.py::test_readme_sector_count_says_what_27_is"]
+file = "README.md"
+find = "벤더 분류(`stocks.sector`) 26개와 `(미분류)` 를 합친 27칸"
+replace = "벤더 분류(`stocks.sector`) 27개"
+
+[[mutation]]
+id = "readme-denies-the-byo-collector"
+why = "BYO 수집기를 빼고 말한다 — 수집 문구가 코드와 어긋난다"
+guards = ["tests/test_first_reader.py::test_collection_wording_admits_the_byo_collector"]
+file = "CLAUDE.md"
+find = "`src/sectorflow/collect/` 는 자기 키움 키로 sqlite 를 채우는 BYO 수집기로 일일 배치와 별개다(`docs/byo/`).\n"
+replace = ""
+
+[[mutation]]
+id = "env-example-promises-sqlite"
+why = ".env.example 이 비워 두면 된다고 안내한다 — 실제로는 '기준일이 없다' 로 끝난다"
+guards = ["tests/test_first_reader.py::test_env_example_does_not_promise_a_sqlite_fallback"]
+file = ".env.example"
+find = "# 비워 두면 리포트를 못 만듭니다(빈 로컬 sqlite 를 보고 \"기준일이 없다\" 로 끝납니다). 화면만 볼 때는 uv run sw-flow --demo.\n"
+replace = "# 비워두면 로컬 SQLite(data/sector_flow.db)를 씁니다.\n"
+
+[[mutation]]
+id = "allowed-outlives-the-missing-path"
+why = "이제 있는 경로의 허용 항목이 남아 오타를 덮는다"
+guards = ["tests/test_doc_paths.py::test_allowed_entries_really_point_nowhere"]
+file = "tests/test_doc_paths.py"
+find = "    (\"CLAUDE.md\", \"docs/schema.md\"): \"quant-airflow 의 문서다\",\n"
+replace = "    (\"CLAUDE.md\", \"docs/schema.md\"): \"quant-airflow 의 문서다\",\n    (\"README.md\", \"docs/slo.md\"): \"가짜\",\n"

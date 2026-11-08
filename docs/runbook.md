@@ -53,3 +53,21 @@
 | 고친 코드가 다음날에도 안 돈다 · `morning-sync` 알림에 `hold sector-flow` | 07:50 `pull-all --ci-gate` 가 CI 가 초록이 아닌 커밋을 받지 않았다 | GitHub Actions 를 초록으로 고친다. 확인했고 당장 필요하면 `git -C ~/git/sector-flow pull --ff-only` |
 
 크론 로그(`reports/cron.log`·`serve.log`)는 5MB 를 넘으면 `scripts/cron_run.sh` 가 `.1` 로 하나만 남기고 비운다.
+
+## 운영 사건 원장
+
+**운영 사건 원장(`reports/events.jsonl`)** — 폴더 바꿔 끼우기가 INCOMPLETE·검증 실패 흔적과 mtime 을 지우고
+크론 로그는 5MB 에서 돌아, "언제 게시됐나·몇 번 막혔나·게시 뒤 숫자가 바뀐 날" 을 나중에 셀 수 없었다. 그래서
+실행·잡·웹 프로브·신선도 판정마다 JSON 한 줄을 **덧붙이기만** 한다(자르지 않는다 — 50MB 를 넘으면 `events.jsonl.2` 로
+이어 쓴다). 형식·통계는 [`scripts/ops_ledger.py`](../scripts/ops_ledger.py)(`uv run python scripts/ops_ledger.py`,
+`--days 90`·`--json`·`--errata`), 기한(잠정 18:30 · 확정 다음날 10:40 · 웹 5분 프로브 200)은 [`docs/slo.md`](slo.md) 가
+정의하고 20:30 신선도 점검이 전 거래일을 그 기한에 대 본다. 원장 기록 실패는 리포트를 멈추지 않고, 원장은 웹
+허용 목록에 없어 밖에 보이지 않는다.
+
+## (선택) KRX 공표치 대조
+
+(선택) `KR_QUANT_KRX_TRUTH=1` 로 만들면 KRX 정보데이터시스템(data.krx.co.kr)이 공표한 투자자별 **거래대금**(순매수)과 시장 1일
+순매수 금액(수량×종가 근사)을 대조해 상대 오차를 `today.krx_truth` 에 적고 공표치를 `krx_truth.json` 으로 재운다
+([`scripts/krx_truth.py`](../scripts/krx_truth.py)) — **내부 검증용으로만** 받아 기준일당 한 번 캐시하고, 비공개 리포트 밖으로
+재배포하지 않는다(이용 범위는 KRX 질의에 포함 — `docs/strategy/inquiries/krx_market_data.md`).
+실패(망·로그인 장벽)는 SKIP 이다 — 리포트는 그대로 만든다.

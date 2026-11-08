@@ -32,10 +32,6 @@ ALLOWED = {
     ("docs/formulas.md", "docs/kqflow-formulas.pdf"): "2026-11-08 지운 옛 판 — 지웠다고 적은 자리",
     ("docs/formulas.md", "src/kr_quant/tui/"): "swing-it 옛 경로 대조표",
     ("docs/formulas.md", "docs/GUARDRAILS.md"): "swing-it 의 파일이라고 적은 자리",
-    ("README.md", "docs/strategy/inquiries/krx_market_data.md"):
-        "strategy-a-plus 브랜치(질의 문서 작업 트리)의 파일이라고 적은 자리 — KRX 공식 대조의 이용 범위 질의",
-    ("docs/byo/phase1-equivalence.md", "docs/strategy/byo-feasibility.md"):
-        "strategy-a-plus 브랜치의 BYO 타당성 문서라고 적은 자리(커밋 1b02f66) — main 에 없다",
 }
 
 TICK = re.compile(r"`([^`\n]+)`")
@@ -93,3 +89,9 @@ def test_allowed_entries_are_still_mentioned():
     for rel, said in ALLOWED:
         by_doc.setdefault(rel, {s for s, _ in _mentions(REPO / rel)})
         assert said in by_doc[rel], f"{rel} 에 더는 `{said}` 가 없다 — ALLOWED 에서 지워라"
+
+
+def test_allowed_entries_really_point_nowhere():
+    """허용 항목은 '없는 경로를 일부러 말하는 자리' 다. 그 경로가 생기면 항목이 진짜 오타를 덮을 일만 남는다."""
+    alive = sorted((rel, said) for rel, said in ALLOWED if _exists(REPO / said))
+    assert not alive, f"이제 있는 경로다 — ALLOWED 에서 지워라: {alive}"

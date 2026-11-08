@@ -36,7 +36,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-DOCS = ("docs/formulas.md", "README.md", "docs/trading-guide.md")
+DOCS = ("docs/formulas.md", "README.md", "docs/reading-guide.md")
 SLACK = 3
 FIX_HINT = "uv run python scripts/docs_refs.py --fix"
 
