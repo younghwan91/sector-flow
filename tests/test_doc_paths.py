@@ -32,7 +32,6 @@ ALLOWED = {
     ("docs/formulas.md", "docs/kqflow-formulas.pdf"): "2026-11-08 지운 옛 판 — 지웠다고 적은 자리",
     ("docs/formulas.md", "src/kr_quant/tui/"): "swing-it 옛 경로 대조표",
     ("docs/formulas.md", "docs/GUARDRAILS.md"): "swing-it 의 파일이라고 적은 자리",
-    ("README.md", "scripts/rebuild_history.py"): "지난 기준일 재구성 작업(별도 브랜치)이 만든다 — 들어오면 이 줄을 지운다",
 }
 
 TICK = re.compile(r"`([^`\n]+)`")

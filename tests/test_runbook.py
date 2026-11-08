@@ -54,6 +54,17 @@ MESSAGES: list[tuple[str, str, str]] = [
     ("scripts/daily_report.sh", "완전성 관문 오류(rc=", "완전성 관문 오류(rc=N)"),
     ("scripts/daily_report.sh", "검증 실패", "검증 실패"),
     ("scripts/daily_report.sh", "게시했지만 검증에 걸렸다", "게시했지만 검증에 걸렸다"),
+    # daily_report.sh — 지난 기준일 재구성(KR_QUANT_ASOF, 손 실행·rebuild_history)
+    ("scripts/daily_report.sh", "KR_QUANT_ASOF 가 날짜 꼴(YYYY-MM-DD)이 아니다", "KR_QUANT_ASOF 가 날짜 꼴(YYYY-MM-DD)이 아니다"),
+    ("scripts/daily_report.sh", "휴장이 아니라 수급 수집 공백이다", "수급 수집 공백"),
+    ("scripts/daily_report.sh", "는 거래일이 아니다(그 이하 마지막 수급일", "거래일이 아니다 … 휴장일이다"),
+    ("scripts/daily_report.sh", "지금 DB 에서도 수집 미완이다", "지금 DB 에서도 수집 미완"),
+    ("scripts/daily_report.sh", "확정치를 확인하지 못해 잠정으로 재구성했다", "확정치를 확인하지 못해 잠정으로 재구성했다"),
+    ("scripts/daily_report.sh", "확정 기록 없음", "확정 기록 없음"),
+    ("scripts/serve_reports.py", "확정 기록 없음", "확정 기록 없음"),
+    ("scripts/rebuild_history.py", "는 git 체크아웃이 아니다", "git 체크아웃이 아니다"),
+    ("scripts/rebuild_history.py", "HEAD 가 origin/main 에 없다", "origin/main 에 없다"),
+    ("scripts/rebuild_history.py", "작업 트리에 커밋 안 한 변경이 있다", "커밋 안 한 변경"),
     # serve.sh — 재시작 알림과 --soft-fail(한 시간 이어지면 web 실패 rc=1)
     ("scripts/serve.sh", "재시작 — /healthz 실패", "재시작 — /healthz 실패"),
     ("scripts/serve.sh", "Tailscale 주소가 없다", "Tailscale 주소가 없다"),
