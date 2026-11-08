@@ -1,0 +1,65 @@
+name: Harness self-test
+
+# `verify_merge.py --self-test` — 일부러 깨진 워크트리(실패 검사·신원 위반·눈먼 가드·죽은 앵커·
+# 변이 미선언 새 검사)로 머지 하네스가 정말 REJECT 를 내는지, 손 안 댄 트리는 PASS 인지 본다.
+# 대조군이 전체 테스트·변이 전부를 돌아 수십 분이라 PR 마다가 아니라 주 1회 돈다.
+#
+# 실패해도 잡은 초록으로 끝내고 **이슈**를 연다. 예약 실행은 main 머리 커밋에 체크로 붙는데,
+# 07:50 `pull-all --ci-gate` 는 그 커밋의 체크가 하나라도 빨가면 배포를 멈춘다 — 하네스 자기 검증
+# 실패로 제품 배포가 막히면 안 된다. 하네스를 고친 PR 은 손으로 돌린다(workflow_dispatch).
+
+on:
+  schedule:
+    - cron: "0 17 * * 6"      # 일요일 02:00 KST — 07:50 배포와 멀리
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  selftest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90           # 스텝 상한(자기 검증 60분)보다 넉넉히
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v10.3.3
+        id: uv
+        continue-on-error: true
+        with:
+          python-version: "3.13"
+          enable-cache: true
+      - name: Install
+        id: install
+        continue-on-error: true
+        run: uv sync --locked --extra dev
+      # 스텝 상한을 잡 상한보다 짧게 — 잡이 시간 초과로 죽으면 continue-on-error 도 소용없이 빨갛다.
+      - name: Self-test
+        id: st
+        if: steps.install.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 60
+        run: |
+          git config --global user.email "selftest@example.invalid"
+          git config --global user.name "selftest"
+          uv run --no-sync python scripts/verify_merge.py --self-test 2>&1 | tee selftest.log
+      # 이슈를 못 열어도(권한·API) 잡은 빨개지지 않는다 — 그때는 실행 로그의 경고로만 남는다.
+      - name: Open an issue on failure
+        if: steps.uv.outcome != 'success' || steps.install.outcome != 'success' || steps.st.outcome != 'success'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "주간 \`verify_merge.py --self-test\` 가 기대와 다르게 끝났다(설치 ${{ steps.install.outcome }} · 자기 검증 ${{ steps.st.outcome }}) — 머지 하네스의 판정을 믿을 수 없는 상태다."
+            echo
+            echo "실행: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo
+            echo '```'
+            tail -n 60 selftest.log 2>/dev/null || echo "(로그 없음)"
+            echo '```'
+          } > body.md
+          gh issue create --title "하네스 자기 검증 실패 ($(date -u +%F))" --body-file body.md \
+            || echo "::warning::자기 검증 실패 이슈를 못 열었다 — 이 실행 로그를 보라"

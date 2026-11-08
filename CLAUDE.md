@@ -5,8 +5,8 @@
 
 ## 명령
 - 테스트: `uv run --extra dev pytest -q` — DB·네트워크 불요.
-- 린트: `uv run --extra dev ruff check src/ tests/ scripts/` (CI 와 같은 범위)
-- TUI 수정 뒤: `uv run python scripts/verify_merge.py <워크트리>` (수 분).
+- 린트: `uv run --extra dev ruff check src/ tests/ scripts/ research/` (CI 와 같은 범위)
+- TUI 수정 뒤: `uv run python scripts/verify_merge.py <워크트리>` (수 분). 로컬 pre-push 는 바뀐 파일에 닿는 변이만 돈다 — 전체는 GitHub 이 4샤드로(`--help`).
 - 리포트 다시 만들기: `KR_QUANT_FORCE=1 scripts/daily_report.sh`. 다른 곳에 쓰려면 `KR_QUANT_REPORTS=<폴더>`.
 - 화면: `uv run sw-flow`, `uv run sw-ledger` (`reports/latest` 를 연다).
 - DB(TimescaleDB `kr_quant`, **읽기 전용**): `set -a; . ~/git/quant-airflow/.env; set +a` 뒤 `$KR_QUANT_DB`, psycopg2 는 `--extra pg`.

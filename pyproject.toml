@@ -15,7 +15,7 @@ dependencies = ["pandas>=2.0"]
 
 [project.optional-dependencies]
 pg = ["psycopg2-binary>=2.9"]
-dev = ["pytest>=8.0", "ruff==0.16.2"]
+dev = ["pytest>=8.0", "pytest-cov>=7.0", "ruff==0.16.2"]
 
 [project.scripts]
 sw-flow = "sectorflow.tui.flow_app:main"
@@ -31,3 +31,15 @@ select = ["E4", "E7", "E9", "F"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+
+[tool.coverage.run]
+# 변경 줄 커버리지(`scripts/diff_coverage.py`, CI)용. 리포트 단계·검증기는 테스트가 **서브프로세스**로 돌리므로
+# subprocess 패치가 없으면 scripts/ 가 통째로 0% 로 보인다.
+source = ["src", "scripts"]
+relative_files = true
+patch = ["subprocess"]
+# 3.12+ 의 sys.monitoring — 기본(ctrace)은 검증기(순수 파이썬 계산)를 4배 느리게 해 테스트가 30초 → 100초가 됐다.
+core = "sysmon"
+
+[tool.coverage.report]
+exclude_also = ['if __name__ == "__main__":']

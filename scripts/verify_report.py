@@ -2809,6 +2809,10 @@ def layer_h(D: dict, P: dict) -> None:
         not bad, f"{len(bad)}건  " + "; ".join(bad[:3]))
 
 
+#: main 이 도는 층 — ``--layers`` 가 고를 수 있는 이름. 층을 더하면 여기에도 적는다(모르는 이름은 거부).
+LAYERS = ("A", "A3", "B", "C", "D", "E", "G", "H", "T", "F")
+
+
 def run_layer(layer: str, fn, *args) -> None:
     """한 층이 터져도 나머지 층은 돈다 — 터진 것은 그 층의 **실패**로 적는다.
 
@@ -2845,7 +2849,21 @@ def main() -> int:
     ap.add_argument("--dir", required=True, help="리포트 폴더(numbers.html·payload.json)")
     ap.add_argument("--db-check", action="store_true")
     ap.add_argument("--db", default=os.environ.get("KR_QUANT_DB"))
+    ap.add_argument("--layers", default="",
+                    help="쉼표로 고른 층만 돈다(예: A,A3,F). 테스트가 빠르게 돌려고 쓴다 — 배치는 늘 전 층이다. "
+                         "고르면 출력 첫 줄에 '부분 검증' 이라고 적는다")
     a = ap.parse_args()
+    want = {x.strip() for x in a.layers.split(",") if x.strip()}
+    unknown = want - set(LAYERS)
+    if unknown:
+        ap.error(f"모르는 층: {', '.join(sorted(unknown))} (있는 층: {', '.join(LAYERS)})")
+    if want:
+        # 부분 결과가 전 층 통과로 읽히지 않게 맨 앞에 적는다.
+        print(f"부분 검증 — 층 {','.join(x for x in LAYERS if x in want)} 만 돈다(전 층이 아니다)")
+
+    def go(layer: str, fn, *args) -> None:
+        if not want or layer in want:
+            run_layer(layer, fn, *args)
 
     d = os.path.expanduser(a.dir)
     html = open(os.path.join(d, "numbers.html"), encoding="utf-8").read()
@@ -2861,17 +2879,17 @@ def main() -> int:
     if a.db_check and not a.db:
         chk("F", "--db-check 인데 DB 접속정보가 있는가", False,
             "KR_QUANT_DB 나 --db 가 없다 — set -a; . ~/git/quant-airflow/.env; set +a")
-    run_layer("A", layer_a, D)
-    run_layer("A3", layer_a3, D, payload)
-    run_layer("B", layer_b, payload, a.db if a.db_check else None)
-    run_layer("C", layer_c, D, html)
-    run_layer("D", layer_d, D, payload, html)
-    run_layer("E", layer_e, D)
-    run_layer("G", layer_g, payload, D)
-    run_layer("H", layer_h, D, payload)
-    run_layer("T", layer_t, payload, d)
+    go("A", layer_a, D)
+    go("A3", layer_a3, D, payload)
+    go("B", layer_b, payload, a.db if a.db_check else None)
+    go("C", layer_c, D, html)
+    go("D", layer_d, D, payload, html)
+    go("E", layer_e, D)
+    go("G", layer_g, payload, D)
+    go("H", layer_h, D, payload)
+    go("T", layer_t, payload, d)
     if a.db_check and a.db:
-        run_layer("F", layer_f, payload, a.db)
+        go("F", layer_f, payload, a.db)
 
     print(f"\n검사 {CHECKS}건 · 실패 {len(FAILS)}건 · 문서 주장 어긋남 {len(CLAIMS)}건")
     write_claims(d)
