@@ -953,7 +953,7 @@ EXPECT = {
     "섹터": ("sector", "str"), "종목[수]": ("n_all", "int"),
     "임펄스[억]": ("flow", "amt"), "가속[%p]": ("accel", "pct2"),
     "수익률[%]": ("ret", "pct2"), "미실현[%p]": ("x", "pct1"),
-    "G": ("G", "f2"), "선정": ("pick", "f2"),
+    "G": ("G", "rhu2"), "선정": ("pick", "f2"),
     "종목": ("name", "clip"), "코드": ("code", "raw"),
     "순매수[억]": ("flow", "amt"), "시총대비[%p]": ("a", "pct2"),
 }
@@ -987,6 +987,12 @@ def want(r, name):
         return V.fmt_pct(v) if v is not None else "—"
     if how == "f2":
         return f"{v:.2f}" if v is not None else "—"
+    if how == "rhu2":
+        # TUI G 열은 웹과 같은 반올림(`rhu`, 0.5 는 0 에서 먼 쪽)이다(리뷰 M6). `.2f` 로 기대하면 0.595(이진
+        # 0.59499…)를 0.59 로 보아, 맞게 그린 0.60 을 어긋남으로 냈다(2026-10-21 재구성 종합 G). rhu 없는 옛 워크트리는 .2f.
+        if v is None:
+            return "—"
+        return f"{V.rhu(v, 2):.2f}" if hasattr(V, "rhu") else f"{v:.2f}"
     return None
 
 def W(s):

@@ -1130,7 +1130,10 @@ def _sector_trusted(d: dict, markets, win: str) -> dict:
             continue
         sec = nm.get("sector")
         out[sec] = out.get(sec, 0.0) + sum(v for v in vals if v is not None)
-    return out
+    # 합의 이진 잔차를 지운다(백만분의 1억 아래) — 종목 값(0.1억 단위)이 상쇄돼 0 이어야 할 합이 더하는 순서에 따라
+    # +2.7e-17 이나 −2.7e-17 이 되고, 부호를 원값에서 읽는 표시가 '+0'·'−0' 으로 갈렸다. 웹은 JS 객체 키 순서
+    # (0 으로 시작하지 않는 숫자 꼴 코드가 먼저)로 더해 TUI 와 순서가 다르다(2026-09-01 종이/목재 재구성). 웹 `trusted` 와 같은 연산.
+    return {s: rhu(v, 6) + 0.0 for s, v in out.items()}
 
 
 def _sec_label(r: dict) -> str:

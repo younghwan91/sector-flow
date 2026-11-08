@@ -334,3 +334,21 @@ def test_changed_src_reaches_guards_through_imports_scripts_and_strings(tmp_path
     assert VM.changed_scope([m], {"src/sectorflow/a.py"}, {"m": m}, tmp_path)[0] == []
     for full in ("scripts/verify_merge.py", "scripts/sector_flow.py", "scripts/templates/x.html"):
         assert VM.changed_scope([m], {full}, {"m": m}, tmp_path)[0] == [m], full
+
+
+def test_render_smoke_expects_the_g_column_rounded_like_the_tui():
+    """렌더 스모크의 G 기대값이 TUI 가 그리는 글자와 같다(`rhu`) — `.2f` 는 0.595(이진 0.59499…)를 0.59 로 보아
+    맞게 그린 0.60 을 어긋남으로 냈다(2026-10-21 재구성 종합 G 로 verify_merge REJECT)."""
+    import ast
+
+    sys.path.insert(0, str(REPO / "src"))
+    from sectorflow.tui import flow_view as FV
+    tree = ast.parse(VM.RENDER_SMOKE)
+    keep = [n for n in tree.body
+            if (isinstance(n, ast.Assign) and any(getattr(t, "id", "") == "EXPECT" for t in n.targets))
+            or (isinstance(n, ast.FunctionDef) and n.name == "want")]
+    ns: dict = {"V": FV}
+    exec(compile(ast.Module(body=keep, type_ignores=[]), "render_smoke", "exec"), ns)
+    g_col = next(c for c in FV._TABLE_COLS if c.header == "G")
+    for v in (0.595, 0.125, -0.335, 0.6, None):
+        assert ns["want"]({"G": v}, "G") == g_col.fn({"G": v}, None)
