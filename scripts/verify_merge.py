@@ -1037,8 +1037,10 @@ def check_block(tag, lines, width, cols, nhead, rows, want_of):
         span = V.col_span(cols, name)
         if span is None or span[0] + w > width:
             continue
-        if slice_cells(head, *span) != V.pad(name, w, right):
-            bad.append(f"{tag} 헤더 '{name}' 이 자기 칸에 없다")
+        # 종목 목록 헤더는 창·주체마다 짧은 증거 표지를 단다(`name_head`, 3차 리뷰 D2-M1) — 화면이 그리는 글자로 본다.
+        shown = V.name_head(name, st) if tag.endswith(" 종목") and hasattr(V, "name_head") else name
+        if slice_cells(head, *span) != V.pad(shown, w, right):
+            bad.append(f"{tag} 헤더 '{shown}' 이 자기 칸에 없다")
     spans = {c[0]: V.col_span(cols, c[0]) for c in cols}
     for r, ln in zip(rows, lines[nhead:]):
         st = cell_starts(ln)

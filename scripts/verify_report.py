@@ -3124,11 +3124,13 @@ def _w_viewer_full(D: dict, P: dict, node: str, vpath: str, FV) -> None:
             st = FV.State(D)
             st.wi, st.ai = FV.WINDOWS.index(str(w)), [k for k, _ in FV.ACTORS].index(a)
             heads = {c.header: FV.name_head(c.header, st) for c in FV.names_cols(True)}
-            for hdr, web in (("순매수[억]", got_ev["amt"]), ("시총대비[%p]", got_ev["share"]),
-                             (FV.COL_INVTRT, iv), (FV.COL_PENFND, pf)):
-                want_h = hdr + FV.B_SHORT[FV.name_badge(web.strip())]
+            # 헤더는 표(`name_evidence`)에서 다시 꺼낸 표지와 맞춘다 — 위에서 뷰어 = 표를 봤으므로 TUI = 뷰어다.
+            # (뷰어 글자로 맞추면 뷰어 결함 하나가 두 대조를 함께 빨갛게 만들어 어느 쪽이 틀렸는지 못 가른다.)
+            for hdr, text in (("순매수[억]", want_ev["amt"]), ("시총대비[%p]", want_ev["share"]),
+                              (FV.COL_INVTRT, iv), (FV.COL_PENFND, pf)):
+                want_h = hdr + FV.B_SHORT[FV.name_badge(text.strip())]
                 if heads.get(hdr) != want_h:
-                    bad_ev.append(f"{tag} TUI 헤더 {heads.get(hdr)!r} vs 뷰어 {web.strip()!r}")
+                    bad_ev.append(f"{tag} TUI 헤더 {heads.get(hdr)!r} vs 표 {text.strip()!r}")
         if "head" not in v:
             continue
         # 전체 표 — 열 머리·표지(섹터 `evidence_at`), 칸 = 페이로드, 금액 칸 = TUI 블록.

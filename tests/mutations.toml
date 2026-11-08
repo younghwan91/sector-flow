@@ -1047,7 +1047,7 @@ id = "header-cuts-numbers"
 why = "그냥 자르면 k=10.179 가 k=1 로 남아 다른 숫자가 된다"
 guards = ["tests/test_tui_user_facing.py::test_header_never_cuts_a_number_or_the_actor_note"]
 file = "src/sectorflow/tui/flow_view.py"
-find = "    l2 = _first_fitting(width, [l2 + notes[n] + metas[m] for n, m in order])"
+find = "    l2 = _first_fitting(width, [l2 + notes[n] + metas[m] for n, m in order] + [l2])"
 replace = "    l2 = l2 + notes[0] + metas[0]"
 
 [[mutation]]

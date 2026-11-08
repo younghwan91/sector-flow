@@ -168,9 +168,9 @@ def test_scroll_position_is_on_the_footer_when_rows_are_hidden(data):
 
 @pytest.mark.parametrize("width", [60, 80, 100, 120, 150])
 def test_header_never_cuts_a_number_or_the_actor_note(data, width):
-    """`k=10.179` 가 `k=1` 로 남으면 다른 숫자다."""
+    """`k=10.179` 가 `k=1` 로 남으면 다른 숫자다. k 는 탐색 모드에서만 적는다(3차 리뷰)."""
     st = State(json.loads(json.dumps(data)))
-    st.ai = 1
+    st.ai, st.explore = 1, True
     line = header_lines(st, width)[1]
     assert "k=" not in line or "k=10.179 (t=2.5)" in line, line
     assert "기관 기준" in line or "기관" not in line.split("주체")[-1].split("]", 1)[-1], line

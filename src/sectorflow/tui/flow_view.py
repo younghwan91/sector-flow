@@ -1820,7 +1820,8 @@ def header_lines(st: State, width: int) -> list[str]:
     meta = st.block_meta()
     metas = (f"  {meta}" if meta else "", f"  {meta.split(' · ')[0]}" if meta else "", "")
     order = ((0, 0), (0, 1), (1, 1), (0, 2), (1, 2), (2, 2))
-    l2 = _first_fitting(width, [l2 + notes[n] + metas[m] for n, m in order])
+    # 마지막 단계는 꼬리 없이 — 탐색 모드 좁은 폭에서 `※ 기관 기준` 이 `※ 기관 기` 로 잘려 남았다.
+    l2 = _first_fitting(width, [l2 + notes[n] + metas[m] for n, m in order] + [l2])
     return [pad(l1, width), pad(l2, width)]
 
 
