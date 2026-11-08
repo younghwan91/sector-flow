@@ -2605,3 +2605,11 @@ guards = ["tests/test_pipeline_e2e.py::test_pipeline_report_verifies_with_no_fai
 file = "scripts/verify_report.py"
 find = """    print(f"검증 대상: {re.sub(r'[.]building[.][0-9]+/?$', '', d.rstrip('/'))}")"""
 replace = """    print(f"검증 대상: {d}")"""
+
+[[mutation]]
+id = "e2e-fixture-goes-blind"
+why = "씨앗이 바뀌어 관문 통과·종합 줄이 안 생기면 G·종합 * 검사가 빈 목록 위에서 초록이다(씨앗 4 가 그 모양)"
+guards = ["tests/test_pipeline_e2e.py::test_fixture_plants_what_it_claims"]
+file = "tests/test_pipeline_e2e.py"
+find = "SEED = 6"
+replace = "SEED = 4"
