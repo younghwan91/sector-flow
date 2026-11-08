@@ -302,3 +302,96 @@ def test_viewer_driver_names_follow_the_tui_rule(tmp_path):
     want = " · ".join(t["name"] for t in tui._leads()["섹터A"]["buy"][:2])
     assert want == "큰종목 · 중간종목", want
     assert want in texts, f"뷰어 이름 줄이 TUI 와 다르다: {[t for t in texts if '·' in t][:5]}"
+
+
+# ── 오늘 — 수치표 맨 위 패널은 TUI 첫 화면(`banner_lines`)과 같은 사실을 적는다 ──
+
+
+def _today_numbers(final: bool = False) -> dict:
+    sys.path.insert(0, str(REPO / "tests"))
+    from test_tui_flow_view import _today_block
+
+    D = _numbers_data()
+    for w in (5, 20):
+        for m in ("전체", "거래소", "코스닥"):
+            D["blocks"][f"{w}|{m}"] = {"from": "2026-10-02", "to": "2026-11-02", "k": 1.0, "b": 0.0,
+                                       "t": 2.0, "rows": []}
+    D["blocks"]["20|전체"]["rows"] = [{"sector": "가", "inst": 300.0, "n_all": 20, "cap": 1.0,
+                                       "top": {"buy": [], "sell": []}}]
+    D["blocks"]["5|전체"]["rows"] = [{"sector": "가", "inst": -50.0, "n_all": 20, "cap": 1.0,
+                                      "top": {"buy": [], "sell": []}}]
+    D["today"] = _today_block(["전기/전자", "건설", "부동산", "IT 서비스"])
+    D["change"] = {"prev_date": "2026-10-30", "window": 20, "top_n": 5, "top": {"전체": {
+        "inst": {"entered": ["건설"], "exited": ["보험"]}, "invpen": {"entered": [], "exited": []}}}}
+    if final:
+        D["final"] = True
+        D["final_diff"] = {"base_final": False, "base_built": "x", "tol": 0.05, "n_cells": 300,
+                           "n_changed": 1, "market_totals": [],
+                           "changed": [{"market": "거래소", "sector": "건설", "actor": "inst", "win": 1,
+                                        "old": 10.0, "new": 12.5, "diff": 2.5}]}
+    return D
+
+
+@node
+def test_numbers_today_panel_says_what_the_terminal_banner_says(tmp_path):
+    """수치표 '오늘' 패널 = TUI 첫 화면의 사실 — 시장 4주체(+%ile)·상위/하위·극단·직전 대비·반전·수익률 라벨.
+
+    주입: 패널의 KRX 칸에 자체 바구니 값을 넣거나 하위를 상위로 바꾸면 실패한다.
+    """
+    texts = _page("sector_numbers.html", _today_numbers(), tmp_path)
+    joined = "\n".join(texts)
+    for want in ("기관 상위", "투신+연기금 하위", "기관 ≥95", "기관 ≤5", "들어옴 건설", "나감 보험",
+                 "변동 없음", "(97)", "+123", "−33", "−6.02%", "+4.00%", "−4.37%", "+5.50%",
+                 "전일 20:00→당일 20:00", "정규장", "가 +350→−50"):
+        assert want in joined, f"오늘 패널에 {want!r} 가 없다"
+    # 상위·하위 순서 — TUI 와 같은 금액 순
+    i = texts.index("기관 상위")
+    assert texts[i + 1].startswith("전기/전자"), texts[i:i + 6]
+    j = texts.index("기관 하위")
+    assert texts[j + 1].startswith("IT 서비스"), texts[j:j + 6]
+
+
+@node
+def test_numbers_today_panel_lists_the_provisional_to_final_changes(tmp_path):
+    texts = "\n".join(_page("sector_numbers.html", _today_numbers(final=True), tmp_path))
+    assert "잠정→확정 변경: 1칸 / 300칸" in texts
+    assert "거래소/건설 기관 1일 +10.00 → +12.50 (+2.50)" in texts
+
+
+@node
+def test_numbers_today_panel_says_when_the_report_has_no_today(tmp_path):
+    assert any("'오늘' 블록이 없다" in t for t in _page("sector_numbers.html", _numbers_data(), tmp_path))
+
+
+@node
+def test_numbers_gap_chip_only_above_threshold(tmp_path):
+    D = _today_numbers()
+    assert not any("금액 근사 오차 큼" in t for t in _page("sector_numbers.html", D, tmp_path))
+    D["today"]["market"]["코스닥"]["approx_gap"]["pct"] = 6.1
+    assert any("금액 근사 오차 큼(코스닥 6.1%)" in t for t in _page("sector_numbers.html", D, tmp_path))
+
+
+@node
+def test_viewer_one_day_preset_lists_stocks_with_trust_and_pension(tmp_path):
+    """뷰어 1일 구간에서도 종목이 나온다(payload names[code].win["1"]), 종목마다 투신·연기금 금액을 단다.
+
+    페이로드를 하루짜리로 줄여 첫 화면이 곧 1일 구간이 되게 한다(하네스가 단추를 누르는 순서와 무관하게).
+    주입: 종목 줄에서 투신·연기금을 빼면 실패한다.
+    """
+    p = _viewer_payload()
+    p["dates"] = p["dates"][-1:]
+    for tbl in ("flows", "detail", "ret", "retw"):
+        for m in p[tbl].values():
+            for sec in m.values():
+                if isinstance(sec, dict):
+                    for k in sec:
+                        sec[k] = sec[k][-1:]
+                else:
+                    pass
+    for m in ("ret", "retw"):
+        p[m] = {mk: {s: v[-1:] for s, v in d.items()} for mk, d in p[m].items()}
+    for r in p["names"].values():
+        r["win"] = {"1": dict(r["win"]["5"], invtrt=7.0, penfnd_etc=-3.0)}
+    texts = _page("sector_flow.html", p, tmp_path)
+    assert "1거래일 · 2종목" in texts and "담은종목" in texts
+    assert "투신 " in texts and "연기금 " in texts and "+7" in texts and "−3" in texts

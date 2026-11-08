@@ -135,6 +135,9 @@ svg{display:block; width:100%; height:auto; overflow:visible}
 .li:hover{background:var(--sunk)}
 .nm{font-size:12.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 .nm span{color:var(--ink-3); font-size:10.5px; margin-left:5px}
+/* 종목 아래 줄 — 투신·연기금. 기관 총액이 같아도 이 둘이 채운 것과 금투(헤지·차익)가 채운 것은 다른 이야기다. */
+.nm .sub2{display:block; margin:1px 0 0; font-size:10.5px; color:var(--ink-3)}
+.nm .sub2 b{font-weight:500}
 .amt{font-size:12px; font-weight:500; text-align:right; min-width:72px}
 .rt{font-size:11px; text-align:right; min-width:46px; color:var(--ink-3)}
 .det-bars{display:flex; flex-direction:column; gap:6px; padding:11px 15px 15px}
@@ -221,8 +224,8 @@ nav.links a:hover{text-decoration:underline}
   </section>
 
   <div class="two">
-    <section class="panel"><h2 id="d-buy">순매수 상위<small>금액(억) 순 · 오른쪽은 시총 대비 %p</small></h2><div class="lst" id="lst-buy"></div></section>
-    <section class="panel"><h2 id="d-sell">순매도 상위<small>금액(억) 순 · 오른쪽은 시총 대비 %p</small></h2><div class="lst" id="lst-sell"></div></section>
+    <section class="panel"><h2 id="d-buy">순매수 상위<small>금액(억) 순 · 오른쪽은 시총 대비 %p · 이름 아래 투신·연기금(억)</small></h2><div class="lst" id="lst-buy"></div></section>
+    <section class="panel"><h2 id="d-sell">순매도 상위<small>금액(억) 순 · 오른쪽은 시총 대비 %p · 이름 아래 투신·연기금(억)</small></h2><div class="lst" id="lst-sell"></div></section>
   </div>
 
   <section class="panel"><h2 id="d-detail">기관 세부<small>구간 누적 · 억원</small></h2><div class="det-bars" id="detbars"></div></section>
@@ -234,6 +237,7 @@ nav.links a:hover{text-decoration:underline}
     <p><b>가속 %p 는 구간 누적 순매수 ÷ 구간말 시가총액 × 100 이다</b>(TUI·수치표의 <b>가속</b>과 같은 정의). 기관 지분율이 몇 %p 올랐나에 대한 근사이지 실제 보유잔고가 아니다. 시총이 작은 섹터는 분모가 작아 크게 튄다 — 종목 수와 거래대금을 같이 보라.</p>
     <p><b>"미반응"(돈은 들어왔는데 덜 간 섹터) 기준은 내렸다.</b> 횡단면 잔차가 사실상 "많이 빠진 순" 의 재포장이었고(수치표에서도 같은 이유로 내렸다), 이름이 앞날 신호처럼 읽혔다. 섹터 수급의 앞날 관계는 검정함 — 증거 없음.</p>
     <p><b>증거 표지</b> — <b>[측정]</b> 지금·지난 구간을 잰 값, 앞날을 주장하지 않는다 · <b>[앞날 증거 없음]</b> 섹터 앞날 5·20일 수익률과의 순위 관계를 검정함 — 증거 없음(기관·외국인 20일, 기관 60일, 투신+연기금 20일).</p>
+    <p><b>수익률은 전일 20:00 → 당일 20:00 이다(애프터마켓 포함 통합 종가).</b> 2026-09-14 부터 일별 종가가 KRX 애프터마켓(16:00~20:00)까지 포함한 통합값이라 정규장(15:30) 종가 기준인 KRX 지수와 같은 날 갈린다(11-06 거래소 자체 바구니 −4.37% vs 코스피 −6.02%). 지수(정규장)와 나란히 보려면 수치표 맨 위 "오늘" 패널.</p>
     <p><b>수익률은 자체 바구니다.</b> 그 섹터 자금흐름과 같은 종목집합의 전일 시총 가중 일별 수익률을 기하누적한다. KRX 업종지수가 아니다 — 구성종목이 달라 분자와 분모가 다른 바구니가 된다(실측: 부동산 20일이 지수 +6.0% vs 자체 +74.9%).</p>
     <p><b>0 은 "관망"이 아니라 "0 또는 미보고"다.</b> 수집기가 파싱에 실패한 필드를 0 으로 채워 둘을 구분할 수 없다. 행 자체의 유무는 신뢰할 수 있다.</p>
     <p><b>빨강이 순매수, 파랑이 순매도다</b>(국내 관행 · 서구 차트와 반대). <b>국가(natn)</b>는 90일 내내 전부 0 이라 뺐다. 유니버스는 현재 상장 종목이며(<span class="num">source='kiwoom'</span>), 개인·기관세부가 폐지 종목에 없어 소스를 좁혔다 — 과거 구간 집계에 그대로 쓰면 생존편향이 된다.</p>
@@ -366,7 +370,7 @@ function drivers(sec,k){
     const x=r.win&&r.win[w];
     if(!x||x[k]==null) continue;
     const v=x[k];
-    rows.push({code,name:r.name,v,tv:x.tv,cap:r.cap,
+    rows.push({code,name:r.name,v,tv:x.tv,cap:r.cap,iv:x.invtrt,pf:x.penfnd_etc,
                a:(r.cap&&r.cap>0)?v/r.cap*100:null});}
   rows.sort((x,y)=>y.v-x.v);
   return rows;
@@ -500,7 +504,7 @@ function render(){
       ["거래대금",amt(sum(flow(s,"tv"),i0,i1)).replace("+","")+"억"],
       ["시가총액",amt(capOf(s)).replace("+","")+"억"],
       ["가속 %p",pp(accelOf(s))+"%p",cls(accelOf(s))],
-      ...(hasIdx(s)?[["수익률 (자체 바구니)",pp(retOf(s))+"%",cls(retOf(s))]]:[["수익률","값 없음"]]),
+      ...(hasIdx(s)?[["수익률 (자체 바구니·~20시 종가)",pp(retOf(s))+"%",cls(retOf(s))]]:[["수익률","값 없음"]]),
       ...drivers(s,actor).filter(x=>x.v>0).slice(0,3).map(x=>["↑ "+x.name,amt(x.v)+"억",cls(x.v)])]));
     b.addEventListener("mousemove",tipMove); b.addEventListener("mouseleave",tipHide);
     b.addEventListener("click",()=>{picked=s; render();});
@@ -539,7 +543,12 @@ function renderNames(){
         :"이 시장·구간에 해당 종목이 없다"));
       box.append(p); return;}
     arr.forEach(t=>{const li=el("div","li");
-      const nm=el("div","nm",t.name); nm.append(el("span",null,t.code)); li.append(nm);
+      const nm=el("div","nm",t.name); nm.append(el("span",null,t.code));
+      // 투신·연기금 — TUI 종목 목록의 `투신[억]`·`연기금[억]` 과 같은 값(선택 주체와 무관하게 늘 기관 세부).
+      const sub=el("span","sub2");
+      [["투신",t.iv],["연기금",t.pf]].forEach(([ko,v],i)=>{ if(i) sub.append(document.createTextNode(" · "));
+        sub.append(document.createTextNode(ko+" ")); sub.append(el("b","num "+(v==null?"":cls(v)),v==null?"—":amt(v))); });
+      sub.append(document.createTextNode("억")); nm.append(sub); li.append(nm);
       li.append(el("div","amt num "+cls(t.v),amt(t.v)+"억"));
       li.append(el("div","rt num "+cls(t.a==null?t.v:t.a),t.a==null?"—":pp(t.a)+"%p"));
       box.append(li);});

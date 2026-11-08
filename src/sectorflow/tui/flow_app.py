@@ -29,9 +29,9 @@ from pathlib import Path
 from sectorflow.tui.flow_view import (
     HELP_FOOT_TIERS, NAME_SORT_COL, all_lines, NAME_SORTS, SORT_COL, SORTS,
     State, banner_lines, cell_len as view_cell_len, color_spans,
-    detail_lines, detail_title_span, footer_line, header_lines, help_lines,
+    detail_lines, detail_title_span, footer_line, header_lines, help_entries, help_lines,
     hint_desc, hint_line,
-    is_section, missing_report_hint, name_sort_span, names_lines, prior_pct, report_warnings,
+    is_section, missing_report_hint, name_sort_span, names_lines, report_warnings,
     scroll_mark, sort_span, staleness_warning, table_lines, tier_for,
     view_width)
 
@@ -70,8 +70,6 @@ def load(report_dir: str) -> dict:
         raise SystemExit(f"{path} 의 데이터에 없는 키: {', '.join(missing)} — "
                          f"리포트 형식이 바뀌었나?\n  있는 키: {sorted(d)}")
     d["report_warnings"] = staleness_warning(d["asof"]) + report_warnings(report_dir, d["asof"])
-    # 배너가 "새로 1년 극단에 든 섹터" 를 말하려면 직전 리포트의 백분위가 필요하다.
-    d["prior"] = prior_pct(report_dir, d["asof"])
     return d
 
 
@@ -384,7 +382,7 @@ def _draw(scr, st: State) -> None:
     col = _COLORED
 
     if st.help:
-        lines, total = help_lines(w, st.hrow, h - 1)
+        lines, total = help_lines(w, st.hrow, h - 1, help_entries(st))
         for i, line in enumerate(lines):
             if col and i == 0:
                 base = curses.color_pair(C_HEAD) | curses.A_BOLD
@@ -667,7 +665,7 @@ def handle_key(st: State, k: int, page: int = 10, help_page: int = 10) -> bool:
         return True
 
     if st.help:
-        total = help_lines(80, 0, 10**6)[1]
+        total = help_lines(80, 0, 10**6, help_entries(st))[1]
         # 하한이 total-5 이던 시절 끝까지 내리면 화면 아래가 비었다.
         bottom = max(total - help_page, 0)
         if k in (curses.KEY_DOWN, ord("j")):

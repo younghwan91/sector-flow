@@ -1271,7 +1271,7 @@ id = "viewer-claims-krx"
 why = "수익률은 자체 바구니인데 KRX 지수라고 적는다"
 guards = ["tests/test_report_pages.py::test_viewer_does_not_claim_krx_index_returns"]
 file = "scripts/templates/sector_flow.html"
-find = "수익률 (자체 바구니)"
+find = "수익률 (자체 바구니·~20시 종가)"
 replace = "실제 Δv (KRX지수)"
 
 [[mutation]]
@@ -1365,8 +1365,8 @@ id = "tui-absent-sector-is-a-row"
 why = "그 시장에 종목이 없는 섹터가 +0·1년 50 으로 찍혀 조용한 섹터로 읽힌다(웹은 뺀다)"
 guards = ["tests/test_tui_user_facing.py::test_a_sector_with_no_stocks_in_the_market_is_not_a_row"]
 file = "src/sectorflow/tui/flow_view.py"
-find = """        rows = [self._project(r) for r in b["rows"] if not absent_row(r)]"""
-replace = """        rows = [self._project(r) for r in b["rows"]]"""
+find = """        rows = [self._project(r) for r in src if not absent_row(r)]"""
+replace = """        rows = [self._project(r) for r in src]"""
 
 [[mutation]]
 id = "tui-combined-actors-from-another-window"
@@ -2215,22 +2215,6 @@ replace = """        if False:"""
 # ── honesty-ui (2026-11-08): 사실 배너 · 탐색 모드 · 증거 표지 · 웹 정합 ──
 
 [[mutation]]
-id = "banner-shows-exploration-scores"
-why = "첫 화면 배너에 탐색 점수(G 통과)가 다시 들어온다 — 검정 결과 앞날 증거가 없는 점수가 첫 화면을 차지한다"
-guards = ["tests/test_tui_flow_view.py::test_banner_states_facts_not_picks"]
-file = "src/sectorflow/tui/flow_view.py"
-find = "    lines.append(pad(f\" {ko} {w}일 1년%ile 극단 — {basis}:\", width))"
-replace = "    lines.append(pad(f\" G 통과 {ko} {w}일 1년%ile 극단 — {basis}:\", width))"
-
-[[mutation]]
-id = "banner-totals-skip-1d"
-why = "1일 블록이 있는데 5일 합계를 적는다 — 가장 최근 값을 두고 낡은 창을 보인다"
-guards = ["tests/test_tui_flow_view.py::test_banner_market_totals_are_the_sum_of_the_shortest_block"]
-file = "src/sectorflow/tui/flow_view.py"
-find = "    for w in (\"1\", \"5\"):"
-replace = "    for w in (\"5\", \"1\"):"
-
-[[mutation]]
 id = "banner-bottom-is-top"
 why = "하위 3 이 상위 3 과 같은 목록이 된다 — 순매도 쪽이 첫 화면에서 사라진다"
 guards = ["tests/test_tui_flow_view.py::test_banner_top_and_bottom_are_ordered_by_amount"]
@@ -2269,22 +2253,6 @@ guards = ["tests/test_tui_flow_view.py::test_reversal_flags_do_not_depend_on_the
 file = "src/sectorflow/tui/flow_view.py"
 find = "    for r in _block_rows(st.d, BANNER_WIN, mk):\n        s = five.get(r.get(\"sector\"))"
 replace = "    for r in _block_rows(st.d, st.window if st.window != \"종합\" else BANNER_WIN, mk):\n        s = five.get(r.get(\"sector\"))"
-
-[[mutation]]
-id = "pct-extremes-ignore-prior"
-why = "직전 리포트와 안 견준다 — 어제도 극단이던 섹터가 \"새로\" 로 적힌다"
-guards = ["tests/test_tui_flow_view.py::test_pct_extremes_are_new_relative_to_the_prior_report"]
-file = "src/sectorflow/tui/flow_view.py"
-find = "        if p >= PCT_HI and (ppct is None or before is None or before < PCT_HI):"
-replace = "        if p >= PCT_HI:"
-
-[[mutation]]
-id = "prior-report-picks-oldest"
-why = "직전 리포트로 가장 오래된 폴더를 읽는다 — \"새로\" 의 기준이 몇 주 전이 된다"
-guards = ["tests/test_tui_flow_view.py::test_prior_pct_reads_the_latest_earlier_report_with_numbers"]
-file = "src/sectorflow/tui/flow_view.py"
-find = "                       if _REPORT_DAY.fullmatch(n) and n < str(asof)), reverse=True)"
-replace = "                       if _REPORT_DAY.fullmatch(n) and n < str(asof)))"
 
 [[mutation]]
 id = "banner-line-unpadded"
@@ -2613,3 +2581,214 @@ guards = ["tests/test_pipeline_e2e.py::test_fixture_plants_what_it_claims"]
 file = "tests/test_pipeline_e2e.py"
 find = "SEED = 6"
 replace = "SEED = 4"
+
+# ── ui-today (2026-11-08): 첫 화면·1일 창·웹 '오늘' 패널·수익률 세션 라벨·금액 근사 오차 ──
+
+[[mutation]]
+id = "banner-shows-exploration-scores"
+why = "첫 화면 배너에 탐색 점수(G 통과)가 다시 들어온다 — 검정 결과 앞날 증거가 없는 점수가 첫 화면을 차지한다"
+guards = ["tests/test_tui_flow_view.py::test_banner_states_facts_not_picks"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "        f\" 오늘 섹터 순매수[억(1년%ile)] — {mk} · 금액 순 · %ile 는 그날 값의 1년 분포\","
+replace = "        f\" G 통과 오늘 섹터 순매수[억(1년%ile)] — {mk} · 금액 순 · %ile 는 그날 값의 1년 분포\","
+
+[[mutation]]
+id = "banner-net-not-from-today"
+why = "첫 화면 시장 순매수가 페이로드 today 의 값을 안 옮긴다 — 4주체가 다 — 로 찍혀 '오늘 누가 샀나' 가 사라진다"
+guards = ["tests/test_tui_flow_view.py::test_banner_market_net_is_the_payload_today_total"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "    net = M.get(\"net\") or {}\n    parts ="
+replace = "    net = {}\n    parts ="
+
+[[mutation]]
+id = "banner-net-cut-when-narrow"
+why = "좁은 폭에서 4주체 순매수를 한 줄에 우겨 넣는다 — 개인·기타법인이 '외 2' 로 사라져 합 ≈ 0 의 그림이 틀린다"
+guards = ["tests/test_tui_flow_view.py::test_banner_market_net_is_the_payload_today_total"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "        lines.append(_items_line(head, parts[:2], width))\n        lines.append(_items_line(\"   \", parts[2:], width))"
+replace = "        lines.append(_items_line(head, parts, width))"
+
+[[mutation]]
+id = "banner-today-bottom-is-top"
+why = "오늘 하위 3 이 상위 3 과 같은 목록이 된다 — 첫 화면에서 판 쪽이 사라진다"
+guards = ["tests/test_tui_flow_view.py::test_banner_today_top_bottom_are_by_amount_with_their_percentile"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "        bot = [f\"{s} {fmt_amt(v)}{_pct_tag(p)}\" for s, v, p in ranked[::-1][:3]]"
+replace = "        bot = [f\"{s} {fmt_amt(v)}{_pct_tag(p)}\" for s, v, p in ranked[:3]]"
+
+[[mutation]]
+id = "today-extremes-exclude-threshold"
+why = "1년%ile 극단 문턱을 미만/초과로 센다 — 정확히 95·5 인 섹터가 빠진다(도움말·웹은 ≥·≤ 라 적는다)"
+guards = ["tests/test_tui_flow_view.py::test_today_extremes_are_todays_percentile_at_95_and_5"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "        if p >= PCT_HI:\n            hi.append((s, p))"
+replace = "        if p > PCT_HI:\n            hi.append((s, p))"
+
+[[mutation]]
+id = "change-items-swapped"
+why = "직전 대비 들어옴·나감을 바꿔 적는다 — 상위 5 에서 빠진 섹터가 새로 든 것으로 읽힌다"
+guards = ["tests/test_tui_flow_view.py::test_banner_change_lists_entries_and_exits_or_says_why_not"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "    return [f\"들어옴 {s}\" for s in t[\"entered\"]] + [f\"나감 {s}\" for s in t[\"exited\"]]"
+replace = "    return [f\"들어옴 {s}\" for s in t[\"exited\"]] + [f\"나감 {s}\" for s in t[\"entered\"]]"
+
+[[mutation]]
+id = "ctx-krx-shows-own-basket"
+why = "KRX 지수(정규장) 칸에 자체 바구니(~20시) 수익률을 적는다 — 세션이 다른 두 값이 같아 보여 차이가 사라진다"
+guards = ["tests/test_tui_flow_view.py::test_banner_returns_are_labelled_after_market_and_sit_next_to_the_krx_regular_session"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "        kr = k.get(\"ret\") or {}\n        mine ="
+replace = "        kr = own\n        mine ="
+
+[[mutation]]
+id = "gap-chip-always"
+why = "금액 근사 오차 칩이 문턱과 무관하게 뜬다 — 늘 뜨는 경고는 경고가 아니다"
+guards = ["tests/test_tui_flow_view.py::test_gap_chip_appears_only_above_the_threshold"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "        if g and g.get(\"pct\") is not None and g[\"pct\"] > warn:"
+replace = "        if g and g.get(\"pct\") is not None:"
+
+[[mutation]]
+id = "final-diff-help-drops-list"
+why = "잠정→확정 변경 칸 목록이 도움말에서 빠진다 — 'N칸 바뀜' 만 있고 어디가 바뀌었는지 볼 곳이 없다"
+guards = ["tests/test_tui_flow_view.py::test_final_diff_line_and_help_list"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "    for r in fd.get(\"changed\") or []:\n        out.append"
+replace = "    for r in []:\n        out.append"
+
+[[mutation]]
+id = "one-day-row-carries-percentile-as-value"
+why = "1일 창 행에 순매수 대신 백분위를 싣는다 — 임펄스 열에 0~100 이 찍힌다"
+guards = ["tests/test_tui_flow_view.py::test_one_day_window_rows_are_the_payload_today_facts"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "                r[k] = (v.get(k) or {}).get(\"v\")"
+replace = "                r[k] = (v.get(k) or {}).get(\"pct\")"
+
+[[mutation]]
+id = "one-day-accel-revived"
+why = "1일 창에 시총을 실어 가속(하루 순매수÷시총)이 살아난다 — 파생값은 1일 창에서 — 라는 화면 약속이 깨진다"
+guards = ["tests/test_tui_flow_view.py::test_one_day_window_rows_are_the_payload_today_facts"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "                 \"cap_idx\": (five.get(sec) or {}).get(\"cap_idx\"),"
+replace = "                 \"cap_idx\": (five.get(sec) or {}).get(\"cap_idx\"), \"cap\": (five.get(sec) or {}).get(\"cap\"),"
+
+[[mutation]]
+id = "one-day-count-from-five-day"
+why = "1일 창 종목 수를 5일 집계로 센다 — 표의 수와 Enter 목록 길이가 갈린다"
+guards = ["tests/test_tui_flow_view.py::test_one_day_sector_count_is_the_one_day_list_length"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "            if nm.get(\"market\") in mkts and ONE_DAY in (nm.get(\"win\") or {}):"
+replace = "            if nm.get(\"market\") in mkts and \"5\" in (nm.get(\"win\") or {}):"
+
+[[mutation]]
+id = "one-day-recent-concentration"
+why = "1일 목록에 최근집중(5일 ÷ 1일)을 낸다 — 하루가 분모인 거꾸로 선 비율이 지속성처럼 읽힌다"
+guards = ["tests/test_tui_flow_view.py::test_one_day_drilldown_has_no_recent_concentration"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "        if win in (CONC_WIN, ONE_DAY) or den is None or abs(den) < CONC_MIN_DEN:"
+replace = "        if win == CONC_WIN or den is None or abs(den) < CONC_MIN_DEN:"
+
+[[mutation]]
+id = "w-lands-on-empty-one-day"
+why = "옛 리포트(today 없음)에서도 w 가 1일 창에 선다 — 빈 표가 '데이터 없음' 으로 뜬다"
+guards = ["tests/test_tui_flow_view.py::test_w_skips_the_one_day_window_without_today"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "                                 and (WINDOWS[j] != ONE_DAY or self.has_today))"
+replace = "                                 )"
+
+[[mutation]]
+id = "krx-index-20d-base-off-by-one"
+why = "KRX 지수 20일 수익률의 기준을 19 거래일 전으로 잡는다 — 자체 바구니 20일과 구간이 어긋난다"
+guards = ["tests/test_payload_today.py::test_krx_index_returns_use_this_payloads_trading_days_and_never_fill"]
+file = "scripts/sector_flow.py"
+find = "            base = px.get((code, dates[-1 - w])) if w < len(dates) else None"
+replace = "            base = px.get((code, dates[-w])) if w < len(dates) else None"
+
+[[mutation]]
+id = "approx-gap-trade-value-in-won"
+why = "daily_bars.trade_value 를 원으로 읽는다(백만원이다) — VWAP 가 1e6 배 작아져 근사 오차가 ~100% 로 늘 칩이 뜬다"
+guards = ["tests/test_payload_today.py::test_approx_gap_compares_close_with_vwap_weighted_by_absolute_net_quantity"]
+file = "scripts/sector_flow.py"
+find = "    vwap = (bars[\"trade_value\"].astype(float) * 1e6 / bars[\"volume\"].astype(float))"
+replace = "    vwap = (bars[\"trade_value\"].astype(float) / bars[\"volume\"].astype(float))"
+
+[[mutation]]
+id = "today-drops-etc-corp"
+why = "today 섹터 칸에서 기타법인이 빠진다 — 1일 창에서 a 로 기타법인을 고르면 전 행이 — 다"
+guards = ["tests/test_payload_today.py::test_today_rows_carry_all_four_actors_for_the_one_day_window"]
+file = "scripts/sector_flow.py"
+find = "                (\"invpen\", \"투신+연기금\"), (\"forgn\", \"외국인\"), (\"indiv\", \"개인\"),\n                (\"etc\", \"기타법인\"))"
+replace = "                (\"invpen\", \"투신+연기금\"), (\"forgn\", \"외국인\"), (\"indiv\", \"개인\"))"
+
+[[mutation]]
+id = "web-today-krx-shows-own-basket"
+why = "웹 오늘 패널의 KRX 칸에 자체 바구니 수익률을 적는다 — TUI 와 다른 말을 한다"
+guards = ["tests/test_report_pages.py::test_numbers_today_panel_says_what_the_terminal_banner_says"]
+file = "scripts/templates/sector_numbers.html"
+find = "const own=((T.market||{})[m]||{}).ret||{}, k=(T.krx_index||{})[m]||{}, kr=k.ret||{};"
+replace = "const own=((T.market||{})[m]||{}).ret||{}, k=(T.krx_index||{})[m]||{}, kr=own;"
+
+[[mutation]]
+id = "web-today-bottom-is-top"
+why = "웹 오늘 패널의 하위 3 이 상위 3 과 같다 — TUI 첫 화면과 다른 목록이다"
+guards = ["tests/test_report_pages.py::test_numbers_today_panel_says_what_the_terminal_banner_says"]
+file = "scripts/templates/sector_numbers.html"
+find = "    c3.append(tline(ko+\" 상위\",r.slice(0,3)), tline(ko+\" 하위\",r.slice().reverse().slice(0,3))); });"
+replace = "    c3.append(tline(ko+\" 상위\",r.slice(0,3)), tline(ko+\" 하위\",r.slice(0,3))); });"
+
+[[mutation]]
+id = "web-final-diff-no-list"
+why = "웹 잠정→확정 변경에 바뀐 칸 목록이 없다 — 'N칸' 만 적고 어디인지 못 본다"
+guards = ["tests/test_report_pages.py::test_numbers_today_panel_lists_the_provisional_to_final_changes"]
+file = "scripts/templates/sector_numbers.html"
+find = "      (F.changed||[]).forEach(r=>ul.append("
+replace = "      [].forEach(r=>ul.append("
+
+[[mutation]]
+id = "web-gap-chip-always"
+why = "웹 금액 근사 오차 칩이 문턱과 무관하게 뜬다"
+guards = ["tests/test_report_pages.py::test_numbers_gap_chip_only_above_threshold"]
+file = "scripts/templates/sector_numbers.html"
+find = "    if(gp&&gp.pct!=null&&gp.pct>warn){"
+replace = "    if(gp&&gp.pct!=null){"
+
+[[mutation]]
+id = "viewer-stock-list-drops-trust-pension"
+why = "뷰어 종목 줄에서 투신·연기금이 빠진다 — 웹 드릴다운이 서비스의 핵심(기관 안의 방향성)을 다시 잃는다"
+guards = ["tests/test_report_pages.py::test_viewer_one_day_preset_lists_stocks_with_trust_and_pension"]
+file = "scripts/templates/sector_flow.html"
+find = "    rows.push({code,name:r.name,v,tv:x.tv,cap:r.cap,iv:x.invtrt,pf:x.penfnd_etc,"
+replace = "    rows.push({code,name:r.name,v,tv:x.tv,cap:r.cap,"
+
+[[mutation]]
+id = "help-scroll-end-ignores-report-tail"
+why = "도움말 스크롤 끝을 고정 HELP 길이로 잰다 — 확정 리포트에 붙은 잠정→확정 목록이 End 로 안 보인다"
+guards = ["tests/test_tui_flow_view.py::test_help_end_reaches_the_report_specific_tail"]
+file = "src/sectorflow/tui/flow_app.py"
+find = "        total = help_lines(80, 0, 10**6, help_entries(st))[1]"
+replace = "        total = help_lines(80, 0, 10**6)[1]"
+
+[[mutation]]
+id = "market-context-drops-gap"
+why = "시장 근사 오차를 today 에 안 싣는다 — 화면·웹이 칩을 띄울 값이 없어 오차가 커도 조용하다"
+guards = ["tests/test_payload_today.py::test_market_context_puts_index_and_gap_inside_today"]
+file = "scripts/sector_flow.py"
+find = "        M[\"approx_gap\"] = gaps.get(mkey)"
+replace = "        M[\"approx_gap\"] = None"
+
+[[mutation]]
+id = "web-today-silent-on-old-report"
+why = "옛 리포트(today 없음)에서 웹 오늘 패널이 빈 채로 말이 없다 — 고장인지 형식 차이인지 모른다"
+guards = ["tests/test_report_pages.py::test_numbers_today_panel_says_when_the_report_has_no_today"]
+file = "scripts/templates/sector_numbers.html"
+find = "  if(!T){ const c=card(\"오늘\");"
+replace = "  if(!T){ return; const c=card(\"오늘\");"
+
+[[mutation]]
+id = "banner-no-fallback-for-old-report"
+why = "옛 리포트에서도 오늘 배너를 그린다 — 빈 줄·'비교 없음' 만 남고 왜 비었는지 안 말한다"
+guards = ["tests/test_tui_flow_view.py::test_banner_without_today_falls_back_to_the_20_day_block"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "    lines += _banner_today(st, width) if st.has_today else _banner_20d(st, width)"
+replace = "    lines += _banner_today(st, width)"
+

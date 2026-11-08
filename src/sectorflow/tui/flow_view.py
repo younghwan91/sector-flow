@@ -8,7 +8,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 import re
 import unicodedata
@@ -45,7 +44,13 @@ from datetime import date
 AMBIGUOUS_WIDE = os.environ.get("KQ_AMBIGUOUS_WIDE", "").strip().lower() \
     not in ("", "0", "false", "no", "off")
 
-WINDOWS = ("5", "20", "60", "120", "종합")
+WINDOWS = ("1", "5", "20", "60", "120", "종합")
+#: **1일 창** — 기준일 하루. 섹터 블록(`blocks`)에는 없고 페이로드 `today`(sector_flow.today_block)에서 만든다.
+#: 하루치에는 사실(4주체 순매수·그 1년 백분위·수익률·거래대금)만 있다 — 가속·미실현·풀림·G·추이 같은 파생값은
+#: 회귀·차분·누적 경로가 하루에서 정의되지 않아 `—` 다. `today` 가 없는 옛 리포트에서는 `w` 가 이 창을 건너뛴다.
+ONE_DAY = "1"
+#: 얇은 섹터 문턱 — ``sector_numbers.MIN_NAMES`` 와 같은 값. 1일 창은 블록이 없어 화면이 직접 센다.
+THIN_MIN = 10
 # 종목 목록은 **절대 순매수 금액** 순이다 — 섹터 합계가 금액의 합이므로 기여도는
 # 금액으로만 정의된다. 시총 대비는 참고 열. (시총 대비로 줄세웠더니 스팩이 1위가
 # 됐고, 그걸 막으려 유동성 하한을 넣었더니 작은 섹터가 통째로 비었다.)
@@ -398,7 +403,8 @@ class State:
         # 키를 눌러 닿을 수 있으면 기본 화면에서 숨긴 것이 아니다.
         if what == "w":
             self.wi = self._step(self.wi, step, len(WINDOWS),
-                                 lambda j: self.explore or WINDOWS[j] not in EXPLORE_WINDOWS)
+                                 lambda j: (self.explore or WINDOWS[j] not in EXPLORE_WINDOWS)
+                                 and (WINDOWS[j] != ONE_DAY or self.has_today))
         elif what == "m":
             self.mi = (self.mi + step) % len(self.markets)
         elif what == "a":
@@ -433,6 +439,41 @@ class State:
         self.allv = False
 
     # --- 데이터 ---
+    @property
+    def has_today(self) -> bool:
+        """페이로드에 `today`(1일 창의 원천)가 있는가 — 옛 리포트에는 없다."""
+        return bool(((self.d.get("today") or {}).get("sectors") or {}))
+
+    def _today_rows(self) -> list[dict]:
+        """1일 창의 섹터 행 — `today.sectors[시장]` 을 블록 행 모양으로 옮긴다(값은 그대로).
+
+        * 4주체 = 그날 순매수, `pct1y` = 그 **일별 값**의 1년 백분위(수치표 `1년[%ile]` 의 1일 창과 같은 정의).
+        * `ret` = 그날 섹터 자체 바구니 수익률, `tv` = 그날 거래대금.
+        * `n_all` = 그날 집계가 있는 종목 수 — Enter 로 여는 1일 목록의 길이와 같다. 10개 미만은 `thin`.
+        * `cap` 을 **싣지 않는다** — 가속(순매수÷시총)은 파생값이라 1일 창에서 `—` 다. 시총 정렬용
+          `cap_idx` 만 같은 기준일의 5일 블록 행에서 가져온다(구간말 시총은 창과 무관하게 같다).
+        """
+        T = self.d.get("today") or {}
+        secs = (T.get("sectors") or {}).get(self.market) or {}
+        five = {r.get("sector"): r for r in
+                ((self.d.get("blocks") or {}).get(f"5|{self.market}") or {}).get("rows") or []}
+        mkts = set([self.market] if self.market != "전체" else self.markets[1:])
+        count: dict = {}
+        for nm in (self.d.get("names") or {}).values():
+            if nm.get("market") in mkts and ONE_DAY in (nm.get("win") or {}):
+                count[nm.get("sector")] = count.get(nm.get("sector"), 0) + 1
+        rows = []
+        for sec, v in secs.items():
+            n = count.get(sec, 0)
+            r = {"sector": sec, "n_all": n, "thin": n < THIN_MIN,
+                 "ret": v.get("ret"), "tv": v.get("tv"),
+                 "cap_idx": (five.get(sec) or {}).get("cap_idx"),
+                 "pct1y": {k: (v.get(k) or {}).get("pct") for k, _ in ACTORS}}
+            for k, _ in ACTORS:
+                r[k] = (v.get(k) or {}).get("v")
+            rows.append(r)
+        return rows
+
     def _project(self, r: dict) -> dict:
         """행을 **선택된 주체 기준으로** 다시 쓴다.
 
@@ -580,10 +621,14 @@ class State:
             return [dict(r, top=leads.get(r.get("sector")),
                          **sums.get(r.get("sector"), {})) for r in c["rows"]
                     if not absent_row(r)]
-        b = self.d["blocks"].get(f"{self.window}|{self.market}")
-        if not b:
-            return []
-        rows = [self._project(r) for r in b["rows"] if not absent_row(r)]
+        if self.window == ONE_DAY:
+            src = self._today_rows()
+        else:
+            b = self.d["blocks"].get(f"{self.window}|{self.market}")
+            if not b:
+                return []
+            src = b["rows"]
+        rows = [self._project(r) for r in src if not absent_row(r)]
         key, _fell = self.effective_sort(rows)
         def val(r):
             v = r.get(key)
@@ -600,6 +645,10 @@ class State:
         if self.window == "종합":
             c = self.d.get("combined", {}).get(self.market)
             return f"구간 {'·'.join(str(w) for w in c['windows'])}일 등가중" if c else ""
+        if self.window == ONE_DAY:
+            T = self.d.get("today") or {}
+            return (f"{T.get('date', '?')} 하루 · 1년%ile=일별 값의 {T.get('lookback', '?')}일 분포"
+                    f" · {RET_LABEL_SHORT}") if T else ""
         b = self.d["blocks"].get(f"{self.window}|{self.market}")
         if not b:
             return ""
@@ -943,7 +992,8 @@ class State:
         경우 중 하나다. 크기만 :data:`CONC_CAP` 에서 잘라 적는다.
         """
         win = self.window if self.window != "종합" else self.COMBINED_WIN
-        if win == CONC_WIN or den is None or abs(den) < CONC_MIN_DEN:
+        # 1일 창의 분모는 하루치라 "5일 ÷ 1일" 은 지속성이 아니라 거꾸로 선 비율이다 — 비운다.
+        if win in (CONC_WIN, ONE_DAY) or den is None or abs(den) < CONC_MIN_DEN:
             return None
         num = ((nm.get("win") or {}).get(CONC_WIN) or {}).get(self.actor)
         return None if num is None else num / den * 100.0
@@ -980,6 +1030,14 @@ def _first_fitting(width: int, cands: list[str]) -> str:
             return c
     return cands[-1]
 
+
+#: 수익률 라벨 — 2026-09-14 부터 일별 종가가 애프터마켓(~20:00) 포함 통합값이라 리포트의 모든 수익률은
+#: "전일 20:00 → 당일 20:00" 이다(정규장 15:30 종가가 아니다). KRX 지수(정규장)와 같은 날 2%p 넘게 갈린다.
+RET_LABEL = "전일 20:00→당일 20:00 (애프터마켓 포함 통합 종가)"
+RET_LABEL_SHORT = "~20시 통합종가"
+#: 오늘 표의 주체 이름 — 페이로드 `today.actors` 와 같다(sector_flow.TODAY_ACTORS).
+TODAY_KO = (("inst", "기관"), ("invtrt", "투신"), ("penfnd_etc", "연기금"), ("invpen", "투신+연기금"),
+            ("forgn", "외국인"), ("indiv", "개인"), ("etc", "기타법인"))
 
 #: 시작 배너가 쓰는 창. 화면 기본 창(20일)과 같고, 반전 검사는 그 안의 최근 5일과 직전 15일을 견준다.
 BANNER_WIN = "20"
@@ -1059,64 +1117,203 @@ def reversal_flags(st: State) -> list[tuple[str, float, float]]:
     return out
 
 
-def _totals_window(d: dict, market: str) -> str | None:
-    """시장 합계를 적을 **가장 짧은 창** — 1일 블록이 있으면 1일, 없으면 5일."""
-    for w in ("1", "5"):
-        if f"{w}|{market}" in (d.get("blocks") or {}):
-            return w
-    return None
+#: 오늘 표에서 배너가 상위·하위·극단을 적는 두 주체 — 기관 총액과, 기관 안에서 방향성이 있는 투신+연기금
+#: (CLAUDE.md 수급 신뢰 순서). 키는 페이로드 `today.sectors[시장][섹터]` 의 키다.
+BANNER_ACTORS = (("inst", "기관"), ("invpen", "투신+연기금"))
+#: 시장 맥락 줄의 수익률 구간(거래일) — 페이로드 `today.market[시장].ret` 의 키.
+CTX_WINDOWS = ("1", "20")
 
 
-def pct_extremes(st: State) -> tuple[list[str], list[str], str]:
-    """1년 백분위가 **새로** ≥95 / ≤5 에 든 섹터 — (위, 아래, 비교 기준 설명).
+def _pct_tag(p) -> str:
+    """백분위 꼬리표 `(97)` — 없으면 `(—)`. 분모 게이트(0 이 많은 줄)에 걸린 값은 결측이다."""
+    return "(—)" if p is None else f"({p:.0f})"
 
-    "새로" 는 직전 리포트(`d["prior"]`, :func:`prior_pct`)와 견준다 — 직전에는 극단이 아니었는데
-    오늘 극단인 섹터. 직전 리포트가 없으면 **지금** 극단인 섹터를 적고 그렇다고 말한다.
+
+def _fmt_ret(v) -> str:
+    return "—" if v is None else f"{v:+.2f}%"
+
+
+def _ctx_lines(d: dict, markets: list[str], width: int) -> list[str]:
+    """시장 맥락 — 시장별 자체 바구니 수익률(애프터마켓 포함 통합 종가)과 KRX 지수(정규장) 수익률.
+
+    둘은 **세션이 다르다.** 2026-09-14 부터 리포트의 일별 종가는 20:00 애프터마켓까지 포함한 통합값이라
+    수익률은 "전일 20:00 → 당일 20:00" 이다. KRX 지수는 정규장(15:30) 값이다. 같은 날 둘이 2%p 넘게 갈릴
+    수 있어(11-06 거래소 −4.37% vs 코스피 −6.02%) 나란히 적고 라벨로 가른다. 첫 줄이 라벨, 시장마다 한 줄.
     """
-    mk, a = st.market, st.actor
-    prior = (st.d.get("prior") or {})
-    ppct = ((prior.get("pct1y") or {}).get(f"{BANNER_WIN}|{mk}"))
+    T = d.get("today") or {}
+    idx = T.get("krx_index") or {}
+    out = [pad(_first_fitting(width, [
+        f" 수익률 {'·'.join(CTX_WINDOWS)}일 — 자체 바구니 {RET_LABEL} | KRX 지수(정규장 15:30)",
+        f" 수익률 {'·'.join(CTX_WINDOWS)}일 — 자체 바구니({RET_LABEL_SHORT}) | KRX 지수(정규장)",
+        f" 수익률 {'·'.join(CTX_WINDOWS)}일 — 바구니(~20시) | KRX(정규장)"]), width)]
+    for m in markets:
+        own = (((T.get("market") or {}).get(m) or {}).get("ret")) or {}
+        k = idx.get(m) or {}
+        kr = k.get("ret") or {}
+        mine = " · ".join(_fmt_ret(own.get(w)) for w in CTX_WINDOWS)
+        krx = " · ".join(_fmt_ret(kr.get(w)) for w in CTX_WINDOWS)
+        out.append(pad(_first_fitting(width, [
+            f"   {m} {mine}  |  KRX {k.get('name') or '지수 없음'} {krx}",
+            f"   {m} {mine} | {krx}"]), width))
+    return out
+
+
+def _gap_chips(d: dict, markets: list[str]) -> list[str]:
+    """금액 근사 오차가 문턱을 넘은 시장 — `금액 근사 오차 큼(코스닥 6.1%)`. 없으면 빈 목록."""
+    T = d.get("today") or {}
+    warn = T.get("approx_gap_warn", 5.0)
+    out = []
+    for m in markets:
+        g = ((T.get("market") or {}).get(m) or {}).get("approx_gap")
+        if g and g.get("pct") is not None and g["pct"] > warn:
+            out.append(f"금액 근사 오차 큼({m} {g['pct']:.1f}%)")
+    return out
+
+
+def _today_rank(d: dict, market: str, actor: str) -> list[tuple[str, float, "float | None"]]:
+    """오늘 (섹터, 순매수, 1년%ile) — 금액 큰 순. 값이 없는 섹터는 뺀다."""
+    secs = (((d.get("today") or {}).get("sectors") or {}).get(market)) or {}
+    out = [(s, (v.get(actor) or {}).get("v"), (v.get(actor) or {}).get("pct"))
+           for s, v in secs.items()]
+    out = [t for t in out if t[1] is not None]
+    out.sort(key=lambda t: (-t[1], t[0]))
+    return out
+
+
+def today_extremes(d: dict, market: str, actor: str) -> tuple[list[str], list[str]]:
+    """오늘 순매수의 1년 백분위가 ≥95 / ≤5 인 섹터 — (위, 아래), 각각 백분위가 극단인 순.
+
+    "오늘" 하루 값의 백분위다(페이로드 `today`, 오늘 포함 1년 일별 분포). 직전 리포트와 견줄 필요가
+    없다 — 어제도 극단이었는지가 아니라 **오늘 값이** 1년 중 어디인지를 말한다.
+    """
     hi, lo = [], []
-    for r in _block_rows(st.d, BANNER_WIN, mk):
-        p = (r.get("pct1y") or {}).get(a)
+    for s, _v, p in _today_rank(d, market, actor):
         if p is None:
             continue
-        before = None if ppct is None else ((ppct.get(r.get("sector")) or {}).get(a))
-        if p >= PCT_HI and (ppct is None or before is None or before < PCT_HI):
-            hi.append(f"{_sec_label(r)} {p:.0f}")
-        elif p <= PCT_LO and (ppct is None or before is None or before > PCT_LO):
-            lo.append(f"{_sec_label(r)} {p:.0f}")
-    basis = f"{prior.get('asof')} 대비 새로" if ppct is not None else "지금(직전 리포트 없음)"
-    return hi, lo, basis
+        if p >= PCT_HI:
+            hi.append((s, p))
+        elif p <= PCT_LO:
+            lo.append((s, p))
+    hi.sort(key=lambda t: (-t[1], t[0]))
+    lo.sort(key=lambda t: (t[1], t[0]))
+    return [f"{s} {p:.0f}" for s, p in hi], [f"{s} {p:.0f}" for s, p in lo]
 
 
-def banner_lines(st: State, width: int) -> list[str]:
-    """시작 배너 — 표를 그리기 전에 아무 키로 넘길 수 있는 1회성 **사실 요약**.
+def change_items(d: dict, market: str, actor: str) -> "list[str] | None":
+    """직전 리포트 대비 20일 순매수 상위 N 의 들고 남 — `들어옴 X`·`나감 Y`. 비교를 못 했으면 None."""
+    C = d.get("change")
+    if not C:
+        return None
+    t = ((C.get("top") or {}).get(market) or {}).get(actor) or {}
+    if t.get("entered") is None or t.get("exited") is None:
+        return None
+    return [f"들어옴 {s}" for s in t["entered"]] + [f"나감 {s}" for s in t["exited"]]
 
-    점수·순위·추천을 싣지 않는다. 예전 배너는 G 통과 섹터와 곱순위 상위 종목을 먼저
-    보였는데, 검정 결과 섹터 지표는 앞날 증거가 없고 G 는 판정 불가이며, 곱의 종목 축은
-    투신+연기금을 "많이 살수록 좋다" 로 세는데 그 순위 정보는 부호가 **음**이었다
-    (docs/validation/). 그래서 여기에는 누가 어디서 사고팔았나만 적는다 — 모든 값은
-    페이로드에 이미 있는 것을 옮길 뿐이고, 줄 순서는 금액 크기(측정값)다.
-    """
-    d = st.d
-    chip = status_chip(d)
-    title = f" 오늘의 수급 · {d.get('asof', '')} {chip} — 아무 키나 눌러 표로"
-    lines = [pad(_first_fitting(width, [title + " · q:종료", title]), width),
-             pad("", width)]
-    mk, w = st.market, BANNER_WIN
+
+def final_diff_line(d: dict) -> str | None:
+    """잠정 → 확정 변경 요약 한 줄 — 확정 리포트에서만. 목록은 도움말 끝(:func:`final_diff_help`)."""
+    if not d.get("final"):
+        return None
+    fd = d.get("final_diff")
+    if fd is None:
+        why = d.get("final_diff_reason") or "이유 없음"
+        return f" 잠정→확정 비교 없음: {why}"
+    return (f" 잠정→확정 변경: {fd.get('n_changed', 0)}칸 / {fd.get('n_cells', 0)}칸"
+            f" (±{fd.get('tol', 0)}억 초과, 1·5일 순매수) — 목록은 ? 도움말 끝")
+
+
+def final_diff_help(d: dict) -> list[tuple[str, str]]:
+    """도움말 끝에 붙는 **이 리포트**의 잠정 → 확정 변경 목록(페이로드 `final_diff`)."""
+    if not d.get("final"):
+        return []
+    fd = d.get("final_diff")
+    out = [("", ""), ("", "── 이 리포트: 잠정 → 확정 변경 ──")]
+    if fd is None:
+        return out + [("", f"비교 없음: {d.get('final_diff_reason') or '이유 없음'}")]
+    ko = dict(TODAY_KO)
+
+    def f(v):
+        return "—" if v is None else f"{v:+,.2f}"
+    base = "확정" if fd.get("base_final") else "잠정"
+    out.append(("", f"바꿔 끼운 {base} 리포트({fd.get('base_built', '?')} KST) 대비"))
+    out.append(("", f"순매수[억] 1·5일 · 반올림 ±{fd.get('tol')}억 초과만"))
+    moved = [t for t in fd.get("market_totals") or []
+             if t.get("diff") is None or abs(t["diff"]) > (fd.get("tol") or 0)]
+    out.append(("", f"시장 합계 {len(fd.get('market_totals') or [])}칸 중 {len(moved)}칸 바뀜"))
+    for t in moved:
+        out.append(("", f"  {t['market']} {ko.get(t['actor'], t['actor'])} {t['win']}일 "
+                        f"{f(t.get('old'))} → {f(t.get('new'))} ({f(t.get('diff'))})"))
+    out.append(("", f"섹터 칸 {fd.get('n_cells', 0)}칸 중 {fd.get('n_changed', 0)}칸 바뀜 — 큰 순"))
+    for r in fd.get("changed") or []:
+        out.append(("", f"  {r['market']}/{r['sector']} {ko.get(r['actor'], r['actor'])} {r['win']}일 "
+                        f"{f(r.get('old'))} → {f(r.get('new'))} ({f(r.get('diff'))})"))
+    return out
+
+
+def help_entries(st: "State") -> list[tuple[str, str]]:
+    """도움말 = 고정 :data:`HELP` + 이 리포트에만 있는 것(잠정 → 확정 변경 목록)."""
+    return HELP + final_diff_help(st.d)
+
+
+def _banner_today(st: State, width: int) -> list[str]:
+    d, mk = st.d, st.market
     mkts = [mk] if mk != "전체" else st.markets[1:]
-
-    tw = _totals_window(d, mk)
-    if tw:
-        rows = _block_rows(d, tw, mk)
-        parts = []
-        for k, ko in ACTORS:
-            vals = [r.get(k) for r in rows if r.get(k) is not None]
-            parts.append(f"{ko} {fmt_amt(sum(vals)) if vals else '—'}")
-        lines.append(_items_line(f" 시장 {mk} 최근 {tw}일 순매수[억]: ", parts, width))
+    lines = _ctx_lines(d, mkts, width)
+    M = ((d.get("today") or {}).get("market") or {}).get(mk) or {}
+    net = M.get("net") or {}
+    parts = [f"{ko} {fmt_amt((net.get(k) or {}).get('v'))}{_pct_tag((net.get(k) or {}).get('pct'))}"
+             for k, ko in ACTORS]
+    head = f" 오늘 {mk} 순매수[억(%ile)]: "
+    if cell_len(head + " · ".join(parts)) <= width:
+        lines.append(pad(head + " · ".join(parts), width))
+    else:                                   # 4주체는 합 ≈ 0 이라 하나라도 잘리면 그림이 틀린다 — 두 줄로
+        lines.append(_items_line(head, parts[:2], width))
+        lines.append(_items_line("   ", parts[2:], width))
+    chips = _gap_chips(d, mkts if mk != "전체" else ["전체", *mkts])
+    if chips:
+        lines.append(_items_line(" ⚠ ", chips + ["종가 환산 vs VWAP — ? 도움말"], width))
     lines.append(pad("", width))
+    lines.append(pad(_first_fitting(width, [
+        f" 오늘 섹터 순매수[억(1년%ile)] — {mk} · 금액 순 · %ile 는 그날 값의 1년 분포",
+        f" 오늘 섹터 순매수[억(1년%ile)] — {mk}"]), width))
+    for a, ko in BANNER_ACTORS:
+        ranked = _today_rank(d, mk, a)
+        top = [f"{s} {fmt_amt(v)}{_pct_tag(p)}" for s, v, p in ranked[:3]]
+        bot = [f"{s} {fmt_amt(v)}{_pct_tag(p)}" for s, v, p in ranked[::-1][:3]]
+        lines.append(_items_line(f"   {ko} 상위: ", top, width))
+        lines.append(_items_line(f"   {ko} 하위: ", bot, width))
+    for a, ko in BANNER_ACTORS:
+        hi, lo = today_extremes(d, mk, a)
+        lines.append(_items_line(f"   {ko} %ile≥{PCT_HI:.0f}: ", hi, width))
+        lines.append(_items_line(f"   {ko} %ile≤{PCT_LO:.0f}: ", lo, width))
+    lines.append(pad("", width))
+    C = d.get("change")
+    if C:
+        lines.append(pad(_first_fitting(width, [
+            f" 직전 리포트({C.get('prev_date', '?')}) 대비 — {C.get('window', 20)}일 순매수 상위"
+            f"{C.get('top_n', 5)} 섹터의 들고 남",
+            f" {str(C.get('prev_date', '?'))[5:]} 대비 {C.get('window', 20)}일 상위{C.get('top_n', 5)} 들고 남"]),
+            width))
+        for a, ko in BANNER_ACTORS:
+            items = change_items(d, mk, a)
+            if items is None:
+                lines.append(pad(f"   {ko}: 비교 없음 — 직전 리포트에 이 시장이 없다", width))
+            else:
+                lines.append(_items_line(f"   {ko}: ", items, width, empty="변동 없음"))
+    else:
+        why = d.get("change_reason") or "비교 못 함"
+        lines.append(pad(_first_fitting(width, [f" 직전 리포트 대비: 비교 없음 — {why}",
+                                                " 직전 리포트 대비: 비교 없음"]), width))
+    return lines
 
+
+def _banner_20d(st: State, width: int) -> list[str]:
+    """옛 리포트(페이로드에 `today` 가 없다) — 20일 블록에서 상위·하위만 적는다."""
+    d, mk, w = st.d, st.market, BANNER_WIN
+    mkts = [mk] if mk != "전체" else st.markets[1:]
+    lines = [pad(_first_fitting(width, [
+        " 이 리포트에는 '오늘' 블록이 없다(옛 형식) — 20일 기준으로 적는다. 다시 만들려면 KR_QUANT_FORCE=1",
+        " 옛 리포트 — '오늘' 블록 없음, 20일 기준", " 옛 리포트 — 20일 기준"]), width)]
     rows = _block_rows(d, w, mk)
     inst = sorted((r for r in rows if r.get("inst") is not None), key=lambda r: -r["inst"])
     trust = _sector_trusted(d, mkts, w)
@@ -1127,58 +1324,38 @@ def banner_lines(st: State, width: int) -> list[str]:
         bot = [f"{_sec_label(r)} {fmt_amt(v)}" for r, v in ranked[::-1][:3]]
         lines.append(_items_line(f" {label} {w}일 순매수 상위[억]: ", top, width))
         lines.append(_items_line(f" {label} {w}일 순매수 하위[억]: ", bot, width))
-    lines.append(pad("", width))
+    return lines
 
+
+def banner_lines(st: State, width: int) -> list[str]:
+    """시작 배너 — 표를 그리기 전에 아무 키로 넘길 수 있는 1회성 **사실 요약**("오늘의 수급").
+
+    점수·순위·추천을 싣지 않는다. 예전 배너는 G 통과 섹터와 곱순위 상위 종목을 먼저
+    보였는데, 검정 결과 섹터 지표는 앞날 증거가 없고 G 는 판정 불가이며, 곱의 종목 축은
+    투신+연기금을 "많이 살수록 좋다" 로 세는데 그 순위 정보는 부호가 **음**이었다
+    (docs/validation/). 그래서 여기에는 누가 어디서 사고팔았나만 적는다 — 모든 값은
+    페이로드 `today`·`change`·`final_diff` 에 이미 있는 것을 옮길 뿐이고, 줄 순서는 금액 크기(측정값)다.
+    웹 수치표 맨 위 "오늘" 패널이 같은 사실을 같은 순서로 적는다.
+    """
+    d = st.d
+    chip = status_chip(d)
+    title = f" 오늘의 수급 · {d.get('asof', '')} {chip} — 아무 키나 눌러 표로"
+    lines = [pad(_first_fitting(width, [title + " · q:종료", title,
+                                        f" 오늘의 수급 · {d.get('asof', '')} {chip}"]), width)]
+    lines += _banner_today(st, width) if st.has_today else _banner_20d(st, width)
+    lines.append(pad("", width))
     ko = ACTORS[st.ai][1]
-    hi, lo, basis = pct_extremes(st)
-    lines.append(pad(f" {ko} {w}일 1년%ile 극단 — {basis}:", width))
-    lines.append(_items_line(f"   ≥{PCT_HI:.0f}: ", hi, width))
-    lines.append(_items_line(f"   ≤{PCT_LO:.0f}: ", lo, width))
-    lines.append(pad("", width))
-
     flips = [f"{s} {fmt_amt(p)}{TREND_ARROW}{fmt_amt(f)}" for s, p, f in reversal_flags(st)]
-    lines.append(pad(f" {ko} 최근 5일 부호가 직전 15일과 반대[억, 직전15일{TREND_ARROW}최근5일]:",
-                     width))
+    lines.append(pad(f" {ko} 최근 5일 부호가 직전 15일과 반대[억, 직전15일{TREND_ARROW}최근5일]:", width))
     lines.append(_items_line("   ", flips, width))
-    lines.append(pad("", width))
+    fdl = final_diff_line(d)
+    if fdl:
+        lines.append(pad(_first_fitting(width, [fdl, fdl.split(" — ")[0]]), width))
     lines.append(pad(_first_fitting(width, [
         " 사실 요약이다 — 순위·추천이 아니다. 섹터 수급의 앞날 관계는 검정함 — 증거 없음(docs/validation/).",
         " 사실 요약 — 추천 아님. 앞날 관계는 검정함 — 증거 없음.",
         " 사실 요약 — 추천 아님."]), width))
     return lines
-
-
-def prior_pct(report_dir: str, asof: str) -> dict | None:
-    """직전 기준일 리포트의 1년 백분위 — `{"asof", "pct1y": {"창|시장": {섹터: {주체: 값}}}}`.
-
-    배너가 "새로 극단에 든 섹터" 를 말하려면 어제 값이 필요한데 페이로드에는 오늘 값만 있다.
-    같은 부모 폴더의 **더 앞** 기준일 폴더 중 `numbers.html` 이 있는 가장 최근 것을 읽는다
-    (수집 미완 폴더는 `numbers.html` 이 없어 저절로 건너뛴다). 못 읽으면 None — 배너는 그때
-    "지금 극단" 을 적고 그렇다고 말한다.
-    """
-    real = os.path.realpath(os.path.expanduser(report_dir))
-    root = os.path.dirname(real)
-    try:
-        days = sorted((n for n in os.listdir(root)
-                       if _REPORT_DAY.fullmatch(n) and n < str(asof)), reverse=True)
-    except OSError:
-        return None
-    for n in days:
-        path = os.path.join(root, n, "numbers.html")
-        if not os.path.exists(path):
-            continue
-        try:
-            with open(path, encoding="utf-8") as f:
-                m = re.search(r"const D = (\{.*?\});\n", f.read(), re.S)
-            pd = json.loads(m.group(1)) if m else None
-        except (OSError, UnicodeDecodeError, ValueError):
-            pd = None
-        if not pd:
-            return None
-        return {"asof": pd.get("asof", n),
-                "pct1y": {k: {r.get("sector"): r.get("pct1y") or {} for r in b.get("rows") or []}
-                          for k, b in (pd.get("blocks") or {}).items()}}
-    return None
 
 
 _REPORT_DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
@@ -1892,6 +2069,8 @@ EVIDENCE = {
     "exp": B_MEAS, "U": B_MEAS, "P": B_MEAS, "xdot": B_MEAS, "xddot": B_MEAS,
     "ret": B_MEAS, "pct": B_MEAS, "spark": B_MEAS, "tv": B_MEAS, "cap": B_MEAS,
     "n_all": B_MEAS,
+    # 오늘(첫 화면·웹 '오늘' 패널) — 금액 근사 오차와 KRX 지수(정규장) 수익률은 잰 값이다.
+    "gap": B_MEAS, "krx": B_MEAS,
 }
 
 #: 도움말 열 이름 → (증거 표지, 한 줄 근거). 섹터 표 절.
@@ -1979,7 +2158,8 @@ HELP = [
     ("↑↓ j k", "한 줄 이동. g·Home 처음 · G·End 끝 · PgUp/PgDn 한 화면씩."),
     ("Enter l →", "그 섹터의 전 종목 보기(드릴다운)."),
     ("h ← Esc", "드릴다운에서 나가기. h 는 vim 의 '왼쪽' 이라 l 의 반대다."),
-    ("w W", "구간 5·20·60·120(탐색 모드는 종합까지). 대문자는 역방향."),
+    ("w W", "구간 1·5·20·60·120(탐색 모드는 종합까지). 대문자는 역방향."),
+    ("", "        1일은 기준일 하루의 사실만 — 가속·미실현·풀림·G·추이는 `—` 다."),
     ("", "        드릴다운에서도 듣는다."),
     ("m M", "시장 전체·거래소·코스닥. 대문자는 역방향."),
     ("a A", "주체 기관·외국인·개인·기타법인. 대문자는 역방향."),
@@ -2008,6 +2188,24 @@ HELP = [
     (B_NEG, "종목 투신+연기금 20일의 섹터 안 순위: IC 가 음으로 확인됐다."),
     ("", "        그러나 매수 상위 회피는 확인 구간에서 역효과였다 — 쓸 수 없다."),
     ("", "        화면의 값은 앞날 예측이 아니라 누가 무엇을 사고파나의 관측이다."),
+    ("", ""),
+    ("", "── 오늘 — 첫 화면(오늘의 수급)과 1일 창 ──"),
+    ("", "첫 화면은 기준일 **하루**의 사실이다. 웹 수치표 맨 위 '오늘' 패널과 같은 말이다."),
+    ("수익률", "리포트의 모든 수익률은 **전일 20:00 → 당일 20:00** 이다."),
+    ("", "        2026-09-14 부터 일별 종가가 애프터마켓(16:00~20:00) 포함 통합값이다."),
+    ("", "        KRX 지수(정규장 15:30)와 같은 날 2%p 넘게 갈린다 — 11-06 거래소 자체"),
+    ("", "        바구니 −4.37% vs 코스피 −6.02%(정규장 종가로 다시 재면 0.01%p 안)."),
+    ("", "        첫 화면은 둘을 나란히 적는다: 자체 바구니(~20시) | KRX 지수(정규장)."),
+    ("오늘%ile", "그날 순매수가 오늘 포함 최근 260거래일 **일별** 값 중 몇 등 [0~100]."),
+    ("", "        동률은 중간순위. 0(또는 미보고)인 날이 75% 를 넘는 줄은 `—` 다."),
+    ("", "        첫 화면은 기관·투신+연기금의 상위·하위 3(금액 순)과 ≥95·≤5 섹터."),
+    ("직전 대비", "직전 거래일 리포트가 **게시한 그대로의** 20일 순매수 순위와 견준"),
+    ("", "        상위 5 섹터의 들고 남(기관·투신+연기금). 없으면 이유를 적는다."),
+    ("금액 오차", "순매수 금액은 수량 × 종가 근사다. 시장마다 그날 Σ|4주체 수량|×종가와"),
+    ("", "        Σ|수량|×VWAP(거래대금÷거래량, daily_bars)의 차이가 5% 를 넘으면"),
+    ("", "        '금액 근사 오차 큼' 칩이 뜬다. 코스닥 섹터 단위는 불안정(검증 Q3b)."),
+    ("잠정→확정", "확정 리포트에서 바꿔 끼운 잠정 리포트 대비 1·5일 순매수가 반올림"),
+    ("", "        (±0.05억)을 넘게 바뀐 칸 수. 목록은 이 도움말 맨 끝에 붙는다."),
     ("", ""),
     ("", "── 섹터 표 ──"),
     ("섹터", "벤더 분류(stocks.sector) 27개. KRX 업종 분류와 다르다."),
@@ -2039,6 +2237,7 @@ HELP = [
     ("가속[%p]", "임펄스 ÷ 구간말 섹터 시총 × 100 [%p]. 물리로 a = F/m."),
     ("", "        금액만 보면 대형 섹터가 늘 이기므로 쏠림은 이쪽이 정직하다."),
     ("1년[%ile]", "그 주체의 롤링 N일 순매수 합, **최근 1년(260거래일) 분포에서 몇 등**인가"),
+    ("", "        (1일 창은 그날 값의 일별 분포 — 첫 화면의 오늘%ile 과 같다)."),
     ("", "        [0~100]. 100=1년 최대 매수 · 0=최대 매도 · 50=평범. 동률은 중간순위."),
     ("", "        z 를 안 쓴다 — 구간이 겹쳐 자기상관이 크고 260일에 비겹침 20일 구간은"),
     ("", "        13개뿐이라 z 는 정밀도를 과장한다. 이 표에서 **유일한 시계열 맥락**이다"),
@@ -2051,6 +2250,7 @@ HELP = [
     ("", "        행끼리 비교되지 않는다 — 크기는 임펄스 열이 말한다."),
     ("", "        짧은 구간(5일)은 조각이 모자라 왼쪽이 빈다(⠀)."),
     ("수익률[%]", "그 섹터 **자체 바구니**의 구간 수익률 [%], 전일 시총 가중."),
+    ("", "        종가는 애프터마켓 포함 통합값 — 하루는 전일 20:00→당일 20:00 다."),
     ("", "        KRX 업종지수가 아니다 — 구성종목이 달라 분자·분모가 어긋난다."),
     ("예상Δv", "k × 가속 + b. k·b 는 10종목 이상 섹터의 횡단면 회귀(절편 포함 OLS)."),
     ("미실현[%p]", "예상Δv − 실제 수익률 [%p]. + 는 적합선 대비 덜 오른 폭이다"),
@@ -2212,7 +2412,7 @@ HINT_DESC = {
     "임펄스[억]": "구간 누적 순매수 [억원] — 수량 × 그날 종가",
     "1년[%ile]": "이 순매수가 최근 1년 분포에서 몇 등 [0~100]",
     "추이[8]": "구간 동안 순매수가 누적된 경로. 왼쪽이 시작",
-    "수익률[%]": "그 섹터 바구니의 구간 수익률 [%], 시총 가중",
+    "수익률[%]": "섹터 바구니 구간 수익률 [%], ~20시 통합종가",
     "미실현[%p]": "예상Δv − 실제 수익률 [%p]. + 면 덜 올랐다",
     "풀림[%p/일²]": "미실현이 해소되는 2차 변화 [%p/일²]",
     "G": "관문 통과 섹터끼리의 순위 평균 [0~1]",
