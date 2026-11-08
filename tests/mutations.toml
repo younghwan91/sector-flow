@@ -6047,8 +6047,8 @@ id = "byo-token-conflict-loops"
 why = "새 토큰도 무효인데 계속 재발급한다(같은 키를 쓰는 다른 프로그램과 서로 밀어낸다)"
 guards = ["tests/test_collect_kiwoom.py::test_second_invalid_token_is_a_conflict_not_a_loop"]
 file = "src/sectorflow/collect/kiwoom.py"
-find = "                if not refreshed:\n"
-replace = "                if True:\n"
+find = "if not refreshed and self.reissues < self.max_reissues:"
+replace = "if self.reissues < self.max_reissues:"
 
 [[mutation]]
 id = "byo-rc5-not-retried"
@@ -6241,14 +6241,6 @@ find = "        n += write.upsert_shares(con, seed, \"seed\")\n"
 replace = "        n += 0\n"
 
 [[mutation]]
-id = "byo-busy-window-on-weekend"
-why = "주말도 운영 창으로 막는다(또는 그 반대)"
-guards = ["tests/test_collect_backfill.py::test_busy_window"]
-file = "src/sectorflow/collect/run.py"
-find = "    if now.weekday() >= 5:\n"
-replace = "    if now.weekday() >= 7:\n"
-
-[[mutation]]
 id = "equiv-flow-diff-blind"
 why = "순매수 대조가 자기 자신과 비교해 차이를 못 본다"
 guards = ["tests/test_collect_equiv.py::test_flow_difference_is_located_by_sector_actor_and_day"]
@@ -6319,3 +6311,147 @@ guards = ["tests/test_packaging.py::test_entry_point_runs_the_repo_script_in_a_c
 file = "src/sectorflow/report_cli.py"
 find = "for base in (_HERE / \"_scripts\", _HERE.parents[1] / \"scripts\"):"
 replace = "for base in (_HERE / \"_scripts\",):"
+
+[[mutation]]
+id = "byo-reissue-cap-dropped"
+why = "토큰 재발급이 요청마다 1회씩 허용돼, 같은 키를 쓰는 프로그램과 끝없이 서로 밀어낸다(리뷰 MAJOR 2)"
+guards = ["tests/test_collect_kiwoom.py::test_token_ping_pong_is_capped_per_run"]
+file = "src/sectorflow/collect/kiwoom.py"
+find = "if not refreshed and self.reissues < self.max_reissues:"
+replace = "if not refreshed:"
+
+[[mutation]]
+id = "byo-busy-checked-only-at-start"
+why = "운영 창을 시작할 때 한 번만 봐 긴 백필이 창 안으로 걸어 들어가도 계속 부른다(리뷰 MAJOR 1)"
+guards = ["tests/test_collect_kiwoom.py::test_guard_runs_before_every_request_including_token", "tests/test_collect_backfill.py::test_busy_window_mid_run_stops_before_sending_and_resume_finishes"]
+file = "src/sectorflow/collect/kiwoom.py"
+find = "        if self._guard is not None:\n            self._guard()\n"
+replace = ""
+
+[[mutation]]
+id = "byo-busy-host-file-misses-intraday"
+why = "simnode 창이 옛 판처럼 장중(scalp-it 08:55~15:40)을 빼먹는다"
+guards = ["tests/test_collect_busy.py::test_simnode_windows_cover_every_job_using_the_key"]
+file = "deploy/kiwoom_busy.simnode.toml"
+find = "start = \"08:45\""
+replace = "start = \"15:30\""
+
+[[mutation]]
+id = "byo-busy-host-file-too-broad"
+why = "창이 넓어져 키를 아무도 안 쓰는 시간까지 막는다"
+guards = ["tests/test_collect_busy.py::test_simnode_free_times"]
+file = "deploy/kiwoom_busy.simnode.toml"
+find = "end = \"20:00\""
+replace = "end = \"23:59\""
+
+[[mutation]]
+id = "byo-busy-day-inverted"
+why = "요일 판정이 뒤집혀 창 밖 요일에 막고 창 안 요일에 부른다"
+guards = ["tests/test_collect_busy.py::test_simnode_windows_cover_every_job_using_the_key"]
+file = "src/sectorflow/collect/busy.py"
+find = "return now.weekday() in self.days and"
+replace = "return now.weekday() not in self.days and"
+
+[[mutation]]
+id = "byo-busy-bad-window-accepted"
+why = "끝이 시작보다 이른 창을 받아 들여 아무 시각도 막지 않는다"
+guards = ["tests/test_collect_busy.py::test_bad_window_is_rejected"]
+file = "src/sectorflow/collect/busy.py"
+find = "if not days or start >= end:"
+replace = "if not days:"
+
+[[mutation]]
+id = "byo-no-shared-key-warning"
+why = "창 설정이 없을 때 키를 나눠 쓰면 토큰이 충돌한다는 경고가 없다"
+guards = ["tests/test_collect_busy.py::test_no_window_file_warns_about_shared_keys"]
+file = "src/sectorflow/collect/run.py"
+find = "        print(busy.SHARED_KEY_WARNING, file=sys.stderr)\n"
+replace = "        pass\n"
+
+[[mutation]]
+id = "byo-resume-refetches-done"
+why = "--resume 이 끝난 종목을 다시 받아 호출을 낭비한다"
+guards = ["tests/test_collect_backfill.py::test_busy_window_mid_run_stops_before_sending_and_resume_finishes"]
+file = "src/sectorflow/collect/run.py"
+find = "            if code in done:\n"
+replace = "            if False:\n"
+
+[[mutation]]
+id = "byo-truncation-looks-like-listing"
+why = "ka10059 가 쪽 상한에서 잘린 것을 신규 상장으로 보고 성공으로 넘긴다"
+guards = ["tests/test_collect_backfill.py::test_truncated_history_fails_but_new_listing_is_only_a_note"]
+file = "src/sectorflow/collect/run.py"
+find = "if info.get(\"more\"):"
+replace = "if False:"
+
+[[mutation]]
+id = "byo-pages-more-never-set"
+why = "연속조회 잘림 표시(more)가 늘 거짓이다"
+guards = ["tests/test_collect_kiwoom.py::test_pages_info_tells_truncation_from_end_of_history"]
+file = "src/sectorflow/collect/kiwoom.py"
+find = "                more = True\n"
+replace = "                more = False\n"
+
+[[mutation]]
+id = "byo-expiry-host-local"
+why = "키움 expires_dt(KST)를 호스트 시간대로 읽어 UTC 호스트에서 토큰을 9시간 늦게 갱신한다"
+guards = ["tests/test_collect_kiwoom.py::test_expires_dt_is_read_as_kst_regardless_of_host_timezone"]
+file = "src/sectorflow/collect/kiwoom.py"
+find = ".replace(tzinfo=KST).timestamp()"
+replace = ".timestamp()"
+
+[[mutation]]
+id = "byo-mask-misses-single-quotes"
+why = "파이썬 dict repr(작은따옴표)의 토큰·키를 못 가린다"
+guards = ["tests/test_collect_kiwoom.py::test_mask_covers_single_quoted_and_bearer_forms"]
+file = "src/sectorflow/collect/auth.py"
+find = "_JSON_SECRET = re.compile(r\"\"\"(?i)([\"']?(?:token|appkey|secretkey|app_key|app_secret|authorization)[\"']?\"\"\"\n                          r\"\"\"\\s*[:=]\\s*[\"']?)[^\"',\\s}]+\"\"\")"
+replace = "_JSON_SECRET = re.compile(r'(?i)(\"?(?:token|appkey|secretkey|app_key|app_secret|authorization)\"?\\s*[:=]\\s*\"?)'\n                          r'[^\",\\s}]+')"
+
+[[mutation]]
+id = "byo-env-export-ignored"
+why = "`export KIWOOM_APP_KEY=` 줄을 못 읽는다"
+guards = ["tests/test_collect_kiwoom.py::test_env_file_accepts_export_lines"]
+file = "src/sectorflow/collect/auth.py"
+find = "if line.startswith(\"export \"):"
+replace = "if False:"
+
+[[mutation]]
+id = "byo-events-wiped-outside-range"
+why = "증분 응답이 범위 밖의 과거 분할·병합까지 지운다"
+guards = ["tests/test_collect_backfill.py::test_replace_events_keeps_events_outside_the_response_range"]
+file = "src/sectorflow/collect/write.py"
+find = "\"DELETE FROM corporate_actions WHERE code = ? AND date >= ? AND date <= ?\", (code, lo, hi))"
+replace = "\"DELETE FROM corporate_actions WHERE code = ? AND ? <= ?\", (code, lo, hi))"
+
+[[mutation]]
+id = "equiv-slice-overwrites"
+why = "equiv slice 가 --force 없이 기존 --out 을 지운다"
+guards = ["tests/test_collect_equiv.py::test_slice_refuses_to_overwrite_without_force"]
+file = "src/sectorflow/collect/equiv.py"
+find = "if os.path.exists(out) and not force:"
+replace = "if False:"
+
+[[mutation]]
+id = "wheel-ships-remote-fonts"
+why = "설치본 템플릿이 Google Fonts 를 불러 제3자 네트워크로 나간다"
+guards = ["tests/test_packaging.py::test_hook_ships_offline_templates", "tests/test_packaging.py::test_strip_remote_keeps_clickable_links"]
+file = "src/sectorflow/offline_templates.py"
+find = "return _CSS_IMPORT.sub(\"\", _REMOTE_LINK.sub(\"\", html))"
+replace = "return html"
+
+[[mutation]]
+id = "wheel-drops-a-template"
+why = "wheel 템플릿 목록에서 하나가 빠져 설치본이 그 HTML 을 못 만든다"
+guards = ["tests/test_packaging.py::test_report_entry_points_ship_their_script_and_templates"]
+file = "src/sectorflow/offline_templates.py"
+find = "TEMPLATES = (\"sector_flow.html\", \"sector_numbers.html\")"
+replace = "TEMPLATES = (\"sector_flow.html\",)"
+
+[[mutation]]
+id = "shipped-code-phones-home"
+why = "설치본 코드에 키움 밖 목적지가 생긴다(텔레메트리·중계)"
+guards = ["tests/test_packaging.py::test_shipped_code_talks_only_to_kiwoom"]
+file = "src/sectorflow/collect/kiwoom.py"
+find = "PROD_URL = \"https://api.kiwoom.com\"\n"
+replace = "PROD_URL = \"https://api.kiwoom.com\"\nSTATS_URL = \"https://stats.example.com/ping\"\n"

@@ -186,3 +186,72 @@ def test_failed_token_issue_does_not_echo_secret():
     with pytest.raises(K.KiwoomError) as e:
         api.request("ka10001", {})
     assert FAKE_KEY not in str(e.value)
+
+
+def test_token_ping_pong_is_capped_per_run():
+    """다른 프로그램과 서로 밀어내면 요청마다 1회씩 재발급해 끝없이 핑퐁한다 — 실행당 상한에서 멈춘다."""
+    bad = (200, {}, {"return_code": 3, "return_msg": "8005"})
+    fake = Fake([bad, ok(), bad, ok(), bad, ok()])
+    api, _ = _api(fake, rate=None, max_reissues=2)
+    api.request("ka10001", {})
+    api.request("ka10001", {})
+    with pytest.raises(K.TokenConflict):
+        api.request("ka10001", {})
+    assert api.reissues == 2 and fake.tokens == 3
+
+
+def test_expires_dt_is_read_as_kst_regardless_of_host_timezone(monkeypatch):
+    import time
+    from datetime import datetime, timezone
+    want = datetime(2026, 11, 8, 15, 0, tzinfo=timezone.utc).timestamp()   # = 2026-11-09 00:00 KST
+    for tz in ("UTC", "America/New_York"):        # 이 호스트는 KST 라 순진한 해석도 맞아 보인다 — 시간대를 바꿔 본다
+        monkeypatch.setenv("TZ", tz)
+        time.tzset()
+        try:
+            assert K._parse_expiry({"expires_dt": "20261109000000"}, lambda: 0.0) == want, tz
+        finally:
+            monkeypatch.undo()
+            time.tzset()
+
+
+def test_pages_info_tells_truncation_from_end_of_history():
+    more = ok({"rows": [{"dt": "20260601"}]}, **{"cont-yn": "Y", "next-key": "K"})
+    end = ok({"rows": [{"dt": "20260101"}]}, **{"cont-yn": "N", "next-key": ""})
+    api, _ = _api(Fake([more, more, more, end]), rate=None)
+    info: dict = {}
+    api.request_pages("ka10059", {}, "rows", max_pages=2, info=info)
+    assert info == {"pages": 2, "more": True, "stopped": False}
+    info = {}
+    api.request_pages("ka10059", {}, "rows", max_pages=5, info=info)
+    assert info == {"pages": 2, "more": False, "stopped": False}
+
+
+def test_guard_runs_before_every_request_including_token():
+    seen: list[str] = []
+
+    def guard():
+        seen.append("g")
+        if len(seen) == 3:
+            raise K.BusyWindow("창")
+    fake = Fake([ok(), ok()])
+    api, _ = _api(fake, rate=None, guard=guard)
+    api.request("ka10001", {})          # 토큰(1) + 요청(2)
+    with pytest.raises(K.BusyWindow):
+        api.request("ka10001", {})      # 3번째 검사에서 멈춘다 — 요청은 안 나간다
+    assert len(fake.sent) == 1
+
+
+def test_mask_covers_single_quoted_and_bearer_forms():
+    from sectorflow.collect.auth import mask
+    out = mask(str({"token": "abc123", "appkey": "k1"}) + ' {"secretkey": "s9"} Bearer zzz')
+    for s in ("abc123", "k1", "s9", "zzz"):
+        assert s not in out
+
+
+def test_env_file_accepts_export_lines(tmp_path, monkeypatch):
+    from sectorflow.collect.auth import load_keys
+    monkeypatch.delenv("KIWOOM_APP_KEY", raising=False)
+    monkeypatch.delenv("KIWOOM_APP_SECRET", raising=False)
+    f = tmp_path / ".env"
+    f.write_text("# c\nexport KIWOOM_APP_KEY='kk'\nKIWOOM_APP_SECRET=ss\n", encoding="utf-8")
+    assert load_keys(f) == ("kk", "ss")

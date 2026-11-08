@@ -37,7 +37,11 @@ packages = ["src/sectorflow"]
 "scripts/sector_numbers.py" = "sectorflow/_scripts/sector_numbers.py"
 "scripts/completeness_gate.py" = "sectorflow/_scripts/completeness_gate.py"
 "scripts/verify_report.py" = "sectorflow/_scripts/verify_report.py"
-"scripts/templates" = "sectorflow/_scripts/templates"
+# 템플릿(sector_flow.html·sector_numbers.html)은 여기 말고 빌드 훅(hatch_build.py)이 파일 하나씩 싣는다 —
+# 설치본은 원격 글꼴을 부르지 않게 떼어 낸 사본이다(src/sectorflow/offline_templates.py).
+
+[tool.hatch.build.targets.wheel.hooks.custom]
+path = "hatch_build.py"
 
 [tool.ruff.lint]
 # 룰셋을 명시한다 — ruff 기본 선택은 릴리스마다 넓어진다. dev extra 의 ruff 핀과 한 쌍이다.

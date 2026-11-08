@@ -28,6 +28,8 @@ def load_keys(env_path: "str | Path | None" = None) -> tuple[str, str]:
             line = line.strip()
             if line.startswith("#") or "=" not in line:
                 continue
+            if line.startswith("export "):
+                line = line[len("export "):].lstrip()
             name, value = line.split("=", 1)
             value = value.strip().strip('"').strip("'")
             if name.strip() == KEY_ENV and not key:
@@ -40,8 +42,8 @@ def load_keys(env_path: "str | Path | None" = None) -> tuple[str, str]:
 
 
 _BEARER = re.compile(r"(?i)(bearer\s+)[A-Za-z0-9._\-+/=]+")
-_JSON_SECRET = re.compile(r'(?i)("?(?:token|appkey|secretkey|app_key|app_secret|authorization)"?\s*[:=]\s*"?)'
-                          r'[^",\s}]+')
+_JSON_SECRET = re.compile(r"""(?i)(["']?(?:token|appkey|secretkey|app_key|app_secret|authorization)["']?"""
+                          r"""\s*[:=]\s*["']?)[^"',\s}]+""")
 
 
 def mask(text: object, *secrets: str) -> str:

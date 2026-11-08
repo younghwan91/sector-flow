@@ -49,12 +49,15 @@ def _val(v: Any) -> Any:
 
 
 # ── slice ──────────────────────────────────────────────────────────────────
-def slice_kr_quant(dsn: str, out: str, sectors: list[str], start: str, end: str) -> dict:
+def slice_kr_quant(dsn: str, out: str, sectors: list[str], start: str, end: str, *,
+                   force: bool = False) -> dict:
     """kr_quant 에서 ``sectors`` 종목 전부와 그 업종지수를 ``[start, end]`` 로 잘라 sqlite 에 쓴다.
 
     주식수·기업행동은 날짜로 자르지 않는다 — as-of 조회가 구간 앞의 행을 쓰고(``market_cap_asof_bulk``),
     구간 뒤 행은 ``end`` 이하만 남긴다(리포트가 미래 행을 볼 일이 없게).
     """
+    if os.path.exists(out) and not force:
+        raise SystemExit(f"{out} 가 이미 있다 — 덮어쓰려면 --force")
     src = connect(dsn)
     if os.path.exists(out):
         os.remove(out)
@@ -326,6 +329,7 @@ def main(argv: "list[str] | None" = None) -> int:
     s.add_argument("--start")
     s.add_argument("--end")
     s.add_argument("--out", required=True)
+    s.add_argument("--force", action="store_true", help="--out 이 이미 있으면 지우고 다시 만든다")
     r = sub.add_parser("rowdiff")
     r.add_argument("a")
     r.add_argument("b")
@@ -345,7 +349,8 @@ def main(argv: "list[str] | None" = None) -> int:
             span = _frame(args.like, "SELECT min(date) a, max(date) b FROM supply_demand")
             start, end = start or span["a"][0], end or span["b"][0]
         sectors = [x.strip() for x in args.sectors.split(",") if x.strip()]
-        print(json.dumps(slice_kr_quant(args.dsn, args.out, sectors, start, end), ensure_ascii=False))
+        print(json.dumps(slice_kr_quant(args.dsn, args.out, sectors, start, end, force=args.force),
+                         ensure_ascii=False))
         return 0
     if args.cmd == "rowdiff":
         print(json.dumps(rowdiff(args.a, args.b, start=args.start), ensure_ascii=False, indent=1,

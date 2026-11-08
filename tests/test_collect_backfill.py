@@ -2,7 +2,8 @@
 
 지키는 것: 수집기가 쓰는 표·열·날짜 모양이 리포트 코드가 읽는 것과 맞는다 · 섹터 필터·보통주 필터 ·
 업종지수는 고른 섹터와 이름이 같은 코드 + 종합 둘 · 주식수 시드 덕에 과거 시총(=섹터 수익률 가중치)이 비지
-않는다 · 원장(collect_runs)에 호출 수가 남는다 · 운영 창에는 돌지 않는다.
+않는다 · 원장(collect_runs)에 호출 수가 남는다 · 운영 창에 들어서면 요청 전에 멈추고 --resume 이 이어 받는다 ·
+ka10059 가 잘린 것(쪽 상한)과 신규 상장의 짧은 이력을 가른다 · 증분 응답이 범위 밖 기업행동을 지우지 않는다.
 """
 
 from __future__ import annotations
@@ -10,7 +11,6 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
-from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -34,8 +34,10 @@ def _price(code: str, i: int) -> int:
 
 
 class FakeKiwoom:
-    def __init__(self):
+    def __init__(self, sd_days: "dict[str, int] | None" = None, sd_more: bool = False):
         self.seen: list[str] = []
+        self.sd_days = sd_days or {}     # 종목별 수급 이력 길이(신규 상장 흉내)
+        self.sd_more = sd_more           # 쪽마다 "더 있다"(cont-yn=Y) — 잘림 흉내
 
     def __call__(self, url, headers, body, timeout):
         if url.endswith(K.TOKEN_PATH):
@@ -59,11 +61,13 @@ class FakeKiwoom:
                 for k, d in enumerate(newest_first)]}
         code = body["stk_cd"]
         if tr == "ka10059":
-            return 200, {"cont-yn": "N"}, {"return_code": 0, "stk_invsr_orgn": [
+            n = self.sd_days.get(code, len(DAYS))
+            hdr = {"cont-yn": "Y", "next-key": "K"} if self.sd_more else {"cont-yn": "N"}
+            return 200, hdr, {"return_code": 0, "stk_invsr_orgn": [
                 {"dt": d, "cur_prc": f"-{_price(code, len(DAYS) - k)}", "flu_rt": "+10",
                  "acc_trde_qty": "1000", "ind_invsr": "-300", "frgnr_invsr": "+100", "orgn": "+150",
                  "fnnc_invt": "50", "insrnc": "0", "invtrt": "40", "bank": "0", "penfnd_etc": "60",
-                 "samo_fund": "0", "natn": "0", "etc_corp": "+50"} for k, d in enumerate(newest_first)]}
+                 "samo_fund": "0", "natn": "0", "etc_corp": "+50"} for k, d in enumerate(newest_first[:n])]}
         if tr == "ka10081":
             ev = {DAYS[20]: ("8", "-50.00")} if code == "000120" else {}
             return 200, {}, {"return_code": 0, "stk_dt_pole_chart_qry": [
@@ -76,11 +80,15 @@ class FakeKiwoom:
         raise AssertionError(tr)
 
 
+def _patch(monkeypatch, fake, guard=None):
+    monkeypatch.setattr(R, "_client", lambda args: K.KiwoomRest(
+        "k", "s", transport=fake, rate=None, max_calls=args.max_calls, sleep=lambda s: None, guard=guard))
+
+
 @pytest.fixture
 def backfilled(tmp_path, monkeypatch):
     fake = FakeKiwoom()
-    monkeypatch.setattr(R, "_client", lambda args: K.KiwoomRest(
-        "k", "s", transport=fake, rate=None, max_calls=args.max_calls, sleep=lambda s: None))
+    _patch(monkeypatch, fake)
     db = tmp_path / "byo.db"
     rc = R.main(["backfill", "--db", str(db), "--sectors", "운송/창고", "--days", "30"])
     return rc, db, fake
@@ -129,8 +137,59 @@ def test_report_generator_reads_the_byo_db(backfilled, tmp_path):
     assert P["iret"]["거래소"]["운송/창고"] is not None and P["iret"]["코스닥"]["운송/창고"] is not None
 
 
-@pytest.mark.parametrize("when,busy", [
-    ("2026-11-09 16:00", True), ("2026-11-09 07:00", True), ("2026-11-09 12:00", False),
-    ("2026-11-08 16:00", False), ("2026-11-09 19:30", False)])
-def test_busy_window(when, busy):
-    assert R.busy_window(datetime.strptime(when, "%Y-%m-%d %H:%M")) is busy
+def test_busy_window_mid_run_stops_before_sending_and_resume_finishes(tmp_path, monkeypatch):
+    import sqlite3
+    db = tmp_path / "byo.db"
+    fake = FakeKiwoom()
+    state = {"n": 0, "limit": 15}       # 토큰·지수·목록 9건 + 첫 종목 4건 뒤, 둘째 종목의 셋째 요청에서 창이 열린다
+
+    def guard():
+        state["n"] += 1
+        if state["n"] > state["limit"]:
+            raise K.BusyWindow("운영 창")
+    _patch(monkeypatch, fake, guard)
+    assert R.main(["backfill", "--db", str(db), "--sectors", "운송/창고", "--days", "30"]) == R.EXIT_BUSY
+    sent_before = len(fake.seen)
+    assert sent_before == state["limit"] - 1          # 창에 걸린 요청은 나가지 않았다(토큰 1건 제외)
+    con = sqlite3.connect(db)
+    assert [r[0] for r in con.execute("SELECT code FROM collect_done")] == ["000120"]
+    assert con.execute("SELECT count(*) FROM supply_demand WHERE code='044490'").fetchone() == (0,)  # 롤백
+    assert "busy" in con.execute("SELECT notes FROM collect_runs").fetchone()[0]
+    con.close()
+
+    state["limit"] = 10**9
+    assert R.main(["backfill", "--db", str(db), "--sectors", "운송/창고", "--days", "30", "--resume"]) == 0
+    resumed = fake.seen[sent_before:]
+    assert resumed.count("ka10059") == 1 and resumed.count("ka10001") == 1   # 끝난 000120 은 다시 안 받는다
+    con = sqlite3.connect(db)
+    assert sorted(r[0] for r in con.execute("SELECT code FROM collect_done")) == ["000120", "044490"]
+
+
+def test_truncated_history_fails_but_new_listing_is_only_a_note(tmp_path, monkeypatch):
+    import sqlite3
+    _patch(monkeypatch, FakeKiwoom(sd_days={"044490": 12}))
+    db = tmp_path / "a.db"
+    assert R.main(["backfill", "--db", str(db), "--sectors", "운송/창고", "--days", "30"]) == 0
+    con = sqlite3.connect(db)
+    failed, notes = con.execute("SELECT failed, notes FROM collect_runs").fetchone()
+    assert json.loads(failed) == [] and "044490" in notes and "이력 시작" in notes
+
+    _patch(monkeypatch, FakeKiwoom(sd_days={"044490": 12}, sd_more=True))
+    db = tmp_path / "b.db"
+    R.main(["backfill", "--db", str(db), "--sectors", "운송/창고", "--days", "30"])
+    con = sqlite3.connect(db)
+    failed = json.loads(con.execute("SELECT failed FROM collect_runs").fetchone()[0])
+    assert [f[0] for f in failed if f[1] == "ka10059"] == ["044490"] and "잘림" in failed[0][2]
+
+
+def test_replace_events_keeps_events_outside_the_response_range(tmp_path):
+    from sectorflow.collect import write
+    con = write.open_db(tmp_path / "e.db")
+    write.replace_events(con, "000120", [("000120", "2024-03-02", "8", -50.0),
+                                         ("000120", "2026-05-20", "16", 900.0)], "2024-01-01", "2026-11-06")
+    # 증분 실행: 최근 15일만 덮는 응답 — 그 안에 이벤트가 없어도 과거 분할은 남아야 한다
+    write.replace_events(con, "000120", [], "2026-10-20", "2026-11-06")
+    assert [r[0] for r in con.execute("SELECT date FROM corporate_actions ORDER BY date")] == [
+        "2024-03-02", "2026-05-20"]
+    write.replace_events(con, "000120", [], "2026-05-01", "2026-11-06")
+    assert [r[0] for r in con.execute("SELECT date FROM corporate_actions")] == ["2024-03-02"]

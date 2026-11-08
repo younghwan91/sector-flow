@@ -9,10 +9,14 @@ from __future__ import annotations
 
 import ast
 import importlib
+import importlib.util
+import re
 import subprocess
 import sys
 import tomllib
 from pathlib import Path
+
+from sectorflow import offline_templates as T
 
 REPO = Path(__file__).resolve().parent.parent
 PY = tomllib.loads((REPO / "pyproject.toml").read_text("utf-8"))
@@ -39,9 +43,63 @@ def test_report_entry_points_ship_their_script_and_templates():
         mod, fn = target.split(":")
         if mod == "sectorflow.report_cli":
             assert _runs(fn) in shipped, f"{name}: {_runs(fn)} 가 wheel 에 안 실린다(force-include)"
-    assert "templates" in shipped, "템플릿 없이는 HTML 을 못 만든다"
     for src in FORCE:
-        assert (REPO / src).exists(), f"force-include 원본이 없다: {src}"
+        assert (REPO / src).is_file(), f"force-include 는 파일 하나씩이다 — 없거나 폴더다: {src}"
+    # 템플릿은 빌드 훅이 원격 글꼴을 떼고 파일 하나씩 싣는다 — 목록이 레포 템플릿 전부를 덮어야 한다.
+    hook = PY["tool"]["hatch"]["build"]["targets"]["wheel"]["hooks"]["custom"]
+    assert (REPO / hook["path"]).is_file()
+    assert sorted(T.TEMPLATES) == sorted(p.name for p in (REPO / "scripts/templates").glob("*.html"))
+
+
+def test_hook_ships_offline_templates(tmp_path):
+    """훅을 hatchling 없이 흉내 내 돌린다 — 싣는 사본에 자동으로 불러오는 원격 자원이 없어야 한다."""
+    import types
+    sys.modules.setdefault("hatchling", types.ModuleType("hatchling"))
+    for m in ("hatchling.builders", "hatchling.builders.hooks", "hatchling.builders.hooks.plugin"):
+        sys.modules.setdefault(m, types.ModuleType(m))
+    iface = types.ModuleType("hatchling.builders.hooks.plugin.interface")
+    iface.BuildHookInterface = type("BuildHookInterface", (), {})
+    sys.modules.setdefault("hatchling.builders.hooks.plugin.interface", iface)
+    spec = importlib.util.spec_from_file_location("_hb", REPO / "hatch_build.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    hook = mod.OfflineTemplates.__new__(mod.OfflineTemplates)
+    hook.root, hook.target_name = str(REPO), "wheel"
+    data: dict = {"force_include": {}}
+    hook.initialize("standard", data)
+    assert sorted(data["force_include"].values()) == sorted(
+        f"sectorflow/_scripts/templates/{n}" for n in T.TEMPLATES)
+    for src in data["force_include"]:
+        html = Path(src).read_text("utf-8")
+        assert not T.AUTO_FETCH.search(html), src
+        assert "googleapis" not in html and "gstatic" not in html
+    editable: dict = {"force_include": {}}
+    hook.initialize("editable", editable)
+    assert editable["force_include"] == {}
+
+
+def test_strip_remote_keeps_clickable_links():
+    html = ('<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n'
+            '<style>@import url("https://x.example/a.css");</style>'
+            '<a href="https://github.com/x">문서</a><svg xmlns="http://www.w3.org/2000/svg"></svg>')
+    out = T.strip_remote(html)
+    assert not T.AUTO_FETCH.search(out)
+    assert '<a href="https://github.com/x">' in out and "w3.org/2000/svg" in out
+
+
+def test_shipped_code_talks_only_to_kiwoom():
+    """설계 §4.2 — 네트워크 목적지는 키움 하나(DART 는 붙일 때 여기 더한다). 중계·공유 캐시·텔레메트리 없음."""
+    allowed = {"api.kiwoom.com"}
+    hosts: dict[str, set[str]] = {}
+    shipped = list((REPO / "src/sectorflow").rglob("*.py")) + [REPO / "scripts" / Path(d).name
+                                                              for d in FORCE.values() if d.endswith(".py")]
+    for f in shipped:
+        for h in re.findall(r"https?://([A-Za-z0-9.\-]+)", f.read_text("utf-8")):
+            hosts.setdefault(h, set()).add(f.name)
+    assert set(hosts) <= allowed, {h: v for h, v in hosts.items() if h not in allowed}
+    net = re.compile(r"^\s*(?:import|from)\s+(socket|http\.client|requests|httpx|aiohttp|urllib3)\b", re.M)
+    offenders = {f.name for f in shipped if net.search(f.read_text("utf-8"))}
+    assert not offenders, offenders
 
 
 def test_entry_point_runs_the_repo_script_in_a_checkout():

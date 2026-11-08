@@ -71,7 +71,7 @@ def stock_list(api: KiwoomRest, market: str, *, max_pages: int = 5) -> list[dict
 
 # ── supply_demand (ka10059) ────────────────────────────────────────────────
 def investor_flow(api: KiwoomRest, code: str, anchor: str, *, max_pages: int = 3,
-                  oldest: str = "") -> list[dict]:
+                  oldest: str = "", info: "dict | None" = None) -> list[dict]:
     """``anchor``(YYYYMMDD)부터 과거로 ``max_pages`` 쪽(한 쪽 ≈ 100거래일). ``oldest`` 에 닿으면 멈춘다.
 
     ``amt_qty_tp=2`` = 수량(주). 리포트는 수량 × 종가로 금액을 복원한다.
@@ -82,7 +82,7 @@ def investor_flow(api: KiwoomRest, code: str, anchor: str, *, max_pages: int = 3
     return api.request_pages(
         "ka10059",
         {"dt": anchor, "stk_cd": code, "amt_qty_tp": "2", "trde_tp": "0", "unit_tp": "1"},
-        SD_KEY, max_pages=max_pages, stop=_stop)
+        SD_KEY, max_pages=max_pages, stop=_stop, info=info)
 
 
 def sd_records(code: str, rows: list[dict], *, oldest: str = "") -> list[tuple]:

@@ -18,7 +18,7 @@ from pathlib import Path
 
 from sectorflow.storage import INVESTOR_COLUMNS, connect
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 BYO_DDL = """
 CREATE TABLE IF NOT EXISTS collect_runs (
@@ -30,7 +30,12 @@ CREATE TABLE IF NOT EXISTS collect_runs (
     calls       TEXT,      -- JSON {api_id: n}
     rows        TEXT,      -- JSON {table: n}
     failed      TEXT,      -- JSON [[code, tr, 이유]]
-    ok          INTEGER
+    ok          INTEGER,
+    notes       TEXT       -- JSON [[code, tr, 메모]] — 실패는 아닌 것(신규 상장의 짧은 이력, 운영 창 중단)
+);
+-- 기준일별로 끝난 종목 — backfill --resume 이 건너뛴다.
+CREATE TABLE IF NOT EXISTS collect_done (
+    code TEXT NOT NULL, asof TEXT NOT NULL, run_id INTEGER, done_at TEXT, PRIMARY KEY (code, asof)
 );
 CREATE TABLE IF NOT EXISTS shares_provenance (
     code TEXT NOT NULL, date TEXT NOT NULL, source TEXT NOT NULL, PRIMARY KEY (code, date)
@@ -53,6 +58,8 @@ def open_db(path: "str | Path") -> sqlite3.Connection:
     for col in ("open", "high", "low"):
         if col not in have:
             con.execute(f"ALTER TABLE daily_bars_adjusted ADD COLUMN {col} REAL")
+    if "notes" not in {r[1] for r in con.execute("PRAGMA table_info(collect_runs)").fetchall()}:
+        con.execute("ALTER TABLE collect_runs ADD COLUMN notes TEXT")   # 판 1 → 2
     ver = con.execute("PRAGMA user_version").fetchone()[0]
     if ver < SCHEMA_VERSION:
         con.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
@@ -92,9 +99,13 @@ def upsert_raw(con, rows: list[tuple]) -> int:
                    [(r[0], r[1], r[5]) for r in rows if r[5]])
 
 
-def replace_events(con, code: str, rows: list[tuple]) -> int:
-    """``corporate_actions`` 는 sqlite 에 PK 가 없다 — 그 종목 행을 지우고 다시 쓴다(멱등)."""
-    con.execute("DELETE FROM corporate_actions WHERE code = ?", (code,))
+def replace_events(con, code: str, rows: list[tuple], lo: str, hi: str) -> int:
+    """``corporate_actions`` 는 sqlite 에 PK 가 없다 — 응답이 덮은 ``[lo, hi]`` 의 그 종목 행만 지우고 다시 쓴다(멱등).
+
+    범위 밖(이전 실행이 받은 더 오래된 이벤트)은 남긴다. 증분 실행의 짧은 응답이 과거 분할·병합을 지우면
+    시드·시총 배율이 조용히 틀린다.
+    """
+    con.execute("DELETE FROM corporate_actions WHERE code = ? AND date >= ? AND date <= ?", (code, lo, hi))
     seen = {(r[0], r[1]): r for r in rows}  # 수정·무수정 응답이 같은 이벤트를 둘 다 싣는다
     return _upsert(con, "corporate_actions", ("code", "date", "upd_stkpc_tp", "upd_rt"), list(seen.values()))
 
@@ -120,9 +131,18 @@ def start_run(con, kind: str, asof: "str | None" = None) -> int:
 
 
 def finish_run(con, run_id: int, *, calls: dict, rows: dict, failed: list, ok: bool,
-               asof: "str | None" = None) -> None:
+               asof: "str | None" = None, notes: "list | None" = None) -> None:
     con.execute("UPDATE collect_runs SET finished_at=?, calls=?, rows=?, failed=?, ok=?, "
-                "asof=COALESCE(?, asof) WHERE run_id=?",
+                "asof=COALESCE(?, asof), notes=? WHERE run_id=?",
                 (_now(), json.dumps(calls, sort_keys=True), json.dumps(rows, sort_keys=True),
-                 json.dumps(failed, ensure_ascii=False), int(ok), asof, run_id))
+                 json.dumps(failed, ensure_ascii=False), int(ok), asof,
+                 json.dumps(notes or [], ensure_ascii=False), run_id))
     con.commit()
+
+
+def mark_done(con, code: str, asof: str, run_id: int) -> None:
+    con.execute("INSERT OR REPLACE INTO collect_done VALUES (?,?,?,?)", (code, asof, run_id, _now()))
+
+
+def done_codes(con, asof: str) -> set[str]:
+    return {r[0] for r in con.execute("SELECT code FROM collect_done WHERE asof = ?", (asof,)).fetchall()}

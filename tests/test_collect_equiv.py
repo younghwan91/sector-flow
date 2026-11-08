@@ -87,3 +87,12 @@ def test_rowdiff_counts_mismatching_cells(tmp_path):
     assert sd["both"] == 1 and list(sd["cols"]) == ["institution"]
     assert sd["cols"]["institution"]["worst"] == ["000810", "2026-11-06", 100, 120]
     assert rep["daily_bars_adjusted"]["cols"] == {}
+
+
+def test_slice_refuses_to_overwrite_without_force(tmp_path):
+    out = tmp_path / "krq.db"
+    out.write_bytes(b"keep me")
+    with pytest.raises(SystemExit, match="--force"):
+        E.main(["slice", "--dsn", "postgresql://u@127.0.0.1:1/x", "--sectors", "보험",
+                "--start", "2026-01-01", "--end", "2026-11-06", "--out", str(out)])
+    assert out.read_bytes() == b"keep me"
