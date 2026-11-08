@@ -160,6 +160,16 @@ def test_cli_demo_flag_runs_end_to_end(tmp_path):
     assert (tmp_path / "cache/sector-flow/demo/numbers.html").exists()
 
 
+def test_flow_demo_flag_opens_the_demo_folder(built, monkeypatch):
+    """``sw-flow --demo`` 는 데모 폴더를 연다 — curses 만 빼고 진입점 그대로."""
+    seen = {}
+    monkeypatch.setattr("sys.argv", ["sw-flow", "--demo"])
+    monkeypatch.setattr("sectorflow.demo.ensure", lambda: str(built["dir"]))
+    monkeypatch.setattr(flow_app, "run_curses", lambda _loop, data: seen.update(data))
+    flow_app.main()
+    assert seen.get("demo") is True
+
+
 @pytest.mark.parametrize("app", ("sectorflow.tui.flow_app", "sectorflow.tui.ledger_app"))
 def test_empty_clone_error_points_to_demo_and_received_folder(tmp_path, app):
     """막다른 길의 입구 — 리포트가 없을 때 데모·받은 폴더·DB 세 갈래를 다 말한다."""

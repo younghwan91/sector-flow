@@ -7643,3 +7643,51 @@ guards = ["tests/test_first_reader.py::test_research_inputs_point_at_the_archive
 file = "research/validation/q2_calc/README.md"
 find = "지금 `reports/` 는 2026-11-09 에 48개 전부 다시 만들어 이 판이 아니다."
 replace = "지금 `reports/` 그대로다."
+
+[[mutation]]
+id = "ledger-demo-flag-ignored"
+why = "sw-ledger --demo 가 데모를 안 열고 없는 reports/latest 로 간다 — 첫 실행이 다시 막힌다"
+guards = ["tests/test_demo.py::test_cli_demo_flag_runs_end_to_end"]
+file = "src/sectorflow/tui/ledger_app.py"
+find = "    if a.demo:\n"
+replace = "    if False:\n"
+
+[[mutation]]
+id = "flow-demo-flag-ignored"
+why = "sw-flow --demo 가 데모를 안 연다 — Quick start 첫 명령이 실패한다"
+guards = ["tests/test_demo.py::test_flow_demo_flag_opens_the_demo_folder"]
+file = "src/sectorflow/tui/flow_app.py"
+find = "    if a.demo:\n"
+replace = "    if False:\n"
+
+[[mutation]]
+id = "demo-seed-not-fixed"
+why = "씨앗을 안 쓰면 만들 때마다 숫자가 달라 문서의 예시를 다시 만들 수 없다"
+guards = ["tests/test_demo.py::test_db_is_deterministic"]
+file = "src/sectorflow/demo.py"
+find = "    rnd = random.Random(seed)\n"
+replace = "    rnd = random.Random()\n"
+
+[[mutation]]
+id = "demo-reads-the-real-db-env"
+why = "생성기에 KR_QUANT_DB 를 넘기면 데모가 실 DB 를 볼 수 있다"
+guards = ["tests/test_demo.py::test_demo_module_never_reads_a_real_db_env"]
+file = "src/sectorflow/demo.py"
+find = "if k != \"KR_QUANT_DB\"}"
+replace = "if k}"
+
+[[mutation]]
+id = "demo-breaks-the-four-actor-identity"
+why = "4주체 합이 0 이 아닌 합성 데이터 — 데모가 검증기를 못 넘는다"
+guards = ["tests/test_demo.py::test_demo_report_passes_the_same_verifier_as_a_real_report"]
+file = "src/sectorflow/demo.py"
+find = "                    indiv = -(inst + forgn + etc)\n"
+replace = "                    indiv = qty\n"
+
+[[mutation]]
+id = "demo-has-no-thin-sector"
+why = "얇은 섹터가 없으면 ~ 표시를 데모에서 볼 수 없다"
+guards = ["tests/test_demo.py::test_demo_shows_what_a_real_report_shows"]
+file = "src/sectorflow/demo.py"
+find = "    roster = [(s, N_PER_MARKET) for s in SECTORS] + [(THIN_SECTOR, N_THIN)]\n"
+replace = "    roster = [(s, N_PER_MARKET) for s in SECTORS]\n"
