@@ -45,10 +45,12 @@ def test_report_entry_points_ship_their_script_and_templates():
             assert _runs(fn) in shipped, f"{name}: {_runs(fn)} 가 wheel 에 안 실린다(force-include)"
     for src in FORCE:
         assert (REPO / src).is_file(), f"force-include 는 파일 하나씩이다 — 없거나 폴더다: {src}"
-    # 템플릿은 빌드 훅이 원격 글꼴을 떼고 파일 하나씩 싣는다 — 목록이 레포 템플릿 전부를 덮어야 한다.
+    # 템플릿은 빌드 훅이 원격 글꼴을 떼고 파일 하나씩 싣는다 — 레포 템플릿은 하나도 빠짐없이 '싣는다' 또는
+    # '웹 전용' 중 한쪽에 적혀 있어야 한다. 새 템플릿이 어느 쪽인지 정하지 않으면 여기서 빨개진다.
     hook = PY["tool"]["hatch"]["build"]["targets"]["wheel"]["hooks"]["custom"]
     assert (REPO / hook["path"]).is_file()
-    assert sorted(T.TEMPLATES) == sorted(p.name for p in (REPO / "scripts/templates").glob("*.html"))
+    assert not set(T.TEMPLATES) & set(T.WEB_ONLY_TEMPLATES)
+    assert sorted(T.TEMPLATES + T.WEB_ONLY_TEMPLATES) == sorted(p.name for p in (REPO / "scripts/templates").glob("*.html"))
 
 
 def test_hook_ships_offline_templates(tmp_path):

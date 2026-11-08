@@ -7331,3 +7331,13 @@ guards = ["tests/test_collect_dart.py::test_rights_issue_the_seed_cannot_see_rea
 file = "src/sectorflow/collect/dart.py"
 find = "                (code, OK)).fetchall():"
 replace = "                (code, \"none\")).fetchall():"
+
+# ── wheel 템플릿 분류·krx_truth 로드·import 폐포·실제 wheel 스모크 (tests/test_packaging.py) ──────────
+
+[[mutation]]
+id = "wheel-web-only-list-loses-a-template"
+why = "웹 전용 목록에서 템플릿이 빠져 레포 템플릿이 '싣는다'·'웹 전용' 어느 쪽에도 없다 — 새 템플릿을 아무도 판단하지 않는다"
+guards = ["tests/test_packaging.py::test_report_entry_points_ship_their_script_and_templates"]
+file = "src/sectorflow/offline_templates.py"
+find = 'WEB_ONLY_TEMPLATES = ("digest_card.html", "trust.html")'
+replace = 'WEB_ONLY_TEMPLATES = ("digest_card.html",)'
