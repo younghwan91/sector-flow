@@ -45,7 +45,7 @@
   새 열·지표는 증거 표지를 같이 단다 — TUI `flow_view.EVIDENCE`·`_EV_SECTOR`·`_EV_NAMES`, 웹 `const EV`(검사가 대조한다).
 - 섹터 지표(가속·임펄스·미실현·G·투신+연금5일 등)를 앞날 수익률의 신호로 소개하지 않는다 — 문서·도움말·커밋 메시지 모두.
   검정 결과 앞날 증거 없음 또는 판정 불가다. "유망"·"매수 후보"·"추천" 같은 말을 화면·README 에 넣지 않는다.
-- 수식 정본은 `docs/formulas.md` 다(`docs/kqflow-formulas.pdf` 는 2026-08-31 판으로 낡았다). 코드를 옮기면 그 `파일:줄` 인용도 고친다
+- 수식 정본은 `docs/formulas.md` 다(옛 PDF 판은 2026-11-08 지웠다 — git 이력에 있다). 코드를 옮기면 그 `파일:줄` 인용도 고친다
   — `tests/test_docs_refs.py` 가 줄 범위와 짝 지은 기호(±3줄)를 본다. 병합 뒤 빨개지면 `uv run python scripts/docs_refs.py --fix`.
 - 수급 신뢰 순서: 기관 순매수만으로 충분하고 외국인 동반은 요구하지 않는다. 기관 안에서는 투신·연기금(`INST_DETAIL`)을 우선한다.
 - 새 검사를 넣으면 `tests/mutations.toml` 에 변이도 넣는다(`verify_merge.py` 가 주입해 검사가 죽었는지 본다).
