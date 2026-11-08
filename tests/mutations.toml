@@ -1608,7 +1608,7 @@ why = "확정 리포트도 화면이 잠정이라 적는다"
 guards = ["tests/test_validation_fixes.py::test_status_chip_says_final_only_for_rebuilt_reports"]
 file = "src/sectorflow/tui/flow_view.py"
 find = """    base = ("마감·확정" if d.get("final") else "마감·확정기록없음""""
-replace = """    base = ("마감·잠정" if d.get("finalized") else "마감·확정기록없음"""""
+replace = """    base = ("마감·잠정" if d.get("finalized") else "마감·확정기록없음\""""
 
 [[mutation]]
 id = "numbers-drop-the-final-flag"
@@ -4870,3 +4870,20 @@ guards = ["tests/test_report_pages.py::test_numbers_page_return_label_is_final_s
 file = "scripts/templates/sector_numbers.html"
 find = "const CLOSED = Boolean(D.final || D.finalize_unverified);"
 replace = "const CLOSED = Boolean(D.final);"
+
+[[mutation]]
+id = "rebuild-note-loses-finalize-state"
+why = "REBUILT.txt 에 finalize 상태가 안 남으면 웹 목록이 창 밖 날을 '확정 기록 없음' 으로 못 가른다"
+guards = ["tests/test_daily_report_flow.py::test_rebuild_records_verified_finalize_and_the_full_commit",
+          "tests/test_daily_report_flow.py::test_rebuild_outside_the_finalize_window_is_final_data_without_a_final_claim"]
+file = "scripts/daily_report.sh"
+find = "    echo \"finalize: $FINALIZE_STATE\""
+replace = "    echo \"finalize: ?\""
+
+[[mutation]]
+id = "rebuild-history-runs-without-dates"
+why = "날짜 없이 부르면 아무 날도 안 짓고 빈 루트·빈 요약만 만들어 '문제 0건' 으로 끝난다"
+guards = ["tests/test_rebuild_history.py::test_needs_a_date_range"]
+file = "scripts/rebuild_history.py"
+find = "        ap.error(\"--from 과 --to, 또는 --dates 가 필요하다\")"
+replace = "        days = []"
