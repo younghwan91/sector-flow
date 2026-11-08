@@ -28,7 +28,9 @@
 - `supply_demand` 의 주체 열은 금액이 아니라 순매매 **수량**(× 종가는 근사). `flu_rt` 는 등락률 ×100 이고 09-14 부터 이어 곱할 수 없다 — 수익률은 `daily_bars_adjusted` 종가 비로. 네 주체 합 ≈ 0 이라 `etc_corp` 를 빼면 안 된다. 0 은 "0 또는 미보고", NULL 은 모름.
 - `daily_bars.trade_value` 단위는 **백만원**이다.
 - 2026-09-14 이후 `daily_bars` 의 고가·저가·종가·거래량은 애프터마켓 포함 통합값이다(시가만 정규장). 정의는 quant-airflow `CLAUDE.md` §3·`docs/schema.md`.
-- 시총 = **원 종가**(`supply_demand.close`, 없으면 `daily_bars_raw`) × 그 시점 상장주식수(as-of, 뒤 분할·병합·감자 반영). `daily_bars` 는 키움 수정주가라
+  그래서 리포트의 하루 수익률은 전일 20:00 → 당일 20:00(통합 종가)이고 KRX 지수(정규장 15:30)와 같은 날 갈린다(11-06 −4.37% vs −6.02%).
+  화면·웹이 `KRX 지수(정규장)` 를 나란히 적는 이유다. 정규장 수익률이라고 쓰지 않는다.
+- 시총 = **원 종가**(`supply_demand.close`, 없으면 `daily_bars_raw`) × 그 시점 상장주식수(as-of 스냅샷 뒤의 분할·병합·감자를 다시 센다). `daily_bars` 는 키움 수정주가라
   시총에 쓰면 과거가 배수로 부푼다(`storage.market_cap_asof_bulk`, 2026-11-08 검증 `docs/validation/`). swing-it 사본도 같은지 볼 것.
 - `storage.py` 는 swing-it 에서 복사한 독립 사본이다. 공유 라이브러리로 묶지 않는다.
 
@@ -39,6 +41,10 @@
   이 결함이 다섯 번 나왔다(`flow_view.py` 최근집중 주석).
 - 검정 결과(`docs/validation/`)를 화면이 따른다: G·종목 선정·곱·종합은 탐색 모드(`e`, 기본 꺼짐)에만 두고 첫 화면은 사실 요약이다.
   새 열·지표는 증거 표지를 같이 단다 — TUI `flow_view.EVIDENCE`·`_EV_SECTOR`·`_EV_NAMES`, 웹 `const EV`(검사가 대조한다).
+- 섹터 지표(가속·임펄스·미실현·G·투신+연금5일 등)를 앞날 수익률의 신호로 소개하지 않는다 — 문서·도움말·커밋 메시지 모두.
+  검정 결과 앞날 증거 없음 또는 판정 불가다. "유망"·"매수 후보"·"추천" 같은 말을 화면·README 에 넣지 않는다.
+- 수식 정본은 `docs/formulas.md` 다(`docs/kqflow-formulas.pdf` 는 2026-08-31 판으로 낡았다). 코드를 옮기면 그 `파일:줄` 인용도 고친다
+  — `tests/test_docs_refs.py` 가 줄 범위와 짝 지은 기호(±3줄)를 본다.
 - 수급 신뢰 순서: 기관 순매수만으로 충분하고 외국인 동반은 요구하지 않는다. 기관 안에서는 투신·연기금(`INST_DETAIL`)을 우선한다.
 - 새 검사를 넣으면 `tests/mutations.toml` 에 변이도 넣는다(`verify_merge.py` 가 주입해 검사가 죽었는지 본다).
 - `perf` 변경은 리포트가 바이트 동일함을 확인하고 메시지에 적는다.
