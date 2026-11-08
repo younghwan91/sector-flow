@@ -172,3 +172,54 @@ def test_a_folder_swap_does_not_404(root, get):
     assert get("/2026-11-06/numbers.html")[0] == 200
     (root / "latest").unlink()
     os.symlink(d, root / "latest")
+
+
+def _row(page: str, d: str) -> str:
+    """목록에서 그 기준일의 한 줄(`<li …>…</li>`)."""
+    i = page.index(f'<span class="d">{d}</span>')
+    return page[page.rindex("<li", 0, i):page.index("</li>", i)]
+
+
+def test_each_row_says_final_or_provisional_and_links_both_pages(root):
+    """줄마다 확정(FINAL.txt)/잠정, 검증 실패/통과, 수집 미완을 적고 두 화면을 잇는다.
+
+    08:20 확정 모드가 전날을 확정치로 다시 만드는데, 목록은 어느 날이 확정인지 안 적었다 —
+    잠정 리포트를 확정으로 읽어도 알 길이 없었다.
+    """
+    (root / "2026-11-05" / "FINAL.txt").write_text("[…] 확정치로 만들었다.", "utf-8")
+    page = srv.index_html(str(root), today=date(2026, 11, 7))
+    final, prov, inc = _row(page, "2026-11-05"), _row(page, "2026-11-06"), _row(page, "2026-11-07")
+    assert ">확정<" in final and "잠정" not in final and "검증 실패" in final
+    assert ">잠정<" in prov and ">확정<" not in prov and "검증 통과" in prov
+    assert "수집 미완" in inc and "잠정" not in inc and "확정" not in inc, "리포트 없는 날에 확정/잠정을 붙였다"
+    for d, row in (("2026-11-05", final), ("2026-11-06", prov)):
+        assert f'href="/{d}/numbers.html"' in row and f'href="/{d}/viewer.html"' in row
+
+
+def test_the_newest_row_and_its_status_stand_out(root):
+    page = srv.index_html(str(root), today=date(2026, 11, 7))
+    assert _row(page, "2026-11-06").startswith('<li class="latest">')
+    assert 'class="latest"' not in _row(page, "2026-11-05")
+    hero = page[page.index('class="hero"'):page.index("</div>", page.index('class="hero"'))]
+    assert "2026-11-06" in hero and "잠정" in hero and "검증 통과" in hero
+
+
+def test_index_does_not_claim_reports_never_change(root):
+    """08:20 확정 모드가 전날 리포트를 다시 만든다 — "만들어 둔 리포트는 안 바뀐다" 는 틀린 말이었다."""
+    page = srv.index_html(str(root))
+    assert "안 바뀐다" not in page
+    assert "08:20" in page and "확정" in page
+
+
+def test_index_fits_a_phone_without_a_wide_table(root):
+    """390px 폰에서 가로 스크롤이 안 생긴다 — 고정 열 표 대신 줄바꿈되는 목록이다."""
+    page = srv.index_html(str(root))
+    assert 'name="viewport" content="width=device-width' in page
+    assert "<table" not in page
+    assert "ul.days li{display:flex;flex-wrap:wrap" in page, "목록 줄이 좁은 화면에서 안 접힌다"
+
+
+def test_final_note_is_served_as_text(get, root):
+    (root / "2026-11-06" / "FINAL.txt").write_text("확정", "utf-8")
+    status, h, body = get("/2026-11-06/FINAL.txt")
+    assert status == 200 and h["Content-Type"].startswith("text/plain") and body.decode() == "확정"
