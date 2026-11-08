@@ -11,27 +11,27 @@
 -->
 <style>
   :root {
-    --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --ink-3: #8a8984;
+    --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --ink-3: #6e6d68;
     --rule: #e4e3df; --mid: #f0efec; --buy: #e34948; --sell: #2a78d6; --warn: #b26b00;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { width: __CARD_W__px; height: __CARD_H__px; overflow: hidden; background: var(--surface); }
   body {
     font-family: "Noto Sans KR", "Noto Sans CJK KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
-    color: var(--ink); padding: 44px 64px 36px; display: flex; flex-direction: column; gap: 16px;
+    color: var(--ink); padding: 32px 56px 24px; display: flex; flex-direction: column; gap: 12px;
     font-variant-numeric: tabular-nums;
   }
   header { display: flex; align-items: baseline; justify-content: space-between; border-bottom: 3px solid var(--ink); padding-bottom: 12px; }
-  header h1 { font-size: 48px; font-weight: 800; letter-spacing: -1px; }
+  header h1 { font-size: 44px; white-space: nowrap; font-weight: 800; letter-spacing: -1px; }
   header .meta { text-align: right; }
   header .date { font-size: 28px; font-weight: 700; }
-  .chip { display: inline-block; font-size: 22px; font-weight: 700; padding: 4px 12px; border-radius: 6px; margin-top: 6px; }
+  .chip { display: inline-block; font-size: 22px; font-weight: 700; padding: 2px 10px; border-radius: 6px; }
   .chip.final { background: var(--ink); color: var(--surface); }
   .chip.prov { border: 2px solid var(--ink-2); color: var(--ink-2); }
   .chip.warn { border: 2px solid var(--warn); color: var(--warn); margin-left: 8px; }
   h2 { font-size: 24px; font-weight: 700; color: var(--ink-2); margin-bottom: 6px; }
   h2 small { font-weight: 400; font-size: 20px; color: var(--ink-3); margin-left: 8px; }
-  .net-row { display: grid; grid-template-columns: 120px 1fr 150px 70px; align-items: center; height: 36px; font-size: 25px; }
+  .net-row { display: grid; grid-template-columns: 120px 1fr 150px 70px; align-items: center; height: 32px; font-size: 25px; }
   .net-ko { font-weight: 700; }
   .net-track { position: relative; height: 24px; background: var(--mid); border-radius: 4px; margin-right: 18px; }
   .net-track .zero { position: absolute; left: 50%; top: -4px; bottom: -4px; width: 2px; background: var(--ink-3); }
@@ -54,29 +54,29 @@
   .col .sp { color: var(--ink-2); text-align: right; font-size: 17px; }
   .dot { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
   .dot.buy { background: var(--buy); } .dot.sell { background: var(--sell); } .dot.flat { background: var(--ink-3); }
-  ul.facts { list-style: none; font-size: 20px; line-height: 1.45; }
+  ul.facts { list-style: none; font-size: 20px; line-height: 1.32; }
   ul.facts b { margin-right: 6px; }
   .sep { color: var(--ink-3); }
-  .legend { font-size: 18px; color: var(--ink-2); margin: -2px 0 4px; }
-  .legend .dot { margin: 0 6px 0 0; } .legend .dot.sell { margin-left: 18px; }
-  .notes p { font-size: 20px; color: var(--ink-2); }
-  footer { margin-top: auto; border-top: 1px solid var(--rule); padding-top: 10px; font-size: 18px; color: var(--ink-2); line-height: 1.45; }
+  .notes p { font-size: 19px; color: var(--ink-2); line-height: 1.3; }
+  .basis { font-size: 18px; color: var(--ink-2); margin-top: 4px; }
+  .detail { font-size: 20px; color: var(--ink-2); margin-top: 4px; }
+  ul.facts li.fh { color: var(--ink-2); font-weight: 700; margin-top: 4px; }
+  footer { margin-top: auto; border-top: 1px solid var(--rule); padding-top: 8px; font-size: 26px; color: var(--ink-2); line-height: 1.3; }
 </style>
 </head>
 <body>
 <header>
   <h1>오늘의 수급</h1>
-  <div class="meta"><div class="date">__DATE__</div><span class="chip __STATUS_CLASS__">__STATUS__</span>__GAPS__</div>
+  <div class="meta"><span class="date">__DATE__</span> <span class="chip __STATUS_CLASS__">__STATUS__</span>__GAPS__<div class="basis">__BASIS__</div></div>
 </header>
 
 <section>
-  <h2>시장 순매수[억] · __MARKET__(거래소+코스닥)<small>괄호는 1년 일별 %ile</small></h2>
-  <p class="legend"><i class="dot buy"></i>빨강 = 순매수 <i class="dot sell"></i>파랑 = 순매도</p>
+  <h2>시장 순매수[억] · __MARKET__(거래소+코스닥)<small>괄호는 1년 일별 %ile · 빨강 = 순매수 · 파랑 = 순매도</small></h2>
   __NET_ROWS__
 </section>
 
 <section>
-  <h2>수익률<small>KRX 지수 = 정규장 15:30 · 바구니 = ~20시 통합 종가(시총 가중)</small></h2>
+  <h2>수익률<small>KRX 지수 = 정규장 15:30 · 바구니 = __RET_LABEL__(시총 가중)</small></h2>
   <table>
     <thead><tr><th></th><th>KRX 지수</th><th class="num">1일</th><th class="num">20일</th><th class="num">바구니 1일</th><th class="num">20일</th></tr></thead>
     <tbody>__RET_ROWS__</tbody>
@@ -89,14 +89,11 @@
 </section>
 
 <section>
-  <h2>1년 분위 상단(≥__PCT_HI__)·하단(≤__PCT_LO__)<small>오늘 값이 1년 일별 분포의 어디인가</small></h2>
+  <h2>1년%ile 상단(≥__PCT_HI__)·하단(≤__PCT_LO__)<small>오늘 값이 1년 일별 분포의 어디인가 · 신규·N일째 = 그 극단에 며칠째</small></h2>
   <ul class="facts">__EXTREMES__</ul>
 </section>
 
-<section>
-  <h2>__CHANGE_HEAD__</h2>
-  <ul class="facts">__CHANGE__</ul>
-</section>
+__CHANGE_SEC__
 
 <section class="notes">__NOTES__</section>
 
