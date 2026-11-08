@@ -141,6 +141,31 @@ def test_budget_overrun_stops_and_rejects(mini):
     wt, base = mini
     s, out = _run(wt, base, budget_min=1e-6)
     assert s.status == VM.REJECT and "돌리지 않고" in out and "잡힘" not in out
+    # 샤드 없는 실행이라 예산에 샤드 수(mini 엔 ci.yml 이 없다 → 4)를 곱했다고 적는다.
+    assert "× 샤드 4" in out
+
+
+def test_unsharded_budget_scales_by_the_ci_shard_count(tmp_path):
+    """--budget-min 은 CI 샤드 한 몫의 예산이다 — 샤드 없이(전체 몫) 돌면 샤드 수를 곱한다.
+
+    안 곱하면 변이가 늘 때마다 ci-local 전체 실행이 전부 REJECT 로 막힌다(2026-11-09, 692개
+    12.3분 > 12분). 샤드가 주어지면 그대로다."""
+    wf = tmp_path / ".github" / "workflows"
+    wf.mkdir(parents=True)
+    (wf / "ci.yml").write_text(
+        "    strategy:\n      matrix:\n        shard: [1, 2, 3, 4, 5, 6]\n", "utf-8")
+    assert VM.ci_shard_count(tmp_path) == 6
+    eff, why = VM.effective_budget(12, None, tmp_path)
+    assert eff == 72 and "× 샤드 6" in why and "72" in why
+    assert VM.effective_budget(12, (2, 6), tmp_path) == (12, "")     # 샤드 한 몫은 그대로
+    assert VM.effective_budget(None, None, tmp_path) == (None, "")   # 예산이 없으면 아무것도 안 한다
+    (wf / "ci.yml").write_text("jobs: {}\n", "utf-8")               # matrix 가 없으면 4 로 본다
+    assert VM.ci_shard_count(tmp_path) == 4
+    assert VM.ci_shard_count(tmp_path / "nope") == 4
+    # 실제 ci.yml 의 matrix 와 같은 수를 읽는다 — 식이 어긋나면 여기서 끊긴다.
+    import re
+    shards = re.search(r"shard: \[([\d, ]+)\]", (REPO / ".github/workflows/ci.yml").read_text("utf-8"))
+    assert VM.ci_shard_count(REPO) == len(shards.group(1).split(","))
 
 
 def test_shards_partition_the_declarations_deterministically():

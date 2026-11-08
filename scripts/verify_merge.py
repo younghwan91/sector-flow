@@ -35,6 +35,9 @@
                        변이 미선언 새 검사 판정은 1번 몫에서만 한다.
     --budget-min M     주입 검증이 M 분을 넘으면 REJECT, 75% 를 넘으면 WARN. 2M 분이면 남은 변이를
                        돌리지 않고 멈춘다(잡 시간 초과로 이유 없이 죽지 않게). 느린 변이 10개를 늘 적는다.
+                       M 은 **CI 샤드 한 몫**의 예산이다 — --shard 없이(ci-local 전체 범위처럼) 돌면
+                       ci.yml matrix 의 샤드 수(못 읽으면 4)를 곱해 쓴다. 변이가 늘어 전체가 12분을
+                       넘자 로컬 pre-push 가 전부 막혔다(2026-11-09) — 전체 실행은 몫 n 개의 일이다.
     --scope all|changed|auto
                        changed = merge-base 이후 바뀐 파일을 대상·가드로 갖거나, 가드가 바뀐 src 모듈·
                        스크립트를 import·문자열로 참조하거나, 선언이 새로 생긴·바뀐 변이만. 의존성·하네스·
@@ -667,6 +670,34 @@ def env_full(text: str) -> str | None:
             f"를 비우거나 `export TMPDIR=<디스크의 폴더>` 로 다시 돌려라")
 
 
+#: ci.yml 의 주입 검증 matrix — 샤드 수를 읽는다(:func:`effective_budget`). tests/test_ci_workflow.py 가
+#: 이 목록이 1..n 연속임을 지키므로 길이가 곧 샤드 수다.
+_CI_SHARDS_RE = re.compile(r"^\s+shard: \[([\d, ]+)\]", re.M)
+
+
+def ci_shard_count(wt: Path, fallback: int = 4) -> int:
+    try:
+        text = (wt / ".github/workflows/ci.yml").read_text("utf-8")
+    except (OSError, UnicodeDecodeError):
+        return fallback
+    m = _CI_SHARDS_RE.search(text)
+    return len(m.group(1).split(",")) if m else fallback
+
+
+def effective_budget(budget_min: float | None, shard: tuple[int, int] | None,
+                     wt: Path) -> tuple[float | None, str]:
+    """실제로 적용할 예산(분)과 그 이유 한 줄.
+
+    ``--budget-min`` 은 CI 샤드 **한 몫**의 예산이다. 샤드 없이 돌면(ci-local 이 sector_flow·템플릿을
+    건드린 푸시에서 전체 범위로 돈다) 한 실행이 몫 n 개의 일을 하므로 n 을 곱한다 — 안 곱하면 변이가
+    늘 때마다 로컬 pre-push 가 전부 REJECT 로 막힌다(2026-11-09, 692개 12.3분 > 12분)."""
+    if not budget_min or shard is not None:
+        return budget_min, ""
+    n = ci_shard_count(wt)
+    return budget_min * n, (f"예산 {budget_min * n:g}분 = --budget-min {budget_min:g}분 × 샤드 {n} — "
+                            f"샤드 없는 실행은 CI 한 몫이 아니라 전체 몫의 일이다(ci.yml matrix)")
+
+
 def _first_failure(stdout: str) -> str:
     return next((ln for ln in stdout.splitlines()
                  if ln.startswith("FAILED") or ln.startswith("ERROR") or " failed" in ln), "").strip()
@@ -679,6 +710,9 @@ def sec_mutations(wt: Path, py: str, base_sha: str, spec_path: Path | None,
     import time
     t_start = time.monotonic()
     s = Section("mutations")
+    budget_min, budget_why = effective_budget(budget_min, shard, wt)
+    if budget_why:
+        s.say(budget_why)
     spec = spec_path or (wt / "tests/mutations.toml")
     new_tests = new_test_functions(wt, base_sha)
     if new_tests:
@@ -922,7 +956,8 @@ def budget_verdict(elapsed_s: float, budget_min: float | None, stopped: int) -> 
         return REJECT, (f"시간 예산의 두 배({2 * budget_min:g}분)를 넘어 변이 {stopped}개를 **돌리지 않고** "
                         f"멈췄다 — 샤드를 늘리거나(ci.yml matrix) 느린 가드를 줄여라")
     if elapsed_s > budget_min * 60:
-        return REJECT, (f"시간 예산 초과 {elapsed_s / 60:.1f}분 > {budget_min:g}분 — 샤드를 늘리거나"
+        return REJECT, (f"시간 예산 초과 {elapsed_s / 60:.1f}분 > {budget_min:g}분(샤드 실행은 한 몫, "
+                        f"샤드 없는 실행은 --budget-min × 샤드 수) — 샤드를 늘리거나"
                         f"(ci.yml matrix) 위 느린 변이의 가드를 줄여라. 넘긴 채로 두면 다음 PR 이 잡 시간 "
                         f"상한에 걸려 07:50 배포 관문이 막힌다")
     if elapsed_s > 0.75 * budget_min * 60:
