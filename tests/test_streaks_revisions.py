@@ -576,3 +576,13 @@ def test_web_today_panel_says_the_same_streaks_and_revision_line_as_the_terminal
 def test_the_web_layer_catches_a_streak_or_revision_line_that_drifts_from_the_terminal(P, tmp_path, patch):
     Q, D = _numbers(P)
     assert "W/'오늘' 패널 연속 순매매·잠정 수정 폭 = TUI 첫 화면 글자" in _w_page(tmp_path, Q, D, patch)
+
+
+def test_seed_with_a_missing_archive_says_so_instead_of_a_traceback(tmp_path, capsys):
+    """디스크 소실 뒤에는 아카이브가 없다 — 복구 절차의 한 단계가 Traceback 으로 끝나면 안 된다."""
+    spec = importlib.util.spec_from_file_location("seed_revisions_cli", REPO / "scripts" / "seed_revisions.py")
+    seed = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(seed)
+    rc = seed.main(["--archive", str(tmp_path / "없다"), "--final-root", str(tmp_path), "--out", str(tmp_path / "o")])
+    out = capsys.readouterr().out
+    assert rc == 1 and "아카이브 폴더가 없다" in out and "시드 0일" in out
