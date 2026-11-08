@@ -1975,8 +1975,8 @@ id = "web-healthy-server-killed"
 why = "대답하는 서버를 5분마다 죽였다 살려 그 틈의 요청이 끊긴다"
 guards = ["tests/test_serve_reports.py::test_serve_sh_leaves_a_healthy_server_alone"]
 file = "scripts/serve.sh"
-find = """     || curl -fsS -m 5 -o /dev/null "http://$HOST:$PORT/healthz" 2>/dev/null; then"""
-replace = """     || false; then"""
+find = """  if WHY="$(curl -fsS -m 5 -o /dev/null "http://$HOST:$PORT/healthz" 2>&1)"; then"""
+replace = """  if false; then"""
 
 [[mutation]]
 id = "web-server-writes-no-pid"
@@ -2990,3 +2990,39 @@ guards = ["tests/test_daily_report_flow.py::test_db_failure_shows_the_exception_
 file = "scripts/daily_report.sh"
 find = """  tail -n 10 "$ASOF_ERR" | sed"""
 replace = """  tail -n 3 "$ASOF_ERR" | sed"""
+
+# ── ops-r2 리허설(2026-11-08): /tmp 할당량 tmpfs 가 찬 날 · 웹 재시작 알림 ──
+
+[[mutation]]
+id = "cron-run-tail-only-in-tmp"
+why = "꼬리 임시 파일을 /tmp 에만 만든다 — 할당량 tmpfs 가 차면 알림 본문이 빈다(2026-11-08 리허설: tail: cannot open '')"
+guards = ["tests/test_daily_report_flow.py::test_cron_run_keeps_the_tail_when_tmp_is_unusable"]
+file = "scripts/cron_run.sh"
+find = """tmp="$(mktemp -p "$REPO/reports" .cron_run.XXXXXX 2>/dev/null || mktemp 2>/dev/null || true)\""""
+replace = """tmp="$(mktemp 2>/dev/null || true)\""""
+
+[[mutation]]
+id = "cron-run-empty-body-unexplained"
+why = "임시 파일을 못 만든 날 빈 본문(또는 tail 오류)만 간다 — 받는 사람이 무엇을 볼지 모른다"
+guards = ["tests/test_daily_report_flow.py::test_cron_run_says_why_the_tail_is_missing"]
+file = "scripts/cron_run.sh"
+find = """        if [ -n "$tmp" ] && [ -s "$tmp" ]; then"""
+replace = """        if true; then"""
+
+[[mutation]]
+id = "report-asof-err-in-tmp"
+why = "daily_report.sh 의 임시 파일을 /tmp 에 만든다 — /tmp 가 차면 리포트가 rc=1 로 죽는다"
+guards = ["tests/test_daily_report_flow.py::test_report_is_built_when_tmp_is_unusable"]
+file = "scripts/daily_report.sh"
+find = """ASOF_ERR="$(mktemp -p "$OUT_ROOT" .asof_err.XXXXXX)" || {"""
+replace = """ASOF_ERR="$(mktemp)" || {"""
+
+[[mutation]]
+id = "web-restart-not-alerted"
+why = "멈춘 서버를 끄고 다시 띄워도 이유를 담은 알림이 없다 — TERM 으로 끝난 서버의 크론 줄은 0 이라 아무 알림도 안 간다"
+guards = ["tests/test_serve_reports.py::test_serve_sh_restarts_a_server_that_stops_answering"]
+file = "scripts/serve.sh"
+find = """  if [ -x "$ALERT" ]; then
+    printf"""
+replace = """  if false; then
+    printf"""

@@ -39,7 +39,11 @@ fi
 
 # 실패 사유는 보여 준다 — 버리면 `set -e` 때문에 아래 안내까지 못 가고 빈 알림으로 끝난다.
 # libpq 가 접속 문자열을 되읊을 수 있어 비밀번호 자리는 가린다.
-ASOF_ERR="$(mktemp)"
+# 임시 파일은 디스크에 — /tmp(사용자 할당량 tmpfs)가 차면 mktemp 가 죽고 set -e 로 이유 없이 끝났다(2026-11-08 리허설).
+ASOF_ERR="$(mktemp -p "$OUT_ROOT" .asof_err.XXXXXX)" || {
+  echo "[$(date '+%F %T')] 임시 파일을 못 만들었다($OUT_ROOT) — 디스크 용량·권한을 보라. 중단." >&2
+  exit 1
+}
 ASOF_RC=0
 ASOF="$("${UVR[@]}" python - <<'PY' 2>"$ASOF_ERR"
 import os

@@ -21,11 +21,19 @@ shift
 [ "${1:-}" = "--" ] && shift
 [ $# -gt 0 ] || { echo "cron_run.sh: 명령이 없다 — cron_run.sh <이름> -- <명령...>" >&2; exit 2; }
 
-tmp="$(mktemp)"
-trap 'rm -f "$tmp"' EXIT
+# 꼬리를 담을 임시 파일은 **디스크(reports/)에 먼저** 만든다. /tmp 는 사용자 할당량이 걸린 tmpfs 라 다른 세션이
+# 채우면 mktemp 가 실패하거나(→ 예전엔 `tail: cannot open ''` 로 본문이 빈 알림), 빈 파일은 만들어지고 쓰기만
+# 조용히 실패한다(2026-11-08 크론 리허설). 둘 다 안 되면 출력은 그대로 흘리고 알림 본문에 그 사실을 적는다.
+tmp="$(mktemp -p "$REPO/reports" .cron_run.XXXXXX 2>/dev/null || mktemp 2>/dev/null || true)"
+trap '[ -n "$tmp" ] && rm -f "$tmp"' EXIT
 
-"$@" 2>&1 | tee "$tmp"
-rc=${PIPESTATUS[0]}
+if [ -n "$tmp" ]; then
+    "$@" 2>&1 | tee "$tmp"
+    rc=${PIPESTATUS[0]}
+else
+    "$@" 2>&1
+    rc=$?
+fi
 
 if [ "$rc" -ne 0 ]; then
     if [ "$rc" -eq 75 ]; then
@@ -36,7 +44,12 @@ if [ "$rc" -ne 0 ]; then
         level=error title="$name 실패 (rc=$rc)"
     fi
     if [ -x "$ALERT" ]; then
-        tail -n 30 "$tmp" | "$ALERT" "$level" "$title"
+        if [ -n "$tmp" ] && [ -s "$tmp" ]; then
+            tail -n 30 "$tmp" | "$ALERT" "$level" "$title"
+        else
+            echo "출력 꼬리가 없다 — 임시 파일을 못 만들었거나(reports/·/tmp 용량을 보라: df -h /tmp; du -sh /tmp/* 2>/dev/null | sort -h | tail) 명령이 아무것도 안 찍었다. 전체는 크론 로그(reports/*.log)에 있다." \
+                | "$ALERT" "$level" "$title"
+        fi
     else
         echo "[cron_run] 알림 통로 없음($ALERT) — $title"
     fi

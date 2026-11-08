@@ -24,8 +24,8 @@ LOCK="$REPO/reports/.serve.lock"
 # (--soft-fail: 한 시간 이어질 때만 알린다). KILL 로 끝난 서버는 그 서버를 띄웠던 크론 래퍼가 rc 137 로 알린다.
 # curl 이 없으면 예전처럼 잠금만 본다.
 if ! flock -n "$LOCK" true; then
-  if ! command -v curl >/dev/null 2>&1 \
-     || curl -fsS -m 5 -o /dev/null "http://$HOST:$PORT/healthz" 2>/dev/null; then
+  command -v curl >/dev/null 2>&1 || exit 0
+  if WHY="$(curl -fsS -m 5 -o /dev/null "http://$HOST:$PORT/healthz" 2>&1)"; then
     exit 0
   fi
   PID="$(cat "$REPO/reports/.serve.pid" 2>/dev/null || true)"
@@ -33,7 +33,15 @@ if ! flock -n "$LOCK" true; then
     exec python3 "$REPO/scripts/serve_reports.py" --root "$REPO/reports" \
       --soft-fail "서버가 떠 있는데 /healthz 가 대답하지 않고, 누구인지(.serve.pid) 몰라 못 끈다 — 손으로 확인하라"
   fi
-  echo "[$(date '+%F %T')] 서버(pid $PID)가 떠 있는데 http://$HOST:$PORT/healthz 가 5초 안에 대답하지 않는다 — 끄고 다시 띄운다"
+  MSG="서버(pid $PID)가 떠 있는데 http://$HOST:$PORT/healthz 가 5초 안에 대답하지 않는다(${WHY:-이유 없음}) — 끄고 다시 띄운다"
+  echo "[$(date '+%F %T')] $MSG"
+  # **여기서 한 번 알린다.** 끈 서버를 띄웠던 크론 줄은 TERM 이면 0(알림 없음), KILL 이면 137 인데 그 본문(서버 출력 꼬리)에는
+  # 왜 껐는지가 없다. 알림 통로는 cron_run.sh 와 같다. alert.sh 는 늘 0 이라 재시작을 막지 않는다.
+  ALERT="${SECTOR_FLOW_ALERT:-$REPO/../quant-airflow/scripts/alert.sh}"
+  if [ -x "$ALERT" ]; then
+    printf '%s\n/healthz 본문(이유): curl -sS http://%s:%s/healthz · 기록: reports/serve.log\n' "$MSG" "$HOST" "$PORT" \
+      | "$ALERT" warn "sector-flow-web 재시작 — /healthz 무응답(pid $PID)" || true
+  fi
   kill "$PID" 2>/dev/null
   for _ in 1 2 3 4 5 6 7 8 9 10; do
     kill -0 "$PID" 2>/dev/null || break

@@ -291,8 +291,18 @@ def web(tmp_path):
                 continue
 
 
-def _serve_sh(r: Path, port: int) -> subprocess.Popen:
-    env = {**os.environ, "SECTOR_FLOW_HOST": "127.0.0.1", "SECTOR_FLOW_PORT": str(port)}
+def _alert_stub(r: Path) -> tuple[Path, Path]:
+    """가짜 alert.sh — 받은 (수준|제목)과 본문을 파일에 적는다. 진짜 채널로는 안 간다."""
+    log = r / "alert.log"
+    stub = r / "alert.sh"
+    stub.write_text(f'#!/bin/sh\necho "$1|$2" >> "{log}"\ncat >> "{log}"\n')
+    stub.chmod(0o755)
+    return stub, log
+
+
+def _serve_sh(r: Path, port: int, alert: Path | None = None) -> subprocess.Popen:
+    env = {**os.environ, "SECTOR_FLOW_HOST": "127.0.0.1", "SECTOR_FLOW_PORT": str(port),
+           "SECTOR_FLOW_ALERT": str(alert or r / "없는-alert.sh")}
     return subprocess.Popen(["/bin/bash", str(r / "scripts" / "serve.sh")], env=env, text=True,
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
 
@@ -328,7 +338,8 @@ def test_serve_sh_restarts_a_server_that_stops_answering(web):
     assert _until(pidfile.exists, 10)
     hung_pid = int(pidfile.read_text())
 
-    p = _serve_sh(r, port)
+    stub, alert_log = _alert_stub(r)
+    p = _serve_sh(r, port, stub)
     procs.append(p)
     assert _until(lambda: _healthy(port), 40), "멈춘 서버를 그대로 뒀다"
     assert hung.wait(timeout=10) is not None
@@ -336,18 +347,24 @@ def test_serve_sh_restarts_a_server_that_stops_answering(web):
     os.kill(int(pidfile.read_text()), signal.SIGTERM)
     out, _ = p.communicate(timeout=15)
     assert "대답하지 않는다" in out
+    # 끈 서버의 크론 줄은 TERM 이면 0(알림 없음)·KILL 이면 137(이유 없는 꼬리)이다 — serve.sh 가 이유를 담아 한 번 알린다.
+    alert = alert_log.read_text() if alert_log.exists() else ""
+    assert alert.count("재시작") == 1, alert
+    assert f"pid {hung_pid}" in alert and "대답하지 않는다" in alert and "curl" in alert, alert
 
 
 def test_serve_sh_leaves_a_healthy_server_alone(web):
     """대답하는 서버를 5분마다 죽였다 살리면 그 틈의 요청이 끊긴다."""
     r, port, procs = web
-    first = _serve_sh(r, port)
+    stub, alert_log = _alert_stub(r)
+    first = _serve_sh(r, port, stub)
     procs.append(first)
     assert _until(lambda: _healthy(port), 20)
     pid = (r / "reports" / ".serve.pid").read_text()
     again = subprocess.run(["/bin/bash", str(r / "scripts" / "serve.sh")], capture_output=True, text=True,
                            timeout=30, env={**os.environ, "SECTOR_FLOW_HOST": "127.0.0.1",
-                                            "SECTOR_FLOW_PORT": str(port)})
+                                            "SECTOR_FLOW_PORT": str(port), "SECTOR_FLOW_ALERT": str(stub)})
     assert again.returncode == 0, again.stdout + again.stderr
+    assert not alert_log.exists(), "건강한 서버에 재시작 알림을 보냈다"
     assert first.poll() is None and (r / "reports" / ".serve.pid").read_text() == pid
     assert _healthy(port)

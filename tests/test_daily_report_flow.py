@@ -224,14 +224,14 @@ def test_empty_table_is_not_a_reference_date(repo):
 
 # ── cron_run.sh ──────────────────────────────────────────────────────────
 
-def _cron_run(repo: Path, tmp_path: Path, *cmd: str):
+def _cron_run(repo: Path, tmp_path: Path, *cmd: str, **env: str):
     log = tmp_path / "alert.log"
     stub = tmp_path / "alert.sh"
     stub.write_text(f'#!/bin/sh\necho "$1|$2" >> "{log}"\ncat >> "{log}"\n')
     stub.chmod(stub.stat().st_mode | stat.S_IEXEC)
     p = subprocess.run([str(repo / "scripts" / "cron_run.sh"), "rpt", "--", *cmd],
                        capture_output=True, text=True, timeout=30,
-                       env={**os.environ, "SECTOR_FLOW_ALERT": str(stub)})
+                       env={**os.environ, "SECTOR_FLOW_ALERT": str(stub), **env})
     return p, (log.read_text() if log.exists() else "")
 
 
@@ -258,6 +258,31 @@ def test_cron_run_names_a_timeout(repo, tmp_path):
     p, alert = _cron_run(repo, tmp_path, "sh", "-c", "exit 124")
     assert p.returncode == 124
     assert alert.startswith("error|") and "시간 초과" in alert
+
+
+def test_cron_run_keeps_the_tail_when_tmp_is_unusable(repo, tmp_path):
+    """/tmp(사용자 할당량 tmpfs)가 차면 mktemp 가 죽어 알림 본문이 비었다(`tail: cannot open ''`) — 꼬리는 디스크에 둔다."""
+    (repo / "reports").mkdir(exist_ok=True)
+    p, alert = _cron_run(repo, tmp_path, "sh", "-c", "echo 터졌다 >&2; exit 3", TMPDIR=str(tmp_path / "없는-tmp"))
+    assert p.returncode == 3
+    assert alert.startswith("error|rpt 실패 (rc=3)") and "터졌다" in alert, alert
+    assert not list((repo / "reports").glob(".cron_run.*")), "임시 파일을 안 지웠다"
+
+
+def test_cron_run_says_why_the_tail_is_missing(repo, tmp_path):
+    """임시 파일을 어디에도 못 만들면 출력은 그대로 흘리고, 빈 본문 대신 그 사실을 알린다."""
+    p, alert = _cron_run(repo, tmp_path, "sh", "-c", "echo 터졌다; exit 3", TMPDIR=str(tmp_path / "없는-tmp"))
+    assert p.returncode == 3 and "터졌다" in p.stdout
+    assert alert.startswith("error|rpt 실패 (rc=3)") and "임시 파일을 못 만들었" in alert, alert
+
+
+def test_report_is_built_when_tmp_is_unusable(repo):
+    """daily_report.sh 의 임시 파일도 디스크에 — /tmp 가 차도 리포트가 나온다."""
+    _seed(repo.parent / "db.sqlite", today_kosdaq=50)
+    p = _run(repo, TMPDIR=str(repo.parent / "없는-tmp"))
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert (repo / "reports" / TODAY / "numbers.html").is_file()
+    assert not list((repo / "reports").glob(".asof_err.*")), "임시 파일을 안 지웠다"
 
 
 def test_cron_run_survives_missing_alert_channel(repo, tmp_path):
