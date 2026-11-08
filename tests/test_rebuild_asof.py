@@ -182,3 +182,37 @@ def test_verify_takes_the_rebuilt_asof_as_the_reference_day(tmp_path):
     assert ref_fails(now, DAYS[-1]), "다른 날을 --asof 로 주면 걸려야 한다"
     # 리포트가 지정한 날보다 앞에서 끝났으면(그 사이 거래일이 없어 DB 마지막 날과는 맞아도) 걸려야 한다.
     assert ref_fails(then, DAYS[-1]), "재구성하라고 한 날이 아닌 리포트를 통과시켰다"
+
+
+FAKE_DAILY_PREV = r"""#!/bin/sh
+case "$KR_QUANT_ASOF" in *-09) exit 3 ;; esac
+d="$KR_QUANT_REPORTS/$KR_QUANT_ASOF"; mkdir -p "$d"
+prev=$(ls "$KR_QUANT_REPORTS" | grep -E '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' | awk -v a="$KR_QUANT_ASOF" '$0 < a' | tail -n 1)
+echo "${prev:-none}" > "$d/prev.txt"
+: > "$d/numbers.html"; echo "원본은 x" > "$d/REBUILT.txt"
+printf '검사 10건 · 실패 0건\n전부 통과\n' > "$d/VERIFY.txt"
+"""
+
+
+def test_rebuild_history_parallel_chunks_still_link_each_day_to_the_previous(tmp_path):
+    """--jobs 로 나눠 지어도 모든 날(첫날 빼고)이 같은 루트의 직전 거래일 폴더를 보고 만들어졌다."""
+    repo = tmp_path / "repo"
+    (repo / "scripts").mkdir(parents=True)
+    shutil.copy(REPO / "scripts" / "rebuild_history.py", repo / "scripts")
+    fake = repo / "scripts" / "daily_report.sh"
+    fake.write_text(FAKE_DAILY_PREV)
+    fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+    root = tmp_path / "root"
+    p = subprocess.run([sys.executable, str(repo / "scripts" / "rebuild_history.py"), "--root", str(root),
+                        "--from", "2026-10-05", "--to", "2026-10-16", "--jobs", "2"],
+                       capture_output=True, text=True, timeout=60)
+    assert p.returncode == 0, p.stdout + p.stderr
+    built = sorted(x.name for x in root.iterdir() if x.name[:4] == "2026")
+    assert built == ["2026-10-05", "2026-10-06", "2026-10-07", "2026-10-08",
+                     "2026-10-12", "2026-10-13", "2026-10-14", "2026-10-15", "2026-10-16"]
+    for prev, d in zip(built, built[1:]):
+        assert (root / d / "prev.txt").read_text().strip() == prev, f"{d} 가 직전 거래일 {prev} 없이 만들어졌다"
+    assert (root / "latest").resolve() == (root / "2026-10-16").resolve()
+    assert (root / ".rebuild" / "first-pass" / "2026-10-12").is_dir(), "첫 판을 지웠다"
+    rows = (root / ".rebuild" / "summary.tsv").read_text("utf-8").splitlines()[1:]
+    assert [r.split("\t")[0] for r in rows] == [f"2026-10-{x:02d}" for x in (5, 6, 7, 8, 9, 12, 13, 14, 15, 16)]

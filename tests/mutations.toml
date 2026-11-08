@@ -4610,3 +4610,11 @@ find = """        if a.rebuilt:
             # 같은 자리의 옛 리포트는"""
 replace = """        if False:
             # 같은 자리의 옛 리포트는"""
+
+[[mutation]]
+id = "rebuild-jobs-skips-relinking-chunk-starts"
+why = "나란히 지은 덩어리의 첫날을 다시 안 지으면 그날 change 가 비고(직전 폴더가 다른 루트에 있었다) 아무도 모른다"
+guards = ["tests/test_rebuild_asof.py::test_rebuild_history_parallel_chunks_still_link_each_day_to_the_previous"]
+file = "scripts/rebuild_history.py"
+find = "        for k in range(1, len(chunks)):"
+replace = "        for k in range(len(chunks), len(chunks)):"

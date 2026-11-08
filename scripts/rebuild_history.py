@@ -5,7 +5,8 @@
         --origin-root reports --origin-label reports/.archive/pre-rebuild-2026-11-08
 
 * **오래된 날부터 차례로** 만든다 — 직전 대비(``change``)가 같은 루트의 직전 거래일 폴더를 읽는다.
-  거꾸로 또는 나란히 만들면 그 칸이 비거나 옛 루트의 리포트와 섞인다.
+  거꾸로 만들면 그 칸이 빈다. ``--jobs N`` 은 구간을 N 덩어리로 나눠 덩어리마다 차례로 짓고, 모은 뒤
+  덩어리 첫날만(그때는 직전 폴더가 있다) 다시 지어 잇는다 — 빈 루트에서만 쓴다.
 * 주말은 부르지 않는다. 평일 휴장은 ``daily_report.sh`` 가 :data:`EX_HOLIDAY` 로 알려 주고 요약에 "휴장" 으로 남는다
   (달력이 없어 DB 의 수급일로 가른다).
 * 이미 재구성한 날은 ``daily_report.sh`` 가 건너뛴다 — 끊겨도 다시 돌리면 이어서 간다. 다시 만들려면 ``--force``.
@@ -22,12 +23,14 @@ import re
 import subprocess
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 #: ``daily_report.sh`` 가 재구성 기준일이 거래일이 아닐 때 내는 코드.
 EX_HOLIDAY = 3
+_DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
 _COUNT = re.compile(r"검사 (\d+)건 · 실패 (\d+)건")
 
 
@@ -73,6 +76,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--origin-root", help="원본 리포트가 지금 있는 루트 — 그날 폴더가 있으면 REBUILT.txt 에 원본 위치를 적는다")
     ap.add_argument("--origin-label", help="REBUILT.txt 에 적을 원본 루트 이름(기본 --origin-root). 바꿔 낀 뒤 옮길 곳을 적는다")
     ap.add_argument("--force", action="store_true", help="이미 재구성한 날도 다시 만든다")
+    ap.add_argument("--jobs", type=int, default=1,
+                    help="날짜 구간을 N 덩어리로 나눠 나란히 짓는다(빈 루트에서만). 덩어리 첫날은 끝에 다시 짓는다")
     a = ap.parse_args(argv)
 
     if a.dates:
@@ -87,23 +92,23 @@ def main(argv: list[str] | None = None) -> int:
     rev = code_rev()
     label = a.origin_label or a.origin_root
 
-    rows, bad = [], 0
-    for d in days:
-        env = {**os.environ, "KR_QUANT_ASOF": d, "KR_QUANT_REPORTS": str(root), "KR_QUANT_CODE_REV": rev}
+    def build(d: str, where: Path, force: bool) -> tuple:
+        """그날 하나를 ``where`` 루트에 만든다 → (날, rc, 결과, VERIFY, 실패 항목, 걸린 시간)."""
+        env = {**os.environ, "KR_QUANT_ASOF": d, "KR_QUANT_REPORTS": str(where), "KR_QUANT_CODE_REV": rev}
         env.pop("KR_QUANT_FINAL", None)
         env.pop("KR_QUANT_REBUILD_ORIGIN", None)
-        if a.force:
+        if force:
             env["KR_QUANT_FORCE"] = "1"
         else:
             env.pop("KR_QUANT_FORCE", None)
         if a.origin_root and (Path(a.origin_root).expanduser() / d).is_dir():
             env["KR_QUANT_REBUILD_ORIGIN"] = f"{label.rstrip('/')}/{d}"
         t0 = time.monotonic()
-        with open(logs / f"{d}.log", "w", encoding="utf-8") as log:
+        with open(logs / f"{d}.log", "a", encoding="utf-8") as log:
             rc = subprocess.run([str(REPO / "scripts" / "daily_report.sh")], env=env,
                                 stdout=log, stderr=subprocess.STDOUT).returncode
         secs = time.monotonic() - t0
-        folder = root / d
+        folder = where / d
         if rc == EX_HOLIDAY:
             state = "휴장"
         elif (folder / "INCOMPLETE.txt").is_file() and not (folder / "numbers.html").is_file():
@@ -115,10 +120,54 @@ def main(argv: list[str] | None = None) -> int:
         else:
             state = "재구성"
         verdict, fails = verify_summary(folder) if state != "휴장" else ("-", "")
-        if state not in ("휴장", "재구성") or rc not in (0, EX_HOLIDAY):
-            bad += 1
-        rows.append((d, rc, state, verdict, fails, f"{secs:.0f}s"))
+        row = (d, rc, state, verdict, fails, f"{secs:.0f}s")
         print(f"{d}\trc={rc}\t{state}\t{verdict}\t{fails}\t{secs:.0f}s", flush=True)
+        return row
+
+    for d in days:
+        (logs / f"{d}.log").unlink(missing_ok=True)
+    jobs = max(1, min(a.jobs, len(days)))
+    if jobs == 1:
+        rows = [build(d, root, a.force) for d in days]
+    else:
+        # 덩어리마다 따로 둔 루트에 차례로 짓는다(daily_report.sh 는 루트마다 잠금 하나라 한 루트에 나란히 못 짓는다).
+        # 다 모은 뒤 덩어리 첫날만 — 그때는 직전 거래일 폴더가 옆에 있다 — 다시 지어 change 를 잇는다.
+        # 첫 판은 지우지 않고 .rebuild/first-pass/ 로 비켜 둔다.
+        busy = [d for d in days if (root / d).exists()]
+        if busy:
+            ap.error(f"--jobs 는 빈 루트에서만 쓴다 — 이미 있는 날: {' '.join(busy[:3])}")
+        size = -(-len(days) // jobs)
+        chunks = [days[i:i + size] for i in range(0, len(days), size)]
+        parts = [logs / f"chunk-{k}" for k in range(len(chunks))]
+
+        def run_chunk(k: int) -> list:
+            parts[k].mkdir(parents=True, exist_ok=True)
+            return [build(d, parts[k], a.force) for d in chunks[k]]
+
+        with ThreadPoolExecutor(len(chunks)) as ex:
+            got = list(ex.map(run_chunk, range(len(chunks))))
+        rows = [r for part in got for r in part]
+        for part in parts:
+            for d in sorted(p.name for p in part.iterdir() if _DAY.fullmatch(p.name)):
+                (part / d).rename(root / d)
+        first_pass = logs / "first-pass"
+        first_pass.mkdir(exist_ok=True)
+        for k in range(1, len(chunks)):
+            # 덩어리 첫날이 휴장이면 다음 날이 첫 거래일이다.
+            d = next((r[0] for r in got[k] if r[2] != "휴장"), None)
+            if d is None:
+                continue
+            if (root / d).exists():
+                (root / d).rename(first_pass / d)
+            rows = [build(d, root, False) if r[0] == d else r for r in rows]
+        last = max((p.name for p in root.iterdir() if _DAY.fullmatch(p.name) and (p / "numbers.html").is_file()),
+                   default=None)
+        if last:
+            tmp = root / ".latest.tmp"
+            tmp.unlink(missing_ok=True)
+            tmp.symlink_to(root / last)
+            tmp.replace(root / "latest")
+    bad = sum(1 for _d, rc, state, *_ in rows if state not in ("휴장", "재구성") or rc not in (0, EX_HOLIDAY))
 
     with open(logs / "summary.tsv", "w", encoding="utf-8") as f:
         f.write("date\trc\tstate\tverify\tfailed\tsecs\n")
