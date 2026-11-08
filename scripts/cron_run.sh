@@ -6,7 +6,10 @@
 # 보낸 뒤 **원래 종료코드 그대로** 끝난다. 스크립트가 제 핸들러를 돌리기 전에 죽는 경우
 # (`.env` 없음·uv 경로 깨짐)도 여기서 잡힌다.
 #
-# 75 는 수집 미완이다(daily_report.sh) — 다음 크론이 다시 하므로 error 가 아니라 warn.
+# 75 는 경고다 — error 가 아니라 warn. 뜻은 스크립트마다 다르고 본문(꼬리)이 말한다:
+#   daily_report.sh   오늘 기준일 수집 미완 · 확정치 미확인(08:20) · 다른 실행과 겹침
+#   freshness_check.sh 오늘 수급이 없다(휴장일이 아니면 수집 실패) · 알림 웹훅 미설정
+# 124 는 크론 줄의 timeout 이 끊은 것이다.
 # 알림 구현은 복사하지 않고 quant-airflow 것을 쓴다. 없는 체크아웃에서는 로그에만 남는다.
 set -u
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -26,7 +29,9 @@ rc=${PIPESTATUS[0]}
 
 if [ "$rc" -ne 0 ]; then
     if [ "$rc" -eq 75 ]; then
-        level=warn title="$name 수집 미완 — 게시 안 함, 다음 크론이 재시도"
+        level=warn title="$name 경고 (rc=75) — 본문의 ⚠️ 줄 참조"
+    elif [ "$rc" -eq 124 ]; then
+        level=error title="$name 시간 초과 (rc=124) — 크론 줄의 timeout 이 끊었다"
     else
         level=error title="$name 실패 (rc=$rc)"
     fi

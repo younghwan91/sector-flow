@@ -42,6 +42,11 @@ import re
 import statistics
 import sys
 import traceback
+import warnings
+
+# pandas 는 psycopg2 연결을 "검증 안 된 DBAPI" 라며 read_sql 마다 UserWarning 을 낸다. 동작엔 문제가 없는데
+# 크론 로그를 덮어 진짜 경고를 묻는다(2026-11 cron.log 에 1,491줄). 이 메시지만 끈다 — 크론의 전역 -W 는 다른 경고까지 끈다.
+warnings.filterwarnings("ignore", message="pandas only supports SQLAlchemy", category=UserWarning)
 
 TOL_EXACT = 1e-9      # 항등식 — 기계정밀도
 TOL_FIT = 1e-8        # 재적합 경유 — 누적 부동소수 오차 여유

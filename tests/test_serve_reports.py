@@ -5,6 +5,7 @@ import gzip
 import http.client
 import importlib.util
 import os
+import shutil
 import signal
 import socket
 import subprocess
@@ -223,3 +224,105 @@ def test_final_note_is_served_as_text(get, root):
     (root / "2026-11-06" / "FINAL.txt").write_text("확정", "utf-8")
     status, h, body = get("/2026-11-06/FINAL.txt")
     assert status == 200 and h["Content-Type"].startswith("text/plain") and body.decode() == "확정"
+
+# ── serve.sh — 떠 있는데 대답이 없는 서버 ─────────────────────────────────────
+
+HUNG = """
+import os, socket, sys, time
+s = socket.socket()
+s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+s.bind(("127.0.0.1", int(sys.argv[1])))
+s.listen(16)                       # 연결은 받아 두고(백로그) 대답은 영영 안 한다
+open(sys.argv[2], "w").write(str(os.getpid()))
+time.sleep(120)
+"""
+
+
+@pytest.fixture
+def web(tmp_path):
+    if not shutil.which("curl") or not shutil.which("flock"):
+        pytest.skip("curl·flock 이 없다")
+    r = tmp_path / "sector-flow"
+    (r / "scripts").mkdir(parents=True)
+    (r / "reports").mkdir()
+    for name in ("serve.sh", "serve_reports.py"):
+        shutil.copy(REPO / "scripts" / name, r / "scripts" / name)
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    procs: list[subprocess.Popen] = []
+    yield r, port, procs
+    # 저마다 새 세션으로 띄웠다 — 프로세스 그룹째 끈다(변이가 pid 를 흐려도 서버가 남지 않게).
+    for p in procs:
+        for sig in (signal.SIGTERM, signal.SIGKILL):
+            try:
+                os.killpg(p.pid, sig)
+            except ProcessLookupError:
+                break
+            try:
+                p.wait(timeout=5)
+                break
+            except subprocess.TimeoutExpired:
+                continue
+
+
+def _serve_sh(r: Path, port: int) -> subprocess.Popen:
+    env = {**os.environ, "SECTOR_FLOW_HOST": "127.0.0.1", "SECTOR_FLOW_PORT": str(port)}
+    return subprocess.Popen(["/bin/bash", str(r / "scripts" / "serve.sh")], env=env, text=True,
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
+
+
+def _healthy(port: int) -> bool:
+    try:
+        c = http.client.HTTPConnection("127.0.0.1", port, timeout=1)
+        c.request("GET", "/healthz")
+        return c.getresponse().status == 200
+    except OSError:
+        return False
+
+
+def _until(cond, timeout: float = 30) -> bool:
+    end = time.time() + timeout
+    while time.time() < end:
+        if cond():
+            return True
+        time.sleep(0.2)
+    return False
+
+
+def test_serve_sh_restarts_a_server_that_stops_answering(web):
+    """프로세스만 살아 있고 대답이 없으면 잠금만 보는 크론은 며칠이고 0 이다 — 아무도 모른다."""
+    r, port, procs = web
+    (r / "hung").mkdir()
+    (r / "hung" / "serve_reports.py").write_text(HUNG)
+    pidfile = r / "reports" / ".serve.pid"
+    hung = subprocess.Popen(["flock", str(r / "reports" / ".serve.lock"), sys.executable,
+                             str(r / "hung" / "serve_reports.py"), str(port), str(pidfile)],
+                            start_new_session=True)
+    procs.append(hung)
+    assert _until(pidfile.exists, 10)
+    hung_pid = int(pidfile.read_text())
+
+    p = _serve_sh(r, port)
+    procs.append(p)
+    assert _until(lambda: _healthy(port), 40), "멈춘 서버를 그대로 뒀다"
+    assert hung.wait(timeout=10) is not None
+    assert int(pidfile.read_text()) != hung_pid
+    os.kill(int(pidfile.read_text()), signal.SIGTERM)
+    out, _ = p.communicate(timeout=15)
+    assert "대답하지 않는다" in out
+
+
+def test_serve_sh_leaves_a_healthy_server_alone(web):
+    """대답하는 서버를 5분마다 죽였다 살리면 그 틈의 요청이 끊긴다."""
+    r, port, procs = web
+    first = _serve_sh(r, port)
+    procs.append(first)
+    assert _until(lambda: _healthy(port), 20)
+    pid = (r / "reports" / ".serve.pid").read_text()
+    again = subprocess.run(["/bin/bash", str(r / "scripts" / "serve.sh")], capture_output=True, text=True,
+                           timeout=30, env={**os.environ, "SECTOR_FLOW_HOST": "127.0.0.1",
+                                            "SECTOR_FLOW_PORT": str(port)})
+    assert again.returncode == 0, again.stdout + again.stderr
+    assert first.poll() is None and (r / "reports" / ".serve.pid").read_text() == pid
+    assert _healthy(port)

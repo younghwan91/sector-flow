@@ -27,7 +27,7 @@ uv run sw-ledger --dir <리포트 폴더>          # 자금 원장
 
 - §1 [무엇을 하나](#1-무엇을-하나)
 - §2 [구조](#2-구조)
-- §3 [일일 배치 — 언제 무엇이 도나](#3-일일-배치--언제-무엇이-도나)
+- §3 [일일 배치 — 언제 무엇이 도나](#3-일일-배치--언제-무엇이-도나) · [장애 대응](#31-장애-대응)
 - §4 [설치와 실행](#4-설치와-실행) · [리포트 폴더를 그대로 주고받는다](#43-리포트-폴더를-그대로-주고받는다) · [웹으로 보기](#44-웹으로-보기)
 - §5 [화면 읽는 법](#5-화면-읽는-법) · [종목 선정 가이드](docs/trading-guide.md)
 - §6 [자금 원장 — `sw-ledger`](#6-자금-원장--sw-ledger)
@@ -114,8 +114,12 @@ docs/                    # formulas.md · trading-guide.md · validation/
 |---|---|
 | 평일 18:10 | 수집이 끝났으면 리포트를 만들어 `latest` 로 건다 |
 | 평일 19:10 | 18:10 에 못 만든 날을 다시 시도한다(수집이 18:47 까지 간 날이 있었다) |
-| 화~토 08:20 | **확정 모드.** 새벽 `daily_finalize`(06:30~07:25)가 확정치를 덮은 것을 확인하면(`scripts/finalize_done.py`) 전날 리포트를 확정치로 다시 만든다 — 제목이 `마감·확정`. 아직 못 만든 날이면 마지막 기회이기도 하다 |
-| 5분마다 | 웹 서비스(§4.4)가 안 떠 있으면 띄운다 |
+| 화~토 08:20 | **확정 모드.** 새벽 `daily_finalize`(06:30~07:25)가 확정치를 덮은 것을 확인하면(`scripts/finalize_done.py`) 전날 리포트를 확정치로 다시 만든다 — 제목이 `마감·확정`. 확인이 안 되면 잠정 리포트를 두고 경고(75)로 끝난다. 아직 못 만든 날이면 마지막 기회이기도 하다 |
+| 평일 20:30 | 신선도 점검(`scripts/freshness_check.py`). 오늘 수급이 왔는데 `latest` 가 오늘이 아니면 오류, 오늘 수급이 없으면 경고, 알림 웹훅이 비었으면 경고 |
+| 5분마다 | 웹 서비스(§4.4)가 안 떠 있거나 `/healthz` 에 대답하지 않으면 다시 띄운다 |
+
+리포트 배치는 40분(`timeout`), DB 문장 하나는 10분(`statement_timeout`), 접속은 10초에서 끊긴다. 두 실행이 겹치면
+뒤의 것이 `reports/.report.lock` 을 못 잡고 경고로 물러난다.
 
 **만들기 전에 완전성 관문을 본다**([`scripts/completeness_gate.py`](scripts/completeness_gate.py)). 시장별로 기준일의 수급 종목수와
 시총 잡히는 종목수가 직전 5거래일 중앙값의 97% 이상이고 시총 합이 0 보다 커야 한다. 279거래일 실측 최저가 99.1% 여서 평소엔 안 막힌다.
@@ -125,9 +129,29 @@ docs/                    # formulas.md · trading-guide.md · validation/
 | `INCOMPLETE.txt` 만 | 수집 미완이라 안 만들었다. `latest` 는 전날에 머물고, 다음 크론이 성공하면 폴더가 바뀐다 | 전날 리포트 제목에 `⚠ MM-DD 수집 미완` |
 | `VERIFY_FAILED.txt` | 만들었지만 검사에 걸렸다(§9). 다음 시도가 다시 만들어 본다 | 화면 제목에 `⚠ 검증 실패`, HTML 맨 위에 경고 |
 
-종료코드가 75(오늘 기준일 수집 미완, 다음 크론이 재시도)면 경고, 그 밖 비정상이면 오류로 [`scripts/cron_run.sh`](scripts/cron_run.sh) 가 알림을 보낸다. 기준일이 오늘이 아닌데 아직 미완이면 75 가 아니라 1 로 끝난다.
+종료코드가 75 면 경고, 그 밖 비정상이면 오류로 [`scripts/cron_run.sh`](scripts/cron_run.sh) 가 알림을 보낸다(124 는 시간 초과로 따로 부른다). 기준일이 오늘이 아닌데 아직 미완이면 75 가 아니라 1 로 끝난다.
 
 제목의 `마감·잠정` 은 수집 창이 지난 뒤 그날 잠정값으로 만든 리포트, `마감·확정` 은 다음날 아침 확정치로 다시 만든 리포트다. 잠정 리포트의 G 는 확정치에서 자주 바뀐다(2026-11-08 검증: 게시본과 확정치의 G 순위가 크게 갈린 날이 37%).
+
+### 3.1 장애 대응
+
+알림 제목은 `<작업> 실패 (rc=N)`·`<작업> 경고 (rc=75)`·`<작업> 시간 초과 (rc=124)` 이고 본문은 로그 꼬리 30줄이다.
+작업은 `sector-flow-report`(리포트)·`sector-flow-fresh`(신선도)·`sector-flow-web`(웹)이고 아래 표에서는 앞의 `sector-flow-` 를 뗐다. 명령은 저장소 루트
+(`~/git/sector-flow`)에서 친다. 기록은 `reports/cron.log`, 웹은 `reports/serve.log`.
+
+| 알림·증상 | 원인 | 할 일 |
+|---|---|---|
+| `report 경고 (rc=75)`, 본문 `수집 미완` | 오늘 수집이 아직 안 끝났다. 폴더에 `INCOMPLETE.txt`, `latest` 는 전날 | 기다린다 — 19:10·다음날 08:20 이 다시 만든다. 수집이 끝났으면 `scripts/daily_report.sh` |
+| `report 실패 (rc=1)`, 본문 `오늘이 아닌데 수집 미완` | 지난 기준일이 아직 미완이다. 다음 거래일 수집이 시작되면 기준일이 넘어가 그 날은 영영 안 만들어진다 | quant-airflow 에서 수집을 메운 뒤 바로 `scripts/daily_report.sh` |
+| `report 실패 (rc=1)`, 본문 `검증 실패` · 폴더에 `VERIFY_FAILED.txt` | 게시는 됐지만 자기 검증(§9)에 걸렸다. 화면·HTML 에 ⚠ | `grep FAIL reports/latest/VERIFY_FAILED.txt` 로 걸린 검사를 본다. 원인을 고친 뒤 `scripts/daily_report.sh`(검증 실패 폴더는 다시 만든다. 확정 리포트는 확정으로 남는다) |
+| `report 실패 (rc=1)`, 본문 `DB 에서 기준일을 못 읽었다` · `report 시간 초과 (rc=124)` · 본문 `statement timeout` | DB 서버가 죽었거나 접속정보가 틀렸거나 락에 걸렸다 | quant-airflow 의 TimescaleDB 를 살핀다. 접속 확인: `set -a; . ~/git/quant-airflow/.env; set +a; uv run --extra pg python -c "import os; from sectorflow.storage import connect; connect(os.environ['KR_QUANT_DB']).close(); print('ok')"`. 복구 뒤 `scripts/daily_report.sh` |
+| `report 경고 (rc=75)` 08:20, 본문 `확정치를 확인하지 못했다` | `daily_finalize` 가 실패·지연됐거나 Airflow 로그 경로가 바뀌었다. 본문의 `[확정치]` 줄이 어느 쪽인지 말한다 | `uv run python scripts/finalize_done.py --asof <기준일>` 로 이유를 본다. 확정이 끝났으면 `KR_QUANT_FINAL=1 scripts/daily_report.sh`. 경로가 바뀌었으면 `finalize_done.py` 의 경로 규칙을 고친다 |
+| `report 경고 (rc=75)`, 본문 `다른 리포트 실행이 돌고 있다` | 손으로 돌린 실행과 크론이 겹쳤다 | 앞 실행이 끝난 뒤 필요하면 같은 명령을 다시 |
+| `fresh 실패 (rc=1)`, 본문 `오늘 리포트가 안 걸렸다` | 수급은 들어왔는데 리포트가 없다. 크론 줄이 빠졌거나 배포가 깨졌거나 관문이 막았다 | `grep "$(date +%F)" reports/cron.log`, `crontab -l \| grep sector-flow`. 고친 뒤 `scripts/daily_report.sh` |
+| `fresh 경고 (rc=75)`, 본문 `supply_demand 가 비었다` | 휴장일이거나 수집이 실패했다(달력이 없어 못 가른다) | 휴장일이면 무시한다. 아니면 quant-airflow `daily_collection` 을 본다 |
+| `fresh 경고 (rc=75)`, 본문 `ALERT_WEBHOOK_URL 이 비었다`(평일마다) | 알림 웹훅이 없어 위의 모든 알림이 로그에만 남는다 | 웹훅을 만들어 `~/git/quant-airflow/.env` 의 `ALERT_WEBHOOK_URL=` 에 넣는다 |
+| `web 실패 (rc=1)` · 웹이 안 열린다 | Tailscale 이 없거나 포트가 막힌 채 한 시간이 지났다(`reports/.serve.misses` 가 센다). 서버가 죽었다(rc 가 서버 종료코드) | `tail reports/serve.log`, `tailscale ip -4`, `ss -ltnp \| grep 8765`. 손으로 띄우려면 `scripts/serve.sh`. 대답 없는 서버는 크론이 5분 안에 끄고 다시 띄운다 |
+| 고친 코드가 다음날에도 안 돈다 · `morning-sync` 알림에 `hold sector-flow` | 07:50 `pull-all --ci-gate` 가 CI 가 초록이 아닌 커밋을 받지 않았다 | GitHub Actions 를 초록으로 고친다. 확인했고 당장 필요하면 `git -C ~/git/sector-flow pull --ff-only` |
 
 ## 4. 설치와 실행
 

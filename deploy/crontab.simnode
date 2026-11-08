@@ -16,8 +16,19 @@
 # 당일 수급은 잠정값이다. 확정치는 다음날 새벽 daily_finalize 가 DB 에 덮어쓰고, 08:20 이 그 기준일을 다시 만든다.
 # reports/ 는 gitignore 라 새 clone 에 없다 — 리다이렉트가 먼저 터지지 않게 mkdir 부터.
 #
-10 18,19 * * 1-5 mkdir -p /home/young/git/sector-flow/reports && /home/young/git/sector-flow/scripts/cron_run.sh sector-flow-report -- /home/young/git/sector-flow/scripts/daily_report.sh >> /home/young/git/sector-flow/reports/cron.log 2>&1
-20 8 * * 2-6 mkdir -p /home/young/git/sector-flow/reports && KR_QUANT_FINAL=1 /home/young/git/sector-flow/scripts/cron_run.sh sector-flow-report -- /home/young/git/sector-flow/scripts/daily_report.sh >> /home/young/git/sector-flow/reports/cron.log 2>&1
+# 상한: timeout 40m(실측 2~5분). DB 가 걸려 멈춘 배치가 다음 크론과 겹치지 않고, 끊기면 124 로 오류 알림이 간다.
+# -k 2m 은 TERM 을 무시하고 버티는 자식을 KILL 한다. 문장 하나는 DB 쪽 statement_timeout(10분, storage.connect)이 끊는다.
+# 겹침: daily_report.sh 가 reports/.report.lock 을 flock -n 으로 잡는다. 못 잡으면(손으로 돌린 실행과 겹침)
+# 75(경고)로 끝난다 — 0 으로 조용히 끝내면 08:20 확정 모드가 밀린 날이 영영 잠정으로 남아도 아무도 모른다.
+# 잠금을 스크립트 안에 둔 것은 손으로 돌린 실행도 같은 잠금을 잡게 하려고다.
+#
+10 18,19 * * 1-5 mkdir -p /home/young/git/sector-flow/reports && /home/young/git/sector-flow/scripts/cron_run.sh sector-flow-report -- timeout -k 2m 40m /home/young/git/sector-flow/scripts/daily_report.sh >> /home/young/git/sector-flow/reports/cron.log 2>&1
+20 8 * * 2-6 mkdir -p /home/young/git/sector-flow/reports && KR_QUANT_FINAL=1 /home/young/git/sector-flow/scripts/cron_run.sh sector-flow-report -- timeout -k 2m 40m /home/young/git/sector-flow/scripts/daily_report.sh >> /home/young/git/sector-flow/reports/cron.log 2>&1
+
+# 신선도 점검 — 평일 20:30(19:10 재시도·18:47 까지 간 수집 뒤). 결과만 본다(scripts/freshness_check.py):
+# 오늘 수급이 왔는데 latest 가 오늘이 아니면 1, 평일인데 오늘 수급이 없으면 75(휴장일이면 무시),
+# ALERT_WEBHOOK_URL 이 비었으면 75 — 비어 있으면 위의 모든 알림이 로그에만 남는다.
+30 20 * * 1-5 mkdir -p /home/young/git/sector-flow/reports && /home/young/git/sector-flow/scripts/cron_run.sh sector-flow-fresh -- timeout -k 1m 10m /home/young/git/sector-flow/scripts/freshness_check.sh >> /home/young/git/sector-flow/reports/cron.log 2>&1
 
 # 리포트 웹 서비스 — 5분마다 "안 떠 있으면 띄운다"(scripts/serve.sh, 이미 떠 있으면 잠금을 못 잡고 바로 0).
 # 재부팅·서버 사망·배포(서버가 제 코드가 바뀌면 스스로 끝난다) 뒤 5분 안에 다시 뜬다. Tailscale 주소에만 연다.

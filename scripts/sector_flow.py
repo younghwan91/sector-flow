@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import warnings
 from datetime import datetime, timedelta, timezone
 
 import pandas as pd
@@ -33,6 +34,10 @@ import pandas as pd
 from sectorflow.storage import (
     _is_pg,
     connect, db_default, market_cap_asof_bulk, read_supply_demand, recent_dates)
+
+# pandas 는 psycopg2 연결을 "검증 안 된 DBAPI" 라며 read_sql 마다 UserWarning 을 낸다. 동작엔 문제가 없는데
+# 크론 로그를 덮어 진짜 경고를 묻는다(2026-11 cron.log 에 1,491줄). 이 메시지만 끈다 — 크론의 전역 -W 는 다른 경고까지 끈다.
+warnings.filterwarnings("ignore", message="pandas only supports SQLAlchemy", category=UserWarning)
 
 EOK = 1e8                 # 원 → 억원
 INDEX_RET: dict = {}
