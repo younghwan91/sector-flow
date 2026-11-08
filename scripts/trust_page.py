@@ -6,9 +6,12 @@
 
 싣는 것(네 절):
 
-1. **일일 파이프라인 품질** — 기준일 폴더마다 잠정/확정/재구성, ``VERIFY.txt`` 요약(통과/전체·문서 주장 어긋남),
-   완전성 관문 수치(``INCOMPLETE.txt`` 또는 ``cron.log`` 의 관문 줄), 잠정→확정 변경 칸 수(``FINAL.txt``).
-   최근 :data:`WINDOW` 개 기준일을 한 줄 띠와 표로.
+1. **일일 파이프라인 품질** — 기준일 폴더마다 잠정/확정/재구성(``REBUILT.txt`` 의 ``finalize:`` 포함),
+   ``VERIFY.txt`` 요약(통과/전체·문서 주장 어긋남), 완전성 관문 수치(``INCOMPLETE.txt`` 또는 ``cron.log`` 의 관문 줄),
+   잠정→확정 변경 칸 수(``FINAL.txt``). 최근 :data:`WINDOW` 개 기준일을 한 줄 띠와 표로.
+   SLO 준수(최근 30일)와 정정 목록은 운영 사건 원장(``events.jsonl``, ``scripts/ops_ledger.py``)으로 센다 —
+   원장에 게시 사건이 아직 없으면(도입 전) 정정은 폴더 표시에서 세고 그렇게 적는다. 폴더 표시는 바꿔 끼우기가
+   지우므로 원장이 정본이다(``docs/slo.md``).
 2. **방법** — 관문·자기 검증 층(최신 ``VERIFY.txt`` 에서 읽는다)·확정 모드·사전등록, ``docs/`` 링크.
 3. **검증 결과** — :data:`VALIDATION`·:data:`CHECKS`. 불리한 결과(증거 없음·판정 불가·쓸 수 없음·불합격)를 뺀 것이 없다.
    사전등록 커밋이 결과 커밋보다 앞선다는 것은 ``tests/test_trust_page.py`` 가 git 으로 확인한다. 페이지는 그 순서와
@@ -45,6 +48,20 @@ from datetime import datetime, timedelta, timezone
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TEMPLATE = os.path.join(REPO, "scripts", "templates", "trust.html")
+
+
+def _load_ops_ledger():
+    # 같은 폴더의 ops_ledger.py — 원장 읽기·SLO 통계·정정 목록의 정본을 그대로 쓴다(수식 복제 금지).
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("_trust_ops_ledger",
+                                                  os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                                               "ops_ledger.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+ops = _load_ops_ledger()
 KST = timezone(timedelta(hours=9))
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 #: 띠·표에 싣는 최근 기준일 수.
@@ -125,6 +142,16 @@ def parse_final(text: str) -> dict:
     return {"kind": "unknown"}
 
 
+def rebuilt_fields(path: str) -> dict:
+    """``REBUILT.txt`` 의 ``key: 값`` 줄들(``commit:``·``finalize:`` — daily_report.sh 재구성이 쓴다)."""
+    out: dict[str, str] = {}
+    for line in (_read(path) or "").splitlines():
+        k, sep, v = line.partition(":")
+        if sep and k.strip() in ("commit", "finalize"):
+            out[k.strip()] = v.strip()
+    return out
+
+
 def _read(path: str) -> str | None:
     try:
         with open(path, encoding="utf-8", errors="replace") as f:
@@ -168,13 +195,16 @@ def scan_day(root: str, d: str, gates: dict) -> dict:
         "numbers.html", "payload.json", "VERIFY.txt", "VERIFY_FAILED.txt", "CLAIMS.txt",
         "FINAL.txt", "REBUILT.txt", "INCOMPLETE.txt")}
     day = {"date": d, "verify": None, "verify_status": "unknown", "gate": None, "gate_src": None,
-           "final": None, "built": None}
+           "final": None, "built": None, "rebuilt": None}
+    if has["REBUILT.txt"]:
+        day["rebuilt"] = rebuilt_fields(os.path.join(p, "REBUILT.txt"))
     if not has["numbers.html"]:
         day["state"] = "수집 미완" if has["INCOMPLETE.txt"] else "빈 폴더"
-    elif has["REBUILT.txt"]:
-        day["state"] = "재구성"
     elif has["FINAL.txt"]:
         day["state"] = "확정"
+    elif day["rebuilt"] is not None and day["rebuilt"].get("finalize") == "unverified":
+        # daily_finalize 창 밖의 재구성 — 마감 값이지만 확정 기록이 없다(serve_reports 와 같은 말).
+        day["state"] = "확정 기록 없음"
     else:
         day["state"] = "잠정"
     vtxt = _read(os.path.join(p, "VERIFY.txt")) if has["VERIFY.txt"] else None
@@ -215,6 +245,31 @@ def scan(root: str) -> list[dict]:
         day["archived"] = arc.get(d, 0)
         days.append(day)
     return days
+
+
+def folder_errata(days: list[dict]) -> list[dict]:
+    """원장에 게시 사건이 없을 때의 대안 — 폴더 표시에서 '첫 게시 뒤 숫자가 바뀐 날' 을 센다.
+
+    재구성(``REBUILT.txt``)과 섹터 칸이 바뀐 확정(``FINAL.txt`` 의 diff>0)만 보이고, 바꿔 끼우며 지워진
+    흔적은 못 본다 — 그래서 페이지가 출처를 같이 적는다.
+    """
+    rows = []
+    for d in days:
+        if d["rebuilt"] is not None:
+            commit = (d["rebuilt"].get("commit") or "?")[:12]
+            fin = d["rebuilt"].get("finalize")
+            rows.append({"asof": d["date"], "kind": "재구성",
+                         "detail": f"commit {commit}" + (f" · finalize {fin}" if fin else ""), "backfill": False})
+        f = d["final"]
+        if f and f.get("kind") == "diff" and f["sector"][0] > 0 and d["rebuilt"] is None:
+            rows.append({"asof": d["date"], "kind": "확정 정정", "detail": f"섹터 칸 {f['sector'][0]}개 변경",
+                         "backfill": False})
+    return rows
+
+
+def ledger_report_events(events: list[dict]) -> list[dict]:
+    """원장에서 게시 이력을 말하는 사건 — report·archive. 프로브·잡만 있으면 이력으로는 빈 원장이다."""
+    return [e for e in events if e.get("event") in ("report", "archive")]
 
 
 def verify_layers(root: str, d: str | None) -> list[tuple[str, str]]:
@@ -333,7 +388,7 @@ def prereg_gaps(info: dict) -> list[int]:
 
 # ─────────────────────────────────────────────── 그리기
 
-STATE_TAG = {"확정": "ok", "잠정": "prov", "재구성": "rebuilt", "수집 미완": "warn", "빈 폴더": "warn"}
+STATE_TAG = {"확정": "ok", "잠정": "prov", "확정 기록 없음": "prov", "수집 미완": "warn", "빈 폴더": "warn"}
 GLYPH = {"pass": "✓", "claim": "!", "fail": "✕", "incomplete": "…", "unknown": "?"}
 STATUS_KO = {"pass": "검증 통과", "claim": "검증 통과 · 문서 주장 어긋남", "fail": "검증 실패",
              "incomplete": "수집 미완", "unknown": "검증 기록 없음"}
@@ -391,10 +446,14 @@ def final_cell(day: dict) -> str:
 
 def state_cell(day: dict) -> str:
     st = day["state"]
-    href = {"확정": "FINAL.txt", "재구성": "REBUILT.txt", "수집 미완": "INCOMPLETE.txt"}.get(st)
+    href = {"확정": "FINAL.txt", "확정 기록 없음": "REBUILT.txt", "수집 미완": "INCOMPLETE.txt"}.get(st)
     tag = f'<span class="tag {STATE_TAG[st]}">{st}</span>'
     if href:
         tag = f'<a class="tag {STATE_TAG[st]}" href="/{day["date"]}/{href}">{st}</a>'
+    if day["rebuilt"] is not None:
+        commit = (day["rebuilt"].get("commit") or "?")[:12]
+        tag += (f' <a class="tag rebuilt" href="/{day["date"]}/REBUILT.txt" '
+                f'title="나중 코드({commit})·확정 데이터로 다시 만든 날 — 그날 저녁 게시본이 아니다">재구성</a>')
     if day.get("archived"):
         tag += f' <span class="dim" title=".archive/ 에 옛 게시본 보관">원본 보관 {day["archived"]}</span>'
     return tag
@@ -421,7 +480,8 @@ def tiles_html(days: list[dict]) -> str:
         (c["fail"], "자기 검증 실패"),
         (c["claim"], "통과 · 문서 주장 어긋남"),
         (c["incomplete"], "수집 미완(안 만듦)"),
-        (s["확정"], "확정"), (s["잠정"], "잠정"), (s["재구성"], "재구성"),
+        (s["확정"], "확정"), (s["잠정"], "잠정"), (s["확정 기록 없음"], "확정 기록 없음"),
+        (sum(1 for d in days if d["rebuilt"] is not None), "재구성"),
     ]
     return '<div class="tiles">' + "".join(
         f'<div class="tile"><b>{n}</b><span>{E(k)}</span></div>' for n, k in items) + "</div>"
@@ -513,12 +573,77 @@ def layers_html(layers: list[tuple[str, str]]) -> str:
     return '<ul class="tight">' + "".join(f"<li><b>{E(k)}</b> {E(t)}</li>" for k, t in layers) + "</ul>"
 
 
+def _days_list(label: str, ds: list) -> str:
+    names = [d if isinstance(d, str) else f"{d['asof']}({d['at']})" for d in ds]
+    return f"{label} {len(ds)}일" + (" — " + ", ".join(names) if names else "")
+
+
+def slo_html(st: dict | None, has_reports: bool) -> str:
+    """원장 30일 통계 → SLO 카드. 원장이 없으면 없다고 말한다 — 폴더로 흉내 내지 않는다(흔적이 지워진다).
+
+    프로브(웹 응답)만 쌓인 원장이면 그 줄만 싣고, 게시·확정 준시성은 게시 사건이 쌓인 뒤부터 잰다 —
+    빈 집계를 그리면 '늦은 날 0일' 이 '늦은 날 없음' 으로 읽힌다.
+    """
+    if st is None:
+        return ('<div class="card"><p class="dim">운영 사건 원장(<code>events.jsonl</code>)이 아직 없다 — '
+                'SLO 준수는 원장이 쌓인 뒤부터 잰다(<code>docs/slo.md</code>). 폴더 표시로는 재지 않는다: '
+                '바꿔 끼우기가 흔적을 지워 준시성을 과장하게 된다.</p></div>')
+    p, f, pr = st["prov"], st["final"], st["probe"]
+    if not has_reports:
+        probe = (f"웹 프로브(5분 /healthz): {pr['n']}회 중 200 OK {pr['ok']}회"
+                 + (f" ({pr['share']:.1%})" if pr["share"] is not None else "")) if pr["n"] else ""
+        return ('<div class="card"><p class="dim">원장에 아직 게시 사건이 없다 — 게시·확정 준시성은 게시 사건이 '
+                '쌓인 뒤부터 잰다(<code>docs/slo.md</code>). 폴더 표시로는 재지 않는다: 바꿔 끼우기가 흔적을 '
+                '지워 준시성을 과장하게 된다.</p>'
+                + (f'<p>{probe} — 서버가 내려가 있던 주기는 줄 자체가 없어 가용률이 아니라 응답률이다.</p>' if probe else "")
+                + '</div>')
+    lines = [
+        f"<li><b>잠정 게시(당일 {ops.PROV_SLO_KST:%H:%M} KST 기한)</b> — 제때 {p['on_time']}일 · "
+        + _days_list("늦음", p["late"])
+        + (f" · 기록 없음 {len(p['no_record'])}일" if p["no_record"] else "") + "</li>",
+        f"<li><b>확정(다음날 {ops.FINAL_TARGET_KST:%H:%M} 목표 · {ops.FINAL_SLO_KST:%H:%M} SLO)</b> — "
+        f"목표 내 {f['by_target']}일 · 재시도로 SLO 내 {len(f['by_slo'])}일 · "
+        + _days_list("SLO 초과", f["late"]) + " · " + _days_list("기한 지나 미확정", f["missing"])
+        + (f" · 재구성으로만 확정 {len(f['rebuilt_only'])}일(처음 확정 시각 기록 없음)" if f["rebuilt_only"] else "")
+        + "</li>",
+        "<li><b>관문 차단</b> — " + (", ".join(st["gate_blocked_days"]) or "없음")
+        + " · <b>검증 실패</b> — " + (", ".join(st["verify_failed_days"]) or "없음") + "</li>",
+        f"<li><b>웹 프로브(5분 /healthz)</b> — {pr['n']}회 중 200 OK {pr['ok']}회"
+        + (f" ({pr['share']:.1%})" if pr["share"] is not None else "")
+        + " — 서버가 내려가 있던 주기는 줄 자체가 없어 가용률이 아니라 응답률이다</li>",
+    ]
+    if st["backfill_events"]:
+        lines.append(f"<li class=\"dim\">이 창의 사건 중 {st['backfill_events']}건은 백필 복원 — 시각·필드가 성기다</li>")
+    return (f'<div class="card"><ul class="tight">{"".join(lines)}</ul>'
+            f'<p class="dim">기준일 {st["asof_days"]}일({st["from"]} ~ {st["to"]}) · 출처 원장 '
+            f'<code>events.jsonl</code> · 기준·측정법은 <code>docs/slo.md</code>. 원장은 웹에 안 보인다.</p></div>')
+
+
+def errata_html(rows: list[dict], source: str) -> str:
+    """정정 목록 — 첫 게시 뒤 숫자가 바뀐 날. 숨기지 않는 것이 이 페이지의 존재 이유다."""
+    src = ('출처: 운영 사건 원장(<code>ops_ledger.py --errata</code>)' if source == "ledger" else
+           '출처: 폴더 표시(<code>REBUILT.txt</code>·<code>FINAL.txt</code>) — 원장 도입 전이라 바꿔 끼우며 '
+           '지워진 정정은 못 센 하한이다')
+    if not rows:
+        return f'<div class="card"><p>정정 없음 — 첫 게시 뒤 숫자가 바뀐 날이 기록에 없다.</p><p class="dim">{src}.</p></div>'
+    body = "".join(f"<tr><td>{E(r['asof'])}</td><td>{E(r['kind'])}</td><td>{E(r['detail'])}"
+                   + (' <span class="dim">[백필 복원]</span>' if r.get("backfill") else "") + "</td></tr>"
+                   for r in rows)
+    return (f'<div class="scroll"><table class="errata"><thead><tr><th>기준일</th><th>종류</th><th>내용</th></tr></thead>'
+            f'<tbody>{body}</tbody></table></div><p class="dim">{src}. 재구성은 지난 기준일을 나중 코드·확정 데이터로 '
+            f'다시 만든 것이고, 확정 정정은 잠정→확정에서 머리 숫자가 반올림을 넘게 바뀐 날이다.</p>')
+
+
 def render(root: str, now: datetime | None = None, repo_url: str = REPO_URL, repo: str = REPO,
            window: int = WINDOW) -> str:
     now = now or datetime.now(KST)
     all_days = scan(root)
     days = all_days[-window:]
     latest = latest_dir(root)
+    events = list(ops.iter_events(root))
+    history = ledger_report_events(events)
+    slo = ops.stats(events, 30, now=now.astimezone(timezone.utc)) if events else None
+    err_rows, err_src = (ops.errata_rows(events), "ledger") if history else (folder_errata(all_days), "folders")
     commits = {h for r in VALIDATION + CHECKS for _l, pre, res in r["links"] for h in ((pre or (0, None))[1], res[1]) if h}
     info = {h: git_info(h, repo) for h in commits}
     head = git_head(repo)
@@ -532,6 +657,8 @@ def render(root: str, now: datetime | None = None, repo_url: str = REPO_URL, rep
         "strip": strip_html(days),
         "fail_reasons": fail_reasons_html(days),
         "days_table": days_table_html(days) or '<tr><td colspan="7">리포트 폴더가 없다</td></tr>',
+        "slo": slo_html(slo, bool(history)),
+        "errata": errata_html(err_rows, err_src),
         "layers": layers_html(verify_layers(root, latest)),
         "docs": docs_html(repo_url, head, repo),
         "gaps": (f"{min(gaps)}~{max(gaps)}분" if len(set(gaps)) > 1 else f"{gaps[0]}분") if gaps else "알 수 없음(git 없음)",

@@ -6050,14 +6050,13 @@ find = """        if has["VERIFY_FAILED.txt"] or v["fails"] or not v["complete"]
 replace = """        if v["fails"]:"""
 
 [[mutation]]
-id = "trust-rebuilt-shown-as-final"
-why = "재구성 폴더에도 FINAL.txt 가 있다 — 재구성을 먼저 보지 않으면 나중에 다시 만든 날이 '확정' 게시본으로 보인다"
+id = "trust-unverified-rebuild-shown-as-provisional"
+why = """daily_finalize 창 밖 재구성(finalize: unverified)을 '잠정' 으로 그린다 — 마감 값인데 값이 또 바뀔
+것처럼 읽히고, '확정 기록 없음' 이라는 사실(웹 목록과 같은 말)이 사라진다."""
 guards = ["tests/test_trust_page.py::test_each_report_folder_gets_its_state_verify_gate_and_final_diff"]
 file = "scripts/trust_page.py"
-find = """    elif has["REBUILT.txt"]:
-        day["state"] = "재구성\""""
-replace = """    elif False:
-        day["state"] = "재구성\""""
+find = """    elif day["rebuilt"] is not None and day["rebuilt"].get("finalize") == "unverified":"""
+replace = """    elif day["rebuilt"] is not None and day["rebuilt"].get("finalize") == "never":"""
 
 [[mutation]]
 id = "trust-unfavorable-caveat-dropped"
@@ -6172,3 +6171,65 @@ guards = ["tests/test_trust_page.py::test_no_report_folder_means_no_page_rather_
 file = "scripts/trust_page.py"
 find = "    return os.path.join(root, d, \"trust.html\") if d else None"
 replace = "    return os.path.join(root, d, \"trust.html\") if d else os.path.join(root, \"trust.html\")"
+
+# ── 운영 사건 원장(SLO·정정) ──────────────────────────────────────────────────────
+
+[[mutation]]
+id = "trust-slo-faked-from-empty-ledger"
+why = """원장에 게시 사건이 없어도 통계를 그린다 — 전부 0일이라 '늦은 날 없음' 으로 읽힌다. 지워진
+흔적으로 재면 준시성이 과장되므로, 없으면 없다고 말해야 한다."""
+guards = ["tests/test_trust_page.py::test_slo_without_ledger_says_so_instead_of_pretending",
+          "tests/test_trust_page.py::test_probe_only_ledger_shows_probes_but_not_fake_timeliness"]
+file = "scripts/trust_page.py"
+find = '        "slo": slo_html(slo, bool(history)),'
+replace = '        "slo": slo_html(slo, True),'
+
+[[mutation]]
+id = "trust-slo-late-days-hidden"
+why = "SLO 카드가 늦은 날의 목록(날짜·시각)을 떨구고 수만 남긴다 — 어느 날이 늦었는지 추적할 수 없다"
+guards = ["tests/test_trust_page.py::test_slo_card_counts_come_from_the_ledger"]
+file = "scripts/trust_page.py"
+find = """        + _days_list("늦음", p["late"])"""
+replace = """        + f"늦음 {len(p['late'])}일\""""
+
+[[mutation]]
+id = "trust-errata-ledger-ignored"
+why = """원장에 게시 이력이 있어도 정정을 폴더 표시로만 센다 — 바꿔 끼우며 흔적이 지워진 날(원장의
+archive 사건만 남은 날)이 정정 목록에서 빠진다."""
+guards = ["tests/test_trust_page.py::test_errata_come_from_the_ledger_when_it_has_history"]
+file = "scripts/trust_page.py"
+find = '    err_rows, err_src = (ops.errata_rows(events), "ledger") if history else (folder_errata(all_days), "folders")'
+replace = '    err_rows, err_src = (folder_errata(all_days), "folders")'
+
+[[mutation]]
+id = "trust-folder-errata-drops-final-corrections"
+why = "폴더 대안 정정에서 확정 정정(FINAL diff>0)이 빠진다 — 재구성만 정정으로 세면 잠정→확정 변경이 숨는다"
+guards = ["tests/test_trust_page.py::test_errata_fall_back_to_folder_markers_without_a_ledger"]
+file = "scripts/trust_page.py"
+find = '        if f and f.get("kind") == "diff" and f["sector"][0] > 0 and d["rebuilt"] is None:'
+replace = '        if False:'
+
+[[mutation]]
+id = "trust-method-layers-go-silent"
+why = "방법 절의 검증 층 목록이 최신 VERIFY.txt 를 안 읽으면 '층 목록을 못 읽었다' 로 비는데 아무도 모른다 — 방법이 지금 검사기를 말한다는 약속이 깨진다"
+guards = ["tests/test_trust_page.py::test_layers_come_from_the_latest_verify"]
+file = "scripts/trust_page.py"
+find = '    t = _read(os.path.join(root, d, "VERIFY.txt")) if d else None'
+replace = '    t = None'
+
+[[mutation]]
+id = "trust-signed-percent-sneaks-in"
+why = """판정 설명에 부호 붙은 % 가 들어온다 — 관측 페이지의 숫자가 수익률 실적처럼 읽힌다.
+금지어 목록은 말만 보고 숫자 꼴은 못 본다."""
+guards = ["tests/test_trust_page.py::test_no_banned_words_no_signed_returns_no_leaked_log"]
+file = "scripts/trust_page.py"
+find = '"48일 중 상대차 중앙 5% 이내: 거래소 100%, 전체 98%, 코스닥 71%.",'
+replace = '"48일 중 상대차 중앙 5% 이내: 거래소 100%(+1.2%), 전체 98%, 코스닥 71%.",'
+
+[[mutation]]
+id = "trust-verify-marks-miss-fail"
+why = "요약 줄 없이 멈춘 VERIFY 에서 FAIL 표시를 못 세면 중단 전 실패 수가 0 으로 적힌다"
+guards = ["tests/test_trust_page.py::test_parse_verify_reads_both_summary_formats_and_a_crash"]
+file = "scripts/trust_page.py"
+find = 'MARK_RE = re.compile(r"^\s*\[(OK  |FAIL|OK   |CLAIM)\] ", re.M)'
+replace = 'MARK_RE = re.compile(r"^\s*\[(OK  |OK   |CLAIM)\] ", re.M)'
