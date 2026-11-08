@@ -18,9 +18,10 @@
   07:50 `pull-all --ci-gate` 가 ff 한 뒤 설치하니 main 푸시가 곧 다음날 배포다. 당장은 `git -C ~/git/sector-flow pull --ff-only`.
 - 산출물은 `$REPO/reports/<기준일>`(gitignore) + `latest` 링크. 폴더 이름은 실행일이 아니라 데이터 기준일이다.
 - 크론은 평일 18:10·19:10, 화~토 08:20(확정 모드 `KR_QUANT_FINAL=1`)에 같은 `daily_report.sh` 를 부른다. 08:20 은 `daily_finalize` 성공을
-  Airflow 로그로 확인하고(`scripts/finalize_done.py`) 전날을 확정치로 다시 만든다(`FINAL.txt`). 완전성 관문(`scripts/completeness_gate.py`)이 막으면
+  Airflow 로그로 확인하고(`scripts/finalize_done.py`) 전날을 확정치로 다시 만든다(`FINAL.txt`). 확인 못 하면 75. 완전성 관문(`scripts/completeness_gate.py`)이 막으면
   폴더에 `INCOMPLETE.txt` 만 남기고 75 로 끝나며(`latest` 유지) 다음 실행이 그 기준일을 다시 만든다. `KR_QUANT_FORCE` 도 관문은 못 끈다.
-  이상 종료는 `scripts/cron_run.sh` 가 quant-airflow `alert.sh` 로 알린다.
+  이상 종료는 `scripts/cron_run.sh` 가 quant-airflow `alert.sh` 로 알린다. 평일 20:30 `scripts/freshness_check.sh` 가 결과(`latest`·알림 웹훅)를 본다.
+  상한: 크론 `timeout 40m`, `reports/.report.lock`(겹치면 75), DB 접속 10초·문장 10분(`storage.connect`). 알림별 대응은 README §3.1.
 - 이 레포는 PRIVATE 다. 공개 전환은 사용자가 정한다.
 
 ## 데이터 함정 (kr_quant)
