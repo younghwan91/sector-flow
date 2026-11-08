@@ -351,7 +351,8 @@ def ledger(root):
             outcome="final", gate="pass", verify="pass", final=True, diff=5),
         # 11-06: 재구성만(잠정 게시 기록 없음).
         _ev(ts="2026-11-08T01:00:00Z", event="report", asof="2026-11-06", mode="rebuild", rc=0,
-            outcome="rebuilt", gate="pass", verify="pass", final=True, diff=None, commit="abcdef0123456789"),
+            outcome="rebuilt", gate="pass", verify="pass", final=True, diff=None, commit="abcdef0123456789",
+            source="backfill", origin="marker"),
         # 11-01: 폴더가 없는 날의 보관 사건 — 원장만 아는 정정이다.
         _ev(ts="2026-11-08T01:05:00Z", event="archive", asof="2026-11-01"),
         # 11-11: 잠정이 늦었다(19:00 KST).
