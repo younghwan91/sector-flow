@@ -2454,7 +2454,7 @@ def layer_h(D: dict, P: dict) -> None:
                 # 도움말의 끝은 마지막 줄이 아니라 **마지막 한 화면의 첫 줄**이다
                 # (`handle_key` 의 help_page 기본 10).
                 "도움말": ("hrow", lambda st: max(
-                    FV.help_lines(80, 0, 10**6)[1] - 10, 0) + 1)}
+                    FV.help_lines(80, 0, 10**6, FV.help_entries(st))[1] - 10, 0) + 1)}
 
     def populated(name, mk):
         """(상태 생성기, 목록 크기) — 목록이 빈 날은 **찬 구간·시장**을 찾는다.

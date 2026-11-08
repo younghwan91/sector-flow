@@ -97,6 +97,16 @@ DB(`supply_demand`)는 주체별 순매매 **수량**만 준다. 금액은 그�
 이 근사가 문서 전체의 하한이다. 참값은 VWAP 가중이다. 방향과 상대 크기를 보는 값이지 원 단위 정확도를 주장하지 않는다
 (지표 검증 Q3b: 거래소는 안정, 코스닥은 48일 중 71% 만 상대차 중앙 5% 이내).
 
+**금액 근사 오차.** 시장 $M$ 의 기준일 $N-1$ 에서, 종목 $c$ 의 4주체 $|$순매수 수량$|$ 합 $n_c=\sum_A |q^A_{c,N-1}|$,
+VWAP $V_c = \text{trade\_value}_c\times10^6/\text{volume}_c$(`daily_bars`, 둘 다 양수인 종목만 — 양쪽 합에서 같은 집합)으로
+
+**(2a)** $\quad g_M = \dfrac{\big|\sum_{c\in M} n_c P_c - \sum_{c\in M} n_c V_c\big|}{\sum_{c\in M} n_c V_c}\times100$ [%]
+
+`approx_gap` `scripts/sector_flow.py` → `today.market[M].approx_gap`(`pct`·`close`·`vwap`[억]·`cover`[%] = VWAP 가 있는 종목의 금액 몫).
+2026-09-14 이후 `daily_bars` 의 거래량·거래대금과 `supply_demand.close` 는 모두 애프터마켓 포함 통합값이라 세 값의 세션 정의가 같다 —
+$V$ 는 통합 세션 VWAP 다. 5% 를 넘으면 화면·웹이 `금액 근사 오차 큼(N%)` 칩을 띄운다. 시장 합에서는 종목별 차가 부호가 갈려 상쇄되므로
+Q3b(섹터 단위 상대차)보다 작게 나온다(2026-10-26~11-06 실측 0.15~3.1%).
+
 섹터·시장 단위 일별 값은 종목 합이다.
 
 **(2)** $\quad f^A_{m,s,i} = \sum_{c\in(m,s)} f^A_{c,i}$
@@ -122,6 +132,11 @@ $P^{adj}$ 는 `daily_bars_adjusted.close`, "직전" 은 그 종목의 바로 앞
   요구한다(`scripts/completeness_gate.py:46`).
 - 예전엔 `supply_demand.flu_rt / 100` 을 썼다. 2026-09-14 부터 `flu_rt` 의 분자는 애프터마켓 포함 종가, 기준가는 전일 정규장
   종가라 이어 곱할 수 없다(20일 섹터 수익률 차 중앙 1.9%p, 최대 8.9%p).
+- **세션.** 2026-09-14 부터 `daily_bars(_adjusted)` 의 종가는 KRX 애프터마켓(16:00~20:00) 포함 통합값이다(quant-airflow
+  `docs/schema.md`). 그래서 $r$ 과 그것으로 만든 모든 수익률(섹터·시장·종목)은 **전일 20:00 → 당일 20:00** 이다. KRX 지수(정규장
+  15:30)와 같은 날 갈린다 — 11-06 거래소 자체 바구니 −4.37% vs 코스피 −6.02%. 정규장 종가(`regular_close`)로 다시 재면 0.01%p
+  안에서 맞고, 09-14 전 차이는 ~0.01%p, 뒤로는 평균 ~0.8%p·최대 2.3%p 다. 화면·웹은 수익률에 `~20시`(통합 종가) 라벨을 달고
+  첫 화면·오늘 패널에 `KRX 지수(정규장)` 를 나란히 적는다(§2.18). 09-14 이전 날이 섞인 긴 구간은 그 날들만 정규장 종가다.
 - 단위 함정: $r$ 은 **퍼센트**다. $1+r$ 을 곱하면 하루 +2.5% 가 +250% 가 된다(`scripts/sector_flow.py:321-323`).
 
 ### 1.4 시가총액
@@ -184,7 +199,7 @@ $P^{adj}$ 는 `daily_bars_adjusted.close`, "직전" 은 그 종목의 바로 앞
 
 ### 2.1 구간과 시장
 
-**(9)** $\quad i_0 = N-W,\quad i_1 = N-1,\quad W\in\{5,20,60,120\}$
+**(9)** $\quad i_0 = N-W,\quad i_1 = N-1,\quad W\in\{5,20,60,120\}$ (화면은 1 도 — 블록이 아니라 `today` 에서, §2.19)
 
 `scripts/sector_numbers.py:282-285` · `WINDOWS` `scripts/sector_numbers.py:20`. $W>N$ 인 창은 만들지 않는다. 시장은 `전체`(모든
 시장의 합)와 시장별 단독이고 블록 키는 `"{창}|{시장}"` 이다(`scripts/sector_numbers.py:286-287`, `scripts/sector_numbers.py:455`).
@@ -419,17 +434,41 @@ $k$ 는 (18)에서 기관 유입에 회귀한 것이라 다른 주체로 재계�
 `※ 이 구간에 … 값이 없다` 를 적는다(`SORT_FALLBACK` `src/sectorflow/tui/flow_view.py:421`, `effective_sort` `src/sectorflow/tui/flow_view.py:440-453`).
 정렬 키 목록 `SORTS` `src/sectorflow/tui/flow_view.py:155-157` — 거래대금·시총은 열 없이 정렬 키로만 있다.
 
-### 2.18 시작 요약(배너) — 사실 요약
+### 2.18 시작 요약(배너) — 오늘의 수급
 
-`sw-flow` 를 띄우면 표 앞에 한 번 뜬다. 점수·순위·추천을 싣지 않고 페이로드의 값을 옮긴다(`banner_lines`).
-창은 화면 창과 무관하게 20일(반전은 20일·5일)이고, 시장·주체는 화면 기본(전체·기관)을 따른다.
+`sw-flow` 를 띄우면 표 앞에 한 번 뜬다. 점수·순위·추천을 싣지 않고 페이로드 `today`·`change`·`final_diff` 의 값을 옮긴다
+(`banner_lines` `src/sectorflow/tui/flow_view.py`). 웹 수치표 맨 위 **오늘** 패널(`renderToday`
+`scripts/templates/sector_numbers.html`)이 같은 사실을 같은 순서로 적는다. 시장은 화면 선택(기본 전체), 주체는 기관과
+투신+연기금($\mathrm{invpen}=\mathrm{invtrt}+\mathrm{penfnd}$)이다.
 
-- **시장 합계** — 가장 짧은 블록(1일이 있으면 1일, 없으면 5일)의 섹터 행 합, 4주체.
-- **상위·하위 3** — 20일 기관 순매수, 20일 투신+연기금(종목 `invtrt`+`penfnd_etc` 합) 금액 순.
-- **1년%ile 극단** — $p_s\ge95$ 또는 $\le5$ 이면서 직전 기준일 리포트(`prior_pct`, 같은 부모 폴더의 더 앞 기준일)에서는 극단이 아니던 섹터.
-  직전 리포트가 없으면 지금 극단인 섹터를 적고 그렇다고 말한다.
-- **부호 반전** — 전 섹터에서 $\mathrm{sign}(J^{20}-J^{5})\ne\mathrm{sign}(J^{5})$ 인 것, 즉 최근 5일이 직전 15일과 반대 방향(`reversal_flags`).
-  눌림인지 전환인지는 판정하지 않는다(판정 불가 라벨).
+- **시장 수익률 1·20일** — 자체 바구니 $\prod(1+\bar r_{m,i}/100)-1$(시장 단위 (16), `today.market[m].ret`)와 KRX 종합지수
+  $P^{idx}_{N-1}/P^{idx}_{N-1-w}-1$(`sector_index` 코드 001 코스피·101 코스닥, `today.krx_index`, `krx_index_block`
+  `scripts/sector_flow.py`). 지수의 날짜는 이 페이로드의 거래일에 맞추고 없는 날은 메우지 않는다(결측). 둘은 세션이 다르다(§1.3).
+- **오늘 시장 순매수** — `today.market[시장].net[A]` 의 값과 1년%ile(§2.19). 4주체는 합 ≈ 0 이라 하나도 자르지 않는다(좁으면 두 줄).
+- **금액 근사 오차 칩** — §1.1 (2a) 가 `APPROX_GAP_WARN = 5` 를 넘는 시장에만.
+- **상위·하위 3** — 오늘 섹터 순매수 $f^A_{s,N-1}$ 금액 순, 각자의 1년%ile.
+- **1년%ile 극단** — 오늘 값의 백분위 $p\ge95$ 또는 $\le5$(문턱 포함). 직전 리포트와 견주지 않는다 — 오늘 값이 1년 중 어디인지다.
+- **직전 리포트 대비** — `change.top[시장][A]` 의 `entered`·`exited`: 직전 거래일 리포트가 게시한 20일 순매수 순위의 상위 5 와
+  오늘 상위 5 의 차집합. 직전 리포트가 없으면 `change_reason`.
+- **부호 반전** — 전 섹터에서 $\mathrm{sign}(J^{20}-J^{5})\ne\mathrm{sign}(J^{5})$ 인 것(`reversal_flags`, 선택 주체). 눌림인지
+  전환인지는 판정하지 않는다(판정 불가 라벨).
+- **잠정→확정 변경: N칸** — 확정 리포트에서만. `final_diff.n_changed / n_cells`. 바뀐 칸 목록은 도움말 맨 끝(`final_diff_help`)과
+  웹 패널의 접힌 목록에 있다.
+
+옛 리포트(`today` 없음)면 그렇다고 적고 20일 블록의 기관·투신+연기금 상·하위만 적는다.
+
+### 2.19 1일 창(`w` → 1)
+
+블록(`blocks`)에 1일 창은 없다. 화면이 `today.sectors[시장]` 을 블록 행 모양으로 옮긴다(`State._today_rows`).
+
+**(38a)** $\quad F^A_s = f^A_{s,N-1},\qquad p^A_s = \text{pct}\big(\{f^A_{s,u}\}_{u=N-n}^{N-1}\big),\ n=\min(N,260)$
+
+백분위는 (13)의 1일 창과 같은 midrank 정의이고, $\#\{u: f^A_{s,u}\ne0\} < 0.25\,n$ 이면 결측이다(`day_pct`
+`scripts/sector_flow.py`, `TODAY_MIN_LIVE`). 수익률은 그날 $\bar r_{s,N-1}$, 종목[수] 는 그날 1일 집계가 있는 종목 수(Enter 목록 길이)이고
+10 미만이면 `~`. **가속·미실현·풀림·G·추이·포텐셜·dW/dt 는 결측이다** — 시총 대비·회귀·차분·누적 경로가 하루에서 정의되지 않는다
+(가속도 파생값이라 싣지 않는다). 기본 정렬 키(가속)가 전멸이므로 §2.17 폴백으로 임펄스 순이 되고 헤더가 그렇다고 적는다.
+드릴다운은 `names[code].win["1"]` 이고 최근집중은 결측이다(분모가 하루).
+`today` 가 없는 리포트에서는 `w` 가 이 창을 건너뛴다.
 
 ---
 

@@ -68,7 +68,7 @@ def data():
     #: 창이 전부 같은 값이던 예전 픽스처에서는 그 비율이 늘 100% 라, 분자와 분모를
     #: 바꿔 넣어도 검사가 통과했다. 20일은 기존 값 그대로 둔다 — 다른 검사들이
     #: 기본 창(20일)을 보고 있어서 여기를 흔들면 무관한 검사가 같이 흔들린다.
-    scale = {"5": 0.4, "20": 1.0, "60": 2.5, "120": 3.0}
+    scale = {"1": 0.1, "5": 0.4, "20": 1.0, "60": 2.5, "120": 3.0}
 
     def nm(code, name, sec, inst, forgn, ret=0.0):
         return {"name": name, "sector": sec, "market": "거래소", "cap": 50000.0,
@@ -93,7 +93,33 @@ def data():
              "034020": nm("034020", "두산에너빌리티", "부동산", 10.0, -5.0, 5.0)}
     return {"asof": "2026-08-28", "finalized": True, "dates": ["2026-01-01", "2026-08-28"],
             "names": names,
-            "blocks": blocks, "combined": {m: comb for m in ("전체", "거래소", "코스닥")}}
+            "blocks": blocks, "combined": {m: comb for m in ("전체", "거래소", "코스닥")},
+            "today": _today_block([r["sector"] for r in rows])}
+
+
+def _fact(v, p):
+    return {"v": v, "pct": p}
+
+
+def _today_block(sectors, mk=("전체", "거래소", "코스닥")):
+    """페이로드 `today`(sector_flow.today_block) 모양 — 섹터마다 값·백분위가 **다르다**."""
+    secs = {}
+    for i, s in enumerate(sectors):
+        secs[s] = {"inst": _fact(100.0 - 60 * i, 99.0 - 30 * i), "invtrt": _fact(10.0 * i, 50.0),
+                   "penfnd_etc": _fact(-5.0 * i, 40.0), "invpen": _fact(5.0 * i - 7, 96.0 - 31 * i),
+                   "forgn": _fact(-50.0 + 7 * i, 12.0 + i), "indiv": _fact(-30.0, 60.0),
+                   "etc": _fact(-20.0 + i, None), "tv": 500.0 + i, "ret": -1.5 + i}
+    net = {"inst": _fact(123.0, 97.0), "forgn": _fact(-33.0, 3.0), "indiv": _fact(-80.0, 40.0),
+           "etc": _fact(-10.0, 55.0), "invtrt": _fact(15.0, 70.0), "penfnd_etc": _fact(-3.0, 30.0),
+           "invpen": _fact(12.0, 66.0)}
+    return {"date": "2026-08-28", "lookback": 260, "min_live": 0.25,
+            "sectors": {m: secs for m in mk},
+            "market": {m: {"net": net, "tv": 1000.0, "ret": {"1": -4.37, "20": 5.5},
+                           "approx_gap": {"pct": 1.2, "close": 1.0, "vwap": 1.0, "cover": 100.0}}
+                       for m in mk},
+            "krx_index": {"거래소": {"code": "001", "name": "코스피", "ret": {"1": -6.02, "20": 4.0}},
+                          "코스닥": {"code": "101", "name": "코스닥", "ret": {"1": -5.03, "20": None}}},
+            "approx_gap_warn": 5.0}
 
 
 #: **바뀐 열 라벨 대응표** — 새 이름 → 예전 이름(없으면 새로 생긴 열).
@@ -2474,28 +2500,124 @@ def _bdata(rows20, rows5, extra=None):
 
 
 def test_banner_states_facts_not_picks(data):
-    """배너에 G·곱·선정이 **없다** — 기본 첫 화면은 수급 사실만 말한다.
+    """배너에 G·곱·선정이 **없다** — 기본 첫 화면은 수급 사실("오늘")만 말한다.
 
     주입: 옛 배너(G 통과 섹터·곱순위 상위)를 되살리면 실패한다.
     """
     text = "\n".join(banner_lines(State(data), 160))
     for word in ("G 통과", "곱순위", "곱 ", "선정"):
         assert word not in text, f"배너에 탐색 점수가 남았다: {word!r}\n{text}"
-    for want in ("시장 전체 최근 5일 순매수", "기관 20일 순매수 상위", "기관 20일 순매수 하위",
-                 "투신+연기금 20일 순매수 상위", "투신+연기금 20일 순매수 하위", "사실 요약"):
+    for want in ("오늘 전체 순매수", "기관 상위", "기관 하위", "투신+연기금 상위", "투신+연기금 하위",
+                 "%ile≥95", "%ile≤5", "KRX 코스피", "사실 요약"):
         assert want in text, f"배너에 {want!r} 줄이 없다\n{text}"
 
 
-def test_banner_market_totals_are_the_sum_of_the_shortest_block():
-    """시장 합계 = 가장 짧은 창 블록의 섹터 행 합. 1일 블록이 있으면 1일을 쓴다."""
-    rows = [{"sector": "가", "inst": 100.0, "forgn": -40.0, "indiv": -50.0, "etc": -10.0},
-            {"sector": "나", "inst": 23.0, "forgn": 7.0, "indiv": -30.0, "etc": 0.0}]
-    d = _bdata(rows, rows)
+def test_banner_market_net_is_the_payload_today_total(data):
+    """시장 순매수 줄 = 페이로드 `today.market[시장].net` 의 값과 1년 백분위 그대로(4주체 다)."""
+    text = "\n".join(banner_lines(State(data), 160))
+    assert "오늘 전체 순매수[억(%ile)]: 기관 +123(97) · 외국인 -33(3) · 개인 -80(40) · 기타법인 -10(55)" \
+        in text, text
+    # 좁은 폭에서도 4주체가 다 남는다(합 ≈ 0 이라 하나라도 잘리면 그림이 틀린다) — 두 줄로 나눈다.
+    narrow = "\n".join(banner_lines(State(data), 60))
+    for ko in ("기관 +123", "외국인 -33", "개인 -80", "기타법인 -10"):
+        assert ko in narrow, narrow
+
+
+def test_banner_today_top_bottom_are_by_amount_with_their_percentile(data):
+    """상위·하위 3 은 **오늘 금액** 순이고 각자의 1년%ile 을 단다 — 점수 순이 아니다."""
+    lines = banner_lines(State(data), 160)
+    top = next(ln for ln in lines if "   기관 상위" in ln)
+    bot = next(ln for ln in lines if "   기관 하위" in ln)
+    assert "전기/전자 +100(99) · 건설 +40(69) · 부동산 -20(39)" in top, top
+    assert "IT 서비스 -80(9) · 부동산 -20(39) · 건설 +40(69)" in bot, bot
+    tr = next(ln for ln in lines if "투신+연기금 상위" in ln)
+    assert tr.index("IT 서비스 +8") < tr.index("부동산 +3"), tr
+
+
+def test_today_extremes_are_todays_percentile_at_95_and_5():
+    """≥95·≤5 는 **오늘 값의** 1년 백분위다. 문턱 값(95·5)은 포함한다."""
+    from sectorflow.tui.flow_view import today_extremes
+
+    secs = {"가": {"inst": _fact(1.0, 95.0)}, "나": {"inst": _fact(1.0, 99.5)},
+            "다": {"inst": _fact(1.0, 5.0)}, "라": {"inst": _fact(1.0, 50.0)},
+            "마": {"inst": _fact(1.0, None)}}
+    d = {"today": {"sectors": {"전체": secs}}}
+    assert today_extremes(d, "전체", "inst") == (["나 100", "가 95"], ["다 5"])
+
+
+def test_banner_change_lists_entries_and_exits_or_says_why_not(data):
+    """직전 리포트 대비 20일 상위5 의 들고 남 — 없으면 이유를 적는다."""
+    from sectorflow.tui.flow_view import change_items
+
+    d = dict(data, change={"prev_date": "2026-08-27", "window": 20, "top_n": 5, "top": {"전체": {
+        "inst": {"entered": ["건설"], "exited": ["보험", "금융"]},
+        "invpen": {"entered": [], "exited": []}}}})
+    assert change_items(d, "전체", "inst") == ["들어옴 건설", "나감 보험", "나감 금융"]
     text = "\n".join(banner_lines(State(d), 160))
-    assert "최근 5일 순매수[억]: 기관 +123 · 외국인 -33 · 개인 -80 · 기타법인 -10" in text, text
-    d["blocks"]["1|전체"] = {"rows": [dict(r, inst=r["inst"] / 10) for r in d["blocks"]["5|전체"]["rows"]]}
+    assert "직전 리포트(2026-08-27) 대비" in text and "기관: 들어옴 건설 · 나감 보험 · 나감 금융" in text
+    assert "투신+연기금: 변동 없음" in text, text
+    d = dict(data, change=None, change_reason="2026-08-27 리포트 폴더가 없다")
     text = "\n".join(banner_lines(State(d), 160))
-    assert "최근 1일 순매수" in text and "기관 +12" in text, text
+    assert "직전 리포트 대비: 비교 없음 — 2026-08-27 리포트 폴더가 없다" in text, text
+
+
+def test_banner_returns_are_labelled_after_market_and_sit_next_to_the_krx_regular_session(data):
+    """수익률 줄은 '~20시 통합 종가' 라벨을 달고, KRX 지수(정규장)를 **따로** 나란히 적는다.
+
+    주입: KRX 칸에 자체 바구니 값을 넣으면 두 값이 같아져 실패한다.
+    """
+    text = "\n".join(banner_lines(State(data), 160))
+    assert "20:00" in text and "정규장" in text, text
+    line = next(ln for ln in text.split("\n") if "거래소" in ln and "KRX" in ln)
+    assert "-4.37% · +5.50%" in line and "KRX 코스피 -6.02% · +4.00%" in line, line
+    kq = next(ln for ln in text.split("\n") if ln.strip().startswith("코스닥") and "KRX" in ln)
+    assert "KRX 코스닥 -5.03% · —" in kq, kq
+
+
+def test_gap_chip_appears_only_above_the_threshold(data):
+    """금액 근사 오차 칩 — 문턱(5%)을 넘는 시장에만 뜬다."""
+    from sectorflow.tui.flow_view import _gap_chips
+
+    assert _gap_chips(data, ["전체", "거래소", "코스닥"]) == []
+    d = json.loads(json.dumps(data))
+    d["today"]["market"]["코스닥"]["approx_gap"]["pct"] = 6.1
+    d["today"]["market"]["거래소"]["approx_gap"]["pct"] = 5.0
+    assert _gap_chips(d, ["전체", "거래소", "코스닥"]) == ["금액 근사 오차 큼(코스닥 6.1%)"]
+    assert "금액 근사 오차 큼(코스닥 6.1%)" in "\n".join(banner_lines(State(d), 160))
+
+
+def test_final_diff_line_and_help_list(data):
+    """확정 리포트면 첫 화면에 '잠정→확정 변경: N칸', 도움말 끝에 그 목록."""
+    from sectorflow.tui.flow_view import HELP, final_diff_line, help_entries
+
+    fd = {"base_final": False, "base_built": "2026-08-28 18:10", "windows": [1, 5], "tol": 0.05,
+          "n_cells": 300, "n_changed": 2,
+          "changed": [{"market": "거래소", "sector": "건설", "actor": "inst", "win": 1,
+                       "old": 10.0, "new": 12.5, "diff": 2.5},
+                      {"market": "코스닥", "sector": "제약", "actor": "invtrt", "win": 5,
+                       "old": -1.0, "new": -1.2, "diff": -0.2}],
+          "market_totals": [{"market": "거래소", "actor": "inst", "win": 1, "old": 1.0, "new": 1.0,
+                             "diff": 0.0}]}
+    assert final_diff_line(data) is None                     # 잠정 리포트에는 없다
+    d = dict(data, final=True, final_diff=fd)
+    assert final_diff_line(d).startswith(" 잠정→확정 변경: 2칸 / 300칸")
+    assert "잠정→확정 변경: 2칸" in "\n".join(banner_lines(State(d), 160))
+    extra = [desc for _n, desc in help_entries(State(d))[len(HELP):]]
+    text = "\n".join(extra)
+    assert "거래소/건설 기관 1일 +10.00 → +12.50 (+2.50)" in text, text
+    assert "코스닥/제약 투신 5일" in text and "시장 합계 1칸 중 0칸 바뀜" in text, text
+    # 폭 80(SSH 기본)에서 안 잘린다 — 도움말 본문은 앞 3칸 들여쓰기.
+    over = [t for t in extra if _w(t) + 3 > 80]
+    assert not over, over
+    d = dict(data, final=True, final_diff=None, final_diff_reason="같은 기준일의 잠정 리포트가 없었다")
+    assert "비교 없음: 같은 기준일의 잠정 리포트가 없었다" in final_diff_line(d)
+
+
+def test_banner_without_today_falls_back_to_the_20_day_block():
+    """옛 리포트(`today` 없음) — 그렇다고 말하고 20일 상위·하위를 적는다."""
+    rows = [{"sector": "가", "inst": 10.0}, {"sector": "나", "inst": -5.0}]
+    text = "\n".join(banner_lines(State(_bdata(rows, rows)), 160))
+    assert "'오늘' 블록이 없다" in text and "기관 20일 순매수 상위[억]: 가 +10" in text, text
 
 
 def test_banner_top_and_bottom_are_ordered_by_amount():
@@ -2519,14 +2641,15 @@ def test_banner_trusted_is_invtrt_plus_pension_from_the_stocks(data):
         assert got[sec] == pytest.approx(want), sec
 
 
-def test_banner_says_none_rather_than_hiding_an_empty_list():
+def test_banner_says_none_rather_than_hiding_an_empty_list(data):
     """반전·극단이 하나도 없으면 줄을 빼지 않고 "없음" 이라 적는다."""
-    rows = [{"sector": "가", "inst": 10.0, "pct1y": {"inst": 50.0}}]
-    text = "\n".join(banner_lines(State(_bdata(rows, [{"sector": "가", "inst": 2.0}])), 120))
-    assert "≥95: 없음" in text and "≤5: 없음" in text, text
+    d = json.loads(json.dumps(data))
+    for v in d["today"]["sectors"]["전체"].values():
+        for a in ("inst", "invpen"):
+            v[a]["pct"] = 50.0
+    text = "\n".join(banner_lines(State(d), 120))
+    assert "기관 %ile≥95: 없음" in text and "기관 %ile≤5: 없음" in text, text
     assert "직전 15일과 반대" in text
-    flips_at = text.index("직전 15일과 반대")
-    assert "없음" in text[flips_at:], text
 
 
 def test_reversal_flags_compares_the_last_5_days_with_the_prior_15_for_all_sectors():
@@ -2557,43 +2680,6 @@ def test_reversal_flags_do_not_depend_on_the_screen_window():
     assert reversal_flags(st) == a == [("가", 3500.0, -500.0)]
 
 
-def test_pct_extremes_are_new_relative_to_the_prior_report():
-    """직전 리포트가 있으면 **새로** 극단에 든 섹터만, 없으면 지금 극단을 적고 그렇다고 말한다.
-
-    주입: 직전 값 비교를 빼면 "가"(어제도 97) 가 새로 든 것으로 올라온다.
-    """
-    from sectorflow.tui.flow_view import pct_extremes
-
-    rows = [{"sector": "가", "inst": 1.0, "pct1y": {"inst": 98.0}},
-            {"sector": "나", "inst": 1.0, "pct1y": {"inst": 96.0}},
-            {"sector": "다", "inst": 1.0, "pct1y": {"inst": 2.0}}]
-    prior = {"asof": "2026-09-03", "pct1y": {"20|전체": {"가": {"inst": 97.0}, "나": {"inst": 80.0},
-                                                       "다": {"inst": 4.0}}}}
-    hi, lo, basis = pct_extremes(State(_bdata(rows, rows, {"prior": prior})))
-    assert hi == ["나 96"] and lo == [] and "2026-09-03 대비 새로" in basis, (hi, lo, basis)
-    hi, lo, basis = pct_extremes(State(_bdata(rows, rows)))
-    assert hi == ["가 98", "나 96"] and lo == ["다 2"] and "직전 리포트 없음" in basis
-
-
-def test_prior_pct_reads_the_latest_earlier_report_with_numbers(tmp_path):
-    """직전 리포트 = 같은 부모의 **더 앞** 기준일 중 numbers.html 이 있는 가장 최근 폴더."""
-    from sectorflow.tui.flow_view import prior_pct
-
-    def page(day, pct):
-        p = tmp_path / day
-        p.mkdir()
-        d = {"asof": day, "blocks": {"20|전체": {"rows": [{"sector": "가", "pct1y": {"inst": pct}}]}}}
-        (p / "numbers.html").write_text("<script>\nconst D = " + json.dumps(d) + ";\n</script>", "utf-8")
-    page("2026-09-01", 10.0)
-    page("2026-09-02", 20.0)
-    (tmp_path / "2026-09-03").mkdir()                      # 수집 미완 — numbers.html 없음
-    (tmp_path / "2026-09-03" / "INCOMPLETE.txt").write_text("x")
-    page("2026-09-04", 99.0)
-    got = prior_pct(str(tmp_path / "2026-09-04"), "2026-09-04")
-    assert got["asof"] == "2026-09-02" and got["pct1y"]["20|전체"]["가"]["inst"] == 20.0, got
-    assert prior_pct(str(tmp_path / "2026-09-01"), "2026-09-01") is None
-
-
 def test_banner_lines_share_one_display_width(data):
     st = State(data)
     for width in (60, 80, 90, 120, 160):
@@ -2607,6 +2693,102 @@ def test_banner_cuts_lists_at_item_boundaries(data):
 
     line = _items_line(" 앞: ", ["가 +1,234", "나 +5,678", "다 +9,999"], 24)
     assert line.rstrip() in (" 앞: 가 +1,234 외 2", " 앞: 가 +1,234 · 나 +5,678 외 1"), line
+
+
+# --- 1일 창 -----------------------------------------------------------------
+
+
+def test_one_day_window_rows_are_the_payload_today_facts(data):
+    """1일 창의 섹터 행 = `today.sectors[시장]` 의 값과 백분위 그대로, 주체를 따른다.
+
+    주입: 값 대신 백분위를 싣거나, 가속(파생값)이 살아나면 실패한다.
+    """
+    st = State(data)
+    st.wi = WINDOWS.index("1")
+    secs = data["today"]["sectors"]["전체"]
+    for ai, (k, _ko) in enumerate(ACTORS):
+        st.ai = ai
+        rows = st.rows()
+        assert {r["sector"] for r in rows} == set(secs)
+        for r in rows:
+            assert r["flow"] == secs[r["sector"]][k]["v"], (k, r)
+            assert r["pct"] == secs[r["sector"]][k]["pct"], (k, r)
+            assert r["ret"] == secs[r["sector"]]["ret"]
+            for derived in ("accel", "x", "xddot", "G", "U", "P", "spark"):
+                assert r.get(derived) is None, (derived, r)
+    st.ai = 0
+    lines, _thin, nh = table_lines(st, 200, 40)
+    cols = [c.header for c in _fit(table_cols(st, 200), 200)]
+    assert lines[nh:] and all("—" in ln for ln in lines[nh:])
+    assert "2026-08-28 하루" in "\n".join(header_lines(st, 200)), header_lines(st, 200)
+    assert "가속[%p]" in cols
+
+
+def test_one_day_sector_count_is_the_one_day_list_length(data):
+    """1일 창 `종목[수]` = Enter 로 여는 1일 목록 길이. 10개 미만은 얇다(`~`).
+
+    그날 거래가 없던 종목(1일 집계 없음)은 세지 않는다 — 5일 집계로 세면 표와 목록이 갈린다.
+    """
+    data = json.loads(json.dumps(data))
+    data["names"]["000990"]["win"].pop("1")              # DB하이텍: 오늘 집계 없음
+    st = State(data)
+    st.wi = WINDOWS.index("1")
+    ee = next(r for r in st.rows() if r["sector"] == "전기/전자")
+    assert ee["n_all"] == 4, ee
+    st.wi = WINDOWS.index("1")
+    for i, r in enumerate(st.rows()):
+        st.row = i
+        assert r["n_all"] == len(st.names()), r["sector"]
+        assert r["thin"] == (r["n_all"] < 10)
+
+
+def test_one_day_drilldown_has_no_recent_concentration(data):
+    """1일 목록의 `최근집중`(5일 ÷ 이 창)은 하루가 분모라 뜻이 없다 — 비운다."""
+    st = State(data)
+    st.wi = WINDOWS.index("1")
+    st.drill = True
+    names = st.names()
+    assert names and all(t["conc"] is None for t in names)
+    assert all(t["flow"] is not None for t in names)
+
+
+def test_w_skips_the_one_day_window_without_today(data):
+    """옛 리포트(`today` 없음)는 1일 창이 비므로 `w` 가 건너뛴다. 있으면 5 ← 1 ← 120 로 돈다."""
+    st = State(data)
+    seen = set()
+    for _ in range(len(WINDOWS) * 2):
+        st.cycle("w")
+        seen.add(st.window)
+    assert "1" in seen
+    old = dict(data)
+    old.pop("today")
+    st = State(old)
+    seen = set()
+    for _ in range(len(WINDOWS) * 2):
+        st.cycle("w")
+        seen.add(st.window)
+    assert "1" not in seen and seen == {"5", "20", "60", "120"}, seen
+
+
+def test_help_end_reaches_the_report_specific_tail(data):
+    """확정 리포트는 도움말 끝에 잠정→확정 목록이 붙는다 — End 가 그 목록의 마지막 화면까지 가야 한다.
+
+    주입: 앱이 스크롤 끝을 고정 HELP 길이로 재면 붙인 목록이 End 로 안 보인다(검증 H 층이 실측으로 잡았다).
+    """
+    import curses
+
+    from sectorflow.tui import flow_app
+    from sectorflow.tui.flow_view import help_entries, help_lines
+
+    fd = {"base_final": False, "base_built": "x", "tol": 0.05, "n_cells": 9, "n_changed": 30,
+          "market_totals": [], "changed": [{"market": "거래소", "sector": f"s{i}", "actor": "inst",
+                                            "win": 1, "old": 0.0, "new": 1.0, "diff": 1.0}
+                                           for i in range(30)]}
+    st = State(dict(data, final=True, final_diff=fd))
+    st.help = True
+    flow_app.handle_key(st, curses.KEY_END, help_page=10)
+    total = help_lines(80, 0, 10**6, help_entries(st))[1]
+    assert st.hrow == total - 10, (st.hrow, total)
 
 
 def test_flow_app_draws_the_banner_before_the_table():

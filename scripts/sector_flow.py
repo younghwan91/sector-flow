@@ -390,7 +390,8 @@ TODAY_LOOKBACK = 260
 TODAY_MIN_LIVE = 0.25
 #: 오늘 표의 주체. ``invpen`` = 투신+연기금 — 기관 안에서 방향성이 있는 둘(CLAUDE.md 수급 신뢰 순서).
 TODAY_ACTORS = (("inst", "기관"), ("invtrt", "투신"), ("penfnd_etc", "연기금"),
-                ("invpen", "투신+연기금"), ("forgn", "외국인"), ("indiv", "개인"))
+                ("invpen", "투신+연기금"), ("forgn", "외국인"), ("indiv", "개인"),
+                ("etc", "기타법인"))
 #: 시장 합계에 싣는 주체 — 4주체(합 ≈ 0)와 투신·연기금.
 MARKET_ACTORS = ("inst", "forgn", "indiv", "etc", "invtrt", "penfnd_etc", "invpen")
 #: 시장 맥락 수익률의 구간(거래일).
@@ -710,6 +711,104 @@ def final_diff_text(P: dict, top: int = 15) -> str:
     return "\n".join(lines) + "\n"
 
 
+# ─────────────────────────────────────────────── 시장 맥락 — KRX 지수(정규장) · 금액 근사 오차
+#
+# 둘 다 DB 를 읽기 전용으로 한 번 더 본다(``main`` 이 연결을 닫기 전에 부른다). ``today`` 블록 안에 싣는다 —
+# 화면(TUI)은 numbers.html 의 D 하나만 읽고 ``sector_numbers.build`` 가 ``today`` 를 통째로 건넨다.
+
+#: KRX 종합지수 — ``sector_index`` 의 코드. 지수는 **정규장**(09:00~15:30) 값이다. 리포트의 수익률은
+#: 2026-09-14 이후 애프터마켓(~20:00)까지 포함한 통합 종가라, 같은 날 둘이 갈린다(11-06: 거래소 자체 바구니
+#: −4.37% vs KOSPI −6.02%. 정규장 종가로 다시 재면 0.01%p 안에서 맞는다).
+KRX_INDEX = (("거래소", "001", "코스피"), ("코스닥", "101", "코스닥"))
+#: 금액 근사 오차 칩을 띄우는 문턱(%).
+APPROX_GAP_WARN = 5.0
+_QTY_COLS = ("individual", "foreign_", "institution", "etc_corp")
+
+
+def krx_index_block(con, dates: list[str], markets: list[str]) -> dict:
+    """시장별 KRX 종합지수의 1일·20일 수익률[%] — 날짜는 **이 페이로드의 거래일**에 맞춘다.
+
+    기준일이나 그 ``w`` 거래일 전 지수가 없으면 그 칸은 ``None``(앞 값으로 메우지 않는다 — 저녁 18:10
+    배치에 그날 지수가 아직 없으면 "어제 지수" 를 오늘 것처럼 적게 된다).
+    """
+    need = [dates[-1 - w] for w in MARKET_RET_WINDOWS if w < len(dates)] + [dates[-1]]
+    codes = [c for m, c, _ in KRX_INDEX if m in markets]
+    if not codes:
+        return {}
+    ph = "%s" if _is_pg(con) else "?"
+    q = (f"SELECT code, date, close FROM sector_index WHERE code IN ({','.join([ph] * len(codes))}) "
+         f"AND date >= {ph} AND date <= {ph}")
+    si = pd.read_sql_query(q, con, params=[*codes, min(need), dates[-1]])
+    si["date"] = si["date"].astype(str)
+    px = {(r.code, r.date): float(r.close) for r in si.itertuples() if r.close}
+    out = {}
+    for m, code, ko in KRX_INDEX:
+        if m not in markets:
+            continue
+        cur = px.get((code, dates[-1]))
+        ret = {}
+        for w in MARKET_RET_WINDOWS:
+            base = px.get((code, dates[-1 - w])) if w < len(dates) else None
+            ret[str(w)] = round((cur / base - 1.0) * 100.0, 3) if cur and base else None
+        out[m] = {"code": code, "name": ko, "ret": ret}
+    return out
+
+
+def approx_gap(con, df: pd.DataFrame, asof: str, markets: list[str]) -> dict:
+    """시장별 **순매수 금액 근사 오차**[%] — 종가 환산과 VWAP 환산의 차이(D1 검토 M4).
+
+    순매수 금액은 수량 × 그날 종가로 복원한다(``load``). 참값에 가까운 것은 그날 VWAP 환산이다. 그날
+    종목 i 의 4주체 |순매수 수량| 합을 :math:`n_i` 라 할 때
+
+    ``gap = |Σ n_i·close_i − Σ n_i·vwap_i| / Σ n_i·vwap_i × 100``,  ``vwap_i = trade_value(백만원)·1e6 / volume``
+
+    (``daily_bars``, 거래량·거래대금이 둘 다 양수인 종목만 — 양쪽 합에서 같은 종목 집합). 2026-09-14
+    이후 ``daily_bars`` 의 거래량·거래대금과 ``supply_demand.close`` 는 모두 애프터마켓 포함 통합값이라
+    VWAP 도 통합 세션의 것이고 셋의 세션 정의가 같다. 지표 검증 Q3b: 코스닥은 48일 중 71% 만 상대차 중앙
+    5% 이내였다. ``cover`` = VWAP 가 있는 종목이 종가 환산 금액에서 차지하는 몫[%].
+    """
+    day = df[df["date"] == asof]
+    if day.empty:
+        return {}
+    ph = "%s" if _is_pg(con) else "?"
+    bars = pd.read_sql_query(
+        f"SELECT code, volume, trade_value, source FROM daily_bars WHERE date = {ph}", con, params=[asof])
+    # 같은 날 소스가 둘이면 키움을 쓴다(수급과 같은 소스).
+    bars = (bars.assign(_k=(bars["source"] != "kiwoom").astype(int))
+                .sort_values(["code", "_k"]).drop_duplicates("code"))
+    bars = bars[(bars["volume"].astype(float) > 0) & (bars["trade_value"].astype(float) > 0)]
+    vwap = (bars["trade_value"].astype(float) * 1e6 / bars["volume"].astype(float))
+    vwap.index = bars["code"]
+    n = sum(day[c].astype(float).abs().fillna(0.0) for c in _QTY_COLS)
+    t = pd.DataFrame({"market": day["market"].to_numpy(), "n": n.to_numpy(),
+                      "close": day["close"].astype(float).to_numpy(),
+                      "vwap": day["code"].map(vwap).to_numpy(dtype=float)})
+    out = {}
+    for mkey, mks in [("전체", markets)] + [(m, [m]) for m in markets]:
+        sub = t[t["market"].isin(mks)]
+        all_amt = float((sub["n"] * sub["close"]).sum())
+        cov = sub.dropna(subset=["vwap"])
+        c = float((cov["n"] * cov["close"]).sum())
+        v = float((cov["n"] * cov["vwap"]).sum())
+        if not v:
+            out[mkey] = None
+            continue
+        out[mkey] = {"pct": round(abs(c - v) / v * 100.0, 2),
+                     "close": round(c / EOK, 1), "vwap": round(v / EOK, 1),
+                     "cover": round(c / all_amt * 100.0, 1) if all_amt else None}
+    return out
+
+
+def market_context(con, df: pd.DataFrame, P: dict) -> None:
+    """``today`` 에 KRX 지수(정규장)와 시장별 금액 근사 오차를 붙인다 — 제자리 수정."""
+    T = P["today"]
+    T["krx_index"] = krx_index_block(con, P["dates"], P["markets"])
+    T["approx_gap_warn"] = APPROX_GAP_WARN
+    gaps = approx_gap(con, df, P["dates"][-1], P["markets"])
+    for mkey, M in T["market"].items():
+        M["approx_gap"] = gaps.get(mkey)
+
+
 def script_json(payload: dict) -> str:
     """``<script>`` 안에 넣을 JSON — 값에 ``</script>`` 가 있어도 태그가 안 닫힌다(``<\\/`` 는 같은 JSON)."""
     return json.dumps(payload, ensure_ascii=False).replace("</", "<\\/")
@@ -750,8 +849,9 @@ def main():
     INDEX_RET = index_returns(con, dates, sorted(df["sector"].unique()),
                               sorted(df["market"].dropna().unique()), members)
     cap_monthly = sector_cap_monthly(con, df, dates)
-    con.close()
     payload = build_payload(df, dates, caps, cap_monthly)
+    market_context(con, df, payload)
+    con.close()
     # 직전 리포트·바꿔 끼울 리포트는 **쓰기 전에** 읽는다 — --json 이 그 폴더의 payload.json 일 수 있다.
     root = a.reports_root or reports_root(a.json or a.html)
     payload["change"], payload["change_reason"] = change_block(payload, root)
