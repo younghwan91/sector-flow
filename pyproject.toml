@@ -20,9 +20,24 @@ dev = ["pytest>=8.0", "pytest-cov>=7.0", "ruff==0.16.2"]
 [project.scripts]
 sw-flow = "sectorflow.tui.flow_app:main"
 sw-ledger = "sectorflow.tui.ledger_app:main"
+# 리포트 생성기 — 파일은 scripts/ 에 두고 wheel 이 sectorflow/_scripts/ 로 복사한다(src/sectorflow/report_cli.py).
+sector-flow-payload = "sectorflow.report_cli:payload"
+sector-flow-numbers = "sectorflow.report_cli:numbers"
+sector-flow-gate = "sectorflow.report_cli:gate"
+sector-flow-verify = "sectorflow.report_cli:verify"
+# BYO 수집기(자기 키움 키 → sqlite). 읽기 전용 TR 6개만 부른다.
+sector-flow-collect = "sectorflow.collect.run:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/sectorflow"]
+
+# 리포트 생성기와 템플릿을 wheel 에 싣는다 — 없으면 `uv tool install .` 한 사용자는 리포트를 못 만든다.
+[tool.hatch.build.targets.wheel.force-include]
+"scripts/sector_flow.py" = "sectorflow/_scripts/sector_flow.py"
+"scripts/sector_numbers.py" = "sectorflow/_scripts/sector_numbers.py"
+"scripts/completeness_gate.py" = "sectorflow/_scripts/completeness_gate.py"
+"scripts/verify_report.py" = "sectorflow/_scripts/verify_report.py"
+"scripts/templates" = "sectorflow/_scripts/templates"
 
 [tool.ruff.lint]
 # 룰셋을 명시한다 — ruff 기본 선택은 릴리스마다 넓어진다. dev extra 의 ruff 핀과 한 쌍이다.
