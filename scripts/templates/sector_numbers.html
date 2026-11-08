@@ -449,6 +449,8 @@ function trusted(m,w){
   Object.values(D.names||{}).forEach(nm=>{ if(!mk.has(nm.market)) return; const x=(nm.win||{})[String(w)]||{};
     if(x.invtrt==null&&x.penfnd_etc==null) return;
     out[nm.sector]=(out[nm.sector]||0)+(x.invtrt||0)+(x.penfnd_etc||0); });
+  // 합의 이진 잔차를 지운다 — 더하는 순서가 TUI 와 달라 0 이 ±2.7e-17 로 남아 '+0'·'−0' 이 갈렸다(TUI `_sector_trusted` 와 같은 연산).
+  Object.keys(out).forEach(s=>{ out[s]=RHU(out[s],6)+0; });
   return out;
 }
 /** 1일 창의 행 — `today.sectors[시장]` 을 블록 행 모양으로(TUI `State._today_rows`). 가속·x 계열은 —. */

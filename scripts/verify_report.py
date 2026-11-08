@@ -2814,7 +2814,22 @@ def _w_trusted(P: dict, mks: list, win: str) -> dict:
         if w.get("invtrt") is None and w.get("penfnd_etc") is None:
             continue
         out[nm["sector"]] = out.get(nm["sector"], 0.0) + (w.get("invtrt") or 0.0) + (w.get("penfnd_etc") or 0.0)
-    return out
+    # 합의 이진 잔차를 지운다 — 상쇄돼 0 인 합이 더하는 순서에 따라 ±2.7e-17 이 되면 부호가 '+0'·'−0' 으로 갈린다
+    # (2026-09-01 종이/목재·09-09 금융 재구성: 웹 '+0' · TUI '−0'). 웹·TUI 도 같은 자리에서 지운다.
+    return {s: _w_rhu(v, 6) + 0.0 for s, v in out.items()}
+
+
+_W_SIGN = re.compile(r"(^|[\s(\[·])-(?=\d)")
+
+
+def _w_minus(text: str) -> str:
+    """TUI 의 ASCII 음수 부호(``-90``)를 웹의 U+2212(``−90``)로 — **숫자 앞의 부호만**.
+
+    통째 ``replace("-", "−")`` 는 이름 안의 하이픈까지 바꿔 ``S-Oil`` 이 ``S−Oil`` 이 되고, 같은 글자를
+    불일치로 냈다(2026-09~11 재구성 13일, 화학 'S-Oil'·금속 '와이지-원'). 부호는 줄 처음이나 공백·괄호·
+    ``[``·``·`` 바로 뒤에서 숫자 앞에만 온다 — 이름 속 하이픈은 글자 뒤에 붙는다.
+    """
+    return _W_SIGN.sub(lambda m: m.group(1) + "−", text)
 
 
 def _w_day_stocks(P: dict, mks: list, actor: str) -> dict:
@@ -2941,7 +2956,7 @@ def layer_w(D: dict, P: dict, folder: str) -> None:
                 if not g:
                     continue
                 for hdr, k in pairs:
-                    tui = cols[hdr].fn(r, st).strip().replace("-", "−") if hdr in cols else None
+                    tui = _w_minus(cols[hdr].fn(r, st).strip()) if hdr in cols else None
                     web = g["cells"].get(k)
                     if tui is not None and web is not None and tui != web and not (tui == "—" and web == "—"):
                         bad_tui.append(f"{w}|{m}|{r['sector']}|{hdr} TUI {tui!r} vs 웹 {web!r}")
@@ -2990,7 +3005,7 @@ def layer_w(D: dict, P: dict, folder: str) -> None:
                     bad_t.append(f"{m}/{a}/{side} {ln['items'][:1]} vs {want_items[:1]}")
                 tui_rets = FV.sector_day_ret(D, m)
                 tui_items = [f"{s} {FV.fmt_amt(v)}{FV._pct_tag(p)} {FV._fmt_ret(tui_rets.get(s))}" for s, v, p in pick]
-                if [i.split("[")[0] for i in ln["items"]] != [t.replace("-", "−") for t in tui_items]:
+                if [i.split("[")[0] for i in ln["items"]] != [_w_minus(t) for t in tui_items]:
                     bad_tt.append(f"{m}/{a}/{side} 웹 {ln['items'][:1]} vs TUI {tui_items[:1]}")
                 # 종목 꼬리표 — 웹은 이름을 다 쓰고 TUI 는 10칸에서 자른다. 웹 꼬리표를 TUI 규칙으로 잘라 같은지 본다.
                 tstocks = FV.day_stocks(D, mkof(m), a)
@@ -2999,7 +3014,7 @@ def layer_w(D: dict, P: dict, folder: str) -> None:
                     clipped = "·".join(f"{FV.clip(n, 10)} {x}" for n, x in
                                        (t.rsplit(" ", 1) for t in web_tag.split("·") if t)) if web_tag else ""
                     tui_tag = FV._stock_tag(tstocks.get(s) or [], "buy" if side == "top" else "sell", 2)
-                    if (f"[{clipped}]" if clipped else "") != tui_tag.replace("-", "−"):
+                    if (f"[{clipped}]" if clipped else "") != _w_minus(tui_tag):
                         bad_tt.append(f"{m}/{a}/{side}/{s} 종목 웹 {web_tag!r} vs TUI {tui_tag!r}")
                         break
             for ln in (cards.get("t-ext") or {}).get("lines", []):
@@ -3032,7 +3047,7 @@ def layer_w(D: dict, P: dict, folder: str) -> None:
             want = FV.streak_items(D, m)
             card = cards.get("t-streak")
             got = ((card or {}).get("lines") or [{}])[0].get("items") if card else None
-            if (want is None) != (card is None) or (want is not None and got != [w.replace("-", "−") for w in want]):
+            if (want is None) != (card is None) or (want is not None and got != [_w_minus(w) for w in want]):
                 bad_sk.append(f"{m} 연속 웹 {(got or [None])[:2]} vs TUI {(want or [None])[:2]}")
             rl = FV.revision_line(D)
             web = [ln["text"] for ln in (cards.get("t-net") or {}).get("lines", []) if "rev" in (ln.get("cls") or "")]
@@ -3055,9 +3070,10 @@ def layer_w(D: dict, P: dict, folder: str) -> None:
                     continue
                 rows.append((nm.get("name"), w["inst"], w.get("invtrt"), w.get("penfnd_etc")))
             rows.sort(key=lambda t: -t[1])
-            buy = [t for t in rows if t[1] > 0][:6]
-            sell = [t for t in rows if t[1] < 0][::-1][:6]
-            for side, want in (("buy", buy), ("sell", sell)):
+            buy_all = [t for t in rows if t[1] > 0]
+            sell_all = [t for t in rows if t[1] < 0][::-1]
+            for side, everyone in (("buy", buy_all), ("sell", sell_all)):
+                want = everyone[:6]
                 got = (vo["secs"].get(s) or {}).get(side) or []
                 if not want:
                     continue
@@ -3066,10 +3082,12 @@ def layer_w(D: dict, P: dict, folder: str) -> None:
                     bad_v.append(f"{s}/{side} {[g['amt'] for g in got][:2]} vs {[_w_A(v) + '억' for _n, v, _i, _p in want][:2]}")
                 # 같은 금액(표시 0.1억 단위)끼리는 순서를 묻지 않는다 — 뷰어(JS)와 여기(파이썬)의 동률 정렬이 다르다
                 # (2026-09-15 금융: LG·JB금융지주 둘 다 +37.9억). 금액 순서는 위에서 이미 봤다.
+                # 짝은 잘린 6개 안이 아니라 **그 쪽 전체**에서 찾는다 — 동률이 6번째 자리를 걸치면 뷰어는 잘린 밖의
+                # 종목을 고를 수 있다(2026-10-30 유통: −0.5억 셋 중 에스에이엠티, 2026-09-16 IT 서비스: +7.5억 둘 중 넥슨게임즈).
                 def _sub(iv, pf):
                     return f"투신 {'—' if iv is None else _w_A(iv)} · 연기금 {'—' if pf is None else _w_A(pf)}억"
                 for g, (_n, v, _i, _p) in zip(got, want):
-                    peers = [(n, _sub(iv, pf)) for n, v2, iv, pf in want if round(v2, 1) == round(v, 1)]
+                    peers = [(n, _sub(iv, pf)) for n, v2, iv, pf in everyone if round(v2, 1) == round(v, 1)]
                     if not any((g.get("name") or "").startswith(n or "") and sub == g.get("sub") for n, sub in peers):
                         bad_v.append(f"{s}/{side} {g.get('name')} {g.get('sub')}")
                         break

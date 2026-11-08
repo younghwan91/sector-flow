@@ -5,8 +5,11 @@
 """
 from __future__ import annotations
 
+import functools
 import importlib.util
 import json
+import math
+import operator
 import shutil
 import sys
 from pathlib import Path
@@ -368,3 +371,116 @@ def test_third_consecutive_external_truth_skip_warns_but_does_not_fail(tmp_path,
     assert _skip_run(monkeypatch, three) == [], "연속 SKIP 은 실패가 아니다"
     out = capsys.readouterr().out
     assert VR.WARNS and "[WARN] F · 외부 참값 연속 SKIP 3회" in out, out
+
+# ── 2026-08-27~11-03 재구성 48일 중 21일이 W 층에서만 빨갰다 — 비교기 결함 셋과 표시 결함 하나 ─────────────
+
+def _rekey(P: dict, order: list) -> dict:
+    """``names`` 를 숫자 꼴 코드로 다시 단다 — 파이썬은 ``order`` 순서로, JS 는 코드 오름차순(= 그 **역순**)으로 돈다."""
+    P2 = json.loads(json.dumps(P))
+    old = P2["names"]
+    P2["names"] = {str(900000 - i): old[c] for i, c in enumerate(order)}
+    return P2
+
+
+def test_minus_normalizer_touches_signs_not_hyphens_in_names():
+    """TUI 의 `-90` 만 웹의 `−90` 으로 — 이름 속 하이픈(S-Oil·와이지-원)은 그대로다."""
+    assert VR._w_minus("[에이피알 -90·S-Oil -73]") == "[에이피알 −90·S-Oil −73]"
+    assert VR._w_minus("[성광벤드 -16·와이지-원 -1]") == "[성광벤드 −16·와이지-원 −1]"
+    assert VR._w_minus("-0.25") == "−0.25"
+    assert VR._w_minus("화학 -1,234(3)") == "화학 −1,234(3)"
+    assert VR._w_minus("[인제니아테… -3·CJ ENM +2]") == "[인제니아테… −3·CJ ENM +2]"
+
+
+@node
+def test_web_layer_today_tags_with_hyphenated_names_match_the_tui(PD, tmp_path):
+    """종목명에 하이픈·공백·괄호가 있어도 '오늘' 패널 = TUI 첫 화면이다.
+
+    비교기가 TUI 꼬리표를 통째로 ``replace("-", "−")`` 해 `S-Oil` 이 `S−Oil` 이 되고, 같은 글자를 불일치로 냈다
+    (2026-10-21 화학 `에이피알 −90·S-Oil −73` vs `[에이피알 -90·S-Oil -73]` 등 13일).
+    """
+    P, _ = PD
+    P2 = json.loads(json.dumps(P))
+    bases = ["S-Oil", "와이지-원", "CJ ENM", "인제니아테라퓨틱스(Reg.S)"]
+    for i, nm in enumerate(P2["names"].values()):
+        nm["name"] = f"{bases[i % len(bases)]}{i}"
+    D2 = SN.build(P2)
+    folder = _write(tmp_path, P2, D2)
+    assert "S-Oil" in (folder / "numbers.html").read_text("utf-8")
+    assert not [f for f in _w_fails(P2, D2, folder) if "'오늘' 패널" in f]
+
+
+@node
+def test_web_layer_one_day_list_tie_across_the_sixth_place(PD, tmp_path):
+    """동률이 6번째 자리를 걸치면 뷰어는 잘린 6개 **밖**의 종목을 고를 수 있다 — 그것도 불일치가 아니다.
+
+    2026-10-30 유통: −0.5억 셋(에스에이엠티·신세계인터내셔날·KG모빌리티플랫폼)이 5~7번째에 걸쳐, 뷰어가
+    파이썬의 6개에 없는 에스에이엠티를 그렸다. 짝을 잘린 6개 안에서만 찾던 비교기가 빨갰다.
+    """
+    P, _ = PD
+    P2 = json.loads(json.dumps(P))
+    S1 = P2["today"]["sectors"]["전체"]
+    sec = max(S1, key=lambda s: abs((S1[s].get("inst") or {}).get("v") or 0))
+    mine = [c for c, n in P2["names"].items() if n.get("sector") == sec and (n.get("win") or {}).get("1")]
+    assert len(mine) >= 7, "픽스처에 7종목이 없다"
+    # 7종목 모두 순매수, 6·7번째가 같은 금액 — 둘 중 파이썬은 앞의 것(0 으로 시작하는 코드), JS 는 숫자 꼴 코드를 고른다.
+    for i, c in enumerate(mine[:7]):
+        P2["names"][c]["win"]["1"].update(inst=[30.0, 25.0, 20.0, 15.0, 10.0, 5.5, 5.5][i],
+                                          invtrt=0.1 * i, penfnd_etc=1.0 + i)
+    for c in mine[7:]:
+        P2["names"][c]["win"]["1"].update(inst=-1.0)
+    assert mine[5].startswith("0")
+    P2["names"]["175330"] = P2["names"].pop(mine[6])
+    D2 = SN.build(P2)
+    assert not [f for f in _w_fails(P2, D2, _write(tmp_path, P2, D2)) if "1일 종목 목록" in f]
+
+
+@node
+def test_trust_sum_that_cancels_to_zero_is_plus_zero_on_web_tui_and_verifier(PD, tmp_path):
+    """상쇄돼 0 인 투신+연기금 합이 더하는 순서에 따라 ±2.7e-17 이 돼 웹 '+0'·TUI '−0' 으로 갈렸다.
+
+    2026-09-01 종이/목재·09-09 금융 재구성. JS 는 숫자 꼴 코드를 오름차순으로 돌아 파이썬과 순서가 반대다.
+    섹터 둘: 하나는 파이썬 순서에서 음의 잔차, 다른 하나는 JS 순서에서 음의 잔차 — 어느 한쪽이 잔차를 안 지우면 빨갛다.
+    """
+    from sectorflow.tui import flow_view as FV
+    P, _ = PD
+    by_sec: dict = {}
+    for c, n in P["names"].items():
+        if n["market"] == "거래소":
+            by_sec.setdefault(n["sector"], []).append(c)
+    secs = sorted(s for s, cs in by_sec.items() if len(cs) == 4)[:2]
+    assert len(secs) == 2
+    seqs = {secs[0]: [0.1, -0.5, 0.3, 0.1], secs[1]: [0.1, 0.3, -0.5, 0.1]}   # 파이썬 −·JS + / 파이썬 +·JS −
+    order = [c for s in secs for c in by_sec[s]] + [c for c in P["names"] if c not in
+                                                    {x for s in secs for x in by_sec[s]}]
+    P2 = _rekey(P, order)
+    for c, n in P2["names"].items():
+        if n["sector"] in secs:
+            n["win"]["5"].update(invtrt=0.0, penfnd_etc=0.0)
+    for s in secs:
+        for c, v in zip([c for c, n in P2["names"].items() if n["sector"] == s and n["market"] == "거래소"], seqs[s]):
+            P2["names"][c]["win"]["5"]["invtrt"] = v
+    # 픽스처가 잔차를 정말 만드는가 — 파이썬 순서 합의 부호가 두 섹터에서 반대다.
+    # (내장 sum 은 3.12 부터 보정 합이라 잔차가 안 남는다 — TUI·웹처럼 하나씩 더한다.)
+    raw = [functools.reduce(operator.add, [P2["names"][c]["win"]["5"]["invtrt"] for c in P2["names"]
+                                           if P2["names"][c]["sector"] == s and P2["names"][c]["market"] == "거래소"], 0.0)
+           for s in secs]
+    assert raw[0] < 0 < raw[1] and max(map(abs, raw)) < 1e-15
+    D2 = SN.build(P2)
+    t = FV._sector_trusted(D2, ["거래소"], "5")
+    assert all(t[s] == 0.0 and math.copysign(1, t[s]) > 0 for s in secs)
+    fails = _w_fails(P2, D2, _write(tmp_path, P2, D2))
+    assert not [f for f in fails if "본표 칸" in f], fails
+
+
+@node
+def test_viewer_rounds_like_the_tui(tmp_path):
+    """뷰어 금액·%p 가 TUI `rhu` 와 같은 반올림이다 — toFixed(2) 는 1.005 를 1.00 으로(이진 값) 그려 TUI 1.01 과 갈렸다."""
+    from sectorflow.tui import flow_view as FV
+    P = PT._payload()
+    page = tmp_path / "viewer.html"
+    vt = (REPO / "scripts" / "templates" / "sector_flow.html").read_text("utf-8")
+    page.write_text(vt.replace("__DATA__", SF.script_json(P)), "utf-8")
+    vals = [1.005, 2.675, -1.005, 0.5, -0.5, 2.4999999999, -0.3, 0.0, 12.5, -96.5]
+    got = VR._w_run(shutil.which("node"), str(page), f"__out({{a:{json.dumps(vals)}.map(amt), p:{json.dumps(vals)}.map(pp)}});")
+    assert got["a"] == [VR._w_minus(FV.fmt_amt(v)) for v in vals]
+    assert got["p"] == [VR._w_minus(FV.fmt_pct(v)) for v in vals]
