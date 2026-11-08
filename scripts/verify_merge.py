@@ -255,17 +255,11 @@ def sec_identity(wt: Path, commits: list[str]) -> Section:
         return s
     s.say(f"기준 신원: {want_name} <{want_mail}>")
     for sha in commits:
-        line = git(wt, "log", "-1", "--format=%h|%an|%ae|%cn|%ce", sha)
-        h, an, ae, cn, ce = line.split("|")
-        if _ok_identity(ae, want_mail) and _ok_identity(ce, want_mail):
-            pass
-        elif True:
+        line = git(wt, "log", "-1", "--format=%h|%ae|%ce", sha)
+        h, ae, ce = line.split("|")
+        if not (_ok_identity(ae, want_mail) and _ok_identity(ce, want_mail)):
             s.fail(f"{h} 신원이 다르다 (author={ae} committer={ce}) — "
                    f"`git -c user.email=…` 금지, 레포 설정을 그대로 쓴다")
-        elif an != want_name or cn != want_name:
-            s.warn(f"{h} 이름이 다르다 (author={an} committer={cn})")
-        else:
-            s.say(f"  {h} ok")
     return s
 
 
