@@ -5368,3 +5368,15 @@ guards = ["tests/test_streaks_revisions.py::test_web_today_panel_says_the_same_s
 file = "scripts/templates/sector_numbers.html"
 find = '''  if(SK){ const c2b='''
 replace = '''  if(false){ const c2b='''
+
+[[mutation]]
+id = "revision-line-on-closed-rebuild"
+why = "창 밖 재구성(finalize_unverified)은 마감 값인데 TUI 만 '잠정→확정 수정 폭' 을 적어 웹(CLOSED)과 갈린다"
+guards = ["tests/test_web_render.py::test_web_layer_is_green_on_a_rebuilt_day_outside_the_finalize_window"]
+file = "src/sectorflow/tui/flow_view.py"
+find = '''    마감 값(확정, 또는 창 밖 재구성 ``finalize_unverified``)이면 None — 웹 ``CLOSED`` 와 같은 기준이다.
+    """
+    if d.get("final") or d.get("finalize_unverified"):'''
+replace = '''    마감 값(확정, 또는 창 밖 재구성 ``finalize_unverified``)이면 None — 웹 ``CLOSED`` 와 같은 기준이다.
+    """
+    if d.get("final"):'''
