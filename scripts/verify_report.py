@@ -1806,10 +1806,11 @@ def layer_f(P: dict, db: str | None) -> None:
     ins = {r[0]: (float(r[1]), float(r[2])) for r in cur.fetchall()}
     share = {m: out[m][1] / ins[m][0] * 100 for m in out if m in ins}
     tot_tv = sum(v[1] for v in out.values()) / sum(v[0] for v in ins.values()) * 100
+    _f_universe_gap(cur, ph, d0, d1)
     tot_inst = sum(v[2] for v in out.values()) / sum(v[1] for v in ins.values()) * 100
-    detail = (f"빠진 거래대금 {tot_tv:.3f}% · 기관 gross {tot_inst:.3f}% · "
+    detail = (f"상장폐지로 빠진 거래대금 {tot_tv:.3f}%(유니버스 대비 — 우선주·리츠 등 유니버스 밖은 별도 항목) · 기관 gross {tot_inst:.3f}% · "
               + " · ".join(f"{m} {share[m]:.3f}%({out[m][0]}종목)" for m in sorted(share)))
-    claim("F", "한계 §7: 빠진 거래대금 비중이 1% 미만인가", tot_tv < 1.0, detail)
+    claim("F", "한계 §7: 상장폐지로 빠진 거래대금 비중이 1% 미만인가", tot_tv < 1.0, detail)
     claim("F", "한계 §7: 빠진 금액은 코스닥이 아니라 거래소에서 큰가",
         share.get("거래소", 0) > share.get("코스닥", 0),
         f"거래소 {share.get('거래소', 0):.3f}% vs 코스닥 {share.get('코스닥', 0):.3f}%")
@@ -1830,6 +1831,38 @@ def layer_f(P: dict, db: str | None) -> None:
 
 #: KRX 종합지수 코드 — producer 상수를 읽지 않고 여기 적는다.
 VF_KRX = (("거래소", "001"), ("코스닥", "101"))
+#: 유니버스 밖 거래대금의 몫 — 문서가 "거래소 3.6%" 라 적는 값의 상한(시장별, %). 넘으면 그 글이 낡았다.
+VF_UNIVERSE_GAP_MAX = 6.0
+
+
+def _f_universe_gap(cur, ph: str, d0: str, d1: str) -> None:
+    """유니버스 밖 거래대금 — **KRX 종합 거래대금 대비**. ``stocks`` 는 kind A(보통주)뿐이라 우선주·리츠 등은 DB 어느 표에도
+    없다. 그래서 ``supply_demand`` 안에서 세면(위의 상장폐지 몫) 분모부터 좁다. ``sector_index`` 의 종합 행은 그 종목들까지 담은
+    시장 전체라, 두 값의 차가 빠진 몫이다(2026-11-06 거래소 28.98조 − 27.94조 = 1.04조, 네이버 금융 시세 139종목 합과 일치).
+    """
+    try:
+        cur.execute(f"SELECT code, sum(trade_value) FROM sector_index "
+                    f"WHERE code IN ('001','101') AND date BETWEEN {ph} AND {ph} GROUP BY 1", (d0, d1))
+        whole = {c: float(v or 0) for c, v in cur.fetchall()}
+        cur.execute(f"SELECT st.market, sum(b.trade_value) FROM daily_bars b JOIN stocks st ON st.code=b.code "
+                    f"WHERE b.date BETWEEN {ph} AND {ph} AND b.date IN "
+                    f"(SELECT date FROM sector_index WHERE code='001' AND date BETWEEN {ph} AND {ph}) GROUP BY 1",
+                    (d0, d1, d0, d1))
+        inside = {m: float(v or 0) for m, v in cur.fetchall()}
+    except Exception as e:  # noqa: BLE001 — 옛 스키마·시험 DB(거래대금 열 없음)는 잴 수 없다는 사실만 남긴다
+        try:
+            cur.connection.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        print(f"  SKIP 유니버스 밖 거래대금 — 종합 거래대금을 못 읽었다({type(e).__name__})")
+        return
+    gaps = {m: (whole[c] - inside.get(m, 0.0)) / whole[c] * 100 for m, c in VF_KRX if whole.get(c)}
+    if not gaps:
+        print("  SKIP 유니버스 밖 거래대금 — 그 구간 종합 거래대금이 없다")
+        return
+    claim("F", f"한계: 유니버스 밖(우선주·리츠 등) 거래대금이 KRX 종합 대비 시장마다 {VF_UNIVERSE_GAP_MAX:.0f}% 미만인가",
+          all(g < VF_UNIVERSE_GAP_MAX for g in gaps.values()),
+          " · ".join(f"{m} {g:.2f}%" for m, g in gaps.items()) + " (KRX 종합 − 유니버스 합, 구간 합계 대비)")
 #: 정규장 종가로 다시 잰 자체 바구니 vs KRX 지수 — 허용 차이[%p]. 바구니에 우선주가 들어 있고(코스피는 보통주)
 #: 상장·폐지 시점이 달라 0 은 아니다. 실측 11-03~11-05: 0.01~0.04%p.
 VF_REGULAR_TOL = 0.1
@@ -2339,9 +2372,9 @@ def _vt_close(a, b, tol: float) -> bool:
     return (a is None) == (b is None) and (a is None or abs(a - b) <= tol)
 
 
-# ─────────────────────────────────────────────── T. 잠정 → 확정 — 종목(주도주) 층을 다시 센다
+# ─────────────────────────────────────────────── T. 잠정 → 확정 — 종목(기관상위) 층을 다시 센다
 #
-# 섹터 칸과 같은 원칙: 정의는 producer 상수를 읽지 않고 여기 적는다. 주도주 = (시장, 섹터)에서 1일
+# 섹터 칸과 같은 원칙: 정의는 producer 상수를 읽지 않고 여기 적는다. 기관상위 = (시장, 섹터)에서 1일
 # |기관| 큰 순 누적 기여율 80% 를 처음 넘긴 행까지(그 행 포함), 잠정·확정의 합집합. names 의 (시장, 섹터)
 # 종목 집합이 두 페이로드에서 다른 (시장, 섹터)는 통째로 뺀다.
 
@@ -2377,7 +2410,7 @@ def _vt_stk_drivers(w1: dict) -> set:
 
 
 def _vt_stock_diff(P: dict, prov: dict) -> "dict | None":
-    """확정 ``P`` 와 잠정 ``prov`` 에서 다시 센 종목(주도주) 행·요약 — ``final_diff["stocks"]`` 와 같은 정의.
+    """확정 ``P`` 와 잠정 ``prov`` 에서 다시 센 종목(기관상위) 행·요약 — ``final_diff["stocks"]`` 와 같은 정의.
 
     어느 쪽이든 1일 종목 칸이 하나도 없으면(옛 형식 게시본) ``None`` — 종목 층을 말할 수 없다."""
     new1, old1 = _vt_win1(P), _vt_win1(prov)
@@ -2440,7 +2473,7 @@ def _vt_stock_final_check(P: dict, prov: dict, F: dict) -> None:
     S = F.get("stocks")
     W = _vt_stock_diff(P, prov)
     if W is None:
-        chk("T", "잠정 → 확정 — 종목(주도주) 층은 1일 칸이 없는 옛 형식 게시본 대비에서 비어 있는가", S is None,
+        chk("T", "잠정 → 확정 — 종목(기관상위) 층은 1일 칸이 없는 옛 형식 게시본 대비에서 비어 있는가", S is None,
             str(S)[:150])
         return
     bad = []
@@ -2461,7 +2494,7 @@ def _vt_stock_final_check(P: dict, prov: dict, F: dict) -> None:
                         and _vt_close(got[k].get(a, [None, None])[1], want[k][a][1], 0.051))
                    for a in VT_STK_ACTORS):
                 bad.append(f"{'/'.join(k)} {got[k]} vs {want[k]}"[:160])
-    chk("T", "잠정 → 확정 — 종목(주도주) 행·요약을 옆 잠정 리포트에서 다시 센 것과 같은가", not bad,
+    chk("T", "잠정 → 확정 — 종목(기관상위) 행·요약을 옆 잠정 리포트에서 다시 센 것과 같은가", not bad,
         f"{len(bad)}건  " + "; ".join(bad[:3]))
 
 
@@ -2671,7 +2704,7 @@ def _vt_revision_check(P: dict, folder: "str | None") -> None:
 
 
 def _vt_stock_rev_check(R: dict, found: list) -> None:
-    """종목(주도주) 집계 — 일별 ``final_diff["stocks"]`` 요약(칸·뒤집힘·유지는 합, 중앙값은 일별 중앙값의 중앙값)."""
+    """종목(기관상위) 집계 — 일별 ``final_diff["stocks"]`` 요약(칸·뒤집힘·유지는 합, 중앙값은 일별 중앙값의 중앙값)."""
     sd, meds, sc, fl, kp, ls = 0, [], 0, 0, 0, 0
     for _d, fd in found:
         S = fd.get("stocks")
@@ -2686,14 +2719,14 @@ def _vt_stock_rev_check(R: dict, found: list) -> None:
         ls += S.get("top3_lists") or 0
     G = R.get("stocks")
     if not sd:
-        chk("T", "잠정→확정 수정 폭 — 종목(주도주) 집계는 일별 요약이 없으면 비어 있는가", G is None, str(G)[:150])
+        chk("T", "잠정→확정 수정 폭 — 종목(기관상위) 집계는 일별 요약이 없으면 비어 있는가", G is None, str(G)[:150])
         return
     med = statistics.median(meds) if meds else None
     keep = 100.0 * kp / (ls * VT_TOP_N) if ls else None
     ok = (isinstance(G, dict) and G.get("n_dates") == sd and G.get("n_cells") == sc and G.get("flips") == fl
           and _vt_close(G.get("rel_median_pct"), med, 0.051)
           and G.get("top3_lists") == ls and _vt_close(G.get("top3_keep_pct"), keep, 0.051))
-    chk("T", "잠정→확정 수정 폭 — 종목(주도주) 일별 요약의 집계 재계산", ok,
+    chk("T", "잠정→확정 수정 폭 — 종목(기관상위) 일별 요약의 집계 재계산", ok,
         f"{G} vs {sd}일·{sc}칸·중앙 {med if med is None else round(med, 1)}·뒤집힘 {fl}·유지 "
         f"{keep if keep is None else round(keep, 1)}/{ls}"[:300])
 
@@ -3086,6 +3119,19 @@ W_COLS_DEFAULT = ("sector", "n_all", "inst", "accel", "pct", "ret", "trust5", "t
 W_COLS_EXPLORE = ("G", "exp", "x", "P", "xdot", "xddot")
 
 
+def _w_wording(folder: str) -> None:
+    """그날 만든 수치표·뷰어의 글(심은 데이터 줄 제외)에 금칙어가 없는가 — 표는 ``sectorflow.wording`` 하나다."""
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
+    from sectorflow.wording import rendered_page_hits
+    for name in ("numbers.html", "viewer.html"):
+        try:
+            with open(os.path.join(folder, name), encoding="utf-8") as f:
+                hits = rendered_page_hits(f.read())
+        except OSError as e:
+            hits = [f"못 읽었다: {e}"]
+        chk("W", f"금칙어 — {name} 의 글에 권유·전망처럼 읽히는 말이 없는가", not hits, ", ".join(hits))
+
+
 def layer_w(D: dict, P: dict, folder: str) -> None:
     """W. **웹 화면** — numbers.html(본표·'오늘' 패널)과 viewer.html(1일 종목 목록)을 node 로 그려 대조한다."""
     print("\nW. 웹 — 그려진 페이지의 숫자가 페이로드·TUI 와 같은가")
@@ -3095,6 +3141,7 @@ def layer_w(D: dict, P: dict, folder: str) -> None:
         node or "환경 실패(코드 결함 아님): PATH·/usr/bin 에 node 가 없다 — 웹 대조를 못 했다")
     if not node:
         return
+    _w_wording(folder)
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
     from sectorflow.tui import flow_view as FV
     out = _w_run(node, os.path.join(folder, "numbers.html"), _W_PROBE_NUMBERS)
