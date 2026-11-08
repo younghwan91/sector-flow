@@ -97,3 +97,68 @@ def test_every_tee_step_in_our_workflows_sets_pipefail():
             pf = [i for i, ln in enumerate(lines) if re.search(r"\bset -\w*o pipefail\b|\bset -o pipefail\b", ln)]
             assert pf and pf[0] < tee[0], f"{f.name}: | tee 를 쓰는 run 블록에 그보다 앞선 set -o pipefail 이 없다:\n{block}"
     assert n >= 2, "| tee 스텝을 하나도 못 찾았다 — 정규식이 헛돈다"
+
+
+# ── 소모를 줄인 범위 나누기가 배포 관문(`pull-all --ci-gate`)을 뚫지 않는가 ─────────────────────────────
+# 관문은 머리 커밋의 체크만 본다: success·skipped·neutral 이면 통과, 0개·진행 중이면 보류. 설계는 ci.yml 머리말.
+
+
+def test_ci_has_no_workflow_level_filter_and_plan_always_runs():
+    """``paths`` 로 워크플로째 건너뛰면 머리엔 신원 검사만 남아, 빨간 코드 위에 문서 커밋을 얹어 관문을 지나간다."""
+    on = re.search(r"^on:\n(.*?)(?=^\S)", CI, re.S | re.M).group(1)
+    assert "push:" in on and "pull_request:" in on
+    assert "branches: [main]" in on                              # 머지 커밋에 체크가 붙는 자리
+    for word in ("paths", "paths-ignore", "branches-ignore", "tags"):
+        assert word not in on, f"{word} 를 on: 에 쓰면 체크 없는 main 커밋이 생긴다"
+    plan = _job(CI, "plan")
+    assert not re.search(r"^    if:", plan, re.M), "plan 을 건너뛰면 그 뒤 잡이 다 건너뛰어 초록이다"
+    assert "needs: plan" not in plan
+    for job in ("test", "mutations", "mutations-pr"):
+        assert "needs: plan" in _job(CI, job), job
+
+
+def test_skipping_fails_closed_and_main_runs_every_mutation():
+    """plan 출력이 비어도 안 건너뛴다. 문서 판정이 아니면 main 은 전체 변이다 — 범위 옵션이 끼면 관문의 보호가 줄어든다."""
+    main, pr = _job(CI, "mutations"), _job(CI, "mutations-pr")
+    assert "if: ${{ github.event_name != 'pull_request' && needs.plan.outputs.kind != 'docs' }}" in main
+    assert "if: ${{ github.event_name == 'pull_request' && needs.plan.outputs.kind != 'docs' }}" in pr
+    assert "== 'code'" not in CI, "출력이 비면 건너뛰게 되는 조건이다"
+    assert "--scope" not in main                                 # GITHUB_ACTIONS 에서 auto 는 all 이다
+    assert "--scope direct" in pr and "--budget-min" in pr
+    # 잡 상한 안에서 하네스가 먼저 멈춰야 한다(예산의 두 배에서 멈춘다) — 이유 없는 시간 초과로 죽지 않게.
+    budget = float(re.search(r"--budget-min (\d+)", pr).group(1))
+    assert 2 * budget < int(re.search(r"^    timeout-minutes: (\d+)", pr, re.M).group(1))
+
+
+def test_main_docs_judgement_compares_to_the_last_green_main_commit():
+    """직전 커밋과 견주면 '빨간 코드 → 문서' 가 초록으로 보인다. 초록 기록을 묻는 조회와 그 권한이 있어야 한다."""
+    plan = _job(CI, "plan")
+    for flag in ("--workflow ci.yml", "--branch main", "--event push", "--status success"):
+        assert flag in plan, flag
+    assert 'scripts/ci_plan.py' in plan and '--verified "$verified"' in plan
+    assert "actions: read" in plan                               # 없으면 조회가 실패해 늘 전체를 돈다 — 조용한 비용 누수
+
+
+def test_superseding_a_run_cannot_cancel_the_head():
+    """끊기는 것은 같은 이벤트의 앞 커밋뿐이어야 한다 — 머리의 실행이 cancelled 면 관문이 보류한다."""
+    assert re.search(r"^concurrency:\n  group: ci-\$\{\{ github\.event_name \}\}-\$\{\{ github\.ref \}\}\n  cancel-in-progress: true",
+                     CI, re.M)
+
+
+def test_local_ci_keeps_its_python_and_skips_ci_only_steps():
+    """dotfiles ci-local 은 이 파일을 읽어 돈다. matrix 가 식이면 판을 못 읽어 3.13 으로 바뀌고, 식 없는 run 은 로컬에서도 돈다."""
+    assert re.search(r'^env:\n(?:  #.*\n)*  PYTHON_VERSION: "3\.12"', CI, re.M)
+    assert "${{" in re.search(r"- name: Plan\n.*", _job(CI, "plan"), re.S).group(0).split("run: |", 1)[1]
+    assert "${{" in re.search(r"run: .*--scope direct.*", _job(CI, "mutations-pr")).group(0)
+    assert "${{" not in re.search(r"run: (uv run --no-sync python scripts/verify_merge\.py .*)", _job(CI, "mutations")).group(1)
+
+
+def test_every_job_in_our_workflows_has_a_time_limit():
+    """상한이 없으면 GitHub 기본은 6시간 — 멈춘 잡 하나가 분을 다 태운다."""
+    n = 0
+    for f in sorted((REPO / ".github" / "workflows").glob("*.yml")):
+        body = f.read_text("utf-8").split("\njobs:\n", 1)[1]
+        for m in re.finditer(r"^  ([\w-]+):\n(.*?)(?=^  [\w-]+:\n|\Z)", body, re.S | re.M):
+            n += 1
+            assert re.search(r"^    timeout-minutes: \d+", m.group(2), re.M), f"{f.name}: {m.group(1)}"
+    assert n >= 6, "잡을 못 찾았다 — 정규식이 헛돈다"

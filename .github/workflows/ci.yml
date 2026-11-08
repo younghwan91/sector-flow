@@ -1,5 +1,25 @@
 name: CI
 
+# 머지 한 번에 PR·main 두 실행이 돈다. 2026-11-08 main 한 번이 잡 합계 37.3분(변이 681개)이었고, 11월 9일간 머지 38건 뒤
+# 잡이 시작도 못 하게 됐다(결제·지출 한도, 이 소모가 원인으로 보인다). 그래서 범위를 나눈다:
+#
+#              검사(pytest)        주입 검증
+#   문서만     3.13 하나           안 돈다 — 앵커 사망은 tests/test_mutation_spec.py 가 pytest 에서 잡는다
+#   PR(코드)   3.11·3.13           mutations-pr: --scope direct, 직접 건드린 변이만
+#   main(코드) 3.11·3.12·3.13      mutations: 전체, 4샤드
+#
+# 배포 관문과의 관계(dotfiles `pull-all --ci-gate`): **머리 커밋**의 체크가 전부 success·skipped·neutral 이어야 받고,
+# 체크가 0개거나 하나라도 돌고 있으면 보류한다. 그래서:
+# - `paths` 필터를 쓰지 않는다. 워크플로째 건너뛰면 그 커밋엔 신원 검사만 남아, 빨간 코드 커밋 위에 문서 커밋을 얹는
+#   것으로 관문을 지나간다. 워크플로는 늘 돌고 잡만 건너뛴다(잡의 skipped 는 관문을 막지 않는다).
+# - main 의 문서 판정은 직전이 아니라 **마지막 초록 main 커밋**과 견준다(scripts/ci_plan.py) — 머리가 초록이면 머리의 코드
+#   트리는 전체 변이를 지났거나 지난 트리와 같다. 이 성질은 예전과 똑같다.
+# - `if` 는 `!= 'docs'` 로 쓴다 — plan 출력이 비면 건너뛰지 않고 돈다. plan 이 죽으면 그 빨강이 관문을 막는다.
+#
+# 줄어든 것: 머지 **전** 보호. 예전엔 PR 이 전체 변이를 통과해야 머지했고, 지금은 직접 닿지 않은 변이의 실패가 머지 뒤
+# main 에서 드러난다(로컬 pre-push 의 changed 범위가 넓게 먼저 본다, --no-verify 면 없다). 그때 main 이 빨개져 배포가
+# 멈추고 고칠 때까지 다른 머지의 배포도 같이 멈춘다. 나쁜 코드가 배포되지는 않는다.
+
 on:
   push:
     branches: [main]
@@ -8,12 +28,52 @@ on:
 permissions:
   contents: read
 
+# 같은 PR·main 에 새 커밋이 오면 앞 실행을 끊는다 — 관문은 머리만 보므로 지나간 커밋의 결과는 쓰이지 않고, 끊긴 실행은
+# 초록이 아니라 다음 실행의 견줄 기준도 안 된다. 이벤트를 그룹에 넣어 다른 이벤트가 머리의 실행을 못 끊게 한다.
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # 로컬 pre-push(dotfiles ci-local)가 고르는 판 — 아래 matrix 가 식이라 그쪽이 못 읽는다. CI 잡은 이 값을 안 쓴다.
+  PYTHON_VERSION: "3.12"
+
 jobs:
-  test:
+  # ci-local 은 `${{ }}` 가 든 run 스텝을 건너뛴다 — 이 잡은 CI 에서만 돈다. `if` 를 달지 않는다(체크가 늘 하나는 있다).
+  plan:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read           # 마지막 초록 실행을 찾는다
+    outputs:
+      kind: ${{ steps.plan.outputs.kind }}
+      python: ${{ steps.plan.outputs.python }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      # gh 가 실패하면 기준이 비어 전체를 돈다(ci_plan.py) — 끊긴 판정이 초록으로 남지 않게 `|| true` 는 조회에만 둔다.
+      - name: Plan
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          verified=""
+          if [ "${{ github.event_name }}" = "push" ]; then
+            verified=$(gh run list --workflow ci.yml --branch main --event push --status success --limit 1 \
+              --json headSha --jq '.[0].headSha // ""' || true)
+          fi
+          python3 scripts/ci_plan.py --event "${{ github.event_name }}" --base "origin/${{ github.base_ref || 'main' }}" \
+            --verified "$verified" >> "$GITHUB_OUTPUT"
+
+  test:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       matrix:
-        python-version: ["3.11", "3.12", "3.13"]
+        python-version: ${{ fromJSON(needs.plan.outputs.python) }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -32,7 +92,7 @@ jobs:
       - name: Research compiles
         run: uv run --no-sync python -m compileall -q research
       # 3.12+ 는 sys.monitoring 으로 커버리지를 같이 잰다(+15% 안팎). 3.11 은 그게 없어 검증기가 4배
-      # 느려지므로 재지 않는다 — 변경 줄 판정은 3.12·3.13 이 한다.
+      # 느려지므로 재지 않는다 — 변경 줄 판정은 3.12+ 판(PR·문서는 3.13)이 한다.
       - name: Test
         run: |
           if uv run --no-sync python -c 'import sys; sys.exit(sys.version_info < (3, 12))'; then
@@ -52,15 +112,16 @@ jobs:
   # "테스트가 초록" 은 검사가 살아 있다는 뜻이 아니다. 이 단계가 CI 밖에 있는 동안
   # 앵커를 잃은 변이 셋이 조용히 죽었다(경고만 남았고 아무도 안 읽었다).
   #
-  # 시간: 한 잡으로 돌 때 261개 8분 → 302개 22.7분(잡 상한 30분)으로 PR 마다 늘었다. 상한에 걸리면
-  # 07:50 `pull-all --ci-gate` 배포가 막힌다. 그래서 (1) 가드 기준선을 pytest 한 번에, (2) e2e 는 필요한
-  # 검증 층만, (3) 예상 비용으로 4몫에 나눠, (4) 몫마다 12분 예산을 하네스가 잰다 — 넘으면 REJECT 와
-  # 느린 변이 목록이 남는다(그때 matrix 의 shard 목록만 늘린다 — 분모는 strategy.job-total 이라 따라온다.
-  # tests/test_ci_workflow.py 가 1..n 연속인지 본다). 24분이면 하네스가 먼저 멈춘다.
+  # 시간: (1) 가드 기준선을 pytest 한 번에, (2) e2e 는 필요한 검증 층만, (3) 예상 비용으로 4몫에 나눠, (4) 몫마다
+  # 12분 예산을 하네스가 잰다 — 넘으면 REJECT 와 느린 변이 목록이 남는다(그때 matrix 의 shard 목록만 늘린다 — 분모는
+  # strategy.job-total 이라 따라온다. tests/test_ci_workflow.py 가 1..n 연속인지 본다). 24분이면 하네스가 먼저 멈춘다.
+  # 상한에 걸리면 07:50 `pull-all --ci-gate` 배포가 막힌다.
   #
   # 로컬 pre-push(ci-local)는 이 잡을 CI=true·GITHUB_ACTIONS 없이 돌린다 — 하네스가 그걸 보고 merge-base
   # 이후 바뀐 파일에 닿는 변이만 돈다(`verify_merge.py --scope`). 전체는 여기서 돈다.
   mutations:
+    needs: plan
+    if: ${{ github.event_name != 'pull_request' && needs.plan.outputs.kind != 'docs' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -83,3 +144,23 @@ jobs:
           # 거기선 글자 그대로 넘어오고, 로컬 changed 범위는 샤드를 쓰지 않는다.
           SHARD: ${{ matrix.shard }}/${{ strategy.job-total }}
         run: uv run --no-sync python scripts/verify_merge.py . --base origin/main --only mutations --shard "$SHARD" --budget-min 12
+
+  # PR 범위 — 이 PR 이 직접 건드린 변이와 변이 미선언 새 검사 판정. 시간이 넘치면 멈추고 경고한다(PR 을 시간으로 막지
+  # 않는다). run 에 `${{ }}` 를 두어 ci-local 이 건너뛴다 — 로컬은 위 잡이 더 넓은 changed 범위로 이미 돈다.
+  mutations-pr:
+    needs: plan
+    if: ${{ github.event_name == 'pull_request' && needs.plan.outputs.kind != 'docs' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          python-version: "3.13"
+          enable-cache: true
+      - name: Install
+        run: uv sync --locked --extra dev
+      - name: Mutation gate (PR)
+        run: uv run --no-sync python scripts/verify_merge.py . --base "origin/${{ github.base_ref }}" --only mutations --scope direct --budget-min 10

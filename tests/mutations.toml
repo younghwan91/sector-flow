@@ -7391,3 +7391,205 @@ guards = ["tests/test_packaging.py::test_built_wheel_makes_a_report_from_its_own
 file = "hatch_build.py"
 find = "        for name in off.TEMPLATES:"
 replace = "        for name in off.TEMPLATES[:1]:"
+
+# ── CI 소모 줄이기: PR 범위·문서 건너뛰기가 배포 관문을 뚫지 않는가 (scripts/ci_plan.py, ci.yml) ──────────
+
+[[mutation]]
+id = "ci-plan-compares-to-previous-commit"
+why = "main 의 문서 판정이 직전 커밋과 견준다 — 빨간 코드 위 문서 커밋이 전체 변이를 건너뛰어 관문을 지나간다"
+guards = ["tests/test_ci_plan.py::test_docs_commit_on_top_of_a_red_code_commit_still_runs_everything"]
+file = "scripts/ci_plan.py"
+find = "        return _changed(verified)"
+replace = "        return _changed(\"HEAD~1\")"
+
+[[mutation]]
+id = "ci-plan-trusts-a-non-ancestor"
+why = "강제 푸시로 갈라진 옛 초록과 견준다 — 지금 트리와 무관한 초록이 건너뛰기의 근거가 된다"
+guards = ["tests/test_ci_plan.py::test_unknown_base_runs_everything"]
+file = "scripts/ci_plan.py"
+find = "        if _git(\"merge-base\", \"--is-ancestor\", verified, \"HEAD\") is None:"
+replace = "        if False:"
+
+[[mutation]]
+id = "ci-plan-empty-diff-is-docs"
+why = "바뀐 파일이 없을 때(재실행) 문서로 본다 — 변이를 돌리려고 다시 돌린 실행이 아무것도 안 돈다"
+guards = ["tests/test_ci_plan.py::test_unknown_base_runs_everything"]
+file = "scripts/ci_plan.py"
+find = "    docs = bool(changed) and all(is_doc(f) for f in changed)"
+replace = "    docs = changed is not None and all(is_doc(f) for f in changed)"
+
+[[mutation]]
+id = "ci-plan-unknown-base-is-docs"
+why = "기준을 모를 때 문서로 본다 — gh 조회 실패가 곧 전체 변이 건너뛰기다(열린 쪽으로 실패)"
+guards = ["tests/test_ci_plan.py::test_unknown_base_runs_everything"]
+file = "scripts/ci_plan.py"
+find = "    docs = bool(changed) and all(is_doc(f) for f in changed)"
+replace = "    docs = changed is None or all(is_doc(f) for f in changed)"
+
+[[mutation]]
+id = "ci-plan-renames-hide-the-source"
+why = "git diff 가 이름 바꿈을 접어 코드를 docs/ 로 옮긴 커밋이 문서로 보인다"
+guards = ["tests/test_ci_plan.py::test_moving_code_into_docs_is_not_a_docs_change"]
+file = "scripts/ci_plan.py"
+find = "    out = _git(\"diff\", \"--no-renames\", \"--name-only\", base, \"HEAD\")"
+replace = "    out = _git(\"diff\", \"-M\", \"--name-only\", base, \"HEAD\")"
+
+[[mutation]]
+id = "ci-plan-any-markdown-is-a-doc"
+why = "tests/ 안의 .md 픽스처까지 문서로 본다 — 검사 입력이 바뀌었는데 변이를 건너뛴다"
+guards = ["tests/test_ci_plan.py::test_only_root_markdown_and_docs_count_as_documents"]
+file = "scripts/ci_plan.py"
+find = "(\"/\" not in path and path.endswith(\".md\"))"
+replace = "path.endswith(\".md\")"
+
+[[mutation]]
+id = "ci-plan-pr-diffs-against-moved-base"
+why = "PR 을 merge-base 가 아니라 앞서간 기준 브랜치와 견준다 — 기준에만 있는 코드 커밋이 문서 PR 을 코드로 만들고, 반대도 뒤집힌다"
+guards = ["tests/test_ci_plan.py::test_pull_request_compares_to_merge_base_and_picks_python"]
+file = "scripts/ci_plan.py"
+find = "        return _changed(out.strip()) if out else None"
+replace = "        return _changed(base_ref) if out else None"
+
+[[mutation]]
+id = "ci-plan-pr-drops-the-floor-python"
+why = "PR 이 하한 3.11 을 안 돈다 — 3.11 전용 실패가 머지 뒤 main 에서야 보여 배포를 막는다(2026-11-09 sum() 전제)"
+guards = ["tests/test_ci_plan.py::test_python_lists_match_the_workflow_matrix_axis"]
+file = "scripts/ci_plan.py"
+find = "PY_PR = [\"3.11\", \"3.13\"]"
+replace = "PY_PR = [\"3.13\"]"
+
+[[mutation]]
+id = "ci-plan-output-not-github-format"
+why = "출력이 key=value 가 아니라 $GITHUB_OUTPUT 이 비어 python 행렬이 fromJSON 에서 죽는다"
+guards = ["tests/test_ci_plan.py::test_cli_prints_github_output_lines"]
+file = "scripts/ci_plan.py"
+find = "        print(f\"{k}={v}\")                         # $GITHUB_OUTPUT 형식"
+replace = "        print(f\"{k}: {v}\")"
+
+[[mutation]]
+id = "ci-paths-filter-on-the-workflow"
+why = "워크플로에 paths-ignore 를 달면 문서 머지의 머리엔 신원 검사만 남아 빨간 코드가 관문을 지나간다"
+guards = ["tests/test_ci_workflow.py::test_ci_has_no_workflow_level_filter_and_plan_always_runs"]
+file = ".github/workflows/ci.yml"
+find = "  push:\n    branches: [main]\n"
+replace = "  push:\n    branches: [main]\n    paths-ignore: ['docs/**']\n"
+
+[[mutation]]
+id = "ci-plan-job-can-be-skipped"
+why = "plan 잡에 if 가 붙으면 건너뛸 때 뒤 잡이 다 건너뛰어 전부 skipped 인 초록이다"
+guards = ["tests/test_ci_workflow.py::test_ci_has_no_workflow_level_filter_and_plan_always_runs"]
+file = ".github/workflows/ci.yml"
+find = "  plan:\n    runs-on: ubuntu-latest\n"
+replace = "  plan:\n    if: github.event_name == 'pull_request'\n    runs-on: ubuntu-latest\n"
+
+[[mutation]]
+id = "ci-main-mutations-skip-open"
+why = "조건이 == 'code' 면 plan 출력이 빌 때 전체 변이가 건너뛰어 초록이다(열린 쪽으로 실패)"
+guards = ["tests/test_ci_workflow.py::test_skipping_fails_closed_and_main_runs_every_mutation"]
+file = ".github/workflows/ci.yml"
+find = "    if: ${{ github.event_name != 'pull_request' && needs.plan.outputs.kind != 'docs' }}"
+replace = "    if: ${{ github.event_name != 'pull_request' && needs.plan.outputs.kind == 'code' }}"
+
+[[mutation]]
+id = "ci-main-mutations-only-changed"
+why = "main 도 바뀐 범위만 돌면 머리가 초록이어도 전체 변이를 지난 적이 없다 — 관문의 보호가 줄어든다"
+guards = ["tests/test_ci_workflow.py::test_skipping_fails_closed_and_main_runs_every_mutation"]
+file = ".github/workflows/ci.yml"
+find = "--only mutations --shard \"$SHARD\" --budget-min 12"
+replace = "--only mutations --scope changed --shard \"$SHARD\" --budget-min 12"
+
+[[mutation]]
+id = "ci-pr-budget-outlives-the-job"
+why = "PR 예산의 두 배가 잡 상한을 넘어 하네스가 멈추기 전에 잡이 이유 없이 죽는다"
+guards = ["tests/test_ci_workflow.py::test_skipping_fails_closed_and_main_runs_every_mutation"]
+file = ".github/workflows/ci.yml"
+find = "--scope direct --budget-min 10"
+replace = "--scope direct --budget-min 20"
+
+[[mutation]]
+id = "ci-plan-loses-last-green-permission"
+why = "actions: read 가 없으면 초록 조회가 실패해 문서 커밋도 늘 전체를 돈다 — 조용한 분 누수"
+guards = ["tests/test_ci_workflow.py::test_main_docs_judgement_compares_to_the_last_green_main_commit"]
+file = ".github/workflows/ci.yml"
+find = "      actions: read           # 마지막 초록 실행을 찾는다\n"
+replace = ""
+
+[[mutation]]
+id = "ci-last-green-counts-any-run"
+why = "실패한 실행까지 기준으로 삼으면 빨간 코드 커밋 위 문서 커밋이 건너뛴다"
+guards = ["tests/test_ci_workflow.py::test_main_docs_judgement_compares_to_the_last_green_main_commit"]
+file = ".github/workflows/ci.yml"
+find = "--event push --status success --limit 1"
+replace = "--event push --limit 1"
+
+[[mutation]]
+id = "ci-other-event-can-cancel-the-head"
+why = "이벤트가 그룹에 없으면 PR 이 아닌 다른 이벤트가 머리의 실행을 끊어 cancelled — 관문이 보류한다"
+guards = ["tests/test_ci_workflow.py::test_superseding_a_run_cannot_cancel_the_head"]
+file = ".github/workflows/ci.yml"
+find = "  group: ci-${{ github.event_name }}-${{ github.ref }}"
+replace = "  group: ci-${{ github.ref }}"
+
+[[mutation]]
+id = "ci-local-python-falls-to-newest"
+why = "matrix 가 식이라 ci-local 이 판을 못 읽고 3.13 으로 바뀐다 — 로컬 venv·커버리지가 조용히 달라진다"
+guards = ["tests/test_ci_workflow.py::test_local_ci_keeps_its_python_and_skips_ci_only_steps"]
+file = ".github/workflows/ci.yml"
+find = "  PYTHON_VERSION: \"3.12\"\n"
+replace = ""
+
+[[mutation]]
+id = "ci-pr-mutation-step-runs-locally-too"
+why = "PR 스텝에 식이 없으면 ci-local 이 그것까지 돌아 pre-push 가 변이를 두 번 돈다"
+guards = ["tests/test_ci_workflow.py::test_local_ci_keeps_its_python_and_skips_ci_only_steps"]
+file = ".github/workflows/ci.yml"
+find = "--base \"origin/${{ github.base_ref }}\" --only mutations"
+replace = "--base origin/main --only mutations"
+
+[[mutation]]
+id = "ci-test-job-has-no-time-limit"
+why = "잡 상한이 없으면 기본 6시간 — 멈춘 검사 하나가 분을 다 태운다"
+guards = ["tests/test_ci_workflow.py::test_every_job_in_our_workflows_has_a_time_limit"]
+file = ".github/workflows/ci.yml"
+find = "  test:\n    needs: plan\n    runs-on: ubuntu-latest\n    timeout-minutes: 20\n"
+replace = "  test:\n    needs: plan\n    runs-on: ubuntu-latest\n"
+
+[[mutation]]
+id = "harness-direct-scope-widens"
+why = "PR 범위가 FULL_TRIGGERS 처럼 넓어지면 머지의 절반이 다시 전체다 — 소모를 줄인 근거가 사라진다"
+guards = ["tests/test_verify_merge.py::test_direct_scope_does_not_widen_and_runs_new_declarations_first"]
+file = "scripts/verify_merge.py"
+find = "        if files & changed or gfiles & changed or base_muts.get(m.get(\"id\")) != m:"
+replace = "        if True:"
+
+[[mutation]]
+id = "harness-direct-scope-new-declarations-last"
+why = "새로 선언한 변이를 뒤에 두면 시간 예산에 걸려 멈출 때 이 PR 이 새로 주장한 것부터 안 돈다"
+guards = ["tests/test_verify_merge.py::test_direct_scope_does_not_widen_and_runs_new_declarations_first"]
+file = "scripts/verify_merge.py"
+find = "    out.sort(key=lambda m: base_muts.get(m.get(\"id\")) == m)     # 안정 정렬 — 새 선언 먼저, 나머지는 선언 순서\n"
+replace = ""
+
+[[mutation]]
+id = "harness-direct-scope-budget-blocks-the-pr"
+why = "PR 범위가 시간 초과로 REJECT — 큰 PR 이 코드가 아니라 시계 때문에 막힌다. 전체는 main push 가 돈다"
+guards = ["tests/test_verify_merge.py::test_direct_scope_runs_the_touched_mutation_and_only_warns_on_budget"]
+file = "scripts/verify_merge.py"
+find = "    if scope == \"direct\" and verdict == REJECT:"
+replace = "    if False:"
+
+[[mutation]]
+id = "harness-direct-budget-scales-by-shards"
+why = "PR 범위 예산에 샤드 수를 곱하면 잡 상한보다 커져 하네스가 멈추기 전에 잡이 죽는다"
+guards = ["tests/test_verify_merge.py::test_direct_scope_runs_the_touched_mutation_and_only_warns_on_budget"]
+file = "scripts/verify_merge.py"
+find = "    if not budget_min or shard is not None or scope == \"direct\":"
+replace = "    if not budget_min or shard is not None:"
+
+[[mutation]]
+id = "harness-direct-scope-falls-back-to-changed"
+why = "--scope direct 가 changed 와 같은 선택을 하면 옵션만 다르고 PR 비용은 그대로다"
+guards = ["tests/test_verify_merge.py::test_direct_scope_runs_the_touched_mutation_and_only_warns_on_budget"]
+file = "scripts/verify_merge.py"
+find = "        if scope == \"direct\":\n            muts, why = direct_scope("
+replace = "        if False:\n            muts, why = direct_scope("
