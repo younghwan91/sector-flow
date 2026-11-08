@@ -467,6 +467,6 @@ def test_rebuilt_report_says_so_in_the_page_chip(tpl, tmp_path):
     make = _viewer_payload if tpl == "sector_flow.html" else _numbers_data
     plain = _page(tpl, dict(make(), final=True), tmp_path)
     rebuilt = _page(tpl, dict(make(), final=True, rebuilt=True), tmp_path)
-    assert any("재구성" in t for t in rebuilt), "재구성 리포트의 칩이 재구성을 안 말한다"
+    assert "마감 · 확정 · 재구성" in rebuilt, "재구성 리포트의 칩 글자가 재구성을 안 말한다"
     assert any("그날 저녁 게시본이 아니다" in t for t in rebuilt)
     assert not any("재구성" in t for t in plain)
