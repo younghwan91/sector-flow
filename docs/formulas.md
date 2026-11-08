@@ -1,5 +1,5 @@
 # sw-flow · sw-ledger 화면 값의 수식 정의
-<!-- refs-verified-at: f0066e9f3f4abbdaa99aab95c5ae1f234ea953fa -->
+<!-- refs-verified-at: 647978c2143da9eaf02b6d6127775b9fe9d2b8e4 -->
 
 두 터미널 화면(`sw-flow`·`sw-ledger`)에 뜨는 모든 값의 정의를 코드 위치와 함께 모은 **정본**이다. 식마다 그것을
 계산하는 `파일:줄` 이 붙어 있고, 지표마다 **근거 수준**(앞날 수익률에 대해 검증된 것이 있나)을 적었다.
