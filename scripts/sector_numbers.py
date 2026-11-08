@@ -289,7 +289,8 @@ def build(P: dict) -> dict:
            "names": P.get("names", {}),
            "n_by_sector": P.get("n_by_sector", {})}
     # 오늘·직전 대비·잠정→확정 — 화면(TUI)은 이 파일 하나만 읽으므로 그대로 건넨다. 여기서 다시 세지 않는다.
-    for k in ("today", "change", "change_reason", "final_diff", "final_diff_reason", "revision_stats", "rebuilt"):
+    for k in ("today", "change", "change_reason", "final_diff", "final_diff_reason", "revision_stats", "rebuilt",
+              "finalize_unverified"):
         if k in P:
             out[k] = P[k]
     for win, wl in WINDOWS:

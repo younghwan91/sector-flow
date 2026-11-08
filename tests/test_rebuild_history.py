@@ -46,17 +46,61 @@ def test_verify_summary_counts_failures_and_claims_separately(tmp_path):
     assert RH.verify_summary(tmp_path)[0] == "형식 불명"
 
 
-def test_code_rev_prefers_the_env_and_survives_a_non_git_copy(tmp_path, monkeypatch):
-    monkeypatch.setenv("KR_QUANT_CODE_REV", "abc1234")
-    assert RH.code_rev() == "abc1234"
-    monkeypatch.delenv("KR_QUANT_CODE_REV")
-    monkeypatch.setattr(RH, "REPO", tmp_path)                             # git archive 사본 — .git 이 없다
-    assert RH.code_rev() == "?"
+def _git(cwd: Path, *args: str) -> str:
+    return subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, text=True, check=True).stdout.strip()
 
 
-def test_needs_a_date_range():
+@pytest.fixture
+def checkout(tmp_path, monkeypatch):
+    """origin/main 을 흉내 낸 작은 체크아웃. 커밋은 commit-tree 로 만든다(훅·신원 설정을 건드리지 않는다)."""
+    r = tmp_path / "co"
+    r.mkdir()
+    _git(r, "init", "-q")
+    (r / "a.txt").write_text("1")
+    _git(r, "add", "a.txt")
+    c1 = _git(r, "commit-tree", _git(r, "write-tree"), "-m", "one")
+    _git(r, "update-ref", "refs/heads/main", c1)
+    _git(r, "symbolic-ref", "HEAD", "refs/heads/main")
+    _git(r, "update-ref", "refs/remotes/origin/main", c1)
+    _git(r, "reset", "-q", "--hard", "main")
+    monkeypatch.setattr(RH, "REPO", r)
+    monkeypatch.delenv("KR_QUANT_CODE_REV", raising=False)
+    return r, c1
+
+
+def test_code_rev_is_the_full_sha_of_a_clean_origin_main_commit(checkout):
+    r, c1 = checkout
+    assert RH.code_rev() == c1 and len(c1) == 40
+
+
+def test_code_rev_refuses_unmerged_dirty_or_non_git_code_unless_allowed(checkout, tmp_path, monkeypatch):
+    """운영 재구성 48일이 어느 브랜치에도 없는 사본 커밋으로 지어졌다 — REBUILT.txt 의 코드는 다시 볼 수 있어야 한다."""
+    r, c1 = checkout
+    c2 = _git(r, "commit-tree", _git(r, "write-tree"), "-p", c1, "-m", "two")   # origin/main 에 없는 커밋
+    _git(r, "update-ref", "refs/heads/main", c2)
+    with pytest.raises(SystemExit, match="origin/main 에 없다"):
+        RH.code_rev()
+    assert RH.code_rev(allow_unmerged=True) == f"{c2}-unmerged"
+    _git(r, "update-ref", "refs/heads/main", c1)
+    (r / "a.txt").write_text("고침")                                         # 커밋 안 한 변경
+    with pytest.raises(SystemExit, match="커밋 안 한 변경"):
+        RH.code_rev()
+    assert RH.code_rev(allow_unmerged=True) == f"{c1}-dirty"
+    monkeypatch.setattr(RH, "REPO", tmp_path / "사본")                        # git archive 사본
+    (tmp_path / "사본").mkdir()
+    with pytest.raises(SystemExit, match="git 체크아웃이 아니다"):
+        RH.code_rev()
+    monkeypatch.setenv("KR_QUANT_CODE_REV", "abc")
+    assert RH.code_rev(allow_unmerged=True) == "abc"
+    with pytest.raises(SystemExit):                                          # 막히면 아무것도 짓지 않는다
+        RH.main(["--root", str(tmp_path / "r"), "--dates", "2026-10-12", "--report-script", "/bin/false"])
+    assert not (tmp_path / "r").exists(), "막혔는데 루트를 만들었다"
+
+
+def test_needs_a_date_range(tmp_path):
     with pytest.raises(SystemExit):
-        RH.main(["--root", "/nonexistent-never-created"])
+        RH.main(["--allow-unmerged", "--root", str(tmp_path / "r")])
+    assert not (tmp_path / "r").exists(), "날짜가 없는데 루트부터 만들었다"
 
 
 # ── 가짜 리포트 스크립트로 제어 흐름 ───────────────────────────────────────
@@ -92,7 +136,7 @@ def test_states_force_and_claims_reach_the_summary(tmp_path, fake, monkeypatch, 
     calls = tmp_path / "calls"
     monkeypatch.setenv("CALLS", str(calls))
     root = tmp_path / "root"
-    rc = RH.main(["--report-script", str(fake), "--root", str(root), "--force",
+    rc = RH.main(["--allow-unmerged", "--report-script", str(fake), "--root", str(root), "--force",
                   "--dates", "2026-10-14", "2026-10-12", "2026-10-13", "2026-10-09"])
     assert rc == 1                                                         # 공백·오류가 있다
     seen = [ln.split("|") for ln in calls.read_text().splitlines()]
@@ -112,7 +156,7 @@ def test_jobs_refuse_a_root_that_already_has_those_days(tmp_path, fake, monkeypa
     root = tmp_path / "root"
     (root / "2026-10-12").mkdir(parents=True)
     with pytest.raises(SystemExit):
-        RH.main(["--report-script", str(fake), "--root", str(root), "--jobs", "2",
+        RH.main(["--allow-unmerged", "--report-script", str(fake), "--root", str(root), "--jobs", "2",
                  "--from", "2026-10-12", "--to", "2026-10-16"])
     assert not (tmp_path / "calls").exists(), "거절하기 전에 짓기 시작했다"
 
@@ -124,7 +168,7 @@ def test_jobs_rerun_in_the_same_root_keeps_every_first_pass(tmp_path, fake, monk
     root = tmp_path / "root"
     (root / "2026-10-08").mkdir(parents=True)                              # 구간 앞의 리포트
     (root / "2026-10-08" / "payload.json").write_text("{}")
-    args = ["--report-script", str(fake), "--root", str(root), "--jobs", "2", "--dates",
+    args = ["--allow-unmerged", "--report-script", str(fake), "--root", str(root), "--jobs", "2", "--dates",
             "2026-10-09", "2026-10-12"]                                     # 덩어리 0 = 휴장뿐
     assert RH.main(args) == 0
     kept = sorted(p.name for p in (root / ".rebuild" / "first-pass").iterdir())
@@ -188,7 +232,7 @@ def test_real_daily_report_rebuilds_in_order_skips_holidays_and_names_gate_block
     (root / FLOW.TODAY / "numbers.html").write_text("<옛 정의>")
     env = FLOW._env(real_repo, today="2026-11-08",
                     KR_QUANT_AIRFLOW_LOGS=str(_finalize_runs(tmp_path / "airflow", "2026-10-31 07:20", "2026-11-04 07:20")))
-    p = subprocess.run([sys.executable, str(SCRIPT), "--report-script", str(real_repo / "scripts" / "daily_report.sh"),
+    p = subprocess.run([sys.executable, str(SCRIPT), "--allow-unmerged", "--report-script", str(real_repo / "scripts" / "daily_report.sh"),
                         "--root", str(root), "--from", "2026-10-29", "--to", FLOW.TODAY,
                         "--origin-root", str(origin), "--origin-label", "reports/.archive/x"],
                        capture_output=True, text=True, env=env, timeout=300)
@@ -204,7 +248,7 @@ def test_real_daily_report_rebuilds_in_order_skips_holidays_and_names_gate_block
     assert (root / "2026-10-30" / "FINAL.txt").is_file() and not (root / "2026-10-30" / "INCOMPLETE.txt").exists()
     # 수집을 메운 뒤 다시 돌리면 이미 만든 날은 건너뛰고(이어서) 막혔던 날만 만든다.
     FLOW._seed(db, today_kosdaq=50)
-    p = subprocess.run([sys.executable, str(SCRIPT), "--report-script", str(real_repo / "scripts" / "daily_report.sh"),
+    p = subprocess.run([sys.executable, str(SCRIPT), "--allow-unmerged", "--report-script", str(real_repo / "scripts" / "daily_report.sh"),
                         "--root", str(root), "--from", "2026-10-29", "--to", FLOW.TODAY],
                        capture_output=True, text=True, env=env, timeout=300)
     assert p.returncode == 0, p.stdout + p.stderr

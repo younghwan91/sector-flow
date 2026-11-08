@@ -470,3 +470,22 @@ def test_rebuilt_report_says_so_in_the_page_chip(tpl, tmp_path):
     assert "마감 · 확정 · 재구성" in rebuilt, "재구성 리포트의 칩 글자가 재구성을 안 말한다"
     assert any("그날 저녁 게시본이 아니다" in t for t in rebuilt)
     assert not any("재구성" in t for t in plain)
+
+
+@node
+@pytest.mark.parametrize("tpl", ["sector_flow.html", "sector_numbers.html"])
+def test_rebuilt_day_outside_the_finalize_window_says_no_final_record(tpl, tmp_path):
+    """창 밖 재구성은 확정도 잠정도 아니다 — 칩은 "확정 기록 없음 · 재구성", 설명은 창 밖이라고 말한다."""
+    make = _viewer_payload if tpl == "sector_flow.html" else _numbers_data
+    texts = _page(tpl, dict(make(), rebuilt=True, finalize_unverified=True), tmp_path)
+    assert "마감 · 확정 기록 없음 · 재구성" in texts, [t for t in texts if "마감" in t][:3]
+    assert any("daily_finalize 창(3일) 밖" in t for t in texts)
+    assert not any(t.startswith("마감 · 잠정") or t.startswith("마감 · 확정 ·") for t in texts)
+
+
+@node
+def test_numbers_page_return_label_is_final_style_for_a_rebuilt_day_outside_the_finalize_window(tmp_path):
+    """창 밖 재구성은 두 달 지난 마감 값이다 — 수치표의 수익률 라벨이 '애프터마켓 진행 중' 이면 거짓이다."""
+    texts = _page("sector_numbers.html", dict(_numbers_data(), rebuilt=True, finalize_unverified=True), tmp_path)
+    joined = " ".join(texts)
+    assert "애프터마켓 진행 중" not in joined and "수집시각 잠정" not in joined, joined[:300]

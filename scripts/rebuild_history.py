@@ -61,14 +61,30 @@ def verify_summary(folder: Path) -> tuple[str, str]:
     return head, fails
 
 
-def code_rev() -> str:
-    if os.environ.get("KR_QUANT_CODE_REV"):
-        return os.environ["KR_QUANT_CODE_REV"]
-    try:
-        return subprocess.run(["git", "-C", str(REPO), "describe", "--always", "--dirty"],
-                              capture_output=True, text=True, check=True).stdout.strip() or "?"
-    except (OSError, subprocess.CalledProcessError):
-        return "?"
+def code_rev(allow_unmerged: bool = False) -> str:
+    """REBUILT.txt 에 적을 코드 — **origin/main 에 든 깨끗한 커밋의 전체 sha** 만 받는다.
+
+    2026-11-08 운영 재구성 48일이 어느 브랜치에도 없는 커밋(git archive 사본)으로 지어져, 그 코드를 다시 볼 길이
+    없었다. 체크아웃이 아니거나·작업 트리가 더럽거나·HEAD 가 origin/main 에 없으면 멈춘다. ``allow_unmerged`` 는
+    시험·리허설용 — 그때는 그 사실을 sha 뒤에 붙여 적는다(사본이면 ``KR_QUANT_CODE_REV`` 또는 ``?``).
+    """
+    def git(*args: str) -> subprocess.CompletedProcess:
+        return subprocess.run(["git", "-C", str(REPO), *args], capture_output=True, text=True)
+
+    head = git("rev-parse", "HEAD")
+    if head.returncode != 0:
+        if allow_unmerged:
+            return os.environ.get("KR_QUANT_CODE_REV") or "?"
+        raise SystemExit(f"{REPO} 는 git 체크아웃이 아니다 — 재구성은 origin/main 체크아웃에서 돌린다"
+                         "(사본으로 리허설하려면 --allow-unmerged).")
+    sha = head.stdout.strip()
+    dirty = bool(git("status", "--porcelain", "--untracked-files=no").stdout.strip())
+    merged = git("merge-base", "--is-ancestor", "HEAD", "origin/main").returncode == 0
+    if not allow_unmerged and (dirty or not merged):
+        why = "작업 트리에 커밋 안 한 변경이 있다" if dirty else "HEAD 가 origin/main 에 없다(git fetch 했나?)"
+        raise SystemExit(f"{sha[:12]}: {why} — REBUILT.txt 의 코드를 나중에 다시 볼 수 없다. "
+                         "origin/main 의 깨끗한 체크아웃에서 돌려라(리허설은 --allow-unmerged).")
+    return sha + ("-dirty" if dirty else "") + ("" if merged else "-unmerged")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -80,6 +96,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--origin-root", help="원본 리포트가 지금 있는 루트 — 그날 폴더가 있으면 REBUILT.txt 에 원본 위치를 적는다")
     ap.add_argument("--origin-label", help="REBUILT.txt 에 적을 원본 루트 이름(기본 --origin-root). 바꿔 낀 뒤 옮길 곳을 적는다")
     ap.add_argument("--force", action="store_true", help="이미 재구성한 날도 다시 만든다")
+    ap.add_argument("--allow-unmerged", action="store_true",
+                    help="origin/main 에 없는·더러운 코드로도 돈다(리허설·시험). REBUILT.txt 의 sha 뒤에 그 사실이 붙는다")
     ap.add_argument("--report-script", default=str(REPO / "scripts" / "daily_report.sh"),
                     help="날마다 부를 리포트 스크립트(기본 이 체크아웃의 scripts/daily_report.sh)")
     ap.add_argument("--jobs", type=int, default=1,
@@ -92,10 +110,10 @@ def main(argv: list[str] | None = None) -> int:
         days = weekdays(a.start, a.end)
     else:
         ap.error("--from 과 --to, 또는 --dates 가 필요하다")
+    rev = code_rev(a.allow_unmerged)          # 막히면 루트도 안 만든다
     root = Path(a.root).expanduser().resolve()
     logs = root / ".rebuild"
     logs.mkdir(parents=True, exist_ok=True)
-    rev = code_rev()
     label = a.origin_label or a.origin_root
 
     def build(d: str, where: Path, force: bool) -> tuple:

@@ -330,3 +330,16 @@ def test_return_label_follows_report_status_and_this_reports_numbers(tmp_path):
     fin = _text(_render(p, tmp_path)["ret-note"])
     assert "전일 20:00→당일 20:00" in fin and "수집 시각" not in fin, fin
     assert "4.37" not in _html() and "6.02" not in _html(), "11-06 숫자가 템플릿에 박혀 있다"
+
+
+@node
+def test_return_label_is_final_style_for_a_rebuilt_day_outside_the_finalize_window(tmp_path):
+    """창 밖 재구성(`finalize_unverified`)은 `final` 이 없지만 두 달 지난 마감 값이다 — "애프터마켓 진행 중" 이 아니다.
+
+    주입: 웹 `retLabel` 이 `final` 만 보면 실패한다.
+    """
+    p = _viewer_payload()
+    p["today"] = {"date": "2026-11-02", "market": {"거래소": {"ret": {"1": -1.23}}}, "krx_index": {}}
+    p.update(rebuilt=True, finalize_unverified=True)
+    note = _text(_render(p, tmp_path)["ret-note"])
+    assert "전일 20:00→당일 20:00" in note and "수집 시각" not in note, note

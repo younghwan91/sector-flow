@@ -143,7 +143,9 @@ FINAL_UNCONFIRMED=""
 if [ -n "$REBUILD" ]; then
   # 이미 확정치로 재구성한 날은 다시 안 만든다(rebuild_history 재실행이 이어서 돈다). 원본(REBUILT.txt 없음)과
   # 잠정으로 재구성한 날(FINAL.txt 없음)은 다시 만든다.
-  if [ -f "$DEST/REBUILT.txt" ] && [ -f "$DEST/FINAL.txt" ] && [ -f "$DEST/numbers.html" ] \
+  # 창 밖이라 확정 기록이 없는 날(finalize: unverified)도 다시 봐도 달라질 것이 없다 — 건너뛴다.
+  if [ -f "$DEST/REBUILT.txt" ] && [ -f "$DEST/numbers.html" ] \
+     && { [ -f "$DEST/FINAL.txt" ] || grep -qx "finalize: unverified" "$DEST/REBUILT.txt"; } \
      && [ ! -f "$DEST/VERIFY_FAILED.txt" ] && [ -z "${KR_QUANT_FORCE:-}" ]; then
     echo "[$(date '+%F %T')] $ASOF 는 이미 재구성했다 — 건너뛴다(다시 만들려면 KR_QUANT_FORCE=1)."
     exit 0
@@ -153,9 +155,20 @@ if [ -n "$REBUILD" ]; then
   # 08:20 확정 모드가 FINAL.txt 를 보고 그날을 영영 건너뛴다.
   REBUILD_FINAL_RC=0
   "${UVR[@]}" python scripts/finalize_done.py --asof "$ASOF" || REBUILD_FINAL_RC=$?
+  # 창 밖 = 기준일이 오늘보다 daily_finalize 창(finalize_done.WINDOW_DAYS, 달력 일) 넘게 앞이다. 앞으로 도는 어떤
+  # 확정 실행도 그날을 덮지 않으므로 기다릴 것이 없다 — 지금 DB 의 마감 값으로 만들되 확정이라 적지 않는다.
+  WINDOW_PASSED="$(KR_TODAY="$TODAY" "${UVR[@]}" python -c 'import os, sys; sys.path.insert(0, "scripts")
+from datetime import date, timedelta
+import finalize_done as f
+print(int(date.fromisoformat(os.environ["KR_QUANT_ASOF"]) < date.fromisoformat(os.environ["KR_TODAY"]) - timedelta(days=f.WINDOW_DAYS)))')"
+  FINALIZE_STATE="verified"
   if [ "$REBUILD_FINAL_RC" -eq 0 ]; then
     FINAL_OK=1
+  elif [ "$WINDOW_PASSED" = "1" ]; then
+    FINALIZE_STATE="unverified"
+    echo "[$(date '+%F %T')] $ASOF 는 daily_finalize 창 밖의 지난 날이다 — 마감 값으로 재구성하되 '확정 기록 없음' 으로 적는다(FINAL.txt 없음)."
   else
+    FINALIZE_STATE="pending"
     echo "[$(date '+%F %T')] ⚠️ $ASOF 확정치를 확인하지 못했다 — 잠정으로 재구성한다(FINAL.txt 없음, 위 [확정치] 줄이 이유)." >&2
     FINAL_UNCONFIRMED=1
   fi
@@ -251,6 +264,7 @@ fi
 VERIFY_ARGS=()
 if [ -n "$REBUILD" ]; then
   FINAL_ARGS+=(--asof "$ASOF" --rebuilt)
+  [ "$FINALIZE_STATE" != "unverified" ] || FINAL_ARGS+=(--finalize-unverified)
   VERIFY_ARGS=(--asof "$ASOF")
   echo "[$(date '+%F %T')] 재구성 — 지금 코드로 $ASOF 이하 데이터만 읽는다"
 fi
@@ -296,13 +310,19 @@ if [ -n "$REBUILD" ]; then
     fi
     [ -n "$ORIGIN" ] || ORIGIN="$ARCHIVED"
   fi
-  REV="${KR_QUANT_CODE_REV:-$(git -C "$REPO" describe --always --dirty 2>/dev/null || echo '?')}"
-  KIND="확정 데이터"
-  [ -n "$FINAL_OK" ] || KIND="잠정 데이터(확정치 미확인)"
+  # 전체 sha — 짧은 sha 는 나중에 모호해지고, 어느 브랜치에도 없는 커밋이면 다시 볼 길이 없다(rebuild_history 가 막는다).
+  REV="${KR_QUANT_CODE_REV:-$(git -C "$REPO" rev-parse HEAD 2>/dev/null || echo '?')}"
+  case "$FINALIZE_STATE" in
+    verified) KIND="확정 데이터" ;;
+    unverified) KIND="마감 데이터(daily_finalize 창 밖 — 확정 기록 없음)" ;;
+    *) KIND="잠정 데이터(확정치 미확인)" ;;
+  esac
   { echo "$(TZ=Asia/Seoul date '+%F %H:%M') 현재 코드($REV)·${KIND}로 다시 만듦; 원본은 ${ORIGIN:-없음(이 루트에서 처음 만들었다)}"
     echo "모든 DB 읽기는 $ASOF 이하로 묶었다(수급·조정 종가·업종지수·주식수·수정주가 이벤트)."
     echo "묶지 못한 것: 섹터·시장 분류와 유니버스는 지금의 stocks 마스터다(이력이 없다)."
     echo "그날 저녁 게시본은 그때의 잠정치·그때의 정의로 만든 것이라 이 숫자와 다를 수 있다."
+    echo "commit: $REV"
+    echo "finalize: $FINALIZE_STATE"
   } > "$BUILD/REBUILT.txt"
 fi
 if [ -d "$DEST" ]; then

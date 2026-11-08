@@ -31,7 +31,8 @@ if "--final" in a:
     pathlib.Path(a[a.index("--json") + 1]).with_name("final_diff.txt").write_text("잠정 → 확정 비교")
 if "--asof" in a:
     pathlib.Path(a[a.index("--json") + 1]).with_name("ARGS_ASOF").write_text(
-        a[a.index("--asof") + 1] + (" rebuilt" if "--rebuilt" in a else ""))
+        a[a.index("--asof") + 1] + (" rebuilt" if "--rebuilt" in a else "")
+        + (" unverified" if "--finalize-unverified" in a else ""))
 if "--json" in a:
     pathlib.Path(a[a.index("--json") + 1]).write_text("{}")
 if "--html" in a:
@@ -651,6 +652,7 @@ def test_rebuild_without_confirmed_finalize_stays_provisional(repo, tmp_path):
     assert not (dest / "FINAL.txt").exists(), "확인 안 된 확정을 적었다"
     assert not (dest / "ARGS_FINAL").exists(), "sector_flow 에 --final 을 넘겼다"
     assert "KR_QUANT_ASOF" in p.stderr
+    assert "finalize: pending" in (dest / "REBUILT.txt").read_text().splitlines()
     # 확정이 끝난 뒤 다시 돌리면 건너뛰지 않고 확정으로 다시 만든다.
     p = _run(repo, KR_QUANT_ASOF=TODAY, KR_QUANT_AIRFLOW_LOGS=str(_finalize_logs(tmp_path / "airflow")))
     assert p.returncode == 0, p.stdout + p.stderr
@@ -668,3 +670,31 @@ def test_rebuild_of_a_weekday_with_other_tables_but_no_flows_is_a_gap_not_a_holi
     p = _run(repo, KR_QUANT_ASOF="2026-11-03")
     assert p.returncode == 1 and "수집 공백" in p.stderr, p.stdout + p.stderr
     assert _run(repo, KR_QUANT_ASOF="2026-10-31").returncode == 3                  # 토요일 = 휴장
+
+
+def test_rebuild_outside_the_finalize_window_is_final_data_without_a_final_claim(repo, tmp_path):
+    """daily_finalize 창(3일) 밖의 지난 날은 앞으로 아무 확정 실행도 덮지 않는다 — 기다릴 것이 없으니 0 으로 만들되,
+    FINAL.txt('daily_finalize 확인 뒤 확정')를 쓰지 않고 REBUILT.txt 에 finalize: unverified 를 남긴다."""
+    _seed(repo.parent / "db.sqlite", today_kosdaq=50)
+    p = _run(repo, KR_QUANT_ASOF=DAYS[1], KR_QUANT_CODE_REV="f" * 40,       # 10-27 < 11-02 − 3일
+             KR_QUANT_AIRFLOW_LOGS=str(tmp_path / "없음"))
+    assert p.returncode == 0, p.stdout + p.stderr
+    dest = repo / "reports" / DAYS[1]
+    lines = (dest / "REBUILT.txt").read_text().splitlines()
+    assert "finalize: unverified" in lines and f"commit: {'f' * 40}" in lines
+    assert "확정 기록 없음" in lines[0]
+    assert not (dest / "FINAL.txt").exists(), "확인 못 한 확정을 FINAL.txt 로 적었다"
+    assert (dest / "ARGS_ASOF").read_text() == f"{DAYS[1]} rebuilt unverified"
+    assert not (dest / "ARGS_FINAL").exists()
+    again = _run(repo, KR_QUANT_ASOF=DAYS[1], KR_QUANT_AIRFLOW_LOGS=str(tmp_path / "없음"))
+    assert again.returncode == 0 and "이미 재구성" in again.stdout, "창 밖 날을 매번 다시 지었다"
+
+
+def test_rebuild_records_verified_finalize_and_the_full_commit(repo, tmp_path):
+    _seed(repo.parent / "db.sqlite", today_kosdaq=50)
+    p = _run(repo, KR_QUANT_ASOF=TODAY, KR_QUANT_AIRFLOW_LOGS=str(_finalize_logs(tmp_path / "airflow")))
+    assert p.returncode == 0, p.stdout + p.stderr
+    lines = (repo / "reports" / TODAY / "REBUILT.txt").read_text().splitlines()
+    assert "finalize: verified" in lines
+    rev = [ln for ln in lines if ln.startswith("commit: ")][0].split(": ", 1)[1]
+    assert rev == "?" or len(rev) >= 40, f"짧은 sha: {rev}"            # 시험 레포는 git 이 아니라 '?'

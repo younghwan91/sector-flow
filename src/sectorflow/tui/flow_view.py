@@ -1087,8 +1087,12 @@ RET_LABEL_PROV_SHORT = "~수집시각 잠정"
 
 
 def ret_label(d: dict, short: bool = False) -> str:
-    """이 리포트의 수익률 라벨 — 확정이면 ~20:00, 아니면(잠정·장중) 수집 시각까지."""
-    if d.get("final"):
+    """이 리포트의 수익률 라벨 — 마감 값이면 ~20:00, 아니면(잠정·장중) 수집 시각까지.
+
+    마감 값 = 확정, 또는 daily_finalize 창 밖이라 확정 기록은 없지만 두 달 지난 날의 값(재구성 ``finalize_unverified``).
+    그런 날을 ``final`` 만 보고 "애프터마켓 진행 중" 이라 적으면 거짓이다.
+    """
+    if d.get("final") or d.get("finalize_unverified"):
         return RET_LABEL_SHORT if short else RET_LABEL
     return RET_LABEL_PROV_SHORT if short else RET_LABEL_PROV
 #: 오늘 표의 주체 이름 — 페이로드 `today.actors` 와 같다(sector_flow.TODAY_ACTORS).
@@ -1626,7 +1630,8 @@ def status_chip(d: dict) -> str:
     한때 "확정" 이라고 적었다. 페이로드 키 이름은 옛 리포트와 맞추려고 그대로 둔다.
     """
     # ``final`` 은 다음날 아침 daily_finalize 확인 뒤 확정치로 다시 만든 리포트에만 있다(daily_report.sh 확정 모드).
-    base = "마감·확정" if d.get("final") else "마감·잠정" if d.get("finalized") else "장중·미확정"
+    base = ("마감·확정" if d.get("final") else "마감·확정기록없음" if d.get("finalize_unverified")
+            else "마감·잠정" if d.get("finalized") else "장중·미확정")
     # ``rebuilt`` 은 지난 기준일을 지금 코드·확정 데이터로 다시 만든 리포트(KR_QUANT_ASOF)에만 있다 — 그날 게시본이 아니다.
     if d.get("rebuilt"):
         base += "·재구성"

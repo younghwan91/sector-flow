@@ -1607,8 +1607,8 @@ id = "chip-never-says-final"
 why = "확정 리포트도 화면이 잠정이라 적는다"
 guards = ["tests/test_validation_fixes.py::test_status_chip_says_final_only_for_rebuilt_reports"]
 file = "src/sectorflow/tui/flow_view.py"
-find = """    base = "마감·확정" if d.get("final") else "마감·잠정" if d.get("finalized") else "장중·미확정\""""
-replace = """    base = "마감·잠정" if d.get("finalized") else "장중·미확정\""""
+find = """    base = ("마감·확정" if d.get("final") else "마감·확정기록없음""""
+replace = """    base = ("마감·잠정" if d.get("finalized") else "마감·확정기록없음"""""
 
 [[mutation]]
 id = "numbers-drop-the-final-flag"
@@ -2102,7 +2102,8 @@ id = "numbers-drop-today"
 why = "화면이 읽는 numbers.html 에 오늘 블록이 안 간다"
 guards = ["tests/test_payload_today.py::test_numbers_page_carries_today_for_the_terminal"]
 file = "scripts/sector_numbers.py"
-find = """    for k in ("today", "change", "change_reason", "final_diff", "final_diff_reason", "revision_stats", "rebuilt"):"""
+find = """    for k in ("today", "change", "change_reason", "final_diff", "final_diff_reason", "revision_stats", "rebuilt",
+              "finalize_unverified"):"""
 replace = """    for k in ():"""
 
 [[mutation]]
@@ -2930,8 +2931,8 @@ id = "prev-day-provisional-counts-as-final"
 why = "잠정 리포트만 있는 전 거래일을 확정으로 본다"
 guards = ["tests/test_freshness_check.py::test_previous_day_without_final_warns"]
 file = "scripts/freshness_check.py"
-find = """    if (d / "FINAL.txt").is_file() or (d / "REBUILT.txt").is_file():"""
-replace = """    if (d / "numbers.html").is_file() or (d / "REBUILT.txt").is_file():"""
+find = """    if (d / "FINAL.txt").is_file():"""
+replace = """    if (d / "numbers.html").is_file():"""
 
 [[mutation]]
 id = "holiday-not-recognized"
@@ -3068,12 +3069,13 @@ find = """            json.loads(body.decode("utf-8", "replace"))"""
 replace = """            pass"""
 
 [[mutation]]
-id = "prev-day-rebuilt-not-counted"
-why = "재구성(REBUILT.txt)한 전 거래일을 미확정이라 매일 경고한다"
-guards = ["tests/test_freshness_check.py::test_rebuilt_previous_day_counts_as_final"]
+id = "prev-day-rebuilt-only-counts-as-final"
+why = """확정치를 확인 못 한 재구성(REBUILT.txt 만, FINAL.txt 없음)을 확정으로 센다 — 확정 작업이 깨진 날을 놓치고,
+창 밖 재구성(finalize: unverified)을 확정으로 읽게 한다."""
+guards = ["tests/test_freshness_check.py::test_rebuilt_previous_day_counts_as_final_only_with_final_txt"]
 file = "scripts/freshness_check.py"
-find = """    if (d / "FINAL.txt").is_file() or (d / "REBUILT.txt").is_file():"""
-replace = """    if (d / "FINAL.txt").is_file():"""
+find = """    if (d / "FINAL.txt").is_file():"""
+replace = """    if (d / "FINAL.txt").is_file() or (d / "REBUILT.txt").is_file():"""
 
 [[mutation]]
 id = "web-restart-alerts-every-five-minutes"
@@ -3802,7 +3804,7 @@ id = "viewer-provisional-says-20h"
 why = """잠정 리포트(18:10)의 수익률을 "전일 20:00→당일 20:00" 이라 적는다 — 마지막 날은 수집 시각 스냅숏이고 애프터마켓이 아직 돈다."""
 guards = ["tests/test_viewer_page.py::test_return_label_follows_report_status_and_this_reports_numbers"]
 file = "scripts/templates/sector_flow.html"
-find = "const retLabel=short=>D.final?(short?RET_LABEL_SHORT:RET_LABEL):(short?RET_LABEL_PROV_SHORT:RET_LABEL_PROV);"
+find = "const retLabel=short=>retClosed()?(short?RET_LABEL_SHORT:RET_LABEL):(short?RET_LABEL_PROV_SHORT:RET_LABEL_PROV);"
 replace = "const retLabel=short=>short?RET_LABEL_SHORT:RET_LABEL;"
 
 [[mutation]]
@@ -3863,7 +3865,7 @@ id = "provisional-return-labelled-as-20h"
 why = "잠정 리포트(수집 시각 스냅숏)의 수익률이 전일 20:00→당일 20:00 이라고 적힌다"
 guards = ["tests/test_tui_flow_view.py::test_provisional_report_labels_its_return_and_its_extremes_and_shows_revision_size"]
 file = "src/sectorflow/tui/flow_view.py"
-find = """    if d.get("final"):
+find = """    if d.get("final") or d.get("finalize_unverified"):
         return RET_LABEL_SHORT if short else RET_LABEL"""
 replace = """    if True:
         return RET_LABEL_SHORT if short else RET_LABEL"""
@@ -4066,7 +4068,7 @@ id = "web-provisional-return-labelled-as-20h"
 why = "웹 잠정 리포트의 수익률이 20:00 종가라고 적힌다"
 guards = ["tests/test_report_pages.py::test_numbers_today_panel_says_what_the_terminal_banner_says"]
 file = "scripts/templates/sector_numbers.html"
-find = "const RET_LABEL = D.final ? \"전일 20:00→당일 20:00 (애프터마켓 포함 통합 종가)\" : \"전일 20:00→당일 수집 시각 (애프터마켓 진행 중)\";"
+find = "const RET_LABEL = CLOSED ? \"전일 20:00→당일 20:00 (애프터마켓 포함 통합 종가)\" : \"전일 20:00→당일 수집 시각 (애프터마켓 진행 중)\";"
 replace = "const RET_LABEL = \"전일 20:00→당일 20:00 (애프터마켓 포함 통합 종가)\";"
 
 [[mutation]]
@@ -4556,8 +4558,8 @@ id = "rebuild-numbers-drop-flag"
 why = "수치표 페이지가 rebuilt 를 안 건네 TUI 칩이 모른다(sw-flow 는 numbers.html 만 읽는다)"
 guards = ["tests/test_validation_fixes.py::test_status_chip_says_rebuilt_for_reconstructed_reports"]
 file = "scripts/sector_numbers.py"
-find = "\"final_diff_reason\", \"rebuilt\"):"
-replace = "\"final_diff_reason\"):"
+find = "\"revision_stats\", \"rebuilt\",\n"
+replace = "\"revision_stats\",\n"
 
 [[mutation]]
 id = "rebuild-moves-latest-backward"
@@ -4754,3 +4756,117 @@ guards = ["tests/test_rebuild_history.py::test_jobs_rerun_in_the_same_root_keeps
 file = "scripts/rebuild_history.py"
 find = "                while dst.exists():                    # 같은 초에 다시 돌린 경우 — 첫 판을 덮지 않는다"
 replace = "                while False:"
+
+# ── 재구성의 확정 표시는 사실만(창 밖 = 확정 기록 없음 · 코드는 origin/main 의 전체 sha) ─────────────
+
+[[mutation]]
+id = "rebuild-window-passed-left-provisional"
+why = "창 밖의 지난 날을 잠정(75)으로 남긴다 — 아무 확정 실행도 다시 안 덮으니 매번 경고만 나고 라벨은 '애프터마켓 진행 중' 이 된다"
+guards = ["tests/test_daily_report_flow.py::test_rebuild_outside_the_finalize_window_is_final_data_without_a_final_claim"]
+file = "scripts/daily_report.sh"
+find = "  elif [ \"$WINDOW_PASSED\" = \"1\" ]; then"
+replace = "  elif false; then"
+
+[[mutation]]
+id = "rebuild-unverified-not-in-payload-args"
+why = "창 밖 재구성을 sector_flow 에 안 알리면 페이로드에 finalize_unverified 가 없어 화면이 잠정이라 말한다"
+guards = ["tests/test_daily_report_flow.py::test_rebuild_outside_the_finalize_window_is_final_data_without_a_final_claim"]
+file = "scripts/daily_report.sh"
+find = "  [ \"$FINALIZE_STATE\" != \"unverified\" ] || FINAL_ARGS+=(--finalize-unverified)"
+replace = "  true"
+
+[[mutation]]
+id = "rebuild-unverified-rebuilt-every-run"
+why = "창 밖 날은 다시 봐도 달라질 게 없는데 rebuild_history 재실행마다 다시 짓는다"
+guards = ["tests/test_daily_report_flow.py::test_rebuild_outside_the_finalize_window_is_final_data_without_a_final_claim"]
+file = "scripts/daily_report.sh"
+find = "     && { [ -f \"$DEST/FINAL.txt\" ] || grep -qx \"finalize: unverified\" \"$DEST/REBUILT.txt\"; } \\"
+replace = "     && [ -f \"$DEST/FINAL.txt\" ] \\"
+
+[[mutation]]
+id = "rebuild-history-short-sha"
+why = "REBUILT.txt 의 코드가 짧은 sha 면 나중에 모호해진다"
+guards = ["tests/test_rebuild_history.py::test_code_rev_is_the_full_sha_of_a_clean_origin_main_commit"]
+file = "scripts/rebuild_history.py"
+find = "    return sha + (\"-dirty\" if dirty else \"\") + (\"\" if merged else \"-unmerged\")"
+replace = "    return sha[:7] + (\"-dirty\" if dirty else \"\") + (\"\" if merged else \"-unmerged\")"
+
+[[mutation]]
+id = "rebuild-history-unmerged-code-allowed"
+why = "어느 브랜치에도 없는·더러운 코드로 운영 재구성을 돌린다(2026-11-08 48일이 그랬다) — 그 코드를 다시 볼 수 없다"
+guards = ["tests/test_rebuild_history.py::test_code_rev_refuses_unmerged_dirty_or_non_git_code_unless_allowed"]
+file = "scripts/rebuild_history.py"
+find = "    if not allow_unmerged and (dirty or not merged):"
+replace = "    if False:"
+
+[[mutation]]
+id = "payload-drops-finalize-unverified"
+why = "페이로드에 finalize_unverified 가 없으면 창 밖 재구성이 화면에서 잠정으로 보인다"
+guards = ["tests/test_rebuild_asof.py::test_rebuilt_flag_marks_payload_and_skips_the_provisional_comparison"]
+file = "scripts/sector_flow.py"
+find = "            payload[\"finalize_unverified\"] = True"
+replace = "            pass"
+
+[[mutation]]
+id = "numbers-drops-finalize-unverified"
+why = "수치표 페이지(TUI 가 읽는 것)에 finalize_unverified 가 안 건너가 칩·라벨이 모른다"
+guards = ["tests/test_validation_fixes.py::test_rebuilt_day_outside_the_finalize_window_is_marked_and_keeps_the_final_return_label"]
+file = "scripts/sector_numbers.py"
+find = "              \"finalize_unverified\"):"
+replace = "              ):"
+
+[[mutation]]
+id = "tui-chip-unverified-called-provisional"
+why = "TUI 칩이 창 밖 재구성을 '마감·잠정' 이라 말한다"
+guards = ["tests/test_validation_fixes.py::test_rebuilt_day_outside_the_finalize_window_is_marked_and_keeps_the_final_return_label"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "    base = (\"마감·확정\" if d.get(\"final\") else \"마감·확정기록없음\" if d.get(\"finalize_unverified\")"
+replace = "    base = (\"마감·확정\" if d.get(\"final\") else \"마감·잠정\" if d.get(\"finalize_unverified\")"
+
+[[mutation]]
+id = "tui-ret-label-keys-off-final-only"
+why = "두 달 지난 창 밖 재구성의 수익률 라벨이 '애프터마켓 진행 중' 이 된다"
+guards = ["tests/test_validation_fixes.py::test_rebuilt_day_outside_the_finalize_window_is_marked_and_keeps_the_final_return_label"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "    if d.get(\"final\") or d.get(\"finalize_unverified\"):"
+replace = "    if d.get(\"final\"):"
+
+[[mutation]]
+id = "viewer-ret-label-keys-off-final-only"
+why = "웹 흐름 페이지가 창 밖 재구성의 수익률을 '수집 시각(애프터마켓 진행 중)' 이라 적는다"
+guards = ["tests/test_viewer_page.py::test_return_label_is_final_style_for_a_rebuilt_day_outside_the_finalize_window"]
+file = "scripts/templates/sector_flow.html"
+find = "const retClosed=()=>Boolean(D.final||D.finalize_unverified);"
+replace = "const retClosed=()=>Boolean(D.final);"
+
+[[mutation]]
+id = "numbers-chip-unverified-called-provisional"
+why = "수치표 칩이 창 밖 재구성을 '마감 · 잠정' 이라 말한다"
+guards = ["tests/test_report_pages.py::test_rebuilt_day_outside_the_finalize_window_says_no_final_record"]
+file = "scripts/templates/sector_numbers.html"
+find = "D.finalize_unverified?\"마감 · 확정 기록 없음\":"
+replace = ""
+
+[[mutation]]
+id = "viewer-chip-unverified-called-provisional"
+why = "흐름 페이지 칩이 창 밖 재구성을 '마감 · 잠정' 이라 말한다"
+guards = ["tests/test_report_pages.py::test_rebuilt_day_outside_the_finalize_window_says_no_final_record"]
+file = "scripts/templates/sector_flow.html"
+find = "D.finalize_unverified?\"마감 · 확정 기록 없음\":"
+replace = ""
+
+[[mutation]]
+id = "index-unverified-called-provisional"
+why = "웹 목록이 창 밖 재구성을 '잠정' 이라 적는다 — 값이 바뀔 것처럼 읽힌다"
+guards = ["tests/test_serve_reports.py::test_rebuilt_day_outside_the_finalize_window_is_neither_final_nor_provisional"]
+file = "scripts/serve_reports.py"
+find = "    elif has[\"REBUILT.txt\"] and rebuilt_field(os.path.join(p, \"REBUILT.txt\"), \"finalize\") == \"unverified\":"
+replace = "    elif False:"
+
+[[mutation]]
+id = "numbers-ret-label-keys-off-final-only"
+why = "수치표가 창 밖 재구성(두 달 지난 마감 값)의 수익률을 '수집 시각(애프터마켓 진행 중)' 이라 적는다"
+guards = ["tests/test_report_pages.py::test_numbers_page_return_label_is_final_style_for_a_rebuilt_day_outside_the_finalize_window"]
+file = "scripts/templates/sector_numbers.html"
+find = "const CLOSED = Boolean(D.final || D.finalize_unverified);"
+replace = "const CLOSED = Boolean(D.final);"

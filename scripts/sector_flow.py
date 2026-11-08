@@ -1051,6 +1051,8 @@ def main():
     ap.add_argument("--asof", help="이 기준일(YYYY-MM-DD)까지의 데이터로 만든다 — 지난 기준일 재구성")
     ap.add_argument("--rebuilt", action="store_true",
                     help="재구성 리포트로 표시한다(daily_report.sh 의 KR_QUANT_ASOF 가 붙인다)")
+    ap.add_argument("--finalize-unverified", action="store_true",
+                    help="재구성인데 daily_finalize 창(달력 3일) 밖이라 확정 기록이 없다 — 값은 지금 DB 의 마감 값이다")
     ap.add_argument("--reports-root",
                     help="직전 리포트를 찾을 리포트 루트(기본: --json 이 <루트>/<기준일>[.building.N]/ 안이면 그 루트)")
     a = ap.parse_args()
@@ -1106,6 +1108,10 @@ def main():
     if a.rebuilt:
         # 키를 재구성일 때만 싣는다 — 화면이 "재구성" 을 붙인다.
         payload["rebuilt"] = True
+        if a.finalize_unverified:
+            # 확정(final)이 아니다 — daily_finalize 가 그날을 덮었다는 기록이 없다. 다만 두 달 지난 값이라 마감 값이고
+            # 수익률 라벨은 확정과 같다(~20:00). 화면은 이 키로 "확정 기록 없음" 을 단다.
+            payload["finalize_unverified"] = True
     covered = sum(1 for m in payload["markets"] for s in payload["sectors"]
                   if payload["iret"][m].get(s))
     print(f"업종지수 커버리지: {covered} / "

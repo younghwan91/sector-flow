@@ -169,6 +169,24 @@ def test_status_chip_says_rebuilt_for_reconstructed_reports():
     assert SN.build(P)["rebuilt"] is True
 
 
+def test_rebuilt_day_outside_the_finalize_window_is_marked_and_keeps_the_final_return_label():
+    """창 밖 재구성(finalize_unverified): 칩은 '확정기록없음', 수익률 라벨은 확정과 같은 ~20:00(두 달 지난 마감 값)."""
+    from sectorflow.tui import flow_view as FV
+    d = {"finalized": True, "rebuilt": True, "finalize_unverified": True}
+    assert status_chip(d).startswith("마감·확정기록없음·재구성")
+    assert FV.ret_label(d) == FV.RET_LABEL and FV.ret_label(d, short=True) == FV.RET_LABEL_SHORT
+    assert FV.ret_label({"final": True}) == FV.RET_LABEL
+    assert FV.ret_label({"finalized": True}) == FV.RET_LABEL_PROV
+    assert FV.ret_label({"finalized": True}, short=True) == FV.RET_LABEL_PROV_SHORT
+    ctx = FV._ctx_lines(dict(d, today={}), [], 200)[0]
+    assert FV.RET_LABEL in ctx and "수집 시각" not in ctx, ctx
+    assert "수집 시각" in FV._ctx_lines({"finalized": True, "today": {}}, [], 200)[0], "잠정인데 ~20:00 이라 적었다"
+    P = _payload(0)
+    assert "finalize_unverified" not in SN.build(P)
+    P["finalize_unverified"] = True
+    assert SN.build(P)["finalize_unverified"] is True
+
+
 def test_status_chip_says_final_only_for_rebuilt_reports():
     assert status_chip({"finalized": True}).startswith("마감·잠정")
     assert status_chip({"finalized": True, "final": True}).startswith("마감·확정")

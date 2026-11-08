@@ -106,6 +106,9 @@ def test_rebuilt_flag_marks_payload_and_skips_the_provisional_comparison(tmp_pat
     assert P["rebuilt"] is True and P["final"] is True
     assert P["final_diff"] is None and "재구성" in P["final_diff_reason"]
     assert "rebuilt" not in _payload(tmp_path, db, "plain", "--asof", ASOF)
+    U = _payload(tmp_path, db, "u", "--asof", ASOF, "--rebuilt", "--finalize-unverified")
+    assert U["finalize_unverified"] is True and "final" not in U, "창 밖 재구성을 확정이라 적었다"
+    assert "finalize_unverified" not in P
 
 
 # ── rebuild_history.py — 오래된 날부터, 주말은 안 부르고, 휴장은 요약에 남긴다 ─────────────────────
@@ -135,7 +138,7 @@ def test_rebuild_history_runs_oldest_first_and_summarises(tmp_path):
     (origin / "2026-10-07").mkdir(parents=True)
     calls = tmp_path / "calls"
     root = tmp_path / "root"
-    p = subprocess.run([sys.executable, str(REPO / "scripts" / "rebuild_history.py"), "--report-script", str(fake), "--root", str(root),
+    p = subprocess.run([sys.executable, str(REPO / "scripts" / "rebuild_history.py"), "--allow-unmerged", "--report-script", str(fake), "--root", str(root),
                         "--from", "2026-10-07", "--to", "2026-10-12", "--origin-root", str(origin),
                         "--origin-label", "reports/.archive/x"],
                        capture_output=True, text=True, timeout=60,
@@ -206,7 +209,7 @@ def test_rebuild_history_parallel_chunks_still_link_each_day_to_the_previous(tmp
     root = tmp_path / "root"
     (root / "2026-10-02").mkdir(parents=True)                  # 구간 앞의 리포트가 이미 있다 — 0번 덩어리 첫날도 잇는다
     (root / "2026-10-02" / "payload.json").write_text("{}")
-    p = subprocess.run([sys.executable, str(REPO / "scripts" / "rebuild_history.py"), "--report-script", str(fake), "--root", str(root),
+    p = subprocess.run([sys.executable, str(REPO / "scripts" / "rebuild_history.py"), "--allow-unmerged", "--report-script", str(fake), "--root", str(root),
                         "--from", "2026-10-05", "--to", "2026-10-16", "--jobs", "2"],
                        capture_output=True, text=True, timeout=60)
     assert p.returncode == 0, p.stdout + p.stderr

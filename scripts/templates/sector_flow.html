@@ -279,7 +279,9 @@ const EV={"inst":"[앞날 증거 없음]","forgn":"[앞날 증거 없음]","indi
  *  **수집 시각** 스냅숏이다(18:10 에는 애프터마켓이 20:00 까지 돌고 있다). */
 const RET_LABEL="전일 20:00→당일 20:00 (애프터마켓 포함 통합 종가)", RET_LABEL_SHORT="~20시 통합종가";
 const RET_LABEL_PROV="전일 20:00→당일 수집 시각 (애프터마켓 진행 중)", RET_LABEL_PROV_SHORT="~수집시각 잠정";
-const retLabel=short=>D.final?(short?RET_LABEL_SHORT:RET_LABEL):(short?RET_LABEL_PROV_SHORT:RET_LABEL_PROV);
+/* 창 밖이라 확정 기록이 없는 재구성(`finalize_unverified`)도 지난 날의 마감 값이다 — 라벨은 확정과 같다(TUI `ret_label`). */
+const retClosed=()=>Boolean(D.final||D.finalize_unverified);
+const retLabel=short=>retClosed()?(short?RET_LABEL_SHORT:RET_LABEL):(short?RET_LABEL_PROV_SHORT:RET_LABEL_PROV);
 /** 표지가 말하는 **검정 범위** — (주체, 값의 종류)별로 검정한 창 길이(거래일). `share` = 순매수 ÷ 섹터 시총(가속),
  *  `amt` = 순매수 금액(임펄스). 검정은 전부 `전체` 시장·10종목 미만 섹터 제외로 했다.
  *  - 기관 가속 20일·기관 임펄스 20일: Q3d 재검(docs/validation/2026-11-08-prereg-q3d-rerun.md 주 판정 8칸)
@@ -713,7 +715,7 @@ function renderRetNote(){
   const box=document.getElementById("ret-note"); box.replaceChildren();
   box.append(el("b",null,"수익률은 "+retLabel(false)+" 이다."));
   box.append(" 2026-09-14 부터 일별 종가가 KRX 애프터마켓(16:00~20:00)까지 포함한 통합값이라 정규장(15:30) 종가 기준인 KRX 지수와 같은 날 갈린다.");
-  if(!D.final) box.append(" 잠정·장중 리포트라 마지막 날 값은 수집 시각의 스냅숏이고, 다음날 아침 확정치로 다시 만든다.");
+  if(!retClosed()) box.append(" 잠정·장중 리포트라 마지막 날 값은 수집 시각의 스냅숏이고, 다음날 아침 확정치로 다시 만든다.");
   const T=D.today||{}, ex=[];
   (D.markets||[]).forEach(m=>{
     const b=(((T.market||{})[m]||{}).ret||{})["1"], k=(T.krx_index||{})[m]||{}, kv=(k.ret||{})["1"];
@@ -731,10 +733,10 @@ function staleChip(asof,box){
   box.append(c);
 }
 const chip=el("span",D.finalized?"chip":"chip live");
-chip.append(el("span","dot"),document.createTextNode((D.final?"마감 · 확정":D.finalized?"마감 · 잠정":"장중 · 미확정")+(D.rebuilt?" · 재구성":"")));
-const CHIPNOTE=(D.rebuilt?"재구성: 지난 기준일을 나중 코드로 다시 만든 리포트다 — 그날 저녁 게시본이 아니다(REBUILT.txt). ":"")+(D.final?"확정: 다음날 아침 확정치(daily_finalize)를 확인한 뒤 다시 만든 리포트다.":D.finalized?"잠정: 수집 창(17시) 뒤 그날 잠정값으로 만든 리포트다. 다음날 아침 확정치로 다시 만든다.":"미확정: 17시 이전이라 부분 데이터일 수 있다.");
+chip.append(el("span","dot"),document.createTextNode((D.final?"마감 · 확정":D.finalize_unverified?"마감 · 확정 기록 없음":D.finalized?"마감 · 잠정":"장중 · 미확정")+(D.rebuilt?" · 재구성":"")));
+const CHIPNOTE=(D.rebuilt?"재구성: 지난 기준일을 나중 코드로 다시 만든 리포트다 — 그날 저녁 게시본이 아니다(REBUILT.txt). ":"")+(D.finalize_unverified?"확정 기록 없음: daily_finalize 창(3일) 밖의 지난 날이다 — 지금 DB 의 마감 값으로 만들었지만 확정 작업이 그날을 덮었다는 기록은 없다.":D.final?"확정: 다음날 아침 확정치(daily_finalize)를 확인한 뒤 다시 만든 리포트다.":D.finalized?"잠정: 수집 창(17시) 뒤 그날 잠정값으로 만든 리포트다. 다음날 아침 확정치로 다시 만든다.":"미확정: 17시 이전이라 부분 데이터일 수 있다.");
 document.getElementById("hdr-chipnote").textContent=CHIPNOTE;
-chip.title=D.final?"다음날 아침 확정치(daily_finalize)를 확인한 뒤 다시 만든 리포트":D.finalized?"수집 창(17시 KST) 뒤에 만든 리포트. 당일 값은 잠정이고 다음날 아침 확정치로 다시 만든다":"17시 KST 이전이라 부분 데이터일 수 있다";
+chip.title=D.finalize_unverified?"daily_finalize 창 밖의 지난 날 — 마감 값이지만 확정 기록은 없다":D.final?"다음날 아침 확정치(daily_finalize)를 확인한 뒤 다시 만든 리포트":D.finalized?"수집 창(17시 KST) 뒤에 만든 리포트. 당일 값은 잠정이고 다음날 아침 확정치로 다시 만든다":"17시 KST 이전이라 부분 데이터일 수 있다";
 document.getElementById("hdr-chip").append(chip);
 staleChip(D.dates[NDATE-1],document.getElementById("hdr-chip"));
 

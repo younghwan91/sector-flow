@@ -80,6 +80,19 @@ def latest_date(root: str) -> str | None:
     return ds[0] if ds else None
 
 
+def rebuilt_field(path: str, key: str) -> str | None:
+    """``REBUILT.txt`` 의 ``key: 값`` 줄(daily_report.sh 재구성이 쓴다). 없거나 못 읽으면 ``None``."""
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                k, sep, v = line.partition(":")
+                if sep and k.strip() == key:
+                    return v.strip()
+    except OSError:
+        return None
+    return None
+
+
 def day_tags(root: str, d: str) -> list[str]:
     """한 기준일의 상태 표 — ``확정``/``잠정``, ``검증 실패``/``검증 통과``, ``수집 미완``.
 
@@ -99,6 +112,9 @@ def day_tags(root: str, d: str) -> list[str]:
         return tags
     if has["FINAL.txt"]:
         tags.append(f'<a class="tag ok" href="/{d}/FINAL.txt">확정</a>')
+    elif has["REBUILT.txt"] and rebuilt_field(os.path.join(p, "REBUILT.txt"), "finalize") == "unverified":
+        # daily_finalize 창 밖의 지난 날 — 마감 값이지만 확정 기록이 없다. 잠정(값이 바뀔 수 있다)도 확정도 아니다.
+        tags.append(f'<a class="tag prov" href="/{d}/REBUILT.txt">확정 기록 없음</a>')
     else:
         tags.append('<span class="tag prov">잠정</span>')
     if has["REBUILT.txt"]:

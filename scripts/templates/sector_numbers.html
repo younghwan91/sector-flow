@@ -231,19 +231,23 @@ const F3=v=>v==null?"—":sg(v)+Math.abs(RHU(v,3)).toFixed(3);
 // 맨 앞은 **기준일**이다. 페이로드 전체 범위(1년)를 먼저 적으면 그게 이 숫자들의 날짜로 읽힌다.
 document.getElementById("asof").textContent = "기준일 "+D.asof;
 document.getElementById("range").textContent = "· 1년 백분위 표본 "+D.dates[0]+" ~ "+D.dates[1];
-const chip=el("span","chip", (D.final?"마감 · 확정":D.finalized?"마감 · 잠정":"장중 · 미확정")+(D.rebuilt?" · 재구성":""));
+const chip=el("span","chip", (D.final?"마감 · 확정":D.finalize_unverified?"마감 · 확정 기록 없음":D.finalized?"마감 · 잠정":"장중 · 미확정")+(D.rebuilt?" · 재구성":""));
 document.getElementById("chip").append(chip);
 // 칩의 뜻은 **글로** 적는다 — title 에만 두면 폰에서는 볼 길이 없다.
-document.getElementById("chipnote").textContent = (D.rebuilt?"재구성: 지난 기준일을 나중 코드로 다시 만든 리포트다 — 그날 저녁 게시본이 아니다(REBUILT.txt). ":"") + (D.final
+document.getElementById("chipnote").textContent = (D.rebuilt?"재구성: 지난 기준일을 나중 코드로 다시 만든 리포트다 — 그날 저녁 게시본이 아니다(REBUILT.txt). ":"") + (D.finalize_unverified ? "확정 기록 없음: daily_finalize 창(3일) 밖의 지난 날이다 — 지금 DB 의 마감 값으로 만들었지만 확정 작업이 그날을 덮었다는 기록은 없다."
+  : D.final
   ? "확정: 다음날 아침 확정치(daily_finalize)를 확인한 뒤 다시 만든 리포트다."
   : D.finalized ? "잠정: 수집 창(17시) 뒤 그날 잠정값(수집 시각 스냅숏 — 애프터마켓은 20시까지 돈다)으로 만든 리포트다. 다음날 아침 확정치로 다시 만든다."
   : "미확정: 17시 이전이라 부분 데이터일 수 있다.");
 // 받은 폴더·멈춘 배치를 오늘 것으로 읽지 않게. 문턱은 화면(`STALE_DAYS`)과 같다.
 const age=Math.floor((Date.now()-Date.parse(D.asof+"T00:00:00+09:00"))/864e5);
 if(age>=4) document.getElementById("chip").append(el("span","chip","⚠ "+age+"일 지난 리포트"));
-/** 수익률 라벨 — 확정이면 ~20:00, 잠정·장중이면 마지막 날이 수집 시각 스냅숏(TUI `ret_label`). */
-const RET_LABEL = D.final ? "전일 20:00→당일 20:00 (애프터마켓 포함 통합 종가)" : "전일 20:00→당일 수집 시각 (애프터마켓 진행 중)";
-const RET_SHORT = D.final ? "~20시" : "~수집시각 잠정";
+/** 마감 값인가 — 확정, 또는 daily_finalize 창 밖이라 확정 기록은 없지만 지난 날의 값(재구성 `finalize_unverified`).
+ *  수익률 라벨·(잠정) 표시가 이것 하나를 본다(TUI `ret_label`). */
+const CLOSED = Boolean(D.final || D.finalize_unverified);
+/** 수익률 라벨 — 마감이면 ~20:00, 잠정·장중이면 마지막 날이 수집 시각 스냅숏(TUI `ret_label`). */
+const RET_LABEL = CLOSED ? "전일 20:00→당일 20:00 (애프터마켓 포함 통합 종가)" : "전일 20:00→당일 수집 시각 (애프터마켓 진행 중)";
+const RET_SHORT = CLOSED ? "~20시" : "~수집시각 잠정";
 
 function seg(id,opts,get,set){
   const box=document.getElementById(id);
@@ -320,7 +324,7 @@ function renderToday(){
   document.getElementById("seg-mkt-t")._sync();
   const g=document.getElementById("t-grid"); g.replaceChildren();
   if(!T){ const c=card("오늘"); c.append(el("div","tline","이 리포트에는 '오늘' 블록이 없다(옛 형식) — 다시 만들면 생긴다.")); g.append(c); return; }
-  const prov=!D.final;
+  const prov=!CLOSED;
   document.getElementById("t-sub").textContent=T.date+" 하루 · "+mkt+" · 사실만(추천 아님)";
   const mk=mkOf(mkt);
   // 1. 수익률 — 자체 바구니 | KRX 지수(정규장)
@@ -332,7 +336,7 @@ function renderToday(){
     a.append(el("span","lab2",m),el("span","num "+cls(own["1"]||0),R2(own["1"])),el("span","sep"," · "),el("span","num "+cls(own["20"]||0),R2(own["20"])));
     b.append(el("span","sep"," | KRX "+(k.name||"지수 없음")+"(정규장) "),el("span","num "+cls(kr["1"]||0),R2(kr["1"])),el("span","sep"," · "),el("span","num "+cls(kr["20"]||0),R2(kr["20"])));
     p.append(a,document.createTextNode(" "),b); c1.append(p); });   // 두 덩어리 사이에 줄바꿈 자리 — 폰(390px)에서 KRX 쪽이 다음 줄로
-  c1.append(el("div","tnote","두 값은 세션이 달라(정규장 15:30 vs "+(D.final?"애프터마켓 포함 20:00":"수집 시각")+") 같은 날 크게 갈릴 수 있다 — 아래 설명. 증거 "+EV.krx));
+  c1.append(el("div","tnote","두 값은 세션이 달라(정규장 15:30 vs "+(CLOSED?"애프터마켓 포함 20:00":"수집 시각")+") 같은 날 크게 갈릴 수 있다 — 아래 설명. 증거 "+EV.krx));
   g.append(c1);
   // 2. 시장 순매수 4주체 + 1년%ile, 금액 근사 오차 칩, (미분류), 잠정 수정 폭
   const M=((T.market||{})[mkt]||{}).net||{};

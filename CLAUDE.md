@@ -9,7 +9,9 @@
 - TUI 수정 뒤: `uv run python scripts/verify_merge.py <워크트리>` (수 분). 로컬 pre-push 는 바뀐 파일에 닿는 변이만 돈다 — 전체는 GitHub 이 4샤드로(`--help`).
 - 리포트 다시 만들기: `KR_QUANT_FORCE=1 scripts/daily_report.sh`. 다른 곳에 쓰려면 `KR_QUANT_REPORTS=<폴더>`.
 - 지난 기준일 재구성(지금 코드·확정 데이터, 읽기는 그날 이하): `KR_QUANT_ASOF=YYYY-MM-DD scripts/daily_report.sh`, 여러 날은
-  `scripts/rebuild_history.py --root <폴더> --from … --to …`(오래된 날부터 — `change` 가 직전 폴더를 읽는다). 폴더에 `REBUILT.txt`.
+  `scripts/rebuild_history.py --root <폴더> --from … --to …`(오래된 날부터 — `change` 가 직전 폴더를 읽는다). 폴더에 `REBUILT.txt`(`commit:` 전체 sha·`finalize:`).
+  origin/main 의 깨끗한 체크아웃에서만 돈다(`--allow-unmerged` 는 리허설). daily_finalize 창(3일) 밖의 날은 `finalize: unverified`
+  — FINAL.txt 없이 '확정 기록 없음' 으로 표시한다.
 - 화면: `uv run sw-flow`, `uv run sw-ledger` (`reports/latest` 를 연다).
 - DB(TimescaleDB `kr_quant`, **읽기 전용**): `set -a; . ~/git/quant-airflow/.env; set +a` 뒤 `$KR_QUANT_DB`, psycopg2 는 `--extra pg`.
   `daily_report.sh` 는 `.env` 가 없으면 같은 파일을 불러 쓴다. 접속정보 사본을 이 레포에 두지 않는다.
