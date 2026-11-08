@@ -27,7 +27,7 @@
 사용::
 
     python scripts/digest.py --dir reports/2026-11-06            # md·json·카드 html, 되면 png
-    python scripts/digest.py --dir reports/latest --png skip
+    python scripts/digest.py --dir reports/latest --out /tmp/digest-out   # 읽기 전용 리포트는 밖으로
 """
 
 from __future__ import annotations
@@ -66,8 +66,8 @@ MAX_CHARS = 1200
 EXTREME_CAPS = (4, 2, 1, 0)
 #: 카드 크기(px) — 인스타그램 세로·텔레그램 미리보기 비율 4:5.
 CARD_W, CARD_H = 1080, 1350
-#: 카드가 넘치면 극단 목록을 이 개수까지 차례로 줄여 다시 찍는다.
-CARD_EXTREME_CAPS = (3, 1, 0)
+#: 카드가 넘치면 (극단 목록 개수, 연속 줄 꼴) 순으로 줄여 다시 찍는다 — 글의 :data:`TRIM_LADDER` 와 같은 원리.
+CARD_LADDER = ((3, "full"), (1, "nosector"), (0, "none"))
 
 #: 본문에 나오면 안 되는 말 — 권유·전망·보장으로 읽히는 말. 비교 방법은 :func:`banned_hits`.
 BANNED = ("추천", "매수 신호", "매도 신호", "신호", "급등", "폭등", "급락", "세력", "목표가", "수익 보장", "보장",
@@ -195,6 +195,24 @@ def collect(P: dict) -> dict:
                                      "entered": _sectors_only(t["entered"]) if ok else None,
                                      "exited": _sectors_only(t["exited"]) if ok else None})
 
+    streak = None
+    S = T.get("streaks")
+    if isinstance(S, dict) and dom:
+        mkt_f = ((S.get("market") or {}).get(MARKET) or {}).get(dom)
+        sec = ((S.get("longest") or {}).get(MARKET) or {}).get(dom)
+        sec_f = (((S.get("sectors") or {}).get(MARKET) or {}).get(sec) or {}).get(dom) if sec else None
+        if mkt_f:
+            streak = {"actor": dom, "ko": KO[dom], "market": mkt_f,
+                      "sector": sec, "sector_fact": sec_f}
+
+    revision = None
+    if not P.get("final") and not P.get("finalize_unverified"):
+        R = P.get("revision_stats")
+        if isinstance(R, dict):
+            revision = {"n_dates": R.get("n_dates", 0), "rel_median_pct": R.get("rel_median_pct"),
+                        "flips": R.get("flips", 0), "top3_keep_pct": R.get("top3_keep_pct"),
+                        "seed_dates": len(((R.get("seed") or {}).get("dates")) or [])}
+
     final = None
     if P.get("final"):
         fd = P.get("final_diff")
@@ -210,6 +228,7 @@ def collect(P: dict) -> dict:
                 for a, ko in NET_ACTORS],
         "dominant": dom, "returns": rets, "approx_gap": gaps,
         "sectors": sectors, "pct_hi": PCT_HI, "pct_lo": PCT_LO,
+        "streak": streak, "revision": revision,
         "change": change, "final_diff": final, "excluded": list(EXCLUDED_SECTORS),
     }
 
@@ -226,6 +245,47 @@ def pct_tag(p) -> str:
 
 def ret_str(v) -> str:
     return "—" if v is None else f"{v:+.2f}%"
+
+
+def fmt_big(v) -> str:
+    """누적 금액 — |값| 이 1조(10,000억) 이상이면 `-4.1조`, 아래는 `-3,210억`. 화면 ``fmt_big`` 와 같은 꼴."""
+    if v is None:
+        return "—"
+    if abs(v) >= 9999.5:
+        return ("+" if v >= 0 else "-") + f"{abs(v) / 10000:.1f}조"
+    return amt(v) + "억"
+
+
+def streak_text(f: "dict | None") -> str:
+    """연속 순매매 한 토막 — `7일 연속 순매도 누적 -4.1조(98)`. 화면 ``_streak_text`` 와 같은 꼴."""
+    if not f or not f.get("days"):
+        return "연속 없음(오늘 ≈0)"
+    side = "순매수" if f.get("sign", 0) > 0 else "순매도"
+    return f"{f['days']}일 연속 {side} 누적 {fmt_big(f.get('sum'))}{pct_tag(f.get('pct'))}"
+
+
+def streak_line(F: dict, with_sector: bool = True) -> "str | None":
+    """오늘 금액 최대 주체의 연속 순매매 — 시장 합계와 최장 섹터. 옛 리포트(streaks 없음)는 None."""
+    st = F.get("streak")
+    if not st:
+        return None
+    line = f"연속 순매매[일·누적(연속 길이 1년%ile)] — {st['ko']}: {streak_text(st['market'])}"
+    if with_sector and st["sector"]:
+        line += f" · 최장 섹터 {st['sector']} {streak_text(st['sector_fact'])}"
+    return line
+
+
+def revision_line(F: dict) -> "str | None":
+    """잠정 다이제스트의 정직 줄 — 최근 확정일들의 잠정→확정 수정 폭. 확정이거나 기록이 없으면 그렇다고 적는다."""
+    R = F.get("revision")
+    if R is None:
+        return None
+    if not R["n_dates"] or R["rel_median_pct"] is None:
+        return "잠정→확정 수정 폭: 아직 확정 기록이 없다"
+    keep = R["top3_keep_pct"]
+    return (f"최근 {R['n_dates']}일 잠정→확정: 섹터 칸 중앙 {pct_int(R['rel_median_pct'])}%,"
+            f" 부호 뒤집힘 {R['flips']}회"
+            + (f", 상위3 유지 {pct_int(keep)}%" if keep is not None else ""))
 
 
 def day_label(asof: str) -> str:
@@ -257,11 +317,14 @@ def change_phrase(a: dict, top_n: int) -> str:
             f" · 빠진 섹터: {_items(a['exited'])}")
 
 
-def body_text(F: dict, extreme_cap: int = EXTREME_CAPS[0]) -> str:
+def body_text(F: dict, extreme_cap: int = EXTREME_CAPS[0], streak: str = "full") -> str:
     """꼬리를 뺀 본문 — 금칙어 검사 대상."""
     L = [f"오늘의 수급 · {day_label(F['asof'])} · {F['status']}"]
     if not F["final"]:
         L.append("잠정치다 — 다음 거래일 새벽 확정치로 바뀔 수 있다.")
+        rl = revision_line(F)
+        if rl:
+            L.append(rl)
     L += ["", f"시장 순매수[억] · {F['market']}(거래소+코스닥) · 괄호는 1년 일별 %ile",
           "- " + " · ".join(f"{n['ko']} {amt(n['v'])}{pct_tag(n['pct'])}" for n in F["net"])]
     for g in F["approx_gap"]:
@@ -281,6 +344,9 @@ def body_text(F: dict, extreme_cap: int = EXTREME_CAPS[0]) -> str:
         hi = [f"{n} {q}" for n, q in s["hi"]]
         lo = [f"{n} {q}" for n, q in s["lo"]]
         L.append(f"- {s['ko']} 상단: {_capped(hi, extreme_cap)} / 하단: {_capped(lo, extreme_cap)}")
+    sl = None if streak == "none" else streak_line(F, with_sector=streak == "full")
+    if sl:
+        L += ["", sl]
     C = F["change"]
     L.append("")
     if C["prev_date"]:
@@ -301,14 +367,18 @@ def body_text(F: dict, extreme_cap: int = EXTREME_CAPS[0]) -> str:
     return "\n".join(L)
 
 
+#: 길이가 넘칠 때 줄이는 순서 — 극단 목록부터, 마지막에 연속 줄의 최장 섹터 → 연속 줄 전체.
+TRIM_LADDER = tuple([(cap, "full") for cap in EXTREME_CAPS] + [(0, "nosector"), (0, "none")])
+
+
 def compose(F: dict) -> tuple[str, str]:
-    """(본문, 전문). 길이가 넘치면 극단 목록부터 줄이고, 그래도 넘치면 :class:`DigestError`."""
-    for cap in EXTREME_CAPS:
-        body = body_text(F, cap)
+    """(본문, 전문). 길이가 넘치면 :data:`TRIM_LADDER` 순으로 줄이고, 그래도 넘치면 :class:`DigestError`."""
+    for cap, streak in TRIM_LADDER:
+        body = body_text(F, cap, streak)
         full = f"{body}\n\n{FOOTER}\n"
         if len(full) <= MAX_CHARS:
             return body, full
-    raise DigestError(f"글이 {len(full)}자로 상한 {MAX_CHARS}자를 넘는다(극단 목록을 다 줄인 뒤에도)")
+    raise DigestError(f"글이 {len(full)}자로 상한 {MAX_CHARS}자를 넘는다(줄일 수 있는 것을 다 줄인 뒤에도)")
 
 
 #: 금칙어 비교에서 한 항목으로 보는 단위의 경계 — 목록 구분자(` · `·` | `), 줄, `: `.
@@ -346,7 +416,7 @@ def _sign(v) -> str:
     return "flat" if not v else ("buy" if v > 0 else "sell")
 
 
-def card_html(F: dict, extreme_cap: int = CARD_EXTREME_CAPS[0]) -> str:
+def card_html(F: dict, extreme_cap: int = CARD_LADDER[0][0], streak: str = CARD_LADDER[0][1]) -> str:
     """카드 HTML — 값은 여기서 박아 넣는다(스크립트 없음). 템플릿의 ``__KEY__`` 를 다 채워야 한다."""
     vmax = max((abs(n["v"]) for n in F["net"] if n["v"] is not None), default=0.0) or 1.0
     net_rows = []
@@ -389,8 +459,12 @@ def card_html(F: dict, extreme_cap: int = CARD_EXTREME_CAPS[0]) -> str:
         chg = f"<li>비교 없음 — {_e(C['reason'])}</li>"
     fd = F["final_diff"]
     notes = []
+    sl = None if streak == "none" else streak_line(F, with_sector=streak == "full")
+    if sl:
+        notes.append(sl)
     if not F["final"]:
-        notes.append("잠정치다 — 다음 거래일 새벽 확정치로 바뀔 수 있다.")
+        notes.append("잠정치다 — 다음 거래일 새벽 확정치로 바뀔 수 있다."
+                     + (f" {revision_line(F)}." if revision_line(F) else ""))
     if fd is not None:
         notes.append(f"잠정→확정 비교 없음: {fd['reason']}" if fd["reason"] else
                      f"잠정→확정 변경: {fd['n_changed']:,}칸 / {fd['n_cells']:,}칸(±{fd['tol']}억 초과)")
@@ -495,14 +569,14 @@ OUTPUTS = ("digest.md", "digest.json", "digest_card.html", "digest.png")
 def build(P: dict) -> tuple[dict, str, list[str]]:
     """(사실, 글, 카드 HTML 판들) — 금칙어·길이·꼬리를 다 통과해야 돌려준다. 파일은 쓰지 않는다.
 
-    카드 판은 극단 목록 길이만 다르다(:data:`CARD_EXTREME_CAPS`). 다 미리 검사해 둔다 — 찍다가 넘쳐
+    카드 판은 극단 목록 길이·연속 줄 꼴만 다르다(:data:`CARD_LADDER`). 다 미리 검사해 둔다 — 찍다가 넘쳐
     줄인 판이 검사 없이 나가지 않게."""
     F = collect(P)
     body, text = compose(F)
     check_compliance(body, "digest.md")
     if not text.endswith(FOOTER + "\n"):
         raise DigestError("고정 꼬리(면책·자료 출처)가 글 끝에 없다")
-    pages = [card_html(F, cap) for cap in CARD_EXTREME_CAPS]
+    pages = [card_html(F, cap, st) for cap, st in CARD_LADDER]
     for page in pages:
         check_compliance(card_visible_text(page), "digest_card.html")
         if DISCLAIMER not in html.unescape(page):
@@ -515,16 +589,18 @@ def build(P: dict) -> tuple[dict, str, list[str]]:
 def main(argv: "list[str] | None" = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--dir", required=True, help="리포트 폴더(payload.json 이 있는 곳)")
+    ap.add_argument("--out", help="산출물을 쓸 폴더(기본 --dir). 읽기 전용 리포트에서 밖으로 쓸 때")
     ap.add_argument("--png", choices=("auto", "require", "skip"), default="auto",
                     help="auto = Playwright 가 없으면 건너뜀 · require = 못 찍으면 실패 · skip")
     ap.add_argument("--allow-unverified", action="store_true",
                     help="VERIFY_FAILED.txt 가 있는 폴더에서도 만든다(기본은 거부)")
     a = ap.parse_args(argv)
     d = Path(a.dir)
+    out = Path(a.out) if a.out else d
 
     def clear():
         for n in OUTPUTS:
-            (d / n).unlink(missing_ok=True)
+            (out / n).unlink(missing_ok=True)
 
     try:
         if (d / "VERIFY_FAILED.txt").exists() and not a.allow_unverified:
@@ -537,21 +613,23 @@ def main(argv: "list[str] | None" = None) -> int:
         print(f"[digest] 만들지 않았다 — {e}", file=sys.stderr)
         return 1
 
+    out.mkdir(parents=True, exist_ok=True)
     clear()
-    (d / "digest.md").write_text(text, encoding="utf-8")
-    (d / "digest_card.html").write_text(pages[0], encoding="utf-8")
+    (out / "digest.md").write_text(text, encoding="utf-8")
+    (out / "digest_card.html").write_text(pages[0], encoding="utf-8")
     png = "건너뜀"
     if a.png != "skip":
         try:
             for i, page in enumerate(pages):
-                (d / "digest_card.html").write_text(page, encoding="utf-8")
+                (out / "digest_card.html").write_text(page, encoding="utf-8")
                 try:
-                    render_png(d / "digest_card.html", d / "digest.png")
+                    render_png(out / "digest_card.html", out / "digest.png")
                     break
                 except CardOverflow as e:
                     if i == len(pages) - 1:
                         raise
-                    print(f"[digest] {e} — 극단 목록을 {CARD_EXTREME_CAPS[i + 1]}개로 줄여 다시 찍는다",
+                    cap, st = CARD_LADDER[i + 1]
+                    print(f"[digest] {e} — 극단 목록 {cap}개·연속 줄 {st} 로 줄여 다시 찍는다",
                           file=sys.stderr)
             png = "digest.png"
         except ImportError:
@@ -561,15 +639,15 @@ def main(argv: "list[str] | None" = None) -> int:
                 return 1
             png = "건너뜀(Playwright 없음)"
         except Exception as e:     # 카드만 못 찍었다 — 글·사실은 남긴다(require 면 실패)
-            (d / "digest.png").unlink(missing_ok=True)
+            (out / "digest.png").unlink(missing_ok=True)
             print(f"[digest] 카드를 못 찍었다 — {type(e).__name__}: {e}", file=sys.stderr)
             if a.png == "require":
                 clear()
                 return 1
             png = "실패"
     F["png"] = png if png == "digest.png" else None
-    (d / "digest.json").write_text(json.dumps(F, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
-    print(f"[digest] {d}: digest.md {F['text_chars']}자 · digest.json · 카드 {png}")
+    (out / "digest.json").write_text(json.dumps(F, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    print(f"[digest] {out}: digest.md {F['text_chars']}자 · digest.json · 카드 {png}")
     return 0
 
 

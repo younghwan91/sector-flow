@@ -70,9 +70,20 @@ def fixture_payload(*, final: bool = False, finalized: bool = True) -> dict:
                 "거래소": {"net": net, "ret": {"1": -4.37, "20": -22.497}, "approx_gap": {"pct": 1.2}},
                 "코스닥": {"net": net, "ret": {"1": -3.812, "20": -26.415}, "approx_gap": {"pct": 6.2}},
             },
+            "streaks": {
+                "actors": {"inst": "기관", "invpen": "투신+연기금", "forgn": "외국인", "indiv": "개인"},
+                "market_actors": ["inst", "invpen", "forgn", "indiv"],
+                "market": {"전체": {"forgn": {"sign": -1, "days": 7, "sum": -41234.5, "pct": 98.1},
+                                    "inst": {"sign": 1, "days": 2, "sum": 4300.0, "pct": 55.0}}},
+                "sectors": {"전체": {"반도체": {"forgn": {"sign": -1, "days": 9, "sum": -21000.0, "pct": 97.2}}}},
+                "longest": {"전체": {"forgn": "반도체", "inst": "금융"}},
+            },
             "krx_index": {"거래소": {"code": "001", "name": "코스피", "ret": {"1": -6.02, "20": -23.638}},
                           "코스닥": {"code": "101", "name": "코스닥", "ret": {"1": -5.032, "20": None}}},
         },
+        "revision_stats": {"days": 10, "n_dates": 7, "rel_median_pct": 3.6, "flips": 14,
+                           "top3_keep_pct": 88.9, "top3_lists": 42, "n_cells": 11340,
+                           "seed": {"label": "아카이브 시드", "dates": ["2026-10-20"]}},
         "change": {"prev_date": "2026-11-05", "window": 20, "top_n": 5, "top": {"전체": {
             "inst": {"entered": ["유통"], "exited": ["보험"]},
             "invpen": {"entered": [], "exited": []}}}},
@@ -87,6 +98,7 @@ def fixture_payload(*, final: bool = False, finalized: bool = True) -> dict:
 EXPECTED = """\
 오늘의 수급 · 2026-11-06(금) · 마감·잠정
 잠정치다 — 다음 거래일 새벽 확정치로 바뀔 수 있다.
+최근 7일 잠정→확정: 섹터 칸 중앙 4%, 부호 뒤집힘 14회, 상위3 유지 89%
 
 시장 순매수[억] · 전체(거래소+코스닥) · 괄호는 1년 일별 %ile
 - 기관 +2,500(88) · 외국인 -4,200(6) · 개인 +1,500(70) · 기타법인 +200(51)
@@ -111,6 +123,8 @@ EXPECTED = """\
 - 기관 상단: 유통 99 · 반도체 97 / 하단: 화학 4 · 건설 5
 - 투신+연기금 상단: 화학 100 / 하단: 통신 2
 - 외국인 상단: 보험 96 / 하단: 반도체 3
+
+연속 순매매[일·누적(연속 길이 1년%ile)] — 외국인: 7일 연속 순매도 누적 -4.1조(98) · 최장 섹터 반도체 9일 연속 순매도 누적 -2.1조(97)
 
 20일 순매수 상위5 변동 — 20일 누적 기준, 11-05 리포트 대비
 - 기관: 상위5에 새로 든 섹터: 유통 · 빠진 섹터: 보험
@@ -166,6 +180,9 @@ def test_text_fits_char_limit_and_trims_extremes_first():
     assert text.endswith(dg.FOOTER + "\n")
     assert "상위: 가가가가가가00 +1,000(99)" in text
     assert "곳" in text or " 외 " in text
+    # 극단을 줄여서 들어가는 날은 연속 줄이 산다 — 연속을 먼저 떨어뜨리면 여기서 잡힌다(TRIM_LADDER 순서).
+    _F, mid, _ = dg.build(_long_payload(name_len=2, n=20))
+    assert len(mid) <= dg.MAX_CHARS and "곳" in mid and "연속 순매매" in mid
     with pytest.raises(dg.DigestError, match="상한"):
         dg.build(_long_payload(name_len=40))
     _F, text, _ = dg.build(fixture_payload(final=True))
@@ -192,11 +209,18 @@ def test_provisional_and_final_wording():
     """값의 지위를 정확히 말한다 — 잠정은 바뀔 수 있다고, 확정은 몇 칸 바뀌었는지."""
     _F, prov, _ = dg.build(fixture_payload())
     assert "· 마감·잠정\n" in prov and "잠정치다" in prov
-    assert "확정\n" not in prov.splitlines()[0] and "잠정→확정" not in prov
+    assert not prov.splitlines()[0].endswith("확정")
+    # 정직 줄 — 잠정이면 최근 확정일들의 수정 폭을 같이 말한다(없으면 없다고).
+    assert "최근 7일 잠정→확정: 섹터 칸 중앙 4%, 부호 뒤집힘 14회, 상위3 유지 89%" in prov
+    assert "잠정→확정 변경" not in prov
+    P0 = fixture_payload()
+    P0["revision_stats"] = {"n_dates": 0, "rel_median_pct": None, "flips": 0}
+    _F, prov0, _ = dg.build(P0)
+    assert "잠정→확정 수정 폭: 아직 확정 기록이 없다" in prov0
 
     _F, fin, pages = dg.build(fixture_payload(final=True))
     assert fin.splitlines()[0].endswith("· 마감·확정")
-    assert "잠정치다" not in fin
+    assert "잠정치다" not in fin and "수정 폭" not in fin and "최근 7일 잠정→확정" not in fin
     assert "잠정→확정 변경: 12칸 / 1,234칸(±0.05억 초과, 섹터 1·5일 순매수)" in fin
     assert 'class="chip final"' in pages[0]
 
@@ -278,14 +302,45 @@ def test_card_html_is_card_sized_and_carries_facts():
     rows = page.split('<div class="net-row">')[1:]
     assert 'class="bar buy" style="left:50%' in rows[0]
     assert 'class="bar sell" style="left:0.00%;width:50.00%"' in rows[1]
-    # 줄인 판은 극단 목록만 다르다
-    assert len(pages) == len(dg.CARD_EXTREME_CAPS)
+    # 줄인 판은 극단 목록·연속 줄만 다르다
+    assert len(pages) == len(dg.CARD_LADDER)
+    assert "연속 순매매" in pages[0] and "연속 순매매" not in pages[-1]
+
+
+def test_streak_line_names_the_dominant_actor_and_longest_sector():
+    """연속 줄은 오늘 금액 최대 주체의 시장 연속과 최장 섹터를 옮긴다 — 부호·조 단위·%ile 그대로."""
+    F = dg.collect(fixture_payload())
+    assert F["streak"]["actor"] == "forgn" and F["streak"]["sector"] == "반도체"
+    line = dg.streak_line(F)
+    assert line == ("연속 순매매[일·누적(연속 길이 1년%ile)] — 외국인: 7일 연속 순매도 누적 -4.1조(98)"
+                    " · 최장 섹터 반도체 9일 연속 순매도 누적 -2.1조(97)")
+    assert dg.streak_line(F, with_sector=False).endswith("-4.1조(98)")
+    assert dg.fmt_big(9999.4) == "+9,999억" and dg.fmt_big(-10000.0) == "-1.0조"
+    # ≈0 날은 연속이 없다고 말한다
+    assert dg.streak_text({"sign": 0, "days": 0, "sum": 0.0, "pct": None}) == "연속 없음(오늘 ≈0)"
+    # streaks 가 없는 옛 리포트는 줄을 빼되 만들어는 진다
+    P = fixture_payload()
+    del P["today"]["streaks"]
+    _F, text, _ = dg.build(P)
+    assert "연속 순매매" not in text
+
+
+def test_out_dir_keeps_the_report_folder_untouched(tmp_path):
+    """--out 이 있으면 산출물은 거기로만 간다 — 읽기 전용 리포트 폴더(reports/latest)에 쓰지 않는다."""
+    src = tmp_path / "report"
+    src.mkdir()
+    (src / "payload.json").write_text(json.dumps(fixture_payload(), ensure_ascii=False), encoding="utf-8")
+    out = tmp_path / "scratch" / "digest-out"
+    assert dg.main(["--dir", str(src), "--out", str(out), "--png", "skip"]) == 0
+    assert (out / "digest.md").exists() and (out / "digest.json").exists()
+    assert sorted(p.name for p in src.iterdir()) == ["payload.json"]
 
 
 def test_card_text_guard_catches_what_only_the_card_says(monkeypatch):
     """카드에만 있는 글(제목·범례 등)에 금칙어가 들면 만들지 않는다 — 글 검사만으로는 못 잡는다."""
     real = dg.card_html
-    monkeypatch.setattr(dg, "card_html", lambda F, cap=3: real(F, cap).replace("오늘의 수급</h1>", "유망 섹터</h1>"))
+    monkeypatch.setattr(dg, "card_html",
+                        lambda F, cap=3, streak="full": real(F, cap, streak).replace("오늘의 수급</h1>", "유망 섹터</h1>"))
     with pytest.raises(dg.DigestError, match="digest_card.html"):
         dg.build(fixture_payload())
 
