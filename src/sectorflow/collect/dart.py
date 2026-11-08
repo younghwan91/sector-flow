@@ -415,7 +415,7 @@ def apply_history(con, codes: "list[str] | None" = None) -> dict:
         # (403850: 2024-12-31 1,235만 · 상장 2025-11-18 · 2025-12-31 1,435만). 상장일까지는 시드가 첫 실측에서 거꾸로 센다.
         first = con.execute("SELECT min(date) FROM supply_demand WHERE code = ?", (code,)).fetchone()[0]
         listed_from = first if first and start and first > start else ""
-        points = [(d, n) for d, (_, n) in sorted(best.items()) if d not in others and d >= listed_from]
+        points = [(d, n) for d, (_, n) in sorted(best.items()) if d >= listed_from]
         keep, drop = drop_unit_errors(points, list(others.values()))
         dropped += [(code, d, n) for d, n in drop]
         events = [(str(d), str(tp), rt) for d, tp, rt in con.execute(

@@ -75,7 +75,7 @@ def reseed(con, codes: "list[str] | None" = None) -> int:
             "USING (code, date) WHERE code = ? AND p.source <> 'seed' ORDER BY h.date LIMIT 1",
             (code,)).fetchone()
         first = con.execute("SELECT min(date) FROM supply_demand WHERE code = ?", (code,)).fetchone()[0]
-        if anchor is None or first is None or str(anchor[0]) <= str(first):
+        if anchor is None or first is None:   # 실측이 첫날 이하면 seed_rows 가 시드를 내지 않는다
             continue
         events = [(str(d), str(tp), rt) for d, tp, rt in con.execute(
             "SELECT date, upd_stkpc_tp, upd_rt FROM corporate_actions WHERE code = ?", (code,)).fetchall()]

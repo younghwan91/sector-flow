@@ -6595,22 +6595,6 @@ find = "(rcept or \"\") > best[stlm][0]"
 replace = "(rcept or \"\") < best[stlm][0]"
 
 [[mutation]]
-id = "byo-dart-overrides-kiwoom-snapshot"
-why = "같은 날 키움 상장주식수 실측이 있는데 DART 발행주식총수로 덮는다"
-guards = ["tests/test_collect_dart.py::test_latest_filing_wins_and_a_same_day_kiwoom_snapshot_is_kept"]
-file = "src/sectorflow/collect/dart.py"
-find = " if d not in others and d >= listed_from]"
-replace = " if d >= listed_from]"
-
-[[mutation]]
-id = "byo-seed-hijacks-dart-covered-start"
-why = "DART 행이 구간 첫날을 덮는데도 시드를 첫날에 써서 DART 값을 가린다(시드의 유상증자 맹점이 그대로 남는다)"
-guards = ["tests/test_collect_dart.py::test_seed_only_fills_the_gap_before_the_earliest_measured_row"]
-file = "src/sectorflow/collect/shares.py"
-find = "        if anchor is None or first is None or str(anchor[0]) <= str(first):"
-replace = "        if anchor is None or first is None:"
-
-[[mutation]]
 id = "byo-seed-anchored-on-latest-snapshot"
 why = "시드를 가장 이른 실측이 아니라 현재 값에서 거꾸로 세어, 그 사이 증자·소각이 시드에 섞인다"
 guards = ["tests/test_collect_dart.py::test_seed_only_fills_the_gap_before_the_earliest_measured_row"]
@@ -6692,8 +6676,8 @@ replace = "        if raw < recount:"
 
 [[mutation]]
 id = "byo-dart-moved-onto-kiwoom-day"
-why = "옮긴 DART 점이 같은 날 키움 실측을 덮어쓴다"
-guards = ["tests/test_collect_dart.py::test_pre_merger_value_or_an_ambiguous_gap_is_left_alone"]
+why = "DART 점(옮긴 것 포함)이 같은 날 키움 상장주식수 실측을 덮어쓴다"
+guards = ["tests/test_collect_dart.py::test_pre_merger_value_or_an_ambiguous_gap_is_left_alone", "tests/test_collect_dart.py::test_latest_filing_wins_and_a_same_day_kiwoom_snapshot_is_kept"]
 file = "src/sectorflow/collect/dart.py"
 find = "        if row[0] in taken or row[0] in seen:"
 replace = "        if row[0] in seen:"
@@ -6703,8 +6687,8 @@ id = "byo-dart-pre-listing-value-used"
 why = "구간 중 상장한 종목에 공모 신주가 빠진 상장 전 주식수를 써서 상장 초 시총이 작아진다(403850 −14%)"
 guards = ["tests/test_collect_dart.py::test_pre_listing_value_of_a_new_listing_is_not_used"]
 file = "src/sectorflow/collect/dart.py"
-find = "and d >= listed_from]"
-replace = "]"
+find = " for d, (_, n) in sorted(best.items()) if d >= listed_from]"
+replace = " for d, (_, n) in sorted(best.items())]"
 
 [[mutation]]
 id = "byo-dart-window-start-values-dropped"
@@ -6721,3 +6705,27 @@ guards = ["tests/test_collect_dart.py::test_pre_merger_value_or_an_ambiguous_gap
 file = "src/sectorflow/collect/dart.py"
 find = "            unresolved.append(d)"
 replace = "            pass"
+
+[[mutation]]
+id = "byo-dart-cap-crashes-the-run"
+why = "호출 상한에 닿으면 받은 칸을 반영하지 못하고 예외로 죽는다(원장 ok=0 기록도 없다)"
+guards = ["tests/test_collect_dart.py::test_cli_stops_at_the_cap_but_keeps_what_it_got"]
+file = "src/sectorflow/collect/run.py"
+find = "    except (CallBudgetExceeded, dart.DartError) as e:"
+replace = "    except dart.DartError as e:"
+
+[[mutation]]
+id = "byo-dart-missing-key-silent"
+why = "DART 키가 없으면 빈 키로 요청을 보내 오류가 원장 status 로 묻힌다"
+guards = ["tests/test_collect_dart.py::test_missing_dart_key_is_a_clear_error"]
+file = "src/sectorflow/collect/auth.py"
+find = "    if not key:\n        raise MissingKeys(f\"{DART_ENV}"
+replace = "    if False:\n        raise MissingKeys(f\"{DART_ENV}"
+
+[[mutation]]
+id = "byo-dart-values-never-applied"
+why = "원장에 받은 DART 값이 주식수 이력으로 안 가서 시드의 유상증자 맹점이 그대로 남는다(Phase 1 실패 원인)"
+guards = ["tests/test_collect_dart.py::test_rights_issue_the_seed_cannot_see_reaches_past_market_cap"]
+file = "src/sectorflow/collect/dart.py"
+find = "                (code, OK)).fetchall():"
+replace = "                (code, \"none\")).fetchall():"
