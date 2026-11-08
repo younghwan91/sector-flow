@@ -328,8 +328,16 @@ if [ -n "$EV_SUMMARY" ]; then EV_CHECKS="${EV_SUMMARY%% *}" EV_FAILS="${EV_SUMMA
 if [ -f "$BUILD/final_diff.json" ]; then
   EV_DIFF="$(grep -o '"n_changed"[[:space:]]*:[[:space:]]*[0-9][0-9]*' "$BUILD/final_diff.json" 2>/dev/null | head -n 1 | grep -o '[0-9][0-9]*$')" || true
 fi
-# 선택(기본 꺼짐): 오늘의 수급 다이제스트(scripts/digest.py) — 폴더에만 쓴다. 상한 5분·오프라인·판 고정, 실패·멈춤에도 리포트는 게시한다.
-if [ -n "${KR_QUANT_DIGEST:-}" ]; then UV_OFFLINE=1 timeout -k 10s "${KR_QUANT_DIGEST_TIMEOUT:-5m}" "${UVR[@]}" --with 'playwright==1.48.0' python scripts/digest.py --dir "$BUILD" || echo "[$(date '+%F %T')] ⚠️ 다이제스트를 못 만들었다(실패 또는 시간 초과) — 리포트는 그대로 게시한다" >&2; fi
+# 부속 산출물 — 다이제스트·검증 페이지는 짓는 폴더 안에서 만들어 리포트와 **함께** 바꿔 낀다(게시된 폴더의 파일 하나를 고쳐 쓰는 길은 없다).
+# 실패·멈춤에도 리포트는 게시한다. 다만 조용히 빠지면 안 된다 — VERIFY.txt 끝에 적고 맨 끝에서 75(경고)로 알린다.
+SIDE_FAIL=""
+# 오늘의 수급 다이제스트(scripts/digest.py, 끄려면 KR_QUANT_DIGEST=0) — 폴더에만 쓴다(밖으로 보내지 않는다). 상한 5분·오프라인·판 고정.
+if [ "${KR_QUANT_DIGEST:-1}" != "0" ]; then UV_OFFLINE=1 timeout -k 10s "${KR_QUANT_DIGEST_TIMEOUT:-5m}" "${UVR[@]}" --with 'playwright==1.48.0' python scripts/digest.py --dir "$BUILD" || { echo "[$(date '+%F %T')] ⚠️ 다이제스트를 못 만들었다(실패 또는 시간 초과) — 리포트는 그대로 게시한다" >&2; SIDE_FAIL+="digest "; }; fi
+# 글은 됐는데 카드만 못 찍은 날 — 웹의 /latest/digest.png 가 404 다.
+if [ "${KR_QUANT_DIGEST:-1}" != "0" ] && [ -f "$BUILD/digest.md" ] && [ ! -f "$BUILD/digest.png" ]; then
+  echo "[$(date '+%F %T')] ⚠️ 다이제스트 카드(digest.png)를 못 찍었다 — 글은 만들었다" >&2
+  SIDE_FAIL+="digest.png "
+fi
 
 if [ -n "$REBUILD" ] && [ -n "$FINAL_OK" ]; then
   echo "[$(date '+%F %T')] 재구성 — daily_finalize 확인 뒤 확정된 DB 값으로 만들었다(REBUILT.txt)." > "$BUILD/FINAL.txt"
@@ -366,6 +374,16 @@ if [ -n "$REBUILD" ]; then
     echo "commit: $REV"
     echo "finalize: $FINALIZE_STATE"
   } > "$BUILD/REBUILT.txt"
+fi
+# 검증·품질 페이지(scripts/trust_page.py) — 이 판의 표시 파일(VERIFY·FINAL·REBUILT)을 다 쓴 뒤라야 그날 줄이 맞는다.
+# 다른 기준일·원장·.archive 는 읽기만 한다. 재구성을 옆 루트에 지으면 KR_QUANT_TRUST_ROOT 가 운영 루트를 가리킨다(rebuild_history.py).
+if ! timeout -k 10s "${KR_QUANT_TRUST_TIMEOUT:-5m}" "${UVR[@]}" python scripts/trust_page.py \
+     --root "${KR_QUANT_TRUST_ROOT:-$OUT_ROOT}" --build "$BUILD" --asof "$ASOF"; then
+  echo "[$(date '+%F %T')] ⚠️ 검증·품질 페이지를 못 만들었다 — 리포트는 그대로 게시한다" >&2
+  SIDE_FAIL+="trust.html "
+fi
+if [ -n "$SIDE_FAIL" ]; then
+  { echo; echo "부속 산출물 실패: ${SIDE_FAIL% } — 리포트 숫자와 무관하다. 다시 만들려면 KR_QUANT_FORCE=1 scripts/daily_report.sh"; } >> "$BUILD/VERIFY.txt" 2>/dev/null || true
 fi
 if [ -d "$DEST" ]; then
   OLD="$DEST.replaced.$$"
@@ -408,6 +426,11 @@ if [ "$VERIFY_RC" -eq 0 ]; then
   fi
 else
   echo "[$(date '+%F %T')] ⚠️ 게시했지만 검증에 걸렸다 — $DEST (latest). 화면과 HTML 이 ⚠ 로 표시하고, 같은 기준일이면 다음 크론이 다시 만든다."
+fi
+# 부속 산출물만 빠졌으면 경고다 — 이미 실패·미확인(75)이면 그쪽 알림에 본문으로 실린다.
+if [ -n "$SIDE_FAIL" ] && [ "$VERIFY_RC" -eq 0 ]; then
+  echo "[$(date '+%F %T')] ⚠️ 리포트는 게시했지만 부속 산출물을 못 만들었다(${SIDE_FAIL% }) — 위 ⚠️ 줄이 이유다. 고친 뒤 KR_QUANT_FORCE=1 $0" >&2
+  VERIFY_RC=75
 fi
 ls -lh "$DEST" | tail -n +2 | awk '{print "   ", $9, $5}'
 # 검증에 걸린 리포트도 게시한다(화면·HTML 이 ⚠ 로 말한다). 다만 크론에는 실패로 돌려 알림이 가게 한다.

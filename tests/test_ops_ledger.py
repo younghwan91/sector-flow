@@ -307,7 +307,8 @@ def repo(tmp_path):
     (r / "scripts" / "sector_flow.py").write_text(drf.FAKE_SECTOR_FLOW)
     (r / "scripts" / "sector_numbers.py").write_text(drf.FAKE_NUMBERS)
     (r / "scripts" / "verify_report.py").write_text(drf.FAKE_VERIFY)
-    (r / ".env").write_text(f"KR_QUANT_DB={tmp_path / 'db.sqlite'}\n")
+    (r / "scripts" / "trust_page.py").write_text(drf.FAKE_TRUST)
+    (r / ".env").write_text(f"KR_QUANT_DB={tmp_path / 'db.sqlite'}\nKR_QUANT_DIGEST=0\n")
     uv = tmp_path / "uv"
     uv.write_text(f'#!/bin/sh\nshift 5\nexec "{sys.executable}" "$@"\n')
     uv.chmod(uv.stat().st_mode | stat.S_IEXEC)
