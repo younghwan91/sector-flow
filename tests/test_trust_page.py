@@ -546,8 +546,11 @@ def test_first_publication_failure_is_on_the_page_even_when_every_folder_was_reb
 
 def test_a_rebuild_is_never_the_first_publication_even_if_ledger_order_says_so(tmp_path):
     """원장이 시각순이 아니어도(백필 뒤 덧붙임) 가장 이른 재구성 아닌 게시가 첫 게시다."""
-    r = _rebuilt_root(tmp_path, [_reb("2026-10-27", "2026-10-27T01:00:00Z"), _pub("2026-10-27", "pass", "2026-10-28T09:00:00Z"),
-                                 _pub("2026-10-27", "fail", "2026-10-27T09:00:00Z")])
+    early, late = _pub("2026-10-27", "fail", "2026-10-27T09:00:00Z"), _pub("2026-10-27", "pass", "2026-10-28T09:00:00Z")
+    for order in ([late, early], [early, late]):                         # 파일 순서가 어느 쪽이든 시각이 정한다
+        rows = [_reb("2026-10-27", "2026-10-27T01:00:00Z"), *order]
+        assert tp.first_publications([json.loads(_ev(**x)) for x in rows])["2026-10-27"]["verify"] == "fail"
+    r = _rebuilt_root(tmp_path, [_reb("2026-10-27", "2026-10-27T01:00:00Z"), late, early])
     assert "실패" in _row(tp.render(str(r), now=NOW), "2026-10-27")
 
 
@@ -700,7 +703,7 @@ def test_final_correction_row_carries_the_market_moves_from_final_txt(root, tmp_
         "  거래소 기관 5일  +9.00 → +10.00 (+1.00)\n섹터 칸: 240칸 중 5칸 바뀜 — 큰 순 5\n", "utf-8")
     err = tp.render(str(root), now=NOW).split("정정 —")[1].split("기준일별 기록")[0]
     row = _text(re.search(r"<tr><td>2026-11-05</td>(.*?)</tr>", err, re.S).group(1))
-    assert "거래소 기관 +1.00 → +2.00" in row and "5일" not in row and "섹터 칸 5개 변경" in row
+    assert "거래소 기관 +1.00 → +2.00" in row and "+9.00" not in row and "섹터 칸 5개 변경" in row
 
 
 # ─────────────────────────────── 낡은 주장
