@@ -1212,6 +1212,16 @@ def market_context(con, df: pd.DataFrame, P: dict) -> None:
         M["approx_gap"] = gaps.get(mkey)
 
 
+def _krx_truth():
+    """옆 스크립트 ``krx_truth.py`` — ``scripts/`` 는 패키지가 아니라 importlib 로 읽는다(선택 기능)."""
+    import importlib.util  # noqa: PLC0415
+    p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "krx_truth.py")
+    spec = importlib.util.spec_from_file_location("krx_truth", p)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def script_json(payload: dict) -> str:
     """``<script>`` 안에 넣을 JSON — 값에 ``</script>`` 가 있어도 태그가 안 닫힌다(``<\\/`` 는 같은 JSON)."""
     return json.dumps(payload, ensure_ascii=False).replace("</", "<\\/")
@@ -1283,6 +1293,11 @@ def main():
                 with open(os.path.join(here, "final_diff.json"), "w", encoding="utf-8") as f:
                     json.dump(payload["final_diff"], f, ensure_ascii=False)
     payload["revision_stats"] = revision_stats(payload, root)
+    # KRX 공식 거래대금 대조(선택, D1-m2) — 같은 기준일 캐시(krx_truth.json)가 있거나
+    # KR_QUANT_KRX_TRUTH=1 일 때만. 실패·버그는 attach 안에서 skip 블록이 된다 — 리포트를 깨지 않는다.
+    _krx_truth().attach(payload,
+                        os.path.dirname(os.path.abspath(a.json or a.html)) if (a.json or a.html) else None,
+                        root)
     if a.rebuilt:
         # 키를 재구성일 때만 싣는다 — 화면이 "재구성" 을 붙인다.
         payload["rebuilt"] = True

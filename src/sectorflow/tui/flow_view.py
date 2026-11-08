@@ -1338,9 +1338,35 @@ def final_diff_help(d: dict) -> list[tuple[str, str]]:
     return out
 
 
+#: 공식 대조 절의 주체 순서·이름 — 페이로드 ``today.krx_truth.markets.*`` 의 키.
+KRX_TRUTH_KO = (("inst", "기관"), ("forgn", "외국인"), ("indiv", "개인"), ("etc", "기타법인"))
+
+
+def krx_truth_help(d: dict) -> list[tuple[str, str]]:
+    """도움말 끝 — KRX 공식 거래대금 대비 근사 오차(페이로드 ``today.krx_truth``, 선택 실행).
+
+    % 가 없는 칸(``—``)은 분모 게이트다 — |공식 순매수| 가 그 시장 거래대금의 문턱 몫 미만이면
+    상대 오차가 잡음이라 내지 않는다(절대차는 페이로드에 있다).
+    """
+    kt = (d.get("today") or {}).get("krx_truth")
+    if not kt:
+        return []                                # 기능을 안 켠 리포트 — 절도 없다
+    out = [("", ""), ("", "── 이 리포트: KRX 공식 거래대금 대조(내부 검증용) ──")]
+    if kt.get("status") != "ok":
+        return out + [("", f"건너뜀: {kt.get('reason') or '이유 없음'}")]
+
+    def g(row) -> str:
+        v = (row or {}).get("gap_pct")
+        return "—" if v is None else f"{rhu(v, 1):.1f}%"
+    for m, acts in (kt.get("markets") or {}).items():
+        gaps = " · ".join(f"{ko} {g(acts.get(a))}" for a, ko in KRX_TRUTH_KO)
+        out.append(("", f"{m} — 공식 거래대금 대비 근사 오차: {gaps} (KRX 공표치, 내부 검증용)"))
+    return out
+
+
 def help_entries(st: "State") -> list[tuple[str, str]]:
-    """도움말 = 고정 :data:`HELP` + 이 리포트에만 있는 것(잠정 → 확정 변경 목록)."""
-    return HELP + final_diff_help(st.d)
+    """도움말 = 고정 :data:`HELP` + 이 리포트에만 있는 것(잠정 → 확정 변경 목록·KRX 공식 대조)."""
+    return HELP + final_diff_help(st.d) + krx_truth_help(st.d)
 
 
 #: 그날 시장 순매수 |금액| 이 가장 큰 주체를 찾는 후보 — 4주체(합 ≈ 0).
@@ -2761,6 +2787,10 @@ HELP = [
     ("", "        Σ|4주체 수량|×종가와 Σ|수량|×VWAP(거래대금÷거래량)의 차이가 5% 를"),
     ("", "        넘으면 '금액 근사 오차 큼' 칩이 뜬다. 시장 합계는 종목 간 오차가"),
     ("", "        상쇄되지만 섹터 칸은 덜 상쇄된다 — 칩 옆에 섹터 최대 오차를 적는다."),
+    ("공식 대조", "(선택) KR_QUANT_KRX_TRUTH=1 로 만든 리포트는 KRX 정보데이터시스템이"),
+    ("", "        공표한 투자자별 **거래대금**(순매수)에 시장 1일 금액을 대조해 근사"),
+    ("", "        오차를 잰다 — 측정값은 이 도움말 맨 끝 절. 내부 검증용으로만 받고"),
+    ("", "        기준일당 한 번 재운다(krx_truth.json) — 재배포하지 않는다."),
     ("(미분류)", "벤더 마스터에 섹터가 빈 종목. 은행 넷(기업은행·카카오뱅크·케이뱅크·"),
     ("", "        제주은행)은 KRX 업종(금융)으로 덮었다(sectorflow/sector_override.py)."),
     ("", "        남은 종목 수는 첫 화면이 적는다."),

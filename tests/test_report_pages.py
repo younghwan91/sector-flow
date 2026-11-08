@@ -405,6 +405,33 @@ def test_numbers_gap_chip_only_above_threshold(tmp_path):
 
 
 @node
+def test_numbers_today_panel_shows_the_official_gap_line(tmp_path):
+    """오늘 패널 — KRX 공식 거래대금 대비 근사 오차 줄(시장별, 게이트 칸은 —). 기능 꺼짐이면 침묵.
+
+    주입: 줄을 안 그리게 하면 실패한다.
+    """
+    D = _today_numbers()
+    assert not any("공식 거래대금 대비" in t for t in _page("sector_numbers.html", D, tmp_path))
+    D["today"]["krx_truth"] = {"status": "ok", "date": "2026-08-28", "warn": 5.0, "markets": {
+        "거래소": {"inst": {"gap_pct": 3.73}, "forgn": {"gap_pct": 1.7},
+                "indiv": {"gap_pct": 2.29}, "etc": {"gap_pct": 0.07}},
+        "코스닥": {"inst": {"gap_pct": 4.02}, "forgn": {"gap_pct": 8.17},
+                "indiv": {"gap_pct": 2.43}, "etc": {"gap_pct": None}}}}
+    joined = "\n".join(_page("sector_numbers.html", D, tmp_path))
+    assert "공식 거래대금 대비 근사 오차(거래소): 기관 3.7% · 외국인 1.7% · 개인 2.3% · 기타법인 0.1% (KRX 공표치, 내부 검증용)" in joined
+    assert "공식 거래대금 대비 근사 오차(코스닥): 기관 4.0% · 외국인 8.2% · 개인 2.4% · 기타법인 — (KRX 공표치, 내부 검증용)" in joined
+
+
+@node
+def test_numbers_today_panel_names_the_krx_truth_skip_reason(tmp_path):
+    """공식 대조를 건너뛴 리포트는 침묵이 아니라 이유를 적는다 — 빈 자리가 고장인지 꺼짐인지 갈리게."""
+    D = _today_numbers()
+    D["today"]["krx_truth"] = {"status": "skip", "reason": "LOGOUT — 로그인 장벽"}
+    joined = "\n".join(_page("sector_numbers.html", D, tmp_path))
+    assert "KRX 공식 거래대금 대조: 건너뜀 — LOGOUT — 로그인 장벽" in joined
+
+
+@node
 def test_viewer_one_day_preset_lists_stocks_with_trust_and_pension(tmp_path):
     """뷰어 1일 구간에서도 종목이 나온다(payload names[code].win["1"]), 종목마다 투신·연기금 금액을 단다.
 

@@ -92,6 +92,11 @@ MESSAGES: list[tuple[str, str, str]] = [
     ("scripts/finalize_done.py", "를 덮지 않는다", "덮지 않는다"),
     ("scripts/finalize_done.py", "아직 안 돌았거나 도는 중", "아직 안 돌았거나 도는 중"),
     ("scripts/finalize_done.py", "성공으로 끝나지 않았다", "성공으로 끝나지 않았다"),
+    # krx_truth.py — (선택) KRX 공식 거래대금 대조의 ⚠️ 줄(리포트 빌드 로그 → 크론 꼬리)
+    ("scripts/krx_truth.py", "[KRX 공식 대조] SKIP", "[KRX 공식 대조] SKIP"),
+    ("scripts/krx_truth.py", "근사 오차 큼", "[KRX 공식 대조] 근사 오차 큼"),
+    ("scripts/krx_truth.py", "내부 오류", "[KRX 공식 대조] 내부 오류"),
+    ("scripts/krx_truth.py", "krx_truth.json 을 못 재웠다", "krx_truth.json 을 못 재웠다"),
     # completeness_gate.py — 수집 미완 본문의 [FAIL] 줄
     ("scripts/completeness_gate.py", "[FAIL]", "[FAIL]"),
     ("scripts/completeness_gate.py", "daily_price_adjust", "daily_price_adjust"),
@@ -160,7 +165,7 @@ def _py_messages(rel: str) -> list[str]:
 
 
 PY_SCRAPE = ["scripts/freshness_check.py", "scripts/finalize_done.py", "scripts/completeness_gate.py",
-             "scripts/serve_reports.py"]
+             "scripts/serve_reports.py", "scripts/krx_truth.py"]
 
 
 def _src(rel: str) -> str:

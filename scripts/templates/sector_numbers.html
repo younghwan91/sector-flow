@@ -353,6 +353,13 @@ function renderToday(){
       w.title="종가 환산 vs VWAP 환산 차이 — 아래 설명"; c2.append(w); }
     const sm=gp.sector_max;
     if(sm&&sm.pct!=null&&sm.pct>warn&&m!=="전체"){ c2.append(el("span","chip warn","⚠ 금액 근사 오차: "+m+" 섹터 최대 "+sm.sector+" "+RHU(sm.pct,1).toFixed(1)+"%")); } });
+  // KRX 공식 거래대금 대조(선택, D1-m2) — 수량×종가 근사를 공식 공표치에 댄 상대 오차. 없으면 침묵(기능이 꺼진 리포트).
+  const KT=T.krx_truth;
+  if(KT&&KT.status==="ok"){ const kg=v=>v==null?"—":RHU(v,1).toFixed(1)+"%";
+    (mkt==="전체"?mk:[mkt]).forEach(m=>{ const g=(KT.markets||{})[m]; if(!g) return;
+      c2.append(el("div","tnote","공식 거래대금 대비 근사 오차("+m+"): 기관 "+kg((g.inst||{}).gap_pct)+" · 외국인 "+kg((g.forgn||{}).gap_pct)
+        +" · 개인 "+kg((g.indiv||{}).gap_pct)+" · 기타법인 "+kg((g.etc||{}).gap_pct)+" (KRX 공표치, 내부 검증용)")); }); }
+  else if(KT){ c2.append(el("div","tnote","KRX 공식 거래대금 대조: 건너뜀 — "+(KT.reason||"이유 없음"))); }
   const unc=mk.reduce((a,m)=>a+(+(((D.n_by_sector||{})[m]||{})["(미분류)"])||0),0);
   if(unc) c2.append(el("div","tnote","※ (미분류) "+unc+"종목 — 벤더 마스터에 섹터가 빈 종목이다(섹터가 아니다). 은행 넷은 금융으로 덮었다."));
   const RS=D.revision_stats;

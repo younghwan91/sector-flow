@@ -153,6 +153,12 @@ research/validation/        # docs/validation 결과의 재현 스크립트 (CI 
 제목의 `마감·잠정` 은 그날 잠정값으로 만든 리포트다. 잠정 리포트의 G 는 확정치에서 자주 바뀐다(게시본과 확정치의
 G 순위 ρ≥0.95·통과 변화≤1 기준을 못 넘은 날 37.5%, [`docs/validation/`](docs/validation/)).
 
+(선택) `KR_QUANT_KRX_TRUTH=1` 로 만들면 KRX 정보데이터시스템(data.krx.co.kr)이 공표한 투자자별 **거래대금**(순매수)과 시장 1일
+순매수 금액(수량×종가 근사)을 대조해 상대 오차를 `today.krx_truth` 에 적고 공표치를 `krx_truth.json` 으로 재운다
+([`scripts/krx_truth.py`](scripts/krx_truth.py)) — **내부 검증용으로만** 받아 기준일당 한 번 캐시하고, 비공개 리포트 밖으로
+재배포하지 않는다(이용 범위는 KRX 질의에 포함 — strategy-a-plus `docs/strategy/inquiries/krx_market_data.md`).
+실패(망·로그인 장벽)는 SKIP 이다 — 리포트는 그대로 만든다.
+
 종료코드 75 는 경고, 그 밖 비정상은 오류로 [`scripts/cron_run.sh`](scripts/cron_run.sh) 가 알린다(124 는 시간 초과).
 기준일이 오늘이 아닌데 아직 미완이면 75 가 아니라 1 로 끝난다.
 
@@ -197,6 +203,10 @@ G 순위 ρ≥0.95·통과 변화≤1 기준을 못 넘은 날 37.5%, [`docs/val
 | `web 실패 (rc=137)` | `serve.sh` 가 TERM 을 5초 버틴 서버를 KILL 했다 — 그 서버를 띄웠던 래퍼의 알림이다. 위 재시작 알림과 같은 박자(연속 첫 회·12회마다)로만 온다 | 위 재시작 알림의 이유를 본다. 매번 KILL 까지 가면 서버가 TERM 에 끝나지 않는 것이다 — `tail reports/serve.log` |
 | `web 실패 (rc=1)`, 본문 `누구인지(.serve.pid) 몰라 못 끈다` | 잠금(`reports/.serve.lock`)을 쥔 프로세스가 `/healthz` 에 대답하지 않는데, `.serve.pid` 가 없거나 그 pid 가 이 서버가 아니라 안전하게 못 끈다. 한 시간 이어질 때 알린다 | `cat reports/.serve.pid`, `fuser -v reports/.serve.lock` 로 잠금 주인을 찾아 끈다. 다음 5분 크론이 다시 띄운다 |
 | `web 실패 (rc=1)`, 본문 `Tailscale 주소가 없다` · `에 못 묶었다` · 웹이 안 열린다 | Tailscale 이 없거나 포트가 막힌 채 한 시간이 지났다(`reports/.serve.misses` 가 센다). 서버가 죽었다(rc 가 서버 종료코드) | `tail reports/serve.log`, `tailscale ip -4`, `ss -ltnp \| grep 8765`. 손으로 띄우려면 `scripts/serve.sh`. 대답 없는 서버는 크론이 5분 안에 끄고 다시 띄운다 |
+| `report` 로그·본문에 `[KRX 공식 대조] SKIP` | (선택 기능) KRX 공식 거래대금을 못 받았다 — 망·로그인 장벽(`LOGOUT`)·형식 변화·캐시 기준일 불일치. 리포트는 그대로 만들어졌다(실패 아님) | 꼬리의 이유를 본다. `LOGOUT` 이면 KRX 가 익명 조회를 막은 것 — 풀릴 때까지 SKIP 으로 둔다. 받아지면 `KR_QUANT_KRX_TRUTH=1 KR_QUANT_FORCE=1 scripts/daily_report.sh` 로 그 기준일을 다시 만든다 |
+| `report` 로그·본문에 `[KRX 공식 대조] 근사 오차 큼` | 수량×종가 근사가 공식 거래대금과 문턱(5%)을 넘게 다르다 — 값의 버그가 아니라 근사의 한계 측정이다(VERIFY 의 재계산이 통과했으면 수치는 맞다) | 그날 금액 해석에 반영한다. 며칠 이어지면 `reports/<기준일>/krx_truth.json` 과 `payload.json` 의 `today.krx_truth` 로 어느 주체·시장인지 본다 |
+| `report` 로그에 `[KRX 공식 대조] 내부 오류` | krx_truth 모듈 버그 — 대조만 빠지고 리포트는 그대로 만들어졌다 | `uv run python scripts/krx_truth.py --payload reports/latest/payload.json --fetch` 로 재현해 Traceback 을 본다 |
+| `report` 로그에 `krx_truth.json 을 못 재웠다` | 공식값은 받아 대조했는데 캐시 파일을 못 썼다 — 디스크·권한 | `df -h ~/git/sector-flow/reports`, `ls -ld reports/<기준일>*`. 다음 빌드가 다시 받는다 |
 | 고친 코드가 다음날에도 안 돈다 · `morning-sync` 알림에 `hold sector-flow` | 07:50 `pull-all --ci-gate` 가 CI 가 초록이 아닌 커밋을 받지 않았다 | GitHub Actions 를 초록으로 고친다. 확인했고 당장 필요하면 `git -C ~/git/sector-flow pull --ff-only` |
 
 크론 로그(`reports/cron.log`·`serve.log`)는 5MB 를 넘으면 `scripts/cron_run.sh` 가 `.1` 로 하나만 남기고 비운다.

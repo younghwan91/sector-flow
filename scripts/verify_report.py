@@ -2259,6 +2259,7 @@ def layer_t(P: dict, folder: "str | None" = None) -> None:
     _vt_final_vs_provisional(P, folder)
     _vt_revision_check(P, folder)
     _vt_streak_check(P)
+    _vt_krx_truth(P, folder)
 
 
 # ─────────────────────────────────────────────── T. 잠정 → 확정 — 옆 폴더의 잠정 리포트에서 다시 센다
@@ -2611,6 +2612,69 @@ def _vt_streak_check(P: dict) -> None:
     chk("T", "연속 순매매 — 섹터(얇은 섹터·미분류 제외)의 연속 재계산", not bad_s,
         f"{len(bad_s)}건  " + "; ".join(bad_s[:2]))
     chk("T", "연속 순매매 — 시장·주체별 최장 섹터 재계산", not bad_l, "; ".join(bad_l[:2]))
+
+
+#: KRX 공식 대조의 분모 게이트 — producer(krx_truth.GAP_MIN_TV_SHARE)를 읽지 않고 따로 적는다.
+VT_KRX_MIN_TV_SHARE = 0.002
+#: 페이로드 주체 → krx_truth.json 원시 행(공표 투자자구분) — 역시 독립 사본.
+VT_KRX_ROWS = {"inst": ("기관합계",), "forgn": ("외국인", "기타외국인"),
+               "indiv": ("개인",), "etc": ("기타법인",)}
+
+
+def _vt_krx_truth(P: dict, folder: "str | None") -> None:
+    """선택 기능: ``krx_truth.json`` (KRX 공식 투자자별 거래대금) ↔ ``today.krx_truth``.
+
+    공식값은 파일의 **원시 공표 행**(원)에서 다시 억으로 만들고, 오차·분모 게이트도 따로 다시
+    센다. 기능이 꺼진 리포트(파일도 블록도 없음)는 침묵, skip 블록은 SKIP 한 줄이다 — 실패가 아니다
+    (망·로그인 장벽은 리포트 품질이 아니다). 파일은 있는데 블록이 없거나 수가 안 맞으면 실패다.
+    """
+    T = P.get("today") or {}
+    kt = T.get("krx_truth")
+    path = os.path.join(folder, "krx_truth.json") if folder else None
+    have_file = bool(path and os.path.isfile(path))
+    if kt is None and not have_file:
+        return
+    if isinstance(kt, dict) and kt.get("status") != "ok":
+        print(f"       SKIP KRX 공식 거래대금 대조 — {kt.get('reason') or '이유 없음'}")
+        return
+    bad: list[str] = []
+    if not isinstance(kt, dict):
+        bad.append("krx_truth.json 은 있는데 페이로드에 today.krx_truth 가 없다")
+    elif not have_file:
+        bad.append("today.krx_truth 는 ok 인데 폴더에 krx_truth.json 이 없다")
+    else:
+        official = json.load(open(path, encoding="utf-8"))
+        if kt.get("date") != P["dates"][-1] or official.get("date") != P["dates"][-1]:
+            bad.append(f"기준일 불일치: 블록 {kt.get('date')} · 파일 {official.get('date')} · 페이로드 {P['dates'][-1]}")
+        n_cells = 0
+        for m, rows in (official.get("rows") or {}).items():
+            M = (T.get("market") or {}).get(m) or {}
+            tv = M.get("tv")
+            got_m = (kt.get("markets") or {}).get(m) or {}
+            for a, names in VT_KRX_ROWS.items():
+                if a == "inst" and "기관합계" not in rows:
+                    continue                      # 소분류 합 대체는 producer 몫 — 여기선 공표 합계 행만 본다
+                won = sum(float(str(rows.get(x, 0)).replace(",", "") or 0) for x in names if x in rows)
+                off = round(won / 1e8, 2)
+                got = got_m.get(a) or {}
+                v = got.get("approx")
+                n_cells += 1
+                if got.get("official") != off:
+                    bad.append(f"{m}/{a} 공식 {got.get('official')} vs 행 재계산 {off}")
+                    continue
+                if v is None:
+                    bad.append(f"{m}/{a} approx 없음")
+                    continue
+                gated = tv is not None and abs(off) >= VT_KRX_MIN_TV_SHARE * tv and off != 0
+                exp = round(abs(v - off) / abs(off) * 100.0, 2) if gated else None
+                g = got.get("gap_pct")
+                if (g is None) != (exp is None) or (exp is not None and abs(g - exp) > 0.011):
+                    bad.append(f"{m}/{a} 오차 {g} vs {exp}")
+                if abs((got.get("diff") or 0) - round(v - off, 2)) > 0.011:
+                    bad.append(f"{m}/{a} diff {got.get('diff')} vs {round(v - off, 2)}")
+        if not n_cells:
+            bad.append("대조한 칸이 0 — 파일 rows 가 비었다")
+    chk("T", "KRX 공식 거래대금 대조 — 오차가 공표 행에서 다시 나오는가", not bad, "; ".join(bad[:3]))
 
 
 # ─────────────────────────────────────────────── W. 웹 — 그려진 페이지의 숫자
