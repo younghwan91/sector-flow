@@ -2247,6 +2247,17 @@ def _bits(x: float) -> bytes:
     return struct.pack("<d", x)
 
 
+def _same(x: float, y: float) -> bool:
+    """유한하면 비트까지 같고, nan 이면 둘 다 nan 이다 — nan 의 부호 비트는 보지 않는다.
+
+    거울 칸은 옛 ``(b, a)`` 계산을 ``(a, b)`` 로 대신한다. 계열에 nan 이 섞이면 IEEE 가 어느 nan 을
+    넘길지 정하지 않아 부호 비트가 다를 수 있다 — 화면은 ``?``, 평균·``neg_frac`` 은 빼서 출력은 같다.
+    """
+    if x != x or y != y:
+        return x != x and y != y
+    return _bits(x) == _bits(y)
+
+
 def test_corr_kernels_match_the_old_formula_bit_for_bit():
     """쌍 커널(편차를 한 번만 세고 위 삼각만 잰다)이 옛 ``_corr`` 와 **비트까지** 같다.
 
@@ -2265,15 +2276,20 @@ def test_corr_kernels_match_the_old_formula_bit_for_bit():
     ser = {f"s{i}": [rnd.uniform(-1e3, 1e3) / 7 for _ in range(n)] for i in range(6)}
     ser["flat"] = [3.0] * n                       # 분산 0 → nan
     ser["ints"] = [float(i % 7 - 3) for i in range(n)]
+    ser["hole"] = [float("nan") if i == 9 else rnd.uniform(-5, 5) for i in range(n)]  # 값 속 nan → 상관 nan
     keys = list(ser)
     for a in keys:
         for b in keys:
-            assert _bits(_corr(ser[a], ser[b])) == _bits(_old_corr(ser[a], ser[b])), (a, b)
-    got_keys, m, _mean = _corr_ordered_of(keys, ser)
+            assert _same(_corr(ser[a], ser[b]), _old_corr(ser[a], ser[b])), (a, b)
+    got_keys, m, mean = _corr_ordered_of(keys, ser)
+    finite = 0
     for i, a in enumerate(got_keys):
         for j, b in enumerate(got_keys):
             want = 1.0 if a == b else _old_corr(ser[a], ser[b])
-            assert _bits(m[i][j]) == _bits(want), (a, b)
+            assert _same(m[i][j], want), (a, b)
+            finite += want == want
+    assert finite > len(keys), "픽스처가 헛돈다 — 유한한 쌍이 없다"
+    assert mean["hole"] != mean["hole"] and got_keys[-2:] == sorted(["flat", "hole"])
     # 널 — 옛 루프 그대로(씨앗 11, 시프트마다 섹터 순서대로 randrange).
     r2 = random.Random(11)
     vals = []
@@ -2337,3 +2353,48 @@ def test_a_fresh_model_reuses_the_comove_survey_instead_of_redoing_it(monkeypatc
 
     monkeypatch.setattr(LV, "_corr_ordered_of", boom)
     assert Model(P).comove_ranges() == first
+
+
+def test_a_fresh_model_reuses_the_null_instead_of_redoing_it(monkeypatch):
+    """새 ``Model`` 이 같은 계열의 순환이동 널을 **다시 돌리지 않는다** — 상관행렬 메모와 짝이다.
+
+    널은 :data:`_NULL_SHIFTS` 번 27×27 을 다시 재므로 상관행렬 한 번보다 비싸다. 새 ``Model`` 마다 다시 돌면
+    상관행렬 메모로 아낀 시간을 여기서 도로 쓴다.
+
+    주입: ``null_neg_frac`` 이 메모를 거치지 않으면 두 번째 ``Model`` 이 계산 함수를 다시 불러 실패한다.
+    """
+    import sectorflow.tui.ledger_view as LV
+
+    LV._NULL_MEMO.clear()
+    P = _corr_payload()
+    a = Model(P)
+    a.wi = WINDOWS.index(20)
+    first = a.null_neg_frac()
+    assert first is not None, "픽스처가 헛돈다 — 널을 안 쟀다"
+
+    def boom(*_a, **_k):
+        raise AssertionError("같은 계열의 널을 다시 돌렸다")
+
+    monkeypatch.setattr(LV, "_null_neg_frac_of", boom)
+    b = Model(P)
+    b.wi = WINDOWS.index(20)
+    assert b.null_neg_frac() == first
+
+
+def test_null_memo_key_carries_n_and_each_series_length():
+    """널 메모 키는 넘기는 ``n`` 과 **계열별 길이**를 담는다 — 값을 이어 붙인 비트만으로는 경계가 사라진다.
+
+    길이 ``(3, 4, 5)`` 와 ``(3, 5, 4)`` 는 이어 붙이면 같은 비트이고 첫 길이도 같다. 널은 ``randrange(n)`` 으로
+    돌리므로 같은 계열이라도 ``n`` 이 다르면 다른 값이다.
+
+    주입: ``_null_key`` 가 ``_ser_key`` 만 내면 실패한다.
+    """
+    from sectorflow.tui.ledger_view import _null_key
+
+    flat = [float(i) for i in range(12)]
+    keys = ["a", "b", "c"]
+    s1 = {"a": flat[:3], "b": flat[3:7], "c": flat[7:]}
+    s2 = {"a": flat[:3], "b": flat[3:8], "c": flat[8:]}
+    assert _null_key(keys, s1, 3) != _null_key(keys, s2, 3), "계열 경계가 다른데 같은 키다"
+    assert _null_key(keys, s1, 3) != _null_key(keys, s1, 2), "n 이 다른데 같은 키다"
+    assert _null_key(keys, s1, 3) == _null_key(keys, {k: list(v) for k, v in s1.items()}, 3)
