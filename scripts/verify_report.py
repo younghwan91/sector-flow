@@ -4,6 +4,7 @@
 층을 나눠서 본다. 층마다 실패 원인이 다르고 대응도 다르기 때문이다.
 
   A. 수식   — 표에 실린 값들이 정의된 항등식을 만족하는가(전정밀도 재적합 기준)
+  A3. 파생  — 구간 수익률·ẋ·ẍ·1년%ile·dW/dt 를 **페이로드 일별 배열에서 따로** 다시 셈하는가
   B. 데이터 — DB 에서 들어온 것이 온전한가(기준일·커버리지·항등식·중복·단위)
   C. 계산   — 표의 구조(열 정의 = 셀 개수)와 값이 정합한가
   D. 부류   — 계산에 들어가는 두 값이 같은 집합·시점·파라미터에서 나오는가
@@ -28,6 +29,11 @@ U=½kx² 를 검산하면 1e-3 오차가 나서 멀쩡한 수식이 FAIL 로 뜬
 ⚠️ **상대오차로 비교하지 않는다.** 섹터 합계가 0 근처인 칸(섬유/의류 20일
 +2.0억)에서 상대오차는 무의미하게 커진다. 허용오차는 페이로드가 반올림하는
 자릿수에서 유도한 **절대값**이다(`TOL_FLOW`·`TOL_CAP`·`TOL_RET`).
+
+**수치 무결성과 문서 주장을 가른다.** 값이 틀린 것(FAIL)은 리포트를 VERIFY_FAILED 로 만든다.
+도움말·한계 절이 인용하는 **실측 주장**(예: "개인·외국인·기관은 널보다 음수쌍이 드물다")이
+오늘 데이터에서 어긋난 것은 CLAIM 이다 — 숫자에는 결함이 없고 글이 낡았다는 뜻이라 같은 폴더의
+``CLAIMS.txt`` 에만 적는다. 예전엔 둘이 한 목록이라 10-13·10-29 리포트가 수치 결함 없이 빨갰다.
 
 Run:  python scripts/verify_report.py --dir reports/2026-08-27
       python scripts/verify_report.py --dir <폴더> --db-check     # B·F 층까지
@@ -62,6 +68,24 @@ def chk(layer: str, name: str, ok: bool, detail: str = "") -> None:
     print(f"  [{mark}] {layer} · {name}" + (f"   {detail}" if detail else ""))
     if not ok:
         FAILS.append(f"{layer}/{name}")
+
+
+#: 문서 주장 어긋남 — 실패가 아니다(:func:`claim`).
+CLAIMS: list[str] = []
+
+
+def claim(layer: str, name: str, ok: bool, detail: str = "") -> None:
+    """도움말·한계가 인용하는 **실측 주장**이 오늘 데이터에서도 참인가.
+
+    값의 무결성이 아니라 글의 낡음을 본다. 어긋나도 ``FAILS`` 에 넣지 않고 ``CLAIMS`` 에
+    적는다 — 그래야 VERIFY_FAILED 가 "숫자가 틀렸다" 하나만 뜻한다.
+    """
+    global CHECKS
+    CHECKS += 1
+    mark = "OK   " if ok else "CLAIM"
+    print(f"  [{mark}] {layer} · {name}" + (f"   {detail}" if detail else ""))
+    if not ok:
+        CLAIMS.append(f"{layer}/{name}" + (f"   {detail}" if detail else ""))
 
 
 def ols(xs, ys):
@@ -100,7 +124,7 @@ def layer_a(D: dict) -> None:
             continue
         xs = [r["a_idx"] for r in fit]
         ys = [r["ret"] for r in fit]
-        k, b, _t, _r2 = ols(xs, ys)                 # 전정밀도 재적합
+        k, b, t_fit, _r2 = ols(xs, ys)              # 전정밀도 재적합
 
         upd("a = 임펄스/시총×100", max(r["a_idx"] - r["inst"] / r["cap_idx"] * 100 for r in rows))
         upd("예상Δv = k·a + b", max(r["exp"] - (k * r["a_idx"] + b) for r in rows))
@@ -114,6 +138,14 @@ def layer_a(D: dict) -> None:
         upd("OLS: Σ잔차 = 0", sum(res) / len(res))
         upd("OLS: 잔차 ⊥ a", sum(r * x for r, x in zip(res, xs)) / max(1.0, sum(abs(v) for v in xs)))
         upd("k 반올림 편차(표시용)", k - B["k"])
+        upd("b 반올림 편차(표시용)", b - B["b"])
+        # t 는 화면 머리에 `k=… (t=…)` 로 실려 k 를 얼마나 믿을지 말한다. 예전엔 재적합의 t 를
+        # 버리고(`_t`) 표의 t 를 안 봐서, t 가 틀려도 아무 검사도 안 빨개졌다.
+        tb = B.get("t")
+        if isinstance(tb, (int, float)) and math.isfinite(tb) and math.isfinite(t_fit):
+            upd("t 반올림 편차(표시용)", t_fit - tb)
+        elif (isinstance(tb, (int, float)) and math.isfinite(tb)) != math.isfinite(t_fit):
+            chk("A", f"{key} t 결측 불일치", False, f"재적합 {t_fit} vs 표 {tb}")
 
         # U 의 부호 규약: k>0 이면 U≥0
         if k > 0 and any(r["U"] is not None and r["U"] < -TOL_EXACT for r in rows):
@@ -133,7 +165,9 @@ def layer_a(D: dict) -> None:
                 chk("A", f"{key} 얇은 섹터에 G 부여", False, r["sector"])
 
     for name, v in worst.items():
-        tol = 5e-4 if "반올림" in name else TOL_FIT
+        # 반올림 폭의 절반 — k·b 는 소수 3자리, t 는 2자리로 싣는다.
+        tol = (5e-3 + 1e-9 if name.startswith("t ") else 5e-4 + 1e-9 if "반올림" in name
+               else TOL_FIT)
         chk("A", name, v < tol, f"최대오차 {v:.2e}")
     chk("A", "검사한 블록 수", blocks >= 8, f"{blocks}개")
 
@@ -276,11 +310,14 @@ def layer_a2(D: dict) -> None:
         if len(scored) < 2:
             continue
         def _rank(k2):
+            """pos/(N−1) — **동률은 중간순위**(producer 와 같은 규약). 위치 순위로 두면 값이 같은
+            두 섹터가 입력 순서에 따라 다른 G 를 받는데도 검사가 그걸 정답으로 삼는다."""
             vals = [r[k2] for r in scored]
-            order = sorted(range(len(vals)), key=lambda i: vals[i])
             o = [0.0] * len(vals)
-            for pos, i in enumerate(order):
-                o[i] = pos / (len(vals) - 1)
+            for i, v in enumerate(vals):
+                below = sum(1 for u in vals if u < v)
+                ties = sum(1 for u in vals if u == v)
+                o[i] = (below + (ties - 1) / 2.0) / (len(vals) - 1)
             return o
         ra, rx, rd = _rank("a_idx"), _rank("x"), _rank("xddot")
         for r, A, X, Dd in zip(scored, ra, rx, rd):
@@ -307,8 +344,6 @@ def layer_a2(D: dict) -> None:
             if per != got:
                 bad.append(f"{mkey}/{r['sector']} per {per} vs {got}")
                 continue
-            if r.get("seen") != len(got):
-                bad.append(f"{mkey}/{r['sector']} seen {r.get('seen')} vs {len(got)}")
             want = sum(got.values()) / len(got) if got else None
             if (r.get("G") is None) != (want is None):
                 bad.append(f"{mkey}/{r['sector']} G {r.get('G')} vs {want}")
@@ -318,8 +353,260 @@ def layer_a2(D: dict) -> None:
                     bad.append(f"{mkey}/{r['sector']} G {r['G']} vs {want}")
     chk("A", "종합 G = G 가 나온 창의 등가중 평균", not bad, "; ".join(bad[:3]))
 
+    # ⑦ 종합 `*` = **판정된 모든 창에서 통과.** 판정된 창 = 그 창에서 얇지 않고 a·x·ẍ 가 다 있는
+    #    창(seen), 통과 = G 가 나온 창(pass_n). 예전엔 seen 도 "G 가 나온 창" 을 세서 pass_n 과
+    #    언제나 같았고, `*` 가 "한 창이라도 통과" 로 붙었다 — 도움말·README 의 뜻과 반대였다.
+    bad, n_rows = [], 0
+    for mkey, C in (D.get("combined") or {}).items():
+        for r in C["rows"]:
+            n_rows += 1
+            seen = passed = 0
+            for w in C.get("windows") or []:
+                row = next((q for q in (D["blocks"].get(f"{w}|{mkey}") or {}).get("rows", [])
+                            if q["sector"] == r["sector"]), None)
+                if row is None:
+                    continue
+                if (not row.get("thin") and row.get("a_idx") is not None
+                        and row.get("x") is not None and row.get("xddot") is not None):
+                    seen += 1
+                if row.get("G") is not None:
+                    passed += 1
+            want = seen > 0 and passed == seen
+            if (r.get("seen"), r.get("pass_n"), bool(r.get("G_pass"))) != (seen, passed, want):
+                bad.append(f"{mkey}/{r['sector']} seen·pass_n·* = {r.get('seen')}·"
+                           f"{r.get('pass_n')}·{r.get('G_pass')} vs {seen}·{passed}·{want}")
+    chk("A", "종합 * = 판정된 모든 창에서 통과 (seen = 판정 창, pass_n = G 창)", not bad,
+        f"{n_rows}줄 · {len(bad)}건  " + "; ".join(bad[:3]))
+
     for name, v in worst.items():
         print(f"       · {name} 최대오차 {v:.2e}")
+
+
+# ─────────────────────────────────────────────── A3. 파생 열 독립 재계산
+
+#: ``sector_numbers.MIN_NAMES`` 와 같은 수 — 얇은 섹터(이 미만)는 k 적합에서 빠진다. import 하지
+#: 않는다(그 모듈을 부르면 같은 버그를 두 번 통과시킨다). 값이 갈리면 아래 `얇은 섹터` 검사가 빨개진다.
+A3_MIN_NAMES = 10
+#: ``sector_numbers.PCT_LOOKBACK`` — 백분위의 되돌아보기 길이(거래일).
+A3_PCT_LOOKBACK = 260
+#: 같은 페이로드 입력에서 같은 정의로 다시 셈한 값의 차이 — 덧셈 순서만 다르다.
+#: 값의 크기에 비례한 부동소수 오차라 ``A3_TOL_REL × (1 + |값|)`` 로 본다.
+A3_TOL_REL = 1e-9
+
+
+def layer_a3(D: dict, P: dict) -> None:
+    """A3. **파생 열을 페이로드의 일별 배열에서 따로 다시 셈한다.**
+
+    A 층은 회귀 한 줄의 항등식(a·exp·x·U)을, A2 는 G·종합 G·추이 조각의 합을 본다. 그런데
+    화면이 가장 많이 쓰는 파생 값 — 구간 수익률(Δv), ẋ·ẍ, 1년[%ile], dW/dt — 은 **producer 가 낸
+    값을 그대로 믿고** 그 위에서 정합만 봤다. ẍ 의 부호를 뒤집거나 수익률을 기하가 아니라 산술로
+    누적해도 A·A2 는 초록이다(그 틀린 값 위에서 일관될 뿐이다).
+
+    여기서는 ``sector_numbers`` 를 부르지 않고 ``payload.json`` 의 일별 배열(``flows``·``ret``·
+    ``retw``·``cap``)에서 정의대로 다시 만든다. 허용오차는 반올림에서 나온다 — 행 값은 전정밀도라
+    덧셈 순서 오차(:data:`A3_TOL_REL`)만, ``1년[%ile]`` 은 소수 1자리 반올림의 절반을 준다.
+    F 층(DB → 페이로드)과 이 층(페이로드 → 표)을 이으면 DB 에서 표까지 한 줄로 검산된다.
+    """
+    print("\nA3. 파생 열 — 페이로드 일별 배열에서 다시 셈한 값과 같은가")
+    dates = P.get("dates") or []
+    N = len(dates)
+    mk_all = list(P.get("markets") or [])
+    acts = ("inst", "forgn", "indiv", "etc")
+
+    def mkts_of(mk: str) -> list:
+        return mk_all if mk == "전체" else [mk]
+
+    def series(mkts, sec, key) -> list:
+        """시장을 합친 일별 계열. 시장 순서대로 0.0 에 더한다(백분위의 동률이 비트 단위로 같아야)."""
+        out = [0.0] * N
+        for m in mkts:
+            a = ((P["flows"].get(m) or {}).get(sec) or {}).get(key)
+            if not a:
+                continue
+            for i in range(min(N, len(a))):
+                out[i] += a[i] or 0.0
+        return out
+
+    def cap_of(mkts, sec) -> float:
+        return sum((P["cap"].get(m) or {}).get(sec) or 0.0 for m in mkts)
+
+    def comp_ret(mkts, sec, a, b):
+        """[a,b] 의 섹터 수익률(%) — 그날 전일 시총 가중 평균을 **기하**로 잇는다. 하루도 없으면 None."""
+        acc, seen = 1.0, False
+        for i in range(a, b + 1):
+            num = den = 0.0
+            for m in mkts:
+                rs = (P["ret"].get(m) or {}).get(sec)
+                ws = (P["retw"].get(m) or {}).get(sec)
+                if not rs or not ws:
+                    continue
+                r, w = rs[i], ws[i]
+                if r is None or not w:
+                    continue
+                num += r * w
+                den += w
+                seen = True
+            day = num / den if den else 0.0
+            acc *= 1.0 + day / 100.0
+        return (acc - 1.0) * 100.0 if seen else None
+
+    def pct_now(ser, win):
+        """롤링 ``win`` 일 합의 1년 분포에서 오늘 값의 백분위 — 동률은 중간순위."""
+        n = min(len(ser), A3_PCT_LOOKBACK)
+        if win > n:
+            return None
+        tail = ser[len(ser) - n:]
+        pre = [0.0]
+        for v in tail:
+            pre.append(pre[-1] + v)
+        sums = [pre[j + win] - pre[j] for j in range(n - win + 1)]
+        if len(sums) < 2:
+            return None
+        cur = sums[-1]
+        lt = sum(1 for v in sums if v < cur)
+        eq = sum(1 for v in sums if v == cur)
+        return 100.0 * (lt + (eq - 1) / 2.0) / (len(sums) - 1)
+
+    names = D.get("names") or {}
+    stats: dict = {}          # 검사 이름 → [비교 수, 최대오차, 불일치 목록]
+
+    def cmp(name, label, got, want, tol):
+        st = stats.setdefault(name, [0, 0.0, []])
+        if (got is None) != (want is None):
+            st[2].append(f"{label} 표 {got} vs 재계산 {want}")
+            return
+        if got is None:
+            return
+        st[0] += 1
+        d = abs(got - want)
+        if not math.isfinite(d):
+            st[2].append(f"{label} 표 {got} vs 재계산 {want}")
+            return
+        st[1] = max(st[1], d)
+        if d > tol(want):
+            st[2].append(f"{label} 표 {got} vs 재계산 {want}")
+
+    rel = lambda w: A3_TOL_REL * (1.0 + abs(w))          # noqa: E731
+    half01 = lambda _w: 0.05 + 1e-9                      # noqa: E731 — 소수 1자리 반올림
+
+    n_blocks = 0
+    for key, B in (D.get("blocks") or {}).items():
+        try:
+            win, mk = key.split("|")
+            win = int(win)
+        except ValueError:
+            continue
+        if win > N or mk not in (["전체"] + mk_all):
+            continue
+        n_blocks += 1
+        mkts = mkts_of(mk)
+        i0, i1 = N - win, N - 1
+        rows = B.get("rows") or []
+        # ── 행 단위: 임펄스·시총·가속도·구간 수익률·백분위
+        mine = {}
+        for r in rows:
+            sec = r["sector"]
+            tag = f"{key}/{sec}"
+            for a in acts + ("tv",):
+                ser = series(mkts, sec, a)
+                cmp("임펄스·거래대금 = 일별 합 (4주체·tv)", f"{tag}/{a}", r.get(a),
+                    sum(ser[i0:i1 + 1]), rel)
+            cap = cap_of(mkts, sec)
+            cmp("시총 = 시장별 기간말 시총의 합", tag, r.get("cap"), cap, rel)
+            inst = sum(series(mkts, sec, "inst")[i0:i1 + 1])
+            cmp("가속도 = 임펄스/시총×100 (시총 없으면 결측)", tag, r.get("accel"),
+                inst / cap * 100.0 if cap else None, rel)
+            ret = comp_ret(mkts, sec, i0, i1)
+            cmp("구간 수익률 = 일별 시총가중 수익률의 기하누적", tag, r.get("ret"), ret, rel)
+            pcts = r.get("pct1y") or {}
+            for a in acts:
+                want = pct_now(series(mkts, sec, a), win)
+                got = pcts.get(a)
+                cmp("1년[%ile] = 롤링 합의 1년 분포에서 오늘의 중간순위", f"{tag}/{a}", got,
+                    want, half01)
+            # 얇은 섹터 판정 — 적합 표본을 정한다.
+            n_all = sum(1 for nm in names.values()
+                        if nm.get("sector") == sec and nm.get("market") in mkts
+                        and (nm.get("win") or {}).get(str(win)))
+            if bool(r.get("thin")) != (n_all < A3_MIN_NAMES):
+                stats.setdefault("얇은 섹터 = 구간 거래 종목 10 미만", [0, 0.0, []])[2].append(
+                    f"{tag} thin={r.get('thin')} 종목 {n_all}")
+            stats.setdefault("얇은 섹터 = 구간 거래 종목 10 미만", [0, 0.0, []])[0] += 1
+            mine[sec] = {"inst": inst, "cap": cap, "ret": ret, "thin": n_all < A3_MIN_NAMES}
+
+        # ── 블록 적합(얇은 섹터 제외, 절편 포함 OLS)과 t
+        fit = [v for v in mine.values() if v["ret"] is not None and v["cap"] and not v["thin"]]
+        if len(fit) > 2:
+            xs = [v["inst"] / v["cap"] * 100.0 for v in fit]
+            ys = [v["ret"] for v in fit]
+            mx, my = sum(xs) / len(xs), sum(ys) / len(ys)
+            sxx = sum((x - mx) ** 2 for x in xs)
+            sxy = sum((x - mx) * (y - my) for x, y in zip(xs, ys))
+            k = sxy / sxx if sxx else 0.0
+            b = my - k * mx
+            sse = sum(((y - my) - k * (x - mx)) ** 2 for x, y in zip(xs, ys))
+            se = math.sqrt(sse / (len(xs) - 2) / sxx) if sxx else float("nan")
+            t = k / se if se else float("nan")
+        else:
+            k = b = t = 0.0
+        tb = B.get("t")
+        if isinstance(tb, (int, float)) and math.isfinite(tb) and math.isfinite(t):
+            cmp("t = 블록 적합 기울기의 t (소수 2자리)", key, tb, t, lambda _w: 5e-3 + 1e-9)
+        elif (isinstance(tb, (int, float)) and math.isfinite(tb)) != math.isfinite(t):
+            stats.setdefault("t = 블록 적합 기울기의 t (소수 2자리)", [0, 0.0, []])[2].append(
+                f"{key} 표 {tb} vs 재계산 {t}")
+
+        # ── 행 단위: dW/dt · ẋ · ẍ (블록 k·절편을 조각에 적용)
+        for r in rows:
+            sec = r["sector"]
+            tag = f"{key}/{sec}"
+            cap = mine[sec]["cap"]
+            ser = series(mkts, sec, "inst")
+
+            def piece(a, b_, _ser=ser, _sec=sec, _cap=cap):
+                """조각 [a,b] 의 (가속도, 수익률). 수익률이나 시총이 없으면 None."""
+                rr = comp_ret(mkts, _sec, a, b_)
+                if rr is None or not _cap:
+                    return None
+                return sum(_ser[a:b_ + 1]) / _cap * 100.0, rr
+
+            # dW/dt — 구간을 반으로: 앞 [i0, mid], 뒤 [mid+1, i1]. W = 가속도 × 수익률.
+            mid = i0 + (i1 - i0) // 2
+            want_p = None
+            if i0 < mid < i1:
+                h1, h2 = piece(i0, mid), piece(mid + 1, i1)
+                if h1 is not None and h2 is not None:
+                    want_p = (h2[0] * h2[1] - h1[0] * h1[1]) / max(1, i1 - mid)
+            cmp("dW/dt = (W_뒤 − W_앞)/(뒤 반의 거래일수)", tag, r.get("P"), want_p, rel)
+
+            # ẋ·ẍ — 길이 Δ 가 **같은** 세 조각(가장 오래된 나머지 날은 버린다), 부호 반전.
+            want_v = want_a = None
+            if win >= 9 and k:
+                dl = win // 3
+                s0 = i1 - 3 * dl + 1
+                ps = [piece(s0 + j * dl, s0 + (j + 1) * dl - 1) for j in range(3)]
+                if all(p is not None for p in ps):
+                    x1, x2, x3 = ((k * a + b) - dv for a, dv in ps)
+                    want_v = -(x3 - x1) / (2.0 * dl)
+                    want_a = -(x3 - 2.0 * x2 + x1) / (dl * dl)
+            cmp("ẋ = −(x₃ − x₁)/2Δ (같은 길이 세 조각)", tag, r.get("xdot"), want_v, rel)
+            cmp("ẍ = −(x₃ − 2x₂ + x₁)/Δ² (같은 길이 세 조각)", tag, r.get("xddot"), want_a, rel)
+
+    # 비교가 0 건이면 **실패**다 — 본 것이 없는데 초록이면 이 층이 있는 줄 알고 믿는다.
+    for name in ("임펄스·거래대금 = 일별 합 (4주체·tv)", "시총 = 시장별 기간말 시총의 합",
+                 "가속도 = 임펄스/시총×100 (시총 없으면 결측)",
+                 "구간 수익률 = 일별 시총가중 수익률의 기하누적",
+                 "1년[%ile] = 롤링 합의 1년 분포에서 오늘의 중간순위",
+                 "얇은 섹터 = 구간 거래 종목 10 미만",
+                 "t = 블록 적합 기울기의 t (소수 2자리)",
+                 "dW/dt = (W_뒤 − W_앞)/(뒤 반의 거래일수)",
+                 "ẋ = −(x₃ − x₁)/2Δ (같은 길이 세 조각)",
+                 "ẍ = −(x₃ − 2x₂ + x₁)/Δ² (같은 길이 세 조각)"):
+        n_cmp, worst, bad = stats.get(name, [0, 0.0, []])
+        chk("A3", name, not bad and n_cmp > 0,
+            f"{n_cmp}칸 · {len(bad)}건 · 최대오차 {worst:.2e}"
+            + ("  " + "; ".join(bad[:2]) if bad else ""))
+    chk("A3", "검사한 블록 수", n_blocks > 0, f"{n_blocks}개")
 
 
 # ─────────────────────────────────────────────── B. 데이터
@@ -429,15 +716,39 @@ def layer_b(payload: dict, db: str | None) -> None:
     chk("B", "주식수 ≤ 0 행", cur.fetchone()[0] == 0)
     cur.execute("SELECT count(*) FROM daily_bars_adjusted WHERE close<=0 OR low>close OR high<close")
     chk("B", "OHLC 불변식 위반", cur.fetchone()[0] == 0)
-    # 단위 sanity — 수량×종가 ≈ 보고된 거래대금
-    cur.execute("""SELECT count(*) FILTER (WHERE err<0.05), count(*) FROM (
-        SELECT abs(s.acc_trde_qty*abs(s.close)/1e6 / nullif(b.trade_value,0) - 1) err
-        FROM supply_demand s JOIN daily_bars b ON b.code=s.code AND b.date=s.date
-        WHERE s.date=(SELECT max(date) FROM supply_demand) AND b.trade_value>0) q""")
-    good, total = cur.fetchone()
-    chk("B", "수량×종가 ≈ 거래대금 (5% 이내)", total and good / total > 0.9,
-        f"{good}/{total} = {good/total*100:.1f}%" if total else "표본 없음")
+    check_trade_value_units(cur)
     con.close()
+
+
+#: Σ(수량×종가)/Σ거래대금 의 허용 띠. 단위 착오(주↔천주, 원↔백만원)는 10³ 배라 넓은 띠로 충분하다.
+TV_UNIT_BAND = (0.8, 1.25)
+
+
+def check_trade_value_units(cur) -> None:
+    """단위 sanity — 페이로드의 거래대금(`acc_trde_qty × close`)이 보고된 거래대금과 **같은 단위**인가.
+
+    예전엔 종목마다 ``|수량×종가 ÷ 거래대금 − 1| < 5%`` 인 비율이 90% 를 넘는지 봤다. 그건 **정의가
+    다른 둘**을 맞댄 것이다 — 거래대금은 체결가 합(VWAP × 수량)이고 수량×종가는 종가 하나로 환산한
+    근사라, 장중 변동이 큰 종목일수록 5% 를 넘는다. 2026-09-14 애프터마켓 통합 뒤로는 종가가
+    20:00 체결가라 그 차이가 더 벌어졌다(kr_quant 실측, 키움 수급 ⋈ 일봉: 그 비율이 09-14 전
+    230일 평균 97.0% → 뒤 36일 평균 94.6%, 최저 90.6%(11-04) — 문턱 90% 에 바짝 붙어 단위와
+    무관한 날에 빨개질 참이었다).
+
+    단위가 묻는 것은 개별 종목의 근사 오차가 아니라 **배율**이다. 그래서 같은 행들의 합끼리
+    비를 본다 — Σ(수량×종가)/1e6 ÷ Σ거래대금(백만원). 같은 실측에서 266일 전부 0.940~1.040
+    (09-14 뒤 36일 0.969~1.032)이고, 단위 착오는 10³ 배다.
+    """
+    cur.execute("""SELECT sum(s.acc_trde_qty * 1.0 * abs(s.close)) / 1e6, sum(b.trade_value * 1.0),
+                          count(*)
+        FROM supply_demand s JOIN daily_bars b ON b.code=s.code AND b.date=s.date
+        WHERE s.source='kiwoom' AND s.date=(SELECT max(date) FROM supply_demand)
+          AND b.trade_value>0""")
+    qc, tv, total = cur.fetchone()
+    ratio = float(qc) / float(tv) if total and qc is not None and tv else None
+    lo, hi = TV_UNIT_BAND
+    chk("B", f"금액 단위: Σ(수량×종가)/Σ거래대금 ∈ [{lo}, {hi}]",
+        ratio is not None and lo <= ratio <= hi,
+        f"{ratio:.4f} ({total}종목)" if ratio is not None else "표본 없음")
 
 
 # ─────────────────────────────────────────────── C. 계산
@@ -868,7 +1179,7 @@ def layer_g(P: dict, D: dict) -> None:
             if abs(x - y) > TOL_EXACT:
                 bad.append(f"{label} {x} vs {y}")
     chk("G", "원장 표의 값 = 페이로드 직접 재집계 (시장×구간×주체×섹터×8값)",
-        not bad, f"{len(pairs)}칸 · 최대오차 {worst:.3e}  " + "; ".join(bad[:2]))
+        not bad and bool(pairs), f"{len(pairs)}칸 · 최대오차 {worst:.3e}  " + "; ".join(bad[:2]))
     chk("G", "비율 열은 분모가 1억 이상일 때만 값을 낸다", not bad_gate,
         f"{len(bad_gate)}건  " + "; ".join(bad_gate[:2]))
 
@@ -1014,7 +1325,7 @@ def layer_g(P: dict, D: dict) -> None:
                 fworst = max(fworst, abs(g[k] - r[k]))
                 if abs(g[k] - r[k]) > TOL_FLOW:
                     fbad.append(f"{key}/{r['sector']}/{k} {g[k]} vs {r[k]}")
-    chk("G", "원장·flow 의 순매수가 같은가 (시장×구간×섹터×주체)", not fbad,
+    chk("G", "원장·flow 의 순매수가 같은가 (시장×구간×섹터×주체)", not fbad and npair > 0,
         f"{npair * len(AK)}칸 · 최대오차 {fworst:.3e}  " + "; ".join(fbad[:2]))
     chk("G", "원장·flow 의 종목[수] 가 같은가", not nbad,
         f"{npair}칸 · {len(nbad)}건  " + "; ".join(nbad[:2]))
@@ -1047,10 +1358,12 @@ def layer_g(P: dict, D: dict) -> None:
             f"실측 개인·외국인·기관 {lo3:.0f}~{hi3:.0f}% · "
             f"기타법인 {min(etc):.0f}~{max(etc):.0f}%")
     # 그리고 판정 자체("셋은 널보다 드물다")가 12조합 전부에서 유지되는가.
+    # 이건 **도움말이 인용하는 실측 주장**이다 — 값은 위 검사들이 이미 맞다고 했고, 어긋나면 글이
+    # 낡은 것이라 CLAIM 이다(10-13·10-29 가 이것 하나로 VERIFY_FAILED 였다).
     bad = [f"{ko}/{m}/{W} 관측 {v:.0f}% ≥ 널 {n:.0f}%"
            for ko in ("개인", "외국인", "기관") for v, n, m, W in obs.get(ko, [])
            if v >= n - 3]
-    chk("G", "개인·외국인·기관은 어느 조합에서도 널보다 음수쌍이 드문가(β제거 끈 상태)",
+    claim("G", "개인·외국인·기관은 어느 조합에서도 널보다 음수쌍이 드문가(β제거 끈 상태)",
         not bad,
         f"{len(three)}조합  " + "; ".join(bad[:2]))
 
@@ -1069,7 +1382,8 @@ def layer_g(P: dict, D: dict) -> None:
                 worst_lo = max(worst_lo, hit)
                 if cg >= 100:
                     worst_hi = max(worst_hi, hit)
-    chk("G", "한계 §5 의 '최악의 한 칸' 이 하한과 함께 적혀 있는가",
+    # 한계 §5 의 숫자는 글에 박힌 실측값이다 — 오늘 최악이 바뀌면 글이 낡은 것(CLAIM).
+    claim("G", "한계 §5 의 '최악의 한 칸' 이 하한과 함께 적혀 있는가",
         f"{worst_hi[0]:.1f}%" in txt and "gross 100억" in txt,
         f"gross≥100억 {worst_hi[0]:.1f}% ({worst_hi[1]}) · "
         f"하한 없으면 {worst_lo[0]:.1f}%")
@@ -1117,10 +1431,7 @@ def layer_c(D: dict, html: str) -> None:
                if any(isinstance(r.get(k), float) and not math.isfinite(r[k])
                       for k in ("inst", "accel", "ret", "exp", "x", "U", "P", "xdot", "xddot", "G"))]
         chk("C", f"{key} Inf/NaN 없음", not bad, ", ".join(bad[:3]))
-        break_after = True
-        if break_after:
-            pass
-    # 전 블록 Inf/NaN 스캔(위는 첫 블록만 상세, 여기서 전수)
+    # 전 블록 Inf/NaN 합계(위는 블록마다 한 줄씩)
     allbad = [(key, r["sector"]) for key, B in D["blocks"].items() for r in B["rows"]
               if any(isinstance(r.get(k), float) and not math.isfinite(r[k])
                      for k in ("inst", "accel", "ret", "exp", "x", "U", "P", "xdot", "xddot", "G"))]
@@ -1171,20 +1482,28 @@ def layer_f(P: dict, db: str | None) -> None:
     SRC = f"s.source={ph} AND s.date BETWEEN {ph} AND {ph}"
     args = ("kiwoom", d0, d1)
 
-    def cmp_abs(name, pairs, tol):
-        """(라벨, 페이로드값, 재계산값) 을 절대오차로 본다."""
-        bad, worst = [], 0.0
+    def cmp_abs(name, pairs, tol, min_n=1):
+        """(라벨, 페이로드값, 재계산값) 을 절대오차로 본다.
+
+        **비교한 것이 없으면 실패다.** 예전엔 쌍이 0개여도 ``0/0 불일치`` 로 초록이었다 —
+        페이로드가 비거나 SQL 이 아무것도 못 찾으면 이 층이 본 것이 없는데 통과로 읽힌다.
+        ``min_n`` 은 양쪽 다 값이 있고 **둘 중 하나는 0 이 아닌** 쌍의 최소 개수다(전부 0 끼리의
+        비교는 "DB 도 비었고 페이로드도 비었다" 와 구분되지 않는다).
+        """
+        bad, worst, live = [], 0.0, 0
         for label, x, y in pairs:
             if x is None or y is None:
                 if (x is None) != (y is None):
                     bad.append(f"{label} {x} vs {y}")
                 continue
+            if x or y:
+                live += 1
             worst = max(worst, abs(x - y))
             if abs(x - y) > tol:
                 bad.append(f"{label} {x} vs {y}")
-        chk("F", name, not bad,
-            f"{len(bad)}/{len(pairs)} 불일치 · 최대오차 {worst:.3e}"
-            + ("  " + "; ".join(bad[:2]) if bad else ""))
+        chk("F", name, not bad and live >= max(1, min_n),
+            f"{len(bad)}/{len(pairs)} 불일치 · 0 아닌 비교 {live}쌍(최소 {max(1, min_n)}) · "
+            f"최대오차 {worst:.3e}" + ("  " + "; ".join(bad[:2]) if bad else ""))
 
     # ── ① 유량 (시장,섹터,날짜) × 5값 ──
     ACT = (("indiv", "individual"), ("forgn", "foreign_"),
@@ -1207,7 +1526,8 @@ def layer_f(P: dict, db: str | None) -> None:
                 for i, v in enumerate(arr):
                     pairs.append((f"{m}/{s}/{k}/{dates[i]}", v,
                                   got.get((m, s, dates[i], k), 0.0)))
-    cmp_abs("유량 일별 (시장×섹터×5값×거래일)", pairs, TOL_FLOW)
+    # 거래대금(tv)은 거래가 있는 날이면 0 이 아니다 — 시장마다 날마다 적어도 한 칸.
+    cmp_abs("유량 일별 (시장×섹터×5값×거래일)", pairs, TOL_FLOW, min_n=len(P["markets"]) * n)
 
     # ── ② 기관 세부 ──
     det = sorted({k for m in P["detail"] for s in P["detail"][m]
@@ -1228,7 +1548,7 @@ def layer_f(P: dict, db: str | None) -> None:
                     for i, v in enumerate(P["detail"][m][s][k]):
                         pairs.append((f"{m}/{s}/{k}/{dates[i]}", v,
                                       got.get((m, s, dates[i], k), 0.0)))
-        cmp_abs("기관 세부 일별", pairs, TOL_FLOW)
+        cmp_abs("기관 세부 일별", pairs, TOL_FLOW, min_n=n)
 
     # ── ③·④ 시총과 수익률의 재료 — 리포트 코드(`storage.market_cap_asof_bulk`·`adjusted_returns`)를
     #    부르지 않고 원자료에서 따로 만든다.
@@ -1290,7 +1610,7 @@ def layer_f(P: dict, db: str | None) -> None:
     pairs = [(f"{m}/{s}", P["cap"].get(m, {}).get(s), got.get((m, s)))
              for m in P["markets"] for s in P["sectors"]
              if P["cap"].get(m, {}).get(s) is not None or (m, s) in got]
-    cmp_abs("섹터 시총 (구간말, 원 종가 × 주식수)", pairs, TOL_CAP)
+    cmp_abs("섹터 시총 (구간말, 원 종가 × 주식수)", pairs, TOL_CAP, min_n=len(P["markets"]))
 
     # ── ④ 섹터 일별 수익률 — **전일** 시총 가중, 조정 종가 비 ──
     cur.execute(f"SELECT DISTINCT date FROM supply_demand WHERE date < {ph} "
@@ -1326,8 +1646,10 @@ def layer_f(P: dict, db: str | None) -> None:
                 w = den.get((m, s, d), 0.0)
                 pairs_r.append((f"{m}/{s}/{d}", P["ret"][m][s][i], num.get((m, s, d), 0.0) / w if w else 0.0))
                 pairs_w.append((f"{m}/{s}/{d}", P["retw"][m][s][i], w))
-    cmp_abs("섹터 일별 수익률 (전일 시총 가중, 조정 종가 비)", pairs_r, TOL_RET)
-    cmp_abs("섹터 일별 가중합", pairs_w, TOL_CAP)
+    # 첫날은 전일 시총이 없어 가중이 비는 섹터가 있다 — 둘째 날부터 시장마다 하루 한 칸은 산다.
+    cmp_abs("섹터 일별 수익률 (전일 시총 가중, 조정 종가 비)", pairs_r, TOL_RET,
+            min_n=len(P["markets"]) * (n - 1))
+    cmp_abs("섹터 일별 가중합", pairs_w, TOL_CAP, min_n=len(P["markets"]) * (n - 1))
 
     # ── ⑤ 종목 창별 집계 ──
     wins = sorted({int(w) for r in P["names"].values() for w in (r.get("win") or {})})
@@ -1352,7 +1674,8 @@ def layer_f(P: dict, db: str | None) -> None:
             for j, (k, _col) in enumerate(WK):
                 pairs.append((f"{c}/{win}/{k}", w.get(k),
                               None if g is None else g[j]))
-        cmp_abs(f"종목 {win}일 집계", pairs, TOL_CAP)
+        cmp_abs(f"종목 {win}일 집계", pairs, TOL_CAP,
+                min_n=sum(1 for r in P["names"].values() if (r.get("win") or {}).get(str(win))))
 
     # 종목 구간 수익률 — 일별 조정 종가 수익률의 **기하** 누적(결측일은 0, 수급 행이 있는 날만).
     fr = {(c, d): aret[(c, d)] for c, d, _v in sd_rows if (c, d) in aret}
@@ -1369,7 +1692,7 @@ def layer_f(P: dict, db: str | None) -> None:
             for d in span:
                 acc *= 1.0 + fr.get((c, d), 0.0) / 100.0
             pairs.append((f"{c}/{win}/ret", w["ret"], (acc - 1.0) * 100.0))
-    cmp_abs("종목 구간 수익률 (기하누적)", pairs, 0.011)
+    cmp_abs("종목 구간 수익률 (기하누적)", pairs, 0.011, min_n=len(wins))
 
     # ── ⑥ 유니버스의 **폭** — 이 화면이 못 보는 종목이 몇 개인가. ──
     #
@@ -1423,13 +1746,15 @@ def layer_f(P: dict, db: str | None) -> None:
                                   sum(got.get((m, r["sector"], k), 0.0)
                                       for m in mkts)))
         # 페이로드가 일별로 0.01억까지 반올림하므로 W 일을 더하면 그만큼 쌓인다.
-        cmp_abs(f"원장 {W}일 구간 합계 (시장×섹터×주체)", pairs, TOL_FLOW * W)
+        cmp_abs(f"원장 {W}일 구간 합계 (시장×섹터×주체)", pairs, TOL_FLOW * W,
+                min_n=len(mo.markets))
 
     # ── ⑧ 한계 §7(생존편향)이 주장하는 **모양**이 오늘도 참인가 ──
     #
     # §7 은 세 가지를 말한다: 빠진 폭이 작다 · **거래소가 코스닥보다 크다** ·
     # 종목 수는 코스닥이 많다. 퍼센트 자체는 날마다 바뀌므로 검사하지 않고
     # (그러면 매일 빨개진다) **뒤집히면 안 되는 것**만 본다. 값은 detail 로 남긴다.
+    # 셋 다 글이 인용하는 실측 주장이라 어긋나면 CLAIM 이다(수치 결함이 아니다).
     # 시장은 `stocks` 에 없는 종목이라 `delisted_stocks` 에서 가져온다.
     cur.execute(f"""SELECT d.market, count(DISTINCT s.code),
           sum(s.acc_trde_qty*1.0*abs(s.close)), sum(abs(s.institution*1.0*abs(s.close)))
@@ -1448,11 +1773,11 @@ def layer_f(P: dict, db: str | None) -> None:
     tot_inst = sum(v[2] for v in out.values()) / sum(v[1] for v in ins.values()) * 100
     detail = (f"빠진 거래대금 {tot_tv:.3f}% · 기관 gross {tot_inst:.3f}% · "
               + " · ".join(f"{m} {share[m]:.3f}%({out[m][0]}종목)" for m in sorted(share)))
-    chk("F", "한계 §7: 빠진 거래대금 비중이 1% 미만인가", tot_tv < 1.0, detail)
-    chk("F", "한계 §7: 빠진 금액은 코스닥이 아니라 거래소에서 큰가",
+    claim("F", "한계 §7: 빠진 거래대금 비중이 1% 미만인가", tot_tv < 1.0, detail)
+    claim("F", "한계 §7: 빠진 금액은 코스닥이 아니라 거래소에서 큰가",
         share.get("거래소", 0) > share.get("코스닥", 0),
         f"거래소 {share.get('거래소', 0):.3f}% vs 코스닥 {share.get('코스닥', 0):.3f}%")
-    chk("F", "한계 §7: 빠진 **종목 수**는 코스닥이 많은가",
+    claim("F", "한계 §7: 빠진 **종목 수**는 코스닥이 많은가",
         out.get("코스닥", (0,))[0] > out.get("거래소", (0,))[0],
         f"코스닥 {out.get('코스닥', (0,))[0]}종목 vs 거래소 {out.get('거래소', (0,))[0]}종목")
     con.close()
@@ -2354,7 +2679,7 @@ def layer_h(D: dict, P: dict) -> None:
     # --- 한계 화면의 스크롤이 끝을 지나 쌓이지 않는가 -----------------------
     # 커서가 없는 화면은 그리는 쪽이 잘라 쓰기만 하고 상태를 안 고쳐서, PgDn 을
     # 끝에서 더 누르면 그만큼 쌓였다. 그러면 ↑ 가 **죽은 것처럼** 보인다.
-    bad = []
+    bad, flat = [], []
     for view in ("limits", "ledger", "timeline", "comove"):
         mo = lmo(view)()
         attr = mo.scroll_attr
@@ -2368,14 +2693,19 @@ def layer_h(D: dict, P: dict) -> None:
             bad.append(f"{view}: PgDn 30번 {attr}={seen2[0]} · 60번 {seen2[1]} "
                        f"— 끝을 지나 쌓인다")
         # 쌓였으면 ↑ 를 그만큼 눌러야 돌아온다. 한 번에 움직여야 한다.
+        # 끝이 0 이면(목록이 한 화면에 다 들어간다 — 섹터가 적은 날·합성 DB) ↑ 는 0 에 머무는 게
+        # 맞다. 예전엔 −1 을 요구해 "0→0" 을 실패라 했다. 그 화면은 이 검사로 **못 본** 것이다.
         v0 = getattr(mo, attr)
         LA._key(mo, curses.KEY_UP, 24)
         LV.screen(mo, 100, 30)
-        if getattr(mo, attr) != v0 - 1:
+        if v0 == 0:
+            flat.append(view)
+        if getattr(mo, attr) != max(v0 - 1, 0):
             bad.append(f"{view}: 끝에서 ↑ 한 번에 {attr} 가 {v0}→"
                        f"{getattr(mo, attr)}")
     chk("H", "끝까지 내린 뒤 스크롤이 쌓이지 않고 ↑ 한 번에 되돌아오는가",
-        not bad, "; ".join(bad))
+        not bad, "; ".join(bad) + (f"  (한 화면에 다 들어가 못 본 화면: {', '.join(flat)})"
+                                   if flat else ""))
 
     # --- 전 종목 화면(t): 그려진 글자 = 열 정의가 내는 값 -------------------
     #
@@ -2491,6 +2821,25 @@ def run_layer(layer: str, fn, *args) -> None:
         chk(layer, "검사가 끝까지 돌았는가", False, f"{type(e).__name__}: {e}")
 
 
+def write_claims(d: str) -> None:
+    """문서 주장 어긋남을 ``CLAIMS.txt`` 에 적는다. 없으면 옛 파일을 지운다(다시 만든 폴더에 남지 않게).
+
+    VERIFY_FAILED 와 따로 두는 이유는 :func:`claim` 머리말. 이 파일이 있다는 것은 "숫자는 맞고
+    도움말·한계 절의 실측 인용이 오늘 데이터와 어긋났다 — 글을 고쳐라" 이다.
+    """
+    path = os.path.join(d, "CLAIMS.txt")
+    if not CLAIMS:
+        if os.path.exists(path):
+            os.remove(path)
+        return
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("문서 주장 어긋남 — 수치 결함이 아니다. 도움말·한계 절의 실측 인용이 이 리포트의 데이터와 "
+                "다르다.\n\n")
+        for c in CLAIMS:
+            f.write(f"- {c}\n")
+    print(f"문서 주장 어긋남 {len(CLAIMS)}건 → {path}")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--dir", required=True, help="리포트 폴더(numbers.html·payload.json)")
@@ -2503,7 +2852,9 @@ def main() -> int:
     D = json.loads(re.search(r"const D = (\{.*?\});\n", html, re.S).group(1))
     payload = json.load(open(os.path.join(d, "payload.json"), encoding="utf-8"))
 
-    print(f"검증 대상: {d}")
+    # 배치는 옆 폴더(`<기준일>.building.<pid>`)에 짓고 검증한 뒤 제자리로 옮긴다 — 임시 이름을
+    # 적으면 VERIFY.txt 가 사라진 경로를 가리킨다. 옮겨 갈 이름을 적는다.
+    print(f"검증 대상: {re.sub(r'[.]building[.][0-9]+/?$', '', d.rstrip('/'))}")
     print(f"  기준일 {payload['dates'][-1]} · 거래일 {len(payload['dates'])} · "
           f"섹터 {len(payload['sectors'])} · 블록 {len(D['blocks'])}")
     # DB 대조를 요구했는데 DB 가 없으면 **실패**다. 건너뛰고 "전부 통과" 를 내면 DB 를 본 것처럼 읽힌다.
@@ -2511,6 +2862,7 @@ def main() -> int:
         chk("F", "--db-check 인데 DB 접속정보가 있는가", False,
             "KR_QUANT_DB 나 --db 가 없다 — set -a; . ~/git/quant-airflow/.env; set +a")
     run_layer("A", layer_a, D)
+    run_layer("A3", layer_a3, D, payload)
     run_layer("B", layer_b, payload, a.db if a.db_check else None)
     run_layer("C", layer_c, D, html)
     run_layer("D", layer_d, D, payload, html)
@@ -2521,7 +2873,8 @@ def main() -> int:
     if a.db_check and a.db:
         run_layer("F", layer_f, payload, a.db)
 
-    print(f"\n검사 {CHECKS}건 · 실패 {len(FAILS)}건")
+    print(f"\n검사 {CHECKS}건 · 실패 {len(FAILS)}건 · 문서 주장 어긋남 {len(CLAIMS)}건")
+    write_claims(d)
     if FAILS:
         print("실패 목록: " + ", ".join(FAILS))
         return 1
