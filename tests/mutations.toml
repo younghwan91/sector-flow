@@ -2792,3 +2792,13 @@ file = "src/sectorflow/tui/flow_view.py"
 find = "    lines += _banner_today(st, width) if st.has_today else _banner_20d(st, width)"
 replace = "    lines += _banner_today(st, width)"
 
+
+[[mutation]]
+id = "code-moves-under-formulas-doc"
+why = """코드가 몇 줄 움직였는데 docs/formulas.md 의 `파일:줄` 은 그대로다 — 정본이 엉뚱한 줄을
+가리킨다(2026-11-08 하루 아홉 PR 뒤 ~250개 중 55개 짝 인용이 어긋나 있었다). 인용 앞에 주석 8줄을 끼워
+짝 지은 기호(`SHARE_EVENTS`)가 ±3줄 밖으로 밀리는지 본다."""
+guards = ["tests/test_docs_refs.py::test_every_cited_line_exists_and_paired_symbol_is_there"]
+file = "src/sectorflow/storage.py"
+find = "SHARE_EVENTS = 8 | 16 | 64\n"
+replace = "#\n#\n#\n#\n#\n#\n#\n#\nSHARE_EVENTS = 8 | 16 | 64\n"
