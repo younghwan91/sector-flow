@@ -5116,3 +5116,20 @@ guards = ["tests/test_web_smoke.py::test_smoke_exit_codes_and_the_chromium_fallb
 file = "scripts/web_smoke.py"
 find = "            return p.chromium.launch(executable_path=exe)"
 replace = "            return p.chromium.launch()"
+
+[[mutation]]
+id = "selftest-tee-swallows-failure"
+why = "주간 자기 검증의 | tee 가 pipefail 없이 돌아 실패가 초록 스텝으로 끝나고 이슈도 안 열린다"
+guards = ["tests/test_ci_workflow.py::test_every_tee_step_in_our_workflows_sets_pipefail"]
+file = ".github/workflows/harness-selftest.yml"
+find = "          set -o pipefail   # 기본 bash 는 pipefail 이 꺼져 있어 | tee 가 자기 검증의 실패 종료코드를 삼킨다\n"
+replace = ""
+
+[[mutation]]
+id = "smoke-tee-swallows-failure"
+why = "웹 스모크의 | tee 가 pipefail 없이 돌아 Chromium 검사 실패가 초록 스텝으로 끝난다"
+guards = ["tests/test_ci_workflow.py::test_every_tee_step_in_our_workflows_sets_pipefail",
+          "tests/test_ci_workflow.py::test_weekly_selftest_runs_the_browser_smoke_strictly_without_blocking"]
+file = ".github/workflows/harness-selftest.yml"
+find = "          set -o pipefail\n          uv run --no-sync --with playwright python -m playwright install"
+replace = "          uv run --no-sync --with playwright python -m playwright install"

@@ -42,6 +42,7 @@ jobs:
         continue-on-error: true
         timeout-minutes: 60
         run: |
+          set -o pipefail   # 기본 bash 는 pipefail 이 꺼져 있어 | tee 가 자기 검증의 실패 종료코드를 삼킨다
           git config --global user.email "selftest@example.invalid"
           git config --global user.name "selftest"
           uv run --no-sync python scripts/verify_merge.py --self-test 2>&1 | tee selftest.log

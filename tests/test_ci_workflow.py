@@ -64,3 +64,36 @@ def test_weekly_selftest_runs_the_browser_smoke_strictly_without_blocking():
     total = sum(int(x) for x in re.findall(r"^        timeout-minutes: (\d+)", SELFTEST, re.M))
     job_timeout = int(re.search(r"^    timeout-minutes: (\d+)", SELFTEST, re.M).group(1))
     assert total < job_timeout - 10, (total, job_timeout)   # 스텝 상한의 합이 잡 상한에 닿으면 잡이 시간 초과로 빨개진다
+
+
+def test_every_tee_step_in_our_workflows_sets_pipefail():
+    """``cmd | tee log`` 의 종료코드는 tee 의 것이다 — GitHub 기본 bash(``bash -e {0}``)는 pipefail 이 꺼져 있어
+    앞 명령이 실패해도 스텝이 초록이다. 주간 자기 검증이 그렇게 조용히 통과하고 있었다(2026-11-08).
+    ``| tee`` 를 쓰는 run 블록은 ``set -o pipefail``(또는 ``set -euo pipefail``) 을 tee 줄보다 **앞에** 둔다.
+    """
+    def run_blocks(text: str):
+        """``run: |`` 블록 — ``run:`` 키보다 깊게 들여쓴 줄(빈 줄 포함)까지."""
+        lines = text.splitlines()
+        for i, ln in enumerate(lines):
+            m = re.match(r"^(\s*)(?:- )?run: \|\s*$", ln)
+            if not m:
+                continue
+            ind, body = len(m.group(1)), []
+            for nxt in lines[i + 1:]:
+                if nxt.strip() and len(nxt) - len(nxt.lstrip()) <= ind:
+                    break
+                body.append(nxt)
+            yield "\n".join(body)
+
+    wf = sorted((REPO / ".github" / "workflows").glob("*.yml"))
+    n = 0
+    for f in wf:
+        for block in run_blocks(f.read_text("utf-8")):
+            lines = [ln.split("#", 1)[0] for ln in block.splitlines()]
+            tee = [i for i, ln in enumerate(lines) if re.search(r"\|\s*tee\b", ln)]
+            if not tee:
+                continue
+            n += 1
+            pf = [i for i, ln in enumerate(lines) if re.search(r"\bset -\w*o pipefail\b|\bset -o pipefail\b", ln)]
+            assert pf and pf[0] < tee[0], f"{f.name}: | tee 를 쓰는 run 블록에 그보다 앞선 set -o pipefail 이 없다:\n{block}"
+    assert n >= 2, "| tee 스텝을 하나도 못 찾았다 — 정규식이 헛돈다"
