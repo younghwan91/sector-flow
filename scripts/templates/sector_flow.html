@@ -260,7 +260,7 @@ tr.thin td{color:var(--ink-3)}
       <b>[≈섹터 20일 반전: x]</b> 미실현 x 는 사실상 섹터 20일 수익률 반전이다(ρ 0.82~0.93). 앞날 관계도 검정함 — 증거 없음. 이 화면에는 x 가 없다.</p>
     <p><b>1일 구간에는 가속(%p)이 없다.</b> 하루치는 사실(4주체 순매수·거래대금·수익률)만 적는다 — TUI 1일 창과 같다. 1일을 고르면 임펄스(금액) 순이다.</p>
     <p><b>~ 표시 섹터</b>는 그 시장·구간에 거래된 종목이 10개 미만이다(TUI·수치표와 같은 문턱). 시총 분모가 작아 가속이 쉽게 튀므로 회색으로 두고 어느 기준에서도 맨 아래에 놓는다. 종목 값이 실린 기간(프리셋)은 그 기간에 거래된 종목을, 그 밖의 구간은 페이로드 전 기간에 거래된 종목을 센다.</p>
-    <p><b>수익률은 전일 20:00 → 당일 20:00 이다(애프터마켓 포함 통합 종가).</b> 2026-09-14 부터 일별 종가가 KRX 애프터마켓(16:00~20:00)까지 포함한 통합값이라 정규장(15:30) 종가 기준인 KRX 지수와 같은 날 갈린다(11-06 거래소 자체 바구니 −4.37% vs 코스피 −6.02%). 지수(정규장)와 나란히 보려면 수치표 맨 위 "오늘" 패널.</p>
+    <p id="ret-note"></p>
     <p><b>수익률은 자체 바구니다.</b> 그 섹터 자금흐름과 같은 종목집합의 전일 시총 가중 일별 수익률을 기하누적한다. KRX 업종지수가 아니다 — 구성종목이 달라 분자와 분모가 다른 바구니가 된다(실측: 부동산 20일이 지수 +6.0% vs 자체 +74.9%).</p>
     <p><b>0 은 "관망"이 아니라 "0 또는 미보고"다.</b> 수집기가 파싱에 실패한 필드를 0 으로 채워 둘을 구분할 수 없다. 행 자체의 유무는 신뢰할 수 있다.</p>
     <p><b>빨강이 순매수, 파랑이 순매도다</b>(국내 관행 · 서구 차트와 반대). <b>국가(natn)</b>는 90일 내내 전부 0 이라 뺐다. 유니버스는 현재 상장 종목이며(<span class="num">source='kiwoom'</span>), 개인·기관세부가 폐지 종목에 없어 소스를 좁혔다 — 과거 구간 집계에 그대로 쓰면 생존편향이 된다.</p>
@@ -274,7 +274,12 @@ const ACTORS=[["inst","기관"],["forgn","외국인"],["indiv","개인"],["etc",
 const PRESETS=[[1,"1일"],[5,"5일"],[20,"20일"],[60,"60일"],[120,"120일"],[0,"전체"]];
 const METRICS=[["amt","임펄스 억"],["share","가속 %p"]];
 /** 증거 수준 — TUI(`flow_view.EVIDENCE`)와 **같은 표**다. 검사가 둘을 대조한다. */
-const EV={"inst":"[앞날 증거 없음]","forgn":"[앞날 증거 없음]","indiv":"[측정]","etc":"[측정]","accel":"[앞날 증거 없음]","tv":"[측정]","cap":"[측정]"};
+const EV={"inst":"[앞날 증거 없음]","forgn":"[앞날 증거 없음]","indiv":"[측정]","etc":"[측정]","accel":"[앞날 증거 없음]","tv":"[측정]","cap":"[측정]","krx":"[측정]"};
+/** 수익률 라벨 — TUI `flow_view.RET_LABEL*` 와 같은 말. 확정 리포트만 ~20:00 이고, 잠정·장중 리포트의 마지막 날은
+ *  **수집 시각** 스냅숏이다(18:10 에는 애프터마켓이 20:00 까지 돌고 있다). */
+const RET_LABEL="전일 20:00→당일 20:00 (애프터마켓 포함 통합 종가)", RET_LABEL_SHORT="~20시 통합종가";
+const RET_LABEL_PROV="전일 20:00→당일 수집 시각 (애프터마켓 진행 중)", RET_LABEL_PROV_SHORT="~수집시각 잠정";
+const retLabel=short=>D.final?(short?RET_LABEL_SHORT:RET_LABEL):(short?RET_LABEL_PROV_SHORT:RET_LABEL_PROV);
 /** 표지가 말하는 **검정 범위** — (주체, 값의 종류)별로 검정한 창 길이(거래일). `share` = 순매수 ÷ 섹터 시총(가속),
  *  `amt` = 순매수 금액(임펄스). 검정은 전부 `전체` 시장·10종목 미만 섹터 제외로 했다.
  *  - 기관 가속 20일·기관 임펄스 20일: Q3d 재검(docs/validation/2026-11-08-prereg-q3d-rerun.md 주 판정 8칸)
@@ -611,7 +616,7 @@ function render(){
       ["시가총액",amt(capOf(s)).replace("+","")+"억"],
       ["종목 수",(nOf(s)===Infinity?"—":nOf(s)+"개")+(th?" (~ 10개 미만)":"")],
       ["가속 %p",accelOf(s)==null?"— (1일)":pp(accelOf(s))+"%p",accelOf(s)==null?"":cls(accelOf(s))],
-      ...(hasIdx(s)?[["수익률 (자체 바구니·~20시 종가)",pp(retOf(s))+"%",cls(retOf(s))]]:[["수익률","값 없음"]]),
+      ...(hasIdx(s)?[["수익률 (자체 바구니·"+retLabel(true)+")",pp(retOf(s))+"%",cls(retOf(s))]]:[["수익률","값 없음"]]),
       ...drivers(s,actor).filter(x=>x.v>0).slice(0,3).map(x=>["↑ "+x.name,amt(x.v)+"억",cls(x.v)])]));
     b.addEventListener("mousemove",tipMove); b.addEventListener("mouseleave",tipHide);
     b.addEventListener("click",()=>{picked=s; render();});
@@ -700,6 +705,23 @@ function renderTable(order){
     tb.append(r);});
   t.append(tb);
 }
+
+/** 수익률 설명 — 라벨은 리포트 지위(확정/잠정)를 따르고, 바구니 vs KRX 지수의 예는 **이 리포트의** 값
+ *  (`today.market[시장].ret["1"]`·`today.krx_index[시장].ret["1"]`)으로 적는다. 예전엔 11-06 숫자를 박아 두어
+ *  다른 날 리포트에서도 그날 숫자가 나왔다. 값이 없으면(옛 리포트) 예를 빼고 일반 설명만 남긴다. */
+function renderRetNote(){
+  const box=document.getElementById("ret-note"); box.replaceChildren();
+  box.append(el("b",null,"수익률은 "+retLabel(false)+" 이다."));
+  box.append(" 2026-09-14 부터 일별 종가가 KRX 애프터마켓(16:00~20:00)까지 포함한 통합값이라 정규장(15:30) 종가 기준인 KRX 지수와 같은 날 갈린다.");
+  if(!D.final) box.append(" 잠정·장중 리포트라 마지막 날 값은 수집 시각의 스냅숏이고, 다음날 아침 확정치로 다시 만든다.");
+  const T=D.today||{}, ex=[];
+  (D.markets||[]).forEach(m=>{
+    const b=(((T.market||{})[m]||{}).ret||{})["1"], k=(T.krx_index||{})[m]||{}, kv=(k.ret||{})["1"];
+    if(b!=null&&kv!=null) ex.push(m+" 자체 바구니 "+pp(b)+"% vs "+(k.name||"KRX 지수")+" "+pp(kv)+"%");});
+  if(ex.length) box.append(" 이 리포트("+(T.date||D.dates[NDATE-1])+" 하루): "+ex.join(" · ")+" "+EV.krx+".");
+  box.append(" 지수(정규장)와 나란히 보려면 수치표 맨 위 \"오늘\" 패널.");
+}
+renderRetNote();
 
 /** 받은 폴더·멈춘 배치를 오늘 것으로 읽지 않게. 문턱은 화면(`STALE_DAYS`)과 같다. */
 function staleChip(asof,box){

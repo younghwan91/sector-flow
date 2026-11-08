@@ -57,7 +57,7 @@ for(const [id,k] of actions){
 }
 const ser=e=>e instanceof Text?{t:e.textContent}:{tag:e.tag,cls:e.className,text:e._t,bg:e.style.background||"",
   attrs:e.attrs,scrollLeft:e.scrollLeft,scrollWidth:e.scrollWidth,kids:e.children.map(ser)};
-const out={}; for(const id of ["hm","rows","tbl","line","rk-title","ev-buy-amt","ev-buy-trust","rangeinfo"])
+const out={}; for(const id of ["hm","rows","tbl","line","rk-title","ev-buy-amt","ev-buy-trust","rangeinfo","ret-note"])
   out[id]=ser(document.getElementById(id));
 console.log(JSON.stringify(out));
 """
@@ -309,3 +309,24 @@ def test_heatmap_opens_at_the_latest_column(tmp_path):
     """
     hm = _render(_three(), tmp_path)["hm"]
     assert hm["scrollLeft"] == hm["scrollWidth"] > 0, (hm["scrollLeft"], hm["scrollWidth"])
+
+
+@node
+def test_return_label_follows_report_status_and_this_reports_numbers(tmp_path):
+    """수익률 설명 — 확정만 "전일 20:00→당일 20:00", 잠정은 "당일 수집 시각(애프터마켓 진행 중)".
+    바구니 vs KRX 예는 **이 리포트의** `today` 값이고, 11-06 숫자를 박아 두지 않는다.
+
+    주입: 라벨을 늘 20:00 으로 두거나, 바구니 칸에 지수 값을 넣으면 실패한다.
+    """
+    p = _viewer_payload()
+    p["today"] = {"date": "2026-11-02",
+                  "market": {"거래소": {"ret": {"1": -1.23}}, "코스닥": {"ret": {"1": 0.5}}},
+                  "krx_index": {"거래소": {"name": "코스피", "ret": {"1": -2.34}}}}
+    prov = _text(_render(p, tmp_path)["ret-note"])
+    assert "전일 20:00→당일 수집 시각 (애프터마켓 진행 중)" in prov and "당일 20:00" not in prov, prov
+    assert "거래소 자체 바구니 −1.23% vs 코스피 −2.34%" in prov, prov
+    assert "코스닥 자체 바구니" not in prov, "지수 값이 없는 시장까지 예를 적었다"
+    p["final"] = True
+    fin = _text(_render(p, tmp_path)["ret-note"])
+    assert "전일 20:00→당일 20:00" in fin and "수집 시각" not in fin, fin
+    assert "4.37" not in _html() and "6.02" not in _html(), "11-06 숫자가 템플릿에 박혀 있다"

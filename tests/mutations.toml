@@ -1272,7 +1272,7 @@ id = "viewer-claims-krx"
 why = "수익률은 자체 바구니인데 KRX 지수라고 적는다"
 guards = ["tests/test_report_pages.py::test_viewer_does_not_claim_krx_index_returns"]
 file = "scripts/templates/sector_flow.html"
-find = "수익률 (자체 바구니·~20시 종가)"
+find = "수익률 (자체 바구니·\"+retLabel(true)+\")"
 replace = "실제 Δv (KRX지수)"
 
 [[mutation]]
@@ -3794,3 +3794,19 @@ guards = ["tests/test_viewer_page.py::test_badges_follow_the_tested_metric_and_m
 file = "scripts/templates/sector_flow.html"
 find = "  const kind=k===\"accel\"?\"share\":\"amt\";"
 replace = "  const kind=\"share\";"
+
+[[mutation]]
+id = "viewer-provisional-says-20h"
+why = """잠정 리포트(18:10)의 수익률을 "전일 20:00→당일 20:00" 이라 적는다 — 마지막 날은 수집 시각 스냅숏이고 애프터마켓이 아직 돈다."""
+guards = ["tests/test_viewer_page.py::test_return_label_follows_report_status_and_this_reports_numbers"]
+file = "scripts/templates/sector_flow.html"
+find = "const retLabel=short=>D.final?(short?RET_LABEL_SHORT:RET_LABEL):(short?RET_LABEL_PROV_SHORT:RET_LABEL_PROV);"
+replace = "const retLabel=short=>short?RET_LABEL_SHORT:RET_LABEL;"
+
+[[mutation]]
+id = "viewer-ret-example-not-from-payload"
+why = """바구니 vs KRX 예를 이 리포트 값이 아닌 것으로 적는다(예전엔 11-06 숫자를 박아 두었다) — 여기서는 바구니 칸에 지수 값을 넣는다."""
+guards = ["tests/test_viewer_page.py::test_return_label_follows_report_status_and_this_reports_numbers"]
+file = "scripts/templates/sector_flow.html"
+find = "    const b=(((T.market||{})[m]||{}).ret||{})[\"1\"], k=(T.krx_index||{})[m]||{}, kv=(k.ret||{})[\"1\"];"
+replace = "    const k=(T.krx_index||{})[m]||{}, kv=(k.ret||{})[\"1\"], b=kv;"
