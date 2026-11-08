@@ -100,3 +100,43 @@ def test_non_ascii_paths_are_matched(repo):
     assert DC.changed_lines("main", repo)["scripts/한글.py"] == {1}
     assert "scripts/한글.py" in DC.new_files("main", repo)
     assert DC._unquote('"scripts/\\355\\225\\234.py"') == "scripts/한.py"
+
+
+def _touch(repo: Path, rel: str, text: str = "x\n") -> None:
+    (repo / rel).parent.mkdir(parents=True, exist_ok=True)
+    (repo / rel).write_text(text, "utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", f"touch {rel}")
+
+
+def test_changed_shell_and_template_need_a_mutation(repo, capsys):
+    """줄을 잴 수 없는 파일은 변이로 본다 — 없으면 실패하고 파일 이름을 말한다. 지운 파일은 묻지 않는다."""
+    cov = {"files": {"src/a.py": {"executed_lines": [1, 2, 5, 9, 10], "missing_lines": [6]},
+                     "scripts/b.py": {"executed_lines": [1, 2, 4], "missing_lines": []}}}
+    (repo / "cov.json").write_text(json.dumps(cov), "utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "cov")
+    assert DC.main(["--base", "main", "--json", "cov.json"]) == 0
+
+    _touch(repo, "scripts/daily.sh")
+    _touch(repo, "scripts/templates/card.html")
+    assert DC.changed_unmeasurable("main", repo) == {"scripts/daily.sh", "scripts/templates/card.html"}
+    assert DC.main(["--base", "main", "--json", "cov.json"]) == 1
+    out = capsys.readouterr().out
+    assert "scripts/daily.sh" in out and "scripts/templates/card.html" in out
+
+    (repo / "tests").mkdir()
+    _touch(repo, "tests/mutations.toml", '[[mutation]]\nid = "a"\nfile = "scripts/daily.sh"\nfind = "x"\nreplace = "y"\n'
+                                         '[[mutation]]\nid = "b"\n[[mutation.edits]]\nfile = "scripts/templates/card.html"\n'
+                                         'find = "x"\nreplace = "y"\n')
+    assert DC.mutation_targets(repo) == {"scripts/daily.sh", "scripts/templates/card.html"}
+    assert DC.main(["--base", "main", "--json", "cov.json"]) == 0
+
+    _git(repo, "checkout", "-q", "main")                     # 기준에 있던 쉘을 이 브랜치가 지운 경우
+    _touch(repo, "scripts/old.sh", "echo old\n")           # 내용이 달라야 한다 — 같으면 git 이 이름 바꿈으로 읽는다
+    _git(repo, "checkout", "-q", "wt")
+    _git(repo, "merge", "-q", "--no-edit", "main")
+    (repo / "scripts" / "old.sh").unlink()
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "rm")
+    assert "scripts/old.sh" not in DC.changed_unmeasurable("main", repo)

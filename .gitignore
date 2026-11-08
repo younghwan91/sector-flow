@@ -32,3 +32,4 @@ dist/
 .coverage
 .coverage.*
 coverage.json
+.covrun.*

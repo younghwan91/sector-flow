@@ -7721,3 +7721,116 @@ guards = ["tests/test_verifier_depth.py::test_stock_revision_rollup_counts_zero_
 file = "scripts/verify_report.py"
 find = """kp += S.get("top3_kept") or 0"""
 replace = """kp += S.get("top3_kept") or 1"""
+
+# ── 관문 구멍 ──
+[[mutation]]
+id = "new-test-matched-by-name-only"
+why = "다른 파일의 동명 가드가 새 검사의 변이 미선언을 덮는다"
+guards = ["tests/test_verify_merge.py::test_a_same_named_guard_in_another_file_does_not_cover_a_new_test"]
+file = "scripts/verify_merge.py"
+find = """    return g_file == t_file and g_rest.split("::")[-1].split("[")[0] == t_name"""
+replace = """    return g_rest.split("::")[-1].split("[")[0] == t_name"""
+
+[[mutation]]
+id = "removed-mutation-passes-silently"
+why = "변이를 지운 PR 이 이유 없이 통과한다"
+guards = ["tests/test_verify_merge.py::test_removed_mutation_needs_a_written_reason"]
+file = "scripts/verify_merge.py"
+find = """    for mid in sorted(base_ids - kept):"""
+replace = """    for mid in sorted(set()):"""
+
+[[mutation]]
+id = "removed-mutation-accepts-an-empty-reason"
+why = "이유 칸에 아무 글자나 넣으면 통과한다"
+guards = ["tests/test_verify_merge.py::test_removed_mutation_needs_a_written_reason"]
+file = "scripts/verify_merge.py"
+find = """        if len(reason) < EXEMPT_MIN_REASON or EXEMPT_PLACEHOLDER.match(reason):
+            out.append(f"변이 [{mid}]"""
+replace = """        if not reason:
+            out.append(f"변이 [{mid}]"""
+
+[[mutation]]
+id = "diff-coverage-ignores-unmeasurable-files"
+why = "바뀐 .sh·템플릿에 변이가 없어도 관문이 통과한다"
+guards = ["tests/test_diff_coverage.py::test_changed_shell_and_template_need_a_mutation"]
+file = "scripts/diff_coverage.py"
+find = """    if blind:
+        ok = False"""
+replace = """    if blind:
+        ok = ok"""
+
+[[mutation]]
+id = "diff-coverage-misses-multi-edit-targets"
+why = "다중 편집 변이의 대상을 안 세어 거짓 실패한다"
+guards = ["tests/test_diff_coverage.py::test_changed_shell_and_template_need_a_mutation"]
+file = "scripts/diff_coverage.py"
+find = """out.update(e.get("file") for e in m.get("edits") or [m])"""
+replace = """out.update(e.get("file") for e in [m])"""
+
+[[mutation]]
+id = "diff-coverage-asks-about-deleted-files"
+why = "지운 파일까지 변이를 요구한다"
+guards = ["tests/test_diff_coverage.py::test_changed_shell_and_template_need_a_mutation"]
+file = "scripts/diff_coverage.py"
+find = """names = git("diff", "--name-only", "--diff-filter=d", mb, "--", *ROOTS, cwd=cwd).splitlines()"""
+replace = """names = git("diff", "--name-only", mb, "--", *ROOTS, cwd=cwd).splitlines()"""
+
+[[mutation]]
+id = "verify-entry-point-runs-the-gate"
+why = "sector-flow-verify 가 검증기 대신 관문을 돌린다 — 초록으로 끝나 검증한 줄 안다"
+guards = ["tests/test_entry_points.py::test_entry_point_runs_its_own_script"]
+file = "src/sectorflow/report_cli.py"
+find = """_run("verify_report.py")"""
+replace = """_run("completeness_gate.py")"""
+
+[[mutation]]
+id = "session-limit-does-not-exit"
+why = "상한에서 스택만 찍고 멈춘 채 잡 시간을 다 쓴다"
+guards = ["tests/test_session_guards.py::test_a_hung_session_is_killed_red_with_a_stack"]
+file = "tests/conftest.py"
+find = "faulthandler.dump_traceback_later(limit, exit=True, file=os"
+replace = "faulthandler.dump_traceback_later(limit, exit=False, file=os"
+
+[[mutation]]
+id = "session-limit-cannot-be-turned-off"
+why = "0 이 즉시 끝남이 되어 상한을 끌 수 없다"
+guards = ["tests/test_session_guards.py::test_limit_zero_turns_the_limit_off"]
+file = "tests/conftest.py"
+find = "    if limit > 0 and not hasattr(config, \"workerinput\"):"
+replace = "    if not hasattr(config, \"workerinput\"):"
+
+[[mutation]]
+id = "overlapping-coverage-second-run-proceeds"
+why = "겹친 실행을 거절하지 않아 서로의 측정을 지운다"
+guards = ["tests/test_session_guards.py::test_overlapping_coverage_runs_both_end_red"]
+file = "tests/conftest.py"
+find = """        pytest.exit(f"이 체크아웃({root})에서 다른 pytest --cov 가 돌고 있다 — 서로의 측정 파일을 지운다. "
+                    "끝난 뒤 다시 돌리거나 다른 클론에서 돌려라", returncode=3)
+    _lock_fd = fd"""
+replace = """        pass
+    _lock_fd = fd"""
+
+[[mutation]]
+id = "overlapping-coverage-first-run-stays-green"
+why = "측정을 잃은 먼저 쪽이 초록으로 끝나 낮은 숫자를 믿게 된다"
+guards = ["tests/test_session_guards.py::test_overlapping_coverage_runs_both_end_red"]
+file = "tests/conftest.py"
+find = """        (root / CLOBBER_NAME).write_text(f"pid {os.getpid()}\\n", "utf-8")"""
+replace = """        pass"""
+
+[[mutation]]
+id = "overlap-marker-outlives-the-run"
+why = "지난 겹침의 표시가 남아 다음 정상 실행을 빨갛게 만든다"
+guards = ["tests/test_session_guards.py::test_a_lone_coverage_run_is_untouched_even_after_a_crashed_overlap"]
+file = "tests/conftest.py"
+find = """    _lock_fd = fd
+    (root / CLOBBER_NAME).unlink(missing_ok=True)"""
+replace = """    _lock_fd = fd"""
+
+[[mutation]]
+id = "session-limit-stack-goes-to-the-capture-file"
+why = "fd 2 를 그대로 넘기면 멈춘 검사의 스택이 캡처 파일로 사라진다 — 왜 멈췄는지 모른다"
+guards = ["tests/test_session_guards.py::test_a_hung_session_is_killed_red_with_a_stack"]
+file = "tests/conftest.py"
+find = "file=os.dup(sys.__stderr__.fileno()))"
+replace = "file=sys.__stderr__.fileno())"

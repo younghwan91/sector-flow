@@ -377,3 +377,37 @@ def test_render_smoke_expects_the_g_column_rounded_like_the_tui():
     g_col = next(c for c in FV._TABLE_COLS if c.header == "G")
     for v in (0.595, 0.125, -0.335, 0.6, None):
         assert ns["want"]({"G": v}, "G") == g_col.fn({"G": v}, None)
+
+
+def test_a_same_named_guard_in_another_file_does_not_cover_a_new_test(mini):
+    """다른 파일의 동명 가드는 내 검사가 자기 버그를 잡는다는 증거가 아니다."""
+    wt, base = mini
+    (wt / "tests" / "test_other.py").write_text("from lib import add\n\n\ndef test_add():\n    assert add(0, 0) == 0\n",
+                                                "utf-8")
+    _commit(wt, "same name, other file")
+    s, out = _run(wt, base)
+    assert s.status == VM.REJECT and "tests/test_other.py::test_add" in out, out
+    assert VM.guard_names_test("tests/a.py::Cls::test_x[p1]", "tests/a.py::test_x")
+    assert not VM.guard_names_test("tests/b.py::test_x", "tests/a.py::test_x")
+
+
+def test_removed_mutation_needs_a_written_reason(mini):
+    """변이를 지우기만 하면 하네스가 볼 것이 줄어 초록이 된다 — 이유가 diff 에 남아야 한다."""
+    wt, base = mini
+    (wt / "tests" / "mutations.toml").write_text(SPEC + BLIND.replace("test_blind", "test_add"), "utf-8")
+    _commit(wt, "base2")
+    base2 = _git(wt, "rev-parse", "HEAD")
+    (wt / "tests" / "mutations.toml").write_text(SPEC, "utf-8")
+    _commit(wt, "drop one")
+    s, out = _run(wt, base2)
+    assert s.status == VM.REJECT and "[sub-adds-but-guard-is-blind] 가 기준 이후 사라졌다" in out, out
+
+    (wt / "tests" / "mutations.toml").write_text(
+        SPEC + '\n[[removed]]\nid = "sub-adds-but-guard-is-blind"\nwhy = "짧"\n', "utf-8")
+    _commit(wt, "short reason")
+    assert _run(wt, base2)[0].status == VM.REJECT
+    (wt / "tests" / "mutations.toml").write_text(
+        SPEC + '\n[[removed]]\nid = "sub-adds-but-guard-is-blind"\nwhy = "빼기 함수를 지워 버그가 표현 불가능해졌다"\n', "utf-8")
+    _commit(wt, "reason")
+    s, out = _run(wt, base2)
+    assert s.status == VM.PASS, out
