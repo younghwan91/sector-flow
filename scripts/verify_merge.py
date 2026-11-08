@@ -495,8 +495,11 @@ def pytest_runtest_logreport(report):
 
 
 def pytest_sessionfinish(session, exitstatus):
-    with open(os.environ["VERIFY_MERGE_BASELINE"], "w", encoding="utf-8") as f:
-        json.dump(_R, f)
+    # 다 쓴 뒤에 이름을 바꾼다 — 쓰다 죽으면 반쪽 파일 대신 파일이 없다(하네스가 출력과 함께 보고한다).
+    path = os.environ["VERIFY_MERGE_BASELINE"]
+    with open(path + ".tmp", "w", encoding="utf-8") as f:
+        json.dump({"pid": os.getpid(), "exit": int(exitstatus), "results": _R}, f)
+    os.replace(path + ".tmp", path)
 '''
 
 
@@ -530,7 +533,10 @@ def run_baseline(wt: Path, py: str, guards: list[str], scratch: Path,
         p = run([py, "-m", "pytest", "-q", "-p", "vm_baseline", "-p", "no:cacheprovider",
                  "--continue-on-collection-errors", *todo], wt, env, timeout=timeout)
         out = p.stdout + p.stderr
-        res = json.loads(path.read_text("utf-8")) if path.exists() else {}
+        try:
+            res = json.loads(path.read_text("utf-8"))["results"] if path.exists() else {}
+        except (ValueError, KeyError):
+            res = {}
         path.unlink(missing_ok=True)
         broken.update({k: v for k, v in res.items() if k.startswith("<collect>")})
         # 이름을 대어 부른 nodeid 가 없으면(오타·수집 오류 파일) pytest 는 아무것도 안 돌리고 4 로 끝난다.
@@ -544,6 +550,10 @@ def run_baseline(wt: Path, py: str, guards: list[str], scratch: Path,
             missing += gone
             todo = [g for g in todo if g not in gone]
             continue
+        if p.returncode not in (0, 1):
+            # 1 = 어떤 검사가 실패했다(가드별로 판정한다). 그 밖(중단·내부 오류·사용법)은 결과를 믿지 않는다 —
+            # 반쯤 돈 결과로 판정하면 안 돈 가드가 "못 찾음" 경고로 묻힌다.
+            return {}, missing, out + f"\n(pytest 종료코드 {p.returncode})"
         return {**res, **broken}, missing, out
     return dict(broken), missing, out
 
@@ -659,7 +669,7 @@ def sec_mutations(wt: Path, py: str, base_sha: str, spec_path: Path | None,
             s.say(f"기준선: 가드 {len(set(guards_all))}개를 pytest 한 번에 "
                   f"({time.monotonic() - t0:.0f}초)")
         if guards_all and not results and not missing:
-            s.fail("기준선 pytest 가 결과를 남기지 않았다\n" + tail(base_out, 2000))
+            s.fail("기준선 pytest 가 결과를 남기지 않았다\n" + tail(base_out, 3000))
             return s
         broken_files = {k[len("<collect>"):].split("::")[0]: v["msg"]
                         for k, v in results.items() if k.startswith("<collect>")}

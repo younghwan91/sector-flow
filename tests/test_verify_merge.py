@@ -251,3 +251,20 @@ def test_cli_passes_shard_budget_and_scope_through(monkeypatch, tmp_path, capsys
         VM.main([str(tmp_path), "--only", "mutations", "--shard", "${{ matrix.shard }}/4"])
     with pytest.raises(SystemExit):
         VM.main([str(tmp_path), "--only", "nope"])
+
+
+def test_an_aborted_baseline_session_is_rejected_not_read_as_missing_guards(mini):
+    """기준선 pytest 가 중간에 끝나면(pytest.exit·내부 오류·쓰기 실패) 안 돈 가드가 "못 찾음" 경고로
+    묻히면 안 된다 — 결과를 믿지 않고 출력과 함께 REJECT 한다. 한 번은 /tmp 가 차서 결과 파일이
+    빈 채로 남아 하네스가 JSON 오류로 죽었다."""
+    wt, base = mini
+    (wt / "tests" / "test_abort.py").write_text(
+        "import pytest\n\n\ndef test_stop():\n    pytest.exit('중단', returncode=3)\n", "utf-8")
+    (wt / "tests" / "mutations.toml").write_text(SPEC.replace(
+        'guards = ["tests/test_lib.py::test_add"]',
+        'guards = ["tests/test_abort.py::test_stop", "tests/test_lib.py::test_add"]'), "utf-8")
+    _commit(wt, "abort")
+    s, out = _run(wt, base)
+    assert s.status == VM.REJECT
+    assert "기준선 pytest 가 결과를 남기지 않았다" in out and "종료코드 3" in out
+    assert "찾지 못했다" not in out

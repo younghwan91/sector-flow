@@ -3452,3 +3452,11 @@ guards = ["tests/test_research_refs.py::test_research_scripts_exist"]
 file = "tests/test_research_refs.py"
 find = "RESEARCH = REPO / \"research\""
 replace = "RESEARCH = REPO / \"reserch\""
+
+[[mutation]]
+id = "harness-reads-an-aborted-baseline"
+why = "중간에 끝난 기준선 pytest 의 반쪽 결과로 판정한다 — 안 돈 가드가 '못 찾음' 경고로 묻힌다"
+guards = ["tests/test_verify_merge.py::test_an_aborted_baseline_session_is_rejected_not_read_as_missing_guards"]
+file = "scripts/verify_merge.py"
+find = "        if p.returncode not in (0, 1):"
+replace = "        if False:"
