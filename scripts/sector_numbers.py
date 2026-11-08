@@ -153,7 +153,8 @@ def agg(P: dict, markets: list[str], sec: str, i0: int, i1: int) -> dict:
         "sector": sec,
         "inst": inst, "forgn": s("forgn"), "indiv": s("indiv"),
         "etc": s("etc"), "tv": s("tv"), "cap": cap,
-        "accel": (inst / cap * 100) if cap else 0.0,
+        # 시총이 없으면 가속도는 **결측**이다 — 0.0 은 "유입이 없었다" 로 읽힌다.
+        "accel": (inst / cap * 100) if cap else None,
         "cap_idx": cap_idx,
         "ret": ((acc - 1) * 100) if any_ else None,
     }
@@ -223,12 +224,18 @@ def release(P: dict, markets: list[str], sec: str, i0: int, i1: int) -> tuple:
         ẍ = (x₃ − 2·x₂ + x₁) / Δ²    (같은 이유로 부호 반전)
     Δ 는 조각당 거래일수. 2차 차분이라 조각이 짧으면 노이즈가 크다 —
     짧은 창에서는 값이 흔들린다는 것을 알고 봐야 한다.
+
+    세 조각은 **길이가 정확히 Δ 로 같다** — 구간 길이가 3 의 배수가 아니면 가장 **오래된**
+    ``n % 3`` 일을 버린다. 예전엔 셋째 조각이 나머지를 떠안아(20일 → 6·6·8) Δ=6 으로 나눴는데,
+    8일 조각의 수익률·유입이 6일 조각과 같은 단위로 차분돼 ẍ 가 셋째 조각 쪽으로 기울었다.
+    최근 쪽을 남기는 이유는 이 값이 "막 풀리기 시작했나" 를 묻기 때문이다.
     """
     n = i1 - i0 + 1
     if n < 9:
         return None, None
     cut = n // 3
-    segs = [(i0, i0 + cut - 1), (i0 + cut, i0 + 2 * cut - 1), (i0 + 2 * cut, i1)]
+    s0 = i1 - 3 * cut + 1                      # 가장 오래된 n % 3 일을 버린다
+    segs = [(s0, s0 + cut - 1), (s0 + cut, s0 + 2 * cut - 1), (s0 + 2 * cut, i1)]
     xs = []
     for a, b in segs:
         g = agg(P, markets, sec, a, b)
@@ -328,15 +335,8 @@ def build(P: dict) -> dict:
             # 부호가 섹터 정보가 아니라 장세를 따라가면 지표로 쓸 수 없다.
             # 양변을 평균 대비 편차로 놓으면 시장 드리프트가 상쇄되고, 남는 것은
             # "다른 섹터 대비 돈은 더 받았는데 덜 갔나" 라는 상대 진술이다.
-            use = [r for r in rows if r["ret"] is not None]
-            if use:
-                abar = sum(r["accel"] for r in use) / len(use)
-                rbar = sum(r["ret"] for r in use) / len(use)
-                sxy = sum((r["accel"] - abar) * (r["ret"] - rbar) for r in use)
-                sxx = sum((r["accel"] - abar) ** 2 for r in use)
-            else:
-                abar = rbar = sxy = sxx = 0.0
-            slope = sxy / sxx if sxx else 0.0
+            # (얇은 섹터까지 넣은 예비 적합이 여기 있었는데 결과를 아래 적합이 언제나 덮어써 죽은
+            # 코드였다. 가속도가 결측(시총 없음)이면 그 줄에서 TypeError 로 터지므로 지웠다.)
             # 강성 k 와 절편 b, 그리고 t. **얇은 섹터(10종목 미만)는 적합에서 뺀다** — 한두 종목의
             # 등락이 섹터 수익률이 되는 점이 큰 지렛대를 가져, 그것 하나로 k 의 부호가 바뀐 날이
             # 있었다(2026-10-15 20|전체: 포함 −0.59 · 제외 +14.42, 2026-11-08 지표 검증). x·예상Δv 는
@@ -481,18 +481,20 @@ def build(P: dict) -> dict:
                 a = agg_rows.setdefault(r["sector"], {
                     "sector": r["sector"], "n_all": r["n_all"], "thin": r["thin"],
                     "per": {}, "pass_n": 0, "seen": 0})
+                # `seen` = 그 창에서 관문을 **판정할 수 있었던** 창(얇지 않고 a·x·ẍ 가 다 있다).
+                # `pass_n` = 그중 관문을 통과한(G 가 나온) 창. 예전엔 둘 다 "G 가 나온 창" 을 세서
+                # 언제나 같았고, `*`(전 창 통과)가 실제로는 "한 창이라도 통과" 였다.
+                if (not r.get("thin") and r.get("a_idx") is not None
+                        and r.get("x") is not None and r.get("xddot") is not None):
+                    a["seen"] += 1
                 if r.get("G") is not None:
                     a["per"][w] = round(r["G"], 3)
-                    a["seen"] += 1
-                    if r.get("G_pass"):
-                        a["pass_n"] += 1
+                    a["pass_n"] += 1
         rows = []
         for sec, a in agg_rows.items():
-            if a["seen"] == 0:
-                a["G"] = None
-            else:
-                a["G"] = sum(a["per"].values()) / a["seen"]
-            # 전 창 통과는 실측상 아무도 못 해 정보가 없다 — 통과한 창 수를 낸다.
+            # 종합 G 는 G 가 나온 창의 등가중 평균 — 통과 못 한 창을 0 으로 넣지 않는다(순위가 없다).
+            a["G"] = sum(a["per"].values()) / len(a["per"]) if a["per"] else None
+            # `*` 는 판정된 **모든** 창에서 통과했다는 뜻이다. 몇 창인지는 `pass_n` 이 따로 말한다.
             a["G_pass"] = a["seen"] > 0 and a["pass_n"] == a["seen"]
             rows.append(a)
         out["combined"][mkey] = {
