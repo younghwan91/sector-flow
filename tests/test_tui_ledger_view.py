@@ -2224,3 +2224,116 @@ def test_comove_verdict_states_the_measured_fact_with_its_scope():
     assert all("로테이션" not in t for t in low), low
     assert "널보다 드물다" in low[0] and "이 시장·구간·주체" in low[0], low[0]
     assert "읽지 마라" in comove_verdict_tiers(0.49, 0.50)[0]
+
+
+# ------------------------------------------------ 동시성 계산 — 메모와 쌍 커널
+
+def _old_corr(a, b):
+    """메모·쌍 커널 전의 :func:`_corr` 그대로 — 비트 비교의 기준이다(구현에서 가져오지 않는다)."""
+    import math
+
+    n = len(a)
+    ma, mb = sum(a) / n, sum(b) / n
+    va = sum((x - ma) ** 2 for x in a)
+    vb = sum((y - mb) ** 2 for y in b)
+    if va <= 0 or vb <= 0:
+        return float("nan")
+    return sum((a[i] - ma) * (b[i] - mb) for i in range(n)) / math.sqrt(va * vb)
+
+
+def _bits(x: float) -> bytes:
+    import struct
+
+    return struct.pack("<d", x)
+
+
+def test_corr_kernels_match_the_old_formula_bit_for_bit():
+    """쌍 커널(편차를 한 번만 세고 위 삼각만 잰다)이 옛 ``_corr`` 와 **비트까지** 같다.
+
+    동시성은 화면·검증·한계 §6 의 인용 범위가 같은 값을 말해야 한다. 덧셈 순서가 바뀌면 마지막
+    비트가 달라지고 히트맵 농도 경계·``+0``/``-0`` 이 뒤집힐 수 있다 — 빨라지는 대가로 값이 바뀌면 안 된다.
+
+    주입: 정규화를 ``√va·√vb`` 로 나눠 하면(수학으로는 같은 식) 실패한다.
+    """
+    import random
+
+    from sectorflow.tui.ledger_view import (
+        _NULL_SHIFTS, _corr, _corr_ordered_of, _null_neg_frac_of, neg_frac)
+
+    rnd = random.Random(5)
+    n = 60
+    ser = {f"s{i}": [rnd.uniform(-1e3, 1e3) / 7 for _ in range(n)] for i in range(6)}
+    ser["flat"] = [3.0] * n                       # 분산 0 → nan
+    ser["ints"] = [float(i % 7 - 3) for i in range(n)]
+    keys = list(ser)
+    for a in keys:
+        for b in keys:
+            assert _bits(_corr(ser[a], ser[b])) == _bits(_old_corr(ser[a], ser[b])), (a, b)
+    got_keys, m, _mean = _corr_ordered_of(keys, ser)
+    for i, a in enumerate(got_keys):
+        for j, b in enumerate(got_keys):
+            want = 1.0 if a == b else _old_corr(ser[a], ser[b])
+            assert _bits(m[i][j]) == _bits(want), (a, b)
+    # 널 — 옛 루프 그대로(씨앗 11, 시프트마다 섹터 순서대로 randrange).
+    r2 = random.Random(11)
+    vals = []
+    for _ in range(_NULL_SHIFTS):
+        sh = {}
+        for s in keys:
+            t = r2.randrange(n)
+            sh[s] = ser[s][t:] + ser[s][:t]
+        vals += [_old_corr(sh[a], sh[b]) for i, a in enumerate(keys) for b in keys[i + 1:]]
+    assert _null_neg_frac_of(keys, ser, n) == neg_frac(vals)
+
+
+def test_corr_memo_is_keyed_on_the_series_values_not_on_the_screen_state():
+    """모듈 메모는 **계열 값**으로 찾는다 — 같은 섹터·같은 상태라도 페이로드가 다르면 다시 잰다.
+
+    메모는 새 ``Model`` 마다 시장 × 구간 × 주체 × β제거 전수를 다시 재던 비용을 없앤다. 키가
+    상태(시장·구간·주체)뿐이면 두 번째 리포트를 연 화면이 첫 리포트의 상관을 그린다.
+
+    주입: ``_ser_key`` 가 값을 빼고 ``(섹터, 길이)`` 만 내면 실패한다.
+    """
+    import sectorflow.tui.ledger_view as LV
+
+    LV._CORR_MEMO.clear()
+    LV._NULL_MEMO.clear()
+    p1 = _corr_payload()
+    p2 = _corr_payload()
+    # 병을 갑과 같이 가게 바꾼다 — 섹터·날짜·시장은 그대로, 값만 다르다.
+    p2["flows"]["거래소"]["병"] = {k: [-v for v in arr]
+                                for k, arr in p2["flows"]["거래소"]["병"].items()}
+    a, b = Model(p1), Model(p2)
+    a.wi = b.wi = WINDOWS.index(20)
+    got_a, nul_a = a.corr_matrix(), a.null_neg_frac()
+    got_b, nul_b = b.corr_matrix(), b.null_neg_frac()
+    LV._CORR_MEMO.clear()
+    LV._NULL_MEMO.clear()
+    c = Model(p2)
+    c.wi = WINDOWS.index(20)
+    assert got_b == c.corr_matrix(), "다른 페이로드가 앞 페이로드의 상관을 받았다"
+    assert nul_b == c.null_neg_frac()
+    assert got_a != got_b, "픽스처가 헛돈다 — 두 페이로드의 상관이 같다"
+    assert (nul_a, got_a) != (nul_b, got_b)
+
+
+def test_a_fresh_model_reuses_the_comove_survey_instead_of_redoing_it(monkeypatch):
+    """새 ``Model`` 이 같은 페이로드의 동시성 전수를 **다시 재지 않는다** — 일일 검증 시간의 대부분이었다.
+
+    실측(11-06 리포트): 검증은 높이·화면·키마다 새 ``Model`` 을 만들어 한계 화면을 그리고, 그때마다
+    :meth:`Model.comove_ranges` 가 84조합의 27×27 을 처음부터 쟀다 — cProfile 330초 중 236초.
+
+    주입: ``_corr_ordered`` 가 메모를 거치지 않으면 두 번째 ``Model`` 이 계산 함수를 다시 불러 실패한다.
+    """
+    import sectorflow.tui.ledger_view as LV
+
+    LV._CORR_MEMO.clear()
+    P = _corr_payload()
+    first = Model(P).comove_ranges()
+    assert first["off"], "픽스처가 헛돈다 — 잰 조합이 없다"
+
+    def boom(*_a, **_k):
+        raise AssertionError("같은 계열의 상관행렬을 다시 쟀다")
+
+    monkeypatch.setattr(LV, "_corr_ordered_of", boom)
+    assert Model(P).comove_ranges() == first

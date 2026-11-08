@@ -29,8 +29,11 @@ from __future__ import annotations
 
 import json
 import math
+import operator
 import os
 import random
+from array import array
+from collections import OrderedDict
 
 from sectorflow.basis import BASIS_HELP
 from sectorflow.tui.flow_view import (
@@ -267,13 +270,61 @@ def _corr(a: list[float], b: list[float]) -> float:
     예전엔 0.0 을 돌려줬는데, 히트맵에서 그건 ``|r|<0.05`` 와 **같은 빈칸**이라
     "무상관"과 "잴 수 없다"가 구분되지 않았다. ``nan`` 은 화면에서 ``?`` 로 나온다.
     """
-    n = len(a)
-    ma, mb = sum(a) / n, sum(b) / n
-    va = sum((x - ma) ** 2 for x in a)
-    vb = sum((y - mb) ** 2 for y in b)
+    return _corr_of(_dev(a), _dev(b))
+
+
+def _dev(a: list[float]) -> tuple[list[float], float]:
+    """한 계열의 **편차와 제곱합** — :func:`_corr` 가 쌍마다 다시 세던 몫이다.
+
+    상관행렬은 27×27 쌍마다 두 계열의 평균·분산을 처음부터 다시 셌다(일일 검증 시간의 대부분).
+    계열마다 한 번만 세어 둔다. 식과 덧셈 순서는 예전 그대로라 값이 **비트까지** 같다 —
+    `tests/test_tui_ledger_view.py` 가 옛 식과 비트 비교한다.
+    """
+    ma = sum(a) / len(a)
+    d = [x - ma for x in a]
+    return d, sum(v ** 2 for v in d)
+
+
+def _corr_of(da: tuple[list[float], float], db: tuple[list[float], float]) -> float:
+    """:func:`_dev` 둘의 피어슨 상관. 분산이 0 이면 ``nan``(:func:`_corr` 참고)."""
+    (a, va), (b, vb) = da, db
     if va <= 0 or vb <= 0:
         return float("nan")
-    return sum((a[i] - ma) * (b[i] - mb) for i in range(n)) / math.sqrt(va * vb)
+    return sum(map(operator.mul, a, b)) / math.sqrt(va * vb)
+
+
+def _corr_upper(devs: list[tuple[list[float], float]]) -> list[float]:
+    """위 삼각(``i < j``, 행 우선)의 상관 — 널·관측이 쌍을 세는 순서 그대로다."""
+    return [_corr_of(devs[i], devs[j])
+            for i in range(len(devs)) for j in range(i + 1, len(devs))]
+
+
+#: 상관 계산의 **모듈 메모** — 키는 입력 계열 그 자체(섹터 순서 + 값의 비트)다.
+#:
+#: ``Model`` 마다 캐시가 있었지만 화면을 새로 열 때마다(검증은 높이·화면·키마다 새 ``Model`` 을 만든다)
+#: 시장 × 구간 × 주체 × β제거 전수(:meth:`Model.comove_ranges`)를 처음부터 다시 쟀다 — 실측(11-06 리포트)
+#: 일일 검증 330초 중 236초(cProfile)가 여기였다. 키가 값 자체라 페이로드가 바뀌면 그냥 빗나갈 뿐
+#: 낡은 값을 돌려줄 수 없다(시장·구간·주체·β제거는 계열 값에 이미 들어 있다).
+_CORR_MEMO: OrderedDict = OrderedDict()
+_NULL_MEMO: OrderedDict = OrderedDict()
+_MEMO_MAX = 256          # 시장 × 구간 × 주체 × β제거 = 120 조합을 넉넉히 담는다
+
+
+def _ser_key(keys: list[str], ser: dict[str, list[float]]) -> tuple:
+    """계열의 **정확한** 키 — 값은 비트로 싼다(``-0.0`` 과 ``0.0``·nan 이 서로 다르게 남는다)."""
+    n = len(ser[keys[0]]) if keys else 0
+    return (tuple(keys), n, array("d", [v for s in keys for v in ser[s]]).tobytes())
+
+
+def _memo(memo: OrderedDict, key: tuple, make):
+    if key in memo:
+        memo.move_to_end(key)
+        return memo[key]
+    val = make()
+    memo[key] = val
+    if len(memo) > _MEMO_MAX:
+        memo.popitem(last=False)
+    return val
 
 
 def neg_frac(values) -> float | None:
@@ -289,6 +340,44 @@ def neg_frac(values) -> float | None:
     """
     vals = [v for v in values if v == v]
     return sum(1 for v in vals if v < 0) / len(vals) if vals else None
+
+
+def _corr_ordered_of(keys: list[str], ser: dict[str, list[float]]):
+    """:meth:`Model._corr_ordered` 의 계산 — ``(평균상관 순 keys, 행렬, 평균)``. 결과는 메모가 공유한다.
+
+    쌍은 위 삼각만 세고 거울로 채운다 — ``a·b`` 와 ``b·a`` 는 곱의 교환법칙이라 비트까지 같다.
+    """
+    keys = list(keys)
+    up = iter(_corr_upper([_dev(ser[s]) for s in keys]))
+    raw: dict = {a: {a: 1.0} for a in keys}
+    for i, a in enumerate(keys):
+        for b in keys[i + 1:]:
+            raw[a][b] = raw[b][a] = next(up)
+    mean = {}
+    for a in keys:
+        vals = [raw[a][b] for b in keys if b != a and raw[a][b] == raw[a][b]]
+        mean[a] = sum(vals) / len(vals) if vals else float("nan")
+    # 못 잰 섹터(분산 0)는 맨 뒤로 — nan 은 어떤 비교에도 False 라 정렬이
+    # 조용히 뒤엉킨다. 그래서 정렬 키에서 nan 을 **명시적으로** 걷어낸다.
+    keys.sort(key=lambda s: (mean[s] != mean[s], -mean[s]
+                             if mean[s] == mean[s] else 0.0, s))
+    m = [[raw[a][b] for b in keys] for a in keys]
+    return keys, m, mean
+
+
+def _null_neg_frac_of(keys: list[str], ser: dict[str, list[float]], n: int) -> float | None:
+    """:meth:`Model.null_neg_frac` 의 계산 — 순환이동 :data:`_NULL_SHIFTS` 번, 씨앗 11."""
+    rnd = random.Random(11)
+    vals: list[float] = []
+    for _ in range(_NULL_SHIFTS):
+        devs = []
+        for s in keys:
+            t = rnd.randrange(n)
+            devs.append(_dev(ser[s][t:] + ser[s][:t]))
+        vals += _corr_upper(devs)
+    # 잴 수 없는 쌍(nan)을 빼는 것은 `neg_frac` 한 곳이 한다 — 관측 쪽과
+    # 근거 스크립트가 같은 함수를 본다.
+    return neg_frac(vals)
 
 
 class Model:
@@ -330,6 +419,7 @@ class Model:
         self.help = False
         self.help_row = 0
         self._corr_cache: dict = {}
+        self._daily_cache: dict = {}
         self._null_cache: dict = {}
         self._comove_rng: dict | None = None
         # ⚠️ 캐시 키에 **정렬이 의존하는 것까지** 넣는다. `sort_key == "actor"` 도,
@@ -428,6 +518,15 @@ class Model:
 
     def daily(self, sector: str, key: str) -> list[float]:
         """(선택 시장) 섹터의 일별 순매수. ``key`` 가 ``resid`` 면 잔여."""
+        # (시장, 섹터, 주체)마다 한 번만 센다 — 동시성 전수는 구간 넷이 같은 일별을 다시 셌다.
+        # 부르는 쪽은 전부 잘라 쓴다(``[-w:]``)라 돌려준 목록을 고치지 않는다.
+        ck = (self.market, sector, key)
+        hit = self._daily_cache.get(ck)
+        if hit is None:
+            hit = self._daily_cache[ck] = self._daily(sector, key)
+        return hit
+
+    def _daily(self, sector: str, key: str) -> list[float]:
         n = len(self.dates)
         mk = self._mkts()
         cells = [self.d["flows"][m][sector] for m in mk if sector in self.d["flows"][m]]
@@ -607,19 +706,9 @@ class Model:
         if self.detrend:
             ser = self._detrended(ser)
         keys = [s for s in self.sectors if s in ser]
-        raw = {a: {b: (1.0 if a == b else _corr(ser[a], ser[b])) for b in keys}
-               for a in keys}
-        mean = {}
-        for a in keys:
-            vals = [raw[a][b] for b in keys if b != a and raw[a][b] == raw[a][b]]
-            mean[a] = sum(vals) / len(vals) if vals else float("nan")
-        # 못 잰 섹터(분산 0)는 맨 뒤로 — nan 은 어떤 비교에도 False 라 정렬이
-        # 조용히 뒤엉킨다. 그래서 정렬 키에서 nan 을 **명시적으로** 걷어낸다.
-        keys.sort(key=lambda s: (mean[s] != mean[s], -mean[s]
-                                 if mean[s] == mean[s] else 0.0, s))
-        m = [[raw[a][b] for b in keys] for a in keys]
-        self._corr_cache[key] = (keys, m, mean)
-        return keys, m, mean
+        out = _memo(_CORR_MEMO, _ser_key(keys, ser), lambda: _corr_ordered_of(keys, ser))
+        self._corr_cache[key] = out
+        return out
 
     def null_neg_frac(self) -> float | None:
         """순환이동 널에서 **음의 상관 쌍**이 차지하는 비율.
@@ -641,18 +730,7 @@ class Model:
         if n < _MIN_CORR_N or len(keys) < 2:
             self._null_cache[key] = None
             return None
-        rnd = random.Random(11)
-        vals = []
-        for _ in range(_NULL_SHIFTS):
-            sh = {}
-            for s in keys:
-                t = rnd.randrange(n)
-                sh[s] = ser[s][t:] + ser[s][:t]
-            vals += [_corr(sh[a], sh[b])
-                     for i, a in enumerate(keys) for b in keys[i + 1:]]
-        # 잴 수 없는 쌍(nan)을 빼는 것은 `neg_frac` 한 곳이 한다 — 관측 쪽과
-        # 근거 스크립트가 같은 함수를 본다.
-        out = neg_frac(vals)
+        out = _memo(_NULL_MEMO, _ser_key(keys, ser), lambda: _null_neg_frac_of(keys, ser, n))
         self._null_cache[key] = out
         return out
 
@@ -675,7 +753,8 @@ class Model:
 
         관측만 잰다 — 널(순환이동 20번)은 조합당 수십 ms 라 전수면 수 초다.
         글이 인용하는 것은 관측 범위뿐이고, 널 대비 판정은 판정줄의 몫이다.
-        실측(2026-10-07 리포트, 27섹터·260일): 처음 한 번 약 0.9초, 이후 캐시.
+        실측(2026-11-06 리포트, 27섹터·260일): 처음 한 번 약 0.1초(쌍 커널·일별 캐시 전엔 0.9초),
+        이후 캐시. 상관행렬은 모듈 메모(:data:`_CORR_MEMO`)라 새 ``Model`` 도 다시 재지 않는다.
         그래서 한계 화면·도움말을 **처음 열 때** 한 번 잰다.
 
         ⚠️ 상태(시장·구간·주체·β제거)를 돌려 가며 재므로 **반드시 되돌린다** —
