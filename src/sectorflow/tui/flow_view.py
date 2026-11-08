@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import unicodedata
@@ -59,7 +60,7 @@ MARKET_ORDER = ("거래소", "코스닥")
 #: 이건 취향이 아니라 계량의 표준 처방이다 — 중첩 관측(overlapping observations)
 #: 은 관측 수가 더 많은데도 비중첩보다 편향이 크고, 중첩 보정은 t 통계량을 크게
 #: 부풀린다(Boudoukh·Richardson·Whitelaw, *The Myth of Long-Horizon
-#: Predictability*, RFS 2008; Valkanov, JFE 2003). docs/GUARDRAILS.md §3 참고.
+#: Predictability*, RFS 2008; Valkanov, JFE 2003). (swing-it 의 docs/GUARDRAILS.md §3 참고.)
 #:
 #: 마지막 칸(최근 5일)은 **따로 남긴다**. 수익률 쪽에서는 단기 반전이 표준 사실이라
 #: 모멘텀이 최근 한 달을 건너뛰지만(Jegadeesh 1990; Jegadeesh & Titman 1993),
@@ -148,12 +149,12 @@ def absent_row(r: dict) -> bool:
     """
     return r.get("n_all") == 0 and not r.get("cap")
 #: 화면 정렬. **기본은 가속** — 규모로 정규화된 유입이라 대형 섹터가 늘 이기지
-#: 않는다. 예전 기본은 G 였는데, G 는 세 순위의 평균인 **검증 안 된 탐색 점수**라
+#: 않는다. 예전 기본은 G 였는데, G 는 세 순위의 평균인 **탐색 점수**(검정 결과 판정 불가)라
 #: 화면 순서를 지배할 근거가 없다(20일 기본 화면 1위가 임펄스 +14억짜리 섹터였고,
 #: 기관이 2.4조 판 전기/전자는 24위라 스크롤해야 보였다). G 는 보조로 남는다.
 #: 순서는 **열 순서와 같다** — 정렬을 돌릴 때 눈이 왼쪽에서 오른쪽으로 따라간다.
 SORTS = (("accel", "가속"), ("flow", "임펄스"), ("pct", "1년%"), ("ret", "수익률"),
-         ("x", "미실현"), ("xddot", "풀림"), ("G", "선정"), ("U", "포텐셜"),
+         ("x", "미실현"), ("xddot", "풀림"), ("G", "G"), ("U", "포텐셜"),
          ("P", "dW/dt"), ("tv", "거래대금"), ("cap_idx", "시총"), ("n_all", "종목수"))
 #: 종목 목록의 정렬. 기본은 **절대 순매수** — 섹터 합계가 금액의 합이므로
 #: "누가 이 섹터를 움직였나" 는 금액으로만 정의된다. 나머지는 다른 질문에 답한다.
@@ -164,6 +165,19 @@ NAME_SORTS = (("flow", "순매수"), ("pick", "선정점수"),
               ("conc", "최근집중"), ("rrel", "상대수익"),
               ("part", "참여율"), ("a", "시총대비"),
               ("cap", "시총"), ("tv", "거래대금"), ("name", "종목명"))
+
+#: **탐색 모드**(`e`)에서만 닿는 자리 — 종합 창(G 를 섞은 축)·섹터 선정(G)·종목 선정점수.
+#: 검정 결과(docs/validation/2026-11-08-results.md·…-usefulness-results.md): 가속·임펄스·x 는
+#: 앞날 증거 없음, G 는 검정력이 없어 판정 불가, 종목 투신+연기금 순위는 부호가 **음**이다
+#: (선정점수는 그것을 클수록 좋다고 센다). 지우지 않고 기본 화면에서 숨긴다.
+EXPLORE_WINDOWS = ("종합",)
+EXPLORE_SORTS = ("G",)
+EXPLORE_NAME_SORTS = ("pick",)
+#: 탐색 모드에서만 싣는 열 헤더 — 섹터 표의 선정(G)과 종목 목록의 선정점수.
+EXPLORE_COLS = ("G", "선정")
+#: 탐색 모드가 켜져 있을 때 화면이 늘 다는 표지. 줄이 좁으면 뒤의 것부터 쓴다.
+EXPLORE_LABEL_TIERS = ("탐색 — 검정 결과 앞날 증거 없음(G 판정 불가)",
+                       "탐색 — 앞날 증거 없음", "탐색")
 
 #: 최근집중의 **분자가 되는 창**. 5 ⊂ 20 ⊂ 60 ⊂ 120 으로 겹치는 것이 여기선
 #: 자산이다 — 이미 실린 값의 비율일 뿐이라 페이로드가 한 바이트도 안 늘어난다.
@@ -323,6 +337,10 @@ class State:
         # 그 키가 화면 어디에도 안 적혀 있었다 — 발견 불가능한 유일 경로.
         self.rev = False        # 섹터 표 역순(오름차순)
         self.nrev = False       # 종목 목록 역순
+        # 탐색 모드 — G·선정·곱·종합. **기본은 꺼짐**이다. 이 점수들은 검정 결과 앞날
+        # 증거가 없고(G 는 검정력이 없어 판정 불가) 종목 선정점수의 투신+연기금 축은
+        # 검정 부호와 반대다(docs/validation/). 기본 화면은 수급 사실만 말한다.
+        self.explore = False
 
     # --- 현재 선택 ---
     @property
@@ -345,20 +363,53 @@ class State:
     def name_sort(self) -> str:
         return NAME_SORTS[self.nsi][0]
 
+    @staticmethod
+    def _step(i: int, step: int, n: int, ok) -> int:
+        """``i`` 에서 ``step`` 방향으로 ``ok(j)`` 인 다음 자리. 없으면 제자리."""
+        for _ in range(n):
+            i = (i + step) % n
+            if ok(i):
+                return i
+        return i
+
     def cycle(self, what: str, step: int = 1) -> None:
+        # 탐색 모드가 꺼져 있으면 탐색 전용 자리(종합 창·선정 정렬)를 **건너뛴다**.
+        # 키를 눌러 닿을 수 있으면 기본 화면에서 숨긴 것이 아니다.
         if what == "w":
-            self.wi = (self.wi + step) % len(WINDOWS)
+            self.wi = self._step(self.wi, step, len(WINDOWS),
+                                 lambda j: self.explore or WINDOWS[j] not in EXPLORE_WINDOWS)
         elif what == "m":
             self.mi = (self.mi + step) % len(self.markets)
         elif what == "a":
             self.ai = (self.ai + step) % len(ACTORS)
         elif what == "s":
-            self.si = (self.si + step) % len(SORTS)
+            self.si = self._step(self.si, step, len(SORTS),
+                                 lambda j: self.explore or SORTS[j][0] not in EXPLORE_SORTS)
         elif what == "ns":
-            self.nsi = (self.nsi + step) % len(NAME_SORTS)
+            self.nsi = self._step(self.nsi, step, len(NAME_SORTS),
+                                  lambda j: self.explore
+                                  or NAME_SORTS[j][0] not in EXPLORE_NAME_SORTS)
             self.drow = 0
             return
         self.row = 0
+
+    def toggle_explore(self) -> None:
+        """탐색 모드 켜기/끄기. 끌 때 탐색 전용 상태에 서 있으면 기본 자리로 돌린다.
+
+        종합 창·선정 정렬·전 종목(곱) 화면에 선 채로 끄면, 끈 뒤에도 그 점수가 화면을
+        정하고 있게 된다 — 꺼졌다고 적힌 것이 계속 보이는 셈이다.
+        """
+        self.explore = not self.explore
+        if self.explore:
+            return
+        if self.window in EXPLORE_WINDOWS:
+            self.wi = WINDOWS.index("20")
+            self.row = 0
+        if self.sort_key in EXPLORE_SORTS:
+            self.si = 0
+        if self.name_sort in EXPLORE_NAME_SORTS:
+            self.nsi = 0
+        self.allv = False
 
     # --- 데이터 ---
     def _project(self, r: dict) -> dict:
@@ -516,7 +567,11 @@ class State:
         def val(r):
             v = r.get(key)
             # 결측은 역순에서도 **맨 뒤**다 — '값이 없는 것'은 작은 값이 아니다.
-            return (v is None, (v if self.rev else -v) if v is not None else 0)
+            # 얇은 섹터(`~`, 10종목 미만)는 결측보다도 뒤다. 분모(시총)가 작아 가속이 쉽게
+            # 튀어서, 5·60·120일에 3종목짜리 섹터가 가속 1등을 하고 있었다 — 회색으로
+            # 죽인 줄이 표 맨 위를 차지하면 회색이 하는 말을 순서가 뒤집는다.
+            return (bool(r.get("thin")), v is None,
+                    (v if self.rev else -v) if v is not None else 0)
         rows.sort(key=val)
         return rows
 
@@ -623,7 +678,9 @@ class State:
     def _attach_pick(self, rows: list[dict]) -> None:
         """선정점수 — 네 축의 **횡단면 순위 평균**과, 그 앞에 서는 관문 셋.
 
-        섹터 표의 ``*``(부호 AND) + ``G``(순위 평균) 구조를 종목 층에 그대로 옮긴다.
+        섹터 표의 ``*``(부호 AND) + ``G``(순위 평균) 구조를 종목 층에 옮긴다. 다른 점이
+        둘 있다: 최근집중·상대수익·참여율이 다 있어야 후보가 되고(그래서 5일 창에는 점수가
+        없다), 후보가 하나뿐이면 점수가 없다(섹터 G 는 그때 0.5).
         관문은 **탈락**을 정하고 점수는 **순서**를 정한다 — 둘을 한 수로 섞으면
         "왜 빠졌는지" 와 "왜 앞인지" 가 같은 숫자에 뭉개진다.
 
@@ -646,9 +703,9 @@ class State:
         **상대수익만 부호를 뒤집는다.** 나머지 셋은 클수록 좋지만 상대수익은
         **작을수록** 좋다 — 섹터만큼 안 갔다는 뜻이라 자리가 남았다는 읽기다.
 
-        ⚠️ **검증된 적 없는 탐색 점수다.** 네 축 각각도 예측력이 심사된 적 없고,
-        평균이 그것을 만들어 내지도 않는다. `G` 와 같은 지위 — 훑는 순서일 뿐이다.
-        그래서 화면 기본 정렬은 이 점수가 아니라 `순매수` 다.
+        ⚠️ **탐색 점수다** — 탐색 모드(`e`)에서만 보인다. 점수 자체는 앞날 검정을 안
+        했고, ``rank(투신+연기금)`` 축은 검정 결과(docs/validation/2026-11-08-usefulness-
+        results.md K1: 섹터 안 순위 IC 음, 확인)와 **부호가 반대**다. 지우지 않고 숨긴다.
         """
         for t in rows:
             t["pick"] = None
@@ -748,7 +805,7 @@ class State:
         return out
 
     def all_picks(self) -> list[dict]:
-        """**전 섹터의 종목을 한 화면에** — `섹터선정 × 종목선정` 내림차순.
+        """**전 섹터의 종목을 한 화면에** — `섹터G × 종목선정` 내림차순.
 
         섹터 표와 드릴다운은 "이 섹터 안에서 어느 종목" 만 답한다. 그런데 실제
         질문은 "오늘 국내 전체에서 어디" 다. 두 점수를 **곱**해서 그 답을 낸다.
@@ -891,36 +948,6 @@ class State:
             cut_done = cut_done or t["cut"]
 
 
-def reversal_flags(st: State) -> list[tuple[str, float, float]]:
-    """G 통과 섹터 중 5일 창에서 순매수 부호가 뒤집힌 것 — (섹터, 현재 창 값, 5일 값).
-
-    G 는 **현재 창**(보통 20일) 누적만으로 통과 여부가 정해진다. 60일 누적
-    축적이 최근 며칠 새 이탈로 바뀌는 경계에 있어도 통과는 그대로 유지되므로
-    (실측 2026-09-04 건설: 20일 기관 +3,793억인데 5일은 −564억), "통과했다"만
-    보고 방향이 막 바뀐 줄 모르는 일이 생긴다. 시작 배너가 그 반전을 따로 짚는다.
-
-    5일 창 자신은 검사하지 않는다 — 자기 자신과 비교할 수 없다. 종합 화면도
-    뺀다 — 페이로드 순서일 뿐 "현재 창 누적" 이라는 전제가 없다.
-    """
-    if st.window in ("5", "종합"):
-        return []
-    gpass = {r["sector"]: r for r in st.rows() if r.get("G_pass")}
-    if not gpass:
-        return []
-    short = State(st.d)
-    short.wi, short.mi, short.ai = WINDOWS.index("5"), st.mi, st.ai
-    srows = {r["sector"]: r for r in short.rows()}
-    out = []
-    for sec, r in gpass.items():
-        s = srows.get(sec)
-        cur, five = r.get("flow"), (s or {}).get("flow")
-        if cur is None or five is None:
-            continue
-        if cur > 0 and five < 0:
-            out.append((sec, cur, five))
-    return out
-
-
 def _first_fitting(width: int, cands: list[str]) -> str:
     """폭에 들어가는 **첫 후보**. 다 넘치면 마지막(가장 짧은 것)을 준다.
 
@@ -933,91 +960,204 @@ def _first_fitting(width: int, cands: list[str]) -> str:
     return cands[-1]
 
 
-def _pick_trends(st: State, p: dict) -> list[str]:
-    """곱순위 한 줄에 붙일 투신·연기금 추이 — **긴 표기부터** 짧은 순으로.
+#: 시작 배너가 쓰는 창. 화면 기본 창(20일)과 같고, 반전 검사는 그 안의 최근 5일과 직전 15일을 견준다.
+BANNER_WIN = "20"
+#: 1년 백분위가 "극단" 인 문턱 — 위·아래 5%.
+PCT_HI, PCT_LO = 95.0, 5.0
 
-    호출부가 폭에 맞는 첫 후보를 고른다. 마지막에 빈 문자열은 넣지 않는다 —
-    호출부가 추이 없는 원본 줄을 이미 후보 끝에 두고 있다.
+
+def _block_rows(d: dict, win: str, market: str) -> list[dict]:
+    """그 (창, 시장) 블록의 섹터 행 — 종목이 하나도 없는 섹터(:func:`absent_row`)는 뺀다."""
+    b = (d.get("blocks") or {}).get(f"{win}|{market}") or {}
+    return [r for r in b.get("rows") or [] if not absent_row(r)]
+
+
+def _sector_trusted(d: dict, markets, win: str) -> dict:
+    """섹터 → 그 창의 **투신+연기금** 순매수 합[억]. 종목 값을 한 번만 훑어 더한다.
+
+    섹터 행에는 기관 세부가 없다(:func:`sector_actor_win` 과 같은 이유). 한 번에 27개를 채운다.
     """
-    win = ((st.d.get("names") or {}).get(p.get("code")) or {}).get("win") or {}
-    segs = {k: segment_flows(win, k) for k, _ in TREND_ACTORS}
-    wide, tight = [], []
-    for key, label in TREND_ACTORS:
-        wide.append(f"  {label} {trend_cell(segs[key], ('20-5', '5'))}")
-        tight.append(f"  {label} {trend_cell(segs[key], ('5',))}")
-    return ["".join(wide), "".join(tight)]
+    mkts = set(markets or ())
+    out: dict = {}
+    for nm in (d.get("names") or {}).values():
+        if nm.get("market") not in mkts:
+            continue
+        w = (nm.get("win") or {}).get(win) or {}
+        vals = [w.get(k) for k, _ in TREND_ACTORS]
+        if all(v is None for v in vals):
+            continue
+        sec = nm.get("sector")
+        out[sec] = out.get(sec, 0.0) + sum(v for v in vals if v is not None)
+    return out
+
+
+def _sec_label(r: dict) -> str:
+    """배너 목록의 섹터 이름 — 얇은 섹터는 표와 같은 `~` 를 단다(10종목 미만은 섹터로 읽지 않는다)."""
+    return f"{r.get('sector', '—')}{'~' if r.get('thin') else ''}"
+
+
+def _items_line(prefix: str, items: list[str], width: int, empty: str = "없음") -> str:
+    """``prefix`` 뒤에 항목을 ``·`` 로 잇되 **항목 경계에서** 자른다 — 남은 수는 `외 N` 으로 적는다.
+
+    줄을 그냥 자르면 `+3,79` 처럼 숫자가 자릿수 중간에서 끊겨 다른 값이 된다(표가 열을
+    경계에서 떨어뜨리는 것과 같은 규칙).
+    """
+    if not items:
+        return pad(prefix + empty, width)
+    for n in range(len(items), 0, -1):
+        tail = f" 외 {len(items) - n}" if n < len(items) else ""
+        line = prefix + " · ".join(items[:n]) + tail
+        if cell_len(line) <= width:
+            return pad(line, width)
+    return pad(prefix + f"{len(items)}개", width)
+
+
+def reversal_flags(st: State) -> list[tuple[str, float, float]]:
+    """최근 5일 순매수 부호가 **직전 15일**과 반대인 섹터 — (섹터, 직전 15일 값, 5일 값).
+
+    직전 15일 = 20일 누적 − 5일 누적(:data:`TREND_SEGS` 의 `20-5` 와 같은 차분). 전 섹터를
+    본다 — 예전엔 G 통과 섹터만 봤는데, G 는 검정 결과 판정 불가라 사실 요약의 필터가 될 수 없다.
+    양쪽 방향(매수→매도·매도→매수)을 다 적는다. 둘 중 하나가 0 이면 부호가 없어 안 적는다.
+
+    ⚠ 이것은 **판정 불가 라벨**이다 — 최근 반대 방향이 눌림목인지 추세 전환인지는 가격 경로를
+    봐야 갈리는데 리포트에는 구간 수익률뿐이다. 사실(부호가 바뀌었다)만 말한다.
+    주체는 화면의 선택 주체, 시장은 선택 시장이다. 창은 화면 창과 무관하게 20일·5일이다.
+    """
+    mk = st.market
+    five = {r["sector"]: r for r in _block_rows(st.d, "5", mk)}
+    out = []
+    for r in _block_rows(st.d, BANNER_WIN, mk):
+        s = five.get(r.get("sector"))
+        cur, f5 = r.get(st.actor), (s or {}).get(st.actor)
+        if cur is None or f5 is None:
+            continue
+        prior = cur - f5
+        if prior * f5 < 0:
+            out.append((_sec_label(r), prior, f5))
+    out.sort(key=lambda t: -abs(t[2]))
+    return out
+
+
+def _totals_window(d: dict, market: str) -> str | None:
+    """시장 합계를 적을 **가장 짧은 창** — 1일 블록이 있으면 1일, 없으면 5일."""
+    for w in ("1", "5"):
+        if f"{w}|{market}" in (d.get("blocks") or {}):
+            return w
+    return None
+
+
+def pct_extremes(st: State) -> tuple[list[str], list[str], str]:
+    """1년 백분위가 **새로** ≥95 / ≤5 에 든 섹터 — (위, 아래, 비교 기준 설명).
+
+    "새로" 는 직전 리포트(`d["prior"]`, :func:`prior_pct`)와 견준다 — 직전에는 극단이 아니었는데
+    오늘 극단인 섹터. 직전 리포트가 없으면 **지금** 극단인 섹터를 적고 그렇다고 말한다.
+    """
+    mk, a = st.market, st.actor
+    prior = (st.d.get("prior") or {})
+    ppct = ((prior.get("pct1y") or {}).get(f"{BANNER_WIN}|{mk}"))
+    hi, lo = [], []
+    for r in _block_rows(st.d, BANNER_WIN, mk):
+        p = (r.get("pct1y") or {}).get(a)
+        if p is None:
+            continue
+        before = None if ppct is None else ((ppct.get(r.get("sector")) or {}).get(a))
+        if p >= PCT_HI and (ppct is None or before is None or before < PCT_HI):
+            hi.append(f"{_sec_label(r)} {p:.0f}")
+        elif p <= PCT_LO and (ppct is None or before is None or before > PCT_LO):
+            lo.append(f"{_sec_label(r)} {p:.0f}")
+    basis = f"{prior.get('asof')} 대비 새로" if ppct is not None else "지금(직전 리포트 없음)"
+    return hi, lo, basis
 
 
 def banner_lines(st: State, width: int) -> list[str]:
-    """시작 배너 — 표를 그리기 전에 아무 키로 넘길 수 있는 1회성 요약.
+    """시작 배너 — 표를 그리기 전에 아무 키로 넘길 수 있는 1회성 **사실 요약**.
 
-    셋 다 **이미 계산돼 있는 값을 그대로 옮길 뿐**이다 — 새 판단을 여기서
-    내리지 않는다. G 도 곱순위(선정×선정)도 화면이 이미 "검증 안 된 탐색
-    점수"라 적어 두고 있고(``SORTS`` 주석·도움말 '선정' 항목), 이 배너는 그
-    경고를 지우지 않고 그대로 옮긴다 — 자동매수 신호가 아니라 표를 열기 전에
-    먼저 보는 사실 요약이다.
+    점수·순위·추천을 싣지 않는다. 예전 배너는 G 통과 섹터와 곱순위 상위 종목을 먼저
+    보였는데, 검정 결과 섹터 지표는 앞날 증거가 없고 G 는 판정 불가이며, 곱의 종목 축은
+    투신+연기금을 "많이 살수록 좋다" 로 세는데 그 순위 정보는 부호가 **음**이었다
+    (docs/validation/). 그래서 여기에는 누가 어디서 사고팔았나만 적는다 — 모든 값은
+    페이로드에 이미 있는 것을 옮길 뿐이고, 줄 순서는 금액 크기(측정값)다.
     """
     d = st.d
     chip = status_chip(d)
-    title = f" 오늘의 요약 · {d.get('asof', '')} {chip} — 아무 키나 눌러 표로"
+    title = f" 오늘의 수급 · {d.get('asof', '')} {chip} — 아무 키나 눌러 표로"
     lines = [pad(_first_fitting(width, [title + " · q:종료", title]), width),
              pad("", width)]
+    mk, w = st.market, BANNER_WIN
+    mkts = [mk] if mk != "전체" else st.markets[1:]
 
-    rows = st.rows()
-    gpass = sorted((r for r in rows if r.get("G_pass")), key=lambda r: -(r["U"] or 0))
-    if gpass:
-        names = "·".join(r["sector"] for r in gpass)
-        lines.append(pad(f" G 통과 {st.window}일·{st.market} {len(gpass)}개 — {names}", width))
-    else:
-        lines.append(pad(f" G 통과 {st.window}일·{st.market} 섹터 없음", width))
-    lines.append(pad(" (G 는 검증 안 된 탐색 점수 — ? 도움말의 '선정' 항목 참고)", width))
+    tw = _totals_window(d, mk)
+    if tw:
+        rows = _block_rows(d, tw, mk)
+        parts = []
+        for k, ko in ACTORS:
+            vals = [r.get(k) for r in rows if r.get(k) is not None]
+            parts.append(f"{ko} {fmt_amt(sum(vals)) if vals else '—'}")
+        lines.append(_items_line(f" 시장 {mk} 최근 {tw}일 순매수[억]: ", parts, width))
     lines.append(pad("", width))
 
-    picks = st.all_picks()[:5]
-    win = st.window if st.window != "종합" else st.COMBINED_WIN
-    legend_at = len(lines)
-    # 줄마다 창이 다르다 — 순매수는 현재 창, 투신·연기금은 최근 5일이다. 안 적으면 표의 값과
-    # 어긋나 보인다(실측: 배너 `투신 +69` 는 5일, 표의 투신 +167 은 20일).
-    lines.append(pad(f" 곱순위(섹터선정×종목선정) 상위 — 순매수 {win}일:", width))
-    if picks:
-        heads = [f"   {i} {p.get('name', '—')}({p.get('sector', '—')})"
-                 f"  곱 {p.get('both', 0):.2f}  순매수 {fmt_amt(p.get('flow'))}억"
-                 for i, p in enumerate(picks, 1)]
-        # 자금 성격의 **직전 구간 → 최근 구간**. 겹치지 않게 차분한 값이다
-        # (`TREND_SEGS`). 부호가 아니라 금액을 남긴다 — 보는 양이 수요의
-        # 크기라서다(Sias 2004).
-        #
-        # 폭 계층 상수를 또 만들지 않는다. 긴 표기부터 넣어 보고 안 맞으면 짧은
-        # 쪽으로 내려간다 — 이 파일은 같은 폭 임계값을 두 군데 적었다가 어긋난
-        # 적이 있어(`Col` 주석) 임계값을 늘리지 않는 편이 낫다.
-        #
-        # ⚠️ 형식은 **다섯 줄이 같이** 정해진다. 줄마다 따로 재면 이름이 짧은
-        # 종목만 긴 표기를 얻어, 같은 열에 다른 것이 놓인 표가 된다(실측: 폭 80
-        # 에서 1·4·5행만 최근값, 2·3행은 직전→최근이었다).
-        trends = [_pick_trends(st, p) for p in picks]
-        for variant in range(len(trends[0]) + 1):
-            cand = [h + (t[variant] if variant < len(t) else "")
-                    for h, t in zip(heads, trends)]
-            if all(cell_len(c) <= width for c in cand):
-                break
-        seg_note = ("투신·연기금 직전15일->최근5일", "투신·연기금 최근5일")
-        if variant < len(seg_note):
-            lines[legend_at] = pad(_first_fitting(width, [
-                f" 곱순위(섹터선정×종목선정) 상위 — 순매수 {win}일 · {seg_note[variant]}:",
-                f" 곱순위 상위 — 순매수 {win}일 · {seg_note[variant]}:",
-                f" 곱순위 상위 — 순매수 {win}일:"]), width)
-        lines.extend(pad(c, width) for c in cand)
-    else:
-        lines.append(pad("   없음(양쪽 관문을 다 통과한 종목이 없다)", width))
+    rows = _block_rows(d, w, mk)
+    inst = sorted((r for r in rows if r.get("inst") is not None), key=lambda r: -r["inst"])
+    trust = _sector_trusted(d, mkts, w)
+    tr = sorted(((r, trust[r["sector"]]) for r in rows if r.get("sector") in trust),
+                key=lambda t: -t[1])
+    for label, ranked in (("기관", [(r, r["inst"]) for r in inst]), ("투신+연기금", tr)):
+        top = [f"{_sec_label(r)} {fmt_amt(v)}" for r, v in ranked[:3]]
+        bot = [f"{_sec_label(r)} {fmt_amt(v)}" for r, v in ranked[::-1][:3]]
+        lines.append(_items_line(f" {label} {w}일 순매수 상위[억]: ", top, width))
+        lines.append(_items_line(f" {label} {w}일 순매수 하위[억]: ", bot, width))
     lines.append(pad("", width))
 
-    flags = reversal_flags(st)
-    if flags:
-        lines.append(pad(" ⚠ 5일 창에서 기관 순매수가 반대로 돌아선 G 통과 섹터:", width))
-        for sec, cur, five in flags:
-            lines.append(pad(f"   {sec}  {st.window}일 {fmt_amt(cur)}억 → 5일 {fmt_amt(five)}억",
-                              width))
+    ko = ACTORS[st.ai][1]
+    hi, lo, basis = pct_extremes(st)
+    lines.append(pad(f" {ko} {w}일 1년%ile 극단 — {basis}:", width))
+    lines.append(_items_line(f"   ≥{PCT_HI:.0f}: ", hi, width))
+    lines.append(_items_line(f"   ≤{PCT_LO:.0f}: ", lo, width))
+    lines.append(pad("", width))
+
+    flips = [f"{s} {fmt_amt(p)}{TREND_ARROW}{fmt_amt(f)}" for s, p, f in reversal_flags(st)]
+    lines.append(pad(f" {ko} 최근 5일 부호가 직전 15일과 반대[억, 직전15일{TREND_ARROW}최근5일]:",
+                     width))
+    lines.append(_items_line("   ", flips, width))
+    lines.append(pad("", width))
+    lines.append(pad(_first_fitting(width, [
+        " 사실 요약이다 — 순위·추천이 아니다. 섹터 수급의 앞날 관계는 검정함 — 증거 없음(docs/validation/).",
+        " 사실 요약 — 추천 아님. 앞날 관계는 검정함 — 증거 없음.",
+        " 사실 요약 — 추천 아님."]), width))
     return lines
+
+
+def prior_pct(report_dir: str, asof: str) -> dict | None:
+    """직전 기준일 리포트의 1년 백분위 — `{"asof", "pct1y": {"창|시장": {섹터: {주체: 값}}}}`.
+
+    배너가 "새로 극단에 든 섹터" 를 말하려면 어제 값이 필요한데 페이로드에는 오늘 값만 있다.
+    같은 부모 폴더의 **더 앞** 기준일 폴더 중 `numbers.html` 이 있는 가장 최근 것을 읽는다
+    (수집 미완 폴더는 `numbers.html` 이 없어 저절로 건너뛴다). 못 읽으면 None — 배너는 그때
+    "지금 극단" 을 적고 그렇다고 말한다.
+    """
+    real = os.path.realpath(os.path.expanduser(report_dir))
+    root = os.path.dirname(real)
+    try:
+        days = sorted((n for n in os.listdir(root)
+                       if _REPORT_DAY.fullmatch(n) and n < str(asof)), reverse=True)
+    except OSError:
+        return None
+    for n in days:
+        path = os.path.join(root, n, "numbers.html")
+        if not os.path.exists(path):
+            continue
+        try:
+            with open(path, encoding="utf-8") as f:
+                m = re.search(r"const D = (\{.*?\});\n", f.read(), re.S)
+            pd = json.loads(m.group(1)) if m else None
+        except (OSError, UnicodeDecodeError, ValueError):
+            pd = None
+        if not pd:
+            return None
+        return {"asof": pd.get("asof", n),
+                "pct1y": {k: {r.get("sector"): r.get("pct1y") or {} for r in b.get("rows") or []}
+                          for k, b in (pd.get("blocks") or {}).items()}}
+    return None
 
 
 _REPORT_DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
@@ -1083,12 +1223,21 @@ def header_lines(st: State, width: int) -> list[str]:
     d = st.d
     chip = status_chip(d)
     l1 = f" 섹터 자금 흐름 · {d['asof']} {chip}"
+    if st.explore:
+        # 탐색 표지는 **제목 줄 앞**에 붙인다 — 폭이 모자라면 날짜·칩보다 먼저 줄지 않게
+        # 짧은 문구로 내려가고, 어느 폭에서도 `[탐색` 은 남는다.
+        l1 = _first_fitting(width, [f" [{t}]{l1}" for t in EXPLORE_LABEL_TIERS]
+                            + [f" [{t}]" for t in EXPLORE_LABEL_TIERS])
     label, note = SORTS[st.si][1], ""
     # 종합 화면은 **정렬 자체가 없다**(페이로드 순서). 예전엔 방향 화살표만 빼고
     # 열 이름은 남겼는데, `s` 를 누르면 그 이름이 바뀌어서 정렬이 된 것처럼
     # 보였다 — 화살표를 지운 판단을 열 이름까지 밀고 간다. 이 화면이 무엇으로
     # 줄세워졌는지는 첫 열(G) 이 말한다.
-    if st.sortable:
+    if st.allv and not st.drill:
+        # 전 종목 화면은 곱 내림차순 **고정**이다. 섹터 표의 정렬 칩을 그대로 그리면
+        # `정렬[가속▼]` 이 곱 순 목록 위에 뜬다 — 화면이 자기 순서를 틀리게 말한다.
+        sort_chip = " 정렬없음[곱 순]"
+    elif st.sortable:
         key, fell = st.effective_sort(st.rows())
         if fell:
             note = f"  ※ 이 구간에 {label} 값이 없다"
@@ -1119,7 +1268,7 @@ def header_lines(st: State, width: int) -> list[str]:
 #: 양쪽에 있었고, 심지어 분기 모양이 서로 달랐다(한쪽은 if/elif, 다른 쪽은 if 두 개).
 #: 결과가 같았던 것은 우연이고, 어긋나기 직전이었다. 이제 렌더는 이 정의를
 #: **순회만** 하므로 "헤더와 셀이 어긋나는" 버그가 표현 불가능하다 —
-#: docs/GUARDRAILS.md §0 의 "위험한 기능을 코드에서 제거" 와 같은 처방이다.
+#: swing-it docs/GUARDRAILS.md §0 의 "위험한 기능을 코드에서 제거" 와 같은 처방이다.
 Col = namedtuple("Col", "header width right fn")      # fn(r, st) -> str
 
 
@@ -1171,7 +1320,7 @@ def _num(key, nd=2):
 
 
 #: 정렬 키 → 그 열의 헤더 이름. 하이라이트할 열을 찾는 데 쓴다.
-SORT_COL = {"G": "선정", "flow": "임펄스[억]", "accel": "가속[%p]",
+SORT_COL = {"G": "G", "flow": "임펄스[억]", "accel": "가속[%p]",
             "ret": "수익률[%]", "pct": "1년[%ile]",
             "x": "미실현[%p]", "U": "포텐셜[½kx²]", "P": "dW/dt[%p/일]",
             "xddot": "풀림[%p/일²]", "n_all": "종목[수]"}   # 거래대금·시총은 표에 열이 없어 하이라이트 대상이 아니다
@@ -1206,8 +1355,10 @@ _TABLE_COLS = (
     # 마커는 **별도 1칸 열**이다. 값에 붙이면 ● 가 2칸이라 열이 밀린다.
     # 얇은 섹터(~)는 글자로도 표시한다 — 색에만 실으면 무색 터미널·색맹에서
     # 경고가 통째로 사라진다.
+    # `*`(G 관문 통과)는 **탐색 모드에서만** 찍는다 — G 열과 같은 지위다.
     Col("", 1, False,
-        lambda r, st: "~" if r.get("thin") else ("*" if r.get("G_pass") else "")),
+        lambda r, st: "~" if r.get("thin") else
+        ("*" if st.explore and r.get("G_pass") else "")),
     Col("가속[%p]", 9, True, _num("accel")),
     Col("임펄스[억]", 12, True, lambda r, st: fmt_amt(r.get("flow"))),
     Col("1년[%ile]", 9, True,
@@ -1216,7 +1367,7 @@ _TABLE_COLS = (
     Col("수익률[%]", 10, True, _num("ret")),
     Col("미실현[%p]", 10, True, _num("x", 1)),
     Col("풀림[%p/일²]", 12, True, _num("xddot", 3)),
-    Col("선정", 6, True,
+    Col("G", 6, True,
         lambda r, st: f"{r['G']:.2f}" if r.get("G") is not None else "—"),
     # 이름만 잘라 넣으면 한글 길이가 제각각이라 줄마다 다르게 잘려 보인다.
     # **이름 + 금액**을 한 덩어리로 넣고 칸을 고정하면 모양이 일정하다.
@@ -1246,9 +1397,10 @@ def table_cols(st: State, width: int) -> list[Col]:
     `_fit` 하나가 한다 — 폭 임계값이 두 군데에 있으면 언젠가 어긋난다.
     """
     if st.window != "종합":
-        return list(_TABLE_COLS)
+        # G 는 탐색 모드에서만 — 검정 결과 판정 불가(검정력 없음)라 기본 화면에 두지 않는다.
+        return [c for c in _TABLE_COLS if st.explore or c.header not in EXPLORE_COLS]
     cols = [_TABLE_COLS[0], _TABLE_COLS[1],
-            Col("선정", 6, True,
+            Col("G", 6, True,
                 lambda r, st_: f"{r['G']:.2f}" if r.get("G") is not None else "—")]
     wins = (st.d.get("combined", {}).get(st.market) or {}).get("windows", [])
     for w in wins:
@@ -1383,8 +1535,9 @@ _NAME_COLS = (
 )
 
 
-def names_cols() -> list[Col]:
-    return list(_NAME_COLS)
+def names_cols(explore: bool = False) -> list[Col]:
+    """종목 목록의 열. 선정점수는 **탐색 모드에서만** 싣는다(:data:`EXPLORE_COLS`)."""
+    return [c for c in _NAME_COLS if explore or c.header not in EXPLORE_COLS]
 
 
 #: 혼자 남으면 **오해를 만드는** 열 → 그 열이 뜻을 가지려면 같이 있어야 하는 열.
@@ -1400,14 +1553,14 @@ def names_cols() -> list[Col]:
 COL_PAIRS = (("참여율[%]", "거래대금[억]"),)
 
 
-def fit_names(width: int) -> list[Col]:
+def fit_names(width: int, explore: bool = False) -> list[Col]:
     """폭에 들어가는 종목 열 — :data:`COL_PAIRS` 의 짝은 통째로 남거나 통째로 빠진다.
 
     ``width`` 는 **뷰 폭**이다(:func:`view_width` 를 이미 통과한 값). 앱이 한 번
     빼고 여기서 또 빼면 한 칸씩 좁아진다 — 그 −1 이 두 곳에 있어서 난 버그를
     방금 고쳤으므로 같은 실수를 반대 방향으로 만들지 않는다.
     """
-    cols = _fit(names_cols(), width)
+    cols = _fit(names_cols(explore), width)
     heads = [c.header for c in cols]
     drop = {a for a, b in COL_PAIRS if a in heads and b not in heads}
     return [c for c in cols if c.header not in drop]
@@ -1416,7 +1569,7 @@ def fit_names(width: int) -> list[Col]:
 def name_sort_span(st: State) -> tuple[int, int] | None:
     """종목 목록에서 지금 정렬 중인 열의 (시작 표시칸, 폭)."""
     header = NAME_SORT_COL.get(st.name_sort)
-    return col_span(names_cols(), header) if header else None
+    return col_span(names_cols(st.explore), header) if header else None
 
 
 #: 상세 패널 첫 줄의 들여쓰기. :func:`detail_lines` 와 :func:`detail_title_span`
@@ -1574,7 +1727,7 @@ _ALL_COLS = (
     Col("종목", 14, False, lambda t, st: t.get("name", "—")),
     Col("섹터", 13, False, lambda t, st: t.get("sector", "—")),
     Col("곱", 5, True, lambda t, st: f"{t['both']:.2f}"),
-    Col("섹터선정", 9, True, lambda t, st: f"{t['gsec']:.2f}"),
+    Col("섹터G", 9, True, lambda t, st: f"{t['gsec']:.2f}"),
     Col("종목선정", 9, True, lambda t, st: f"{t['pick']:.2f}"),
     Col("순매수[억]", 13, True, lambda t, st: fmt_amt(t.get("flow"))),
     Col(COL_INVTRT, 8, True, lambda t, st: fmt_amt(t.get("invtrt"))),
@@ -1600,8 +1753,8 @@ def all_lines(st: State, width: int) -> tuple[list[str], int]:
     """
     rows = st.all_picks()
     cols = _fit(all_cols(), width)
-    # ⚠️ 종합에서는 **두 층이 다른 구간을 본다.** 섹터 점수는 세 창(20·60·120)의
-    # 등가중 평균인데, 종목 점수는 그 섹터의 20일 목록에서 나온다(`State.names`).
+    # ⚠️ 종합에서는 **두 층이 다른 구간을 본다.** 섹터 점수는 섞은 창(20·60·120) 가운데
+    # **관문을 통과한 창만**의 평균인데, 종목 점수는 그 섹터의 20일 목록에서 나온다(`State.names`).
     # 곱이 뜻을 가지려면 무엇과 무엇을 곱했는지가 화면에 있어야 한다 — 예전엔
     # `20일 기준` 이라고만 적어서, 섹터 쪽도 20일인 것처럼 읽혔다.
     if st.window == "종합":
@@ -1652,7 +1805,7 @@ def names_lines(st: State, width: int) -> tuple[list[str], int]:
         note = " · 옛 리포트(새 열 없음)"
         if cell_len(title + note) + 1 <= width:
             title += note
-    cols = fit_names(width)
+    cols = fit_names(width, st.explore)
     head = pad(" ".join(pad(c.header, c.width, c.right) for c in cols), width)
     out = [pad(title, width), head]
     for t in names:
@@ -1697,6 +1850,107 @@ def color_spans(line: str) -> list[tuple[int, int, str]]:
     return spans
 
 
+#: 증거 수준 표지 — 열마다 "이 값의 앞날 관계를 검정했나, 결과가 무엇인가" 를 붙인다.
+#: 근거: docs/validation/2026-11-08-results.md(Q3d 재검)·2026-11-08-usefulness-results.md.
+B_MEAS = "[측정]"
+B_NONE = "[앞날 증거 없음]"
+B_G = "[판정 불가: G]"
+B_X = "[≈섹터 20일 반전: x]"
+B_NEG = "[음의 순위 정보·쓸 수 없음]"
+BADGES = (B_MEAS, B_NONE, B_G, B_X, B_NEG)
+
+#: 페이로드 키 → 증거 수준. **웹 두 장이 같은 표를 싣는다**(`const EV`) — 화면과 웹이 같은
+#: 값에 다른 표지를 달면 둘 중 하나가 거짓말이다. 검사가 대조한다.
+#:
+#: 검정한 것: 섹터 가속·기관 임펄스·x·G (20일, 5·20일 지평), 섹터 투신+연기금·외국인 20일,
+#: 기관 60일 — 전부 증거 없음(G 는 판정 불가). 개인·기타법인·파생값은 검정하지 않았다.
+EVIDENCE = {
+    "accel": B_NONE, "inst": B_NONE, "forgn": B_NONE, "trust": B_NONE,
+    "indiv": B_MEAS, "etc": B_MEAS,
+    "x": B_X, "G": B_G,
+    "exp": B_MEAS, "U": B_MEAS, "P": B_MEAS, "xdot": B_MEAS, "xddot": B_MEAS,
+    "ret": B_MEAS, "pct": B_MEAS, "spark": B_MEAS, "tv": B_MEAS, "cap": B_MEAS,
+    "n_all": B_MEAS,
+}
+
+#: 도움말 열 이름 → (증거 표지, 한 줄 근거). 섹터 표 절.
+_EV_SECTOR = {
+    "투신+연금5일[억]": (B_NONE, "섹터 투신+연기금 20일로 검정, 5일은 안 함"),
+    "종목[수]": (B_MEAS, ""),
+    "G": (B_G, "관문 통과가 날마다 2~7개"),
+    "임펄스[억]": (B_NONE, "기관 20일 검정. 외국인 20일·기관 60일도"),
+    "가속[%p]": (B_NONE, "20일, 섹터 앞날 5·20일 순위 IC"),
+    "1년[%ile]": (B_MEAS, ""),
+    "추이[8]": (B_MEAS, ""),
+    "수익률[%]": (B_MEAS, ""),
+    "예상Δv": (B_MEAS, ""),
+    "미실현[%p]": (B_X, "앞날 증거 없음"),
+    "포텐셜[½kx²]": (B_MEAS, "x 에서 나온 값"),
+    "dW/dt[%p/일]": (B_MEAS, ""),
+    "풀림[%p/일²]": (B_MEAS, "x 에서 나온 값"),
+    "순매수상위[억]": (B_MEAS, ""),
+    "순매도상위[억]": (B_MEAS, ""),
+    "N일[G]": (B_G, ""),
+    "통과[구간]": (B_G, ""),
+}
+#: 종목 목록·전 종목 절 — 종목 층의 열은 섹터 표와 다른 표지를 단다.
+_EV_NAMES = {
+    "순매수[억]": (B_NONE, "종목 기관 20일 미확인 · 외국인 탈락"),
+    "누적[%]": (B_MEAS, ""),
+    "선정": (B_NEG, "투신+연기금 축이 검정 부호와 반대"),
+    COL_INVTRT: (B_NEG, "투신+연기금 20일 섹터 안 순위"),
+    COL_PENFND: (B_NEG, "투신+연기금 20일 섹터 안 순위"),
+    "상대수익[%p]": (B_MEAS, ""),
+    "최근집중[%]": (B_MEAS, ""),
+    "참여율[%]": (B_MEAS, ""),
+    "시총대비[%p]": (B_MEAS, ""),
+    "시총[억]": (B_MEAS, ""),
+    "거래대금[억]": (B_MEAS, ""),
+    "곱": (B_G, "섹터 G × 종목 선정점수"),
+    "섹터G": (B_G, ""),
+    "종목선정": (B_NEG, "투신+연기금 축이 검정 부호와 반대"),
+}
+
+
+def evidence_for(header: str, section: str = "sector") -> tuple[str, str] | None:
+    """열 헤더의 (증거 표지, 근거). 섹터 표면 ``section="sector"``, 종목 쪽이면 ``"names"``."""
+    table = _EV_NAMES if section == "names" else _EV_SECTOR
+    return table.get(header)
+
+
+def _with_evidence(entries: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    """도움말 열 항목마다 바로 아래에 **증거 줄**을 끼운다(설명이 몇 줄이든 그 항목 끝에).
+
+    표지를 설명 첫 줄 앞에 붙이면 폭 80 에서 줄이 넘친다 — 한 줄을 따로 쓴다.
+    절(`── 종목 목록 ──`·`── 전 종목 ──`)에 따라 표를 바꾼다: `선정` 이 두 절에서 다른 열이다.
+    """
+    out: list[tuple[str, str]] = []
+    section, pending = "sector", None
+
+    def flush():
+        if pending:
+            badge, why = pending
+            out.append(("", f"        증거 {badge}" + (f" — {why}" if why else "")))
+    for name, desc in entries:
+        if not name and desc.strip().startswith("──"):
+            flush()
+            pending = None
+            if "종목 목록" in desc or "전 종목" in desc:
+                section = "names"
+            elif "섹터 표" in desc:
+                section = "sector"
+            else:
+                section = "other"
+            out.append((name, desc))
+            continue
+        if name:
+            flush()
+            pending = evidence_for(name, section) if section != "other" else None
+        out.append((name, desc))
+    flush()
+    return out
+
+
 #: 도움말 — 열의 뜻과 계산식. 화면에서 읽는 사람이 "이 숫자가 뭐냐" 를 물을 자리에
 #: 답을 둔다. 한계도 같이 적는다(추정치·상대지표·유동성 함정).
 HELP = [
@@ -1704,20 +1958,35 @@ HELP = [
     ("↑↓ j k", "한 줄 이동. g·Home 처음 · G·End 끝 · PgUp/PgDn 한 화면씩."),
     ("Enter l →", "그 섹터의 전 종목 보기(드릴다운)."),
     ("h ← Esc", "드릴다운에서 나가기. h 는 vim 의 '왼쪽' 이라 l 의 반대다."),
-    ("w W", "구간 5·20·60·120·종합. 대문자는 역방향. 드릴다운에서도 듣는다."),
+    ("w W", "구간 5·20·60·120(탐색 모드는 종합까지). 대문자는 역방향."),
+    ("", "        드릴다운에서도 듣는다."),
     ("m M", "시장 전체·거래소·코스닥. 대문자는 역방향."),
     ("a A", "주체 기관·외국인·개인·기타법인. 대문자는 역방향."),
     ("s S", "정렬 열 바꾸기. 대문자는 역방향. 드릴다운에서는 종목 정렬."),
     ("r", "정렬 역순 토글. ▼ 내림차순(큰 것 먼저) · ▲ 오름차순 —"),
     ("", "        **순매도 상위**(가장 많이 판 쪽)는 이걸 켜야 위로 온다."),
     ("", "        드릴다운 순매수는 기본이 절댓값 큰 순, 역순이 가장 많이 판 순이다."),
-    ("t", "전 종목 화면 — 전 섹터를 곱 순으로 한 화면에. 섹터 표에서도"),
-    ("", "        드릴다운에서도 열리고, t·h·←·Esc 로 섹터 표로 돌아온다."),
+    ("e", "탐색 모드 켜기/끄기 — G·종목 선정·종합·전 종목(곱). 기본 꺼짐."),
+    ("", "        검정 결과 앞날 증거가 없는(G 는 판정 불가) 점수라 기본 화면에서"),
+    ("", "        뺐다. 켜 있는 동안 제목 줄 맨 앞에 [탐색 — …] 표지가 붙는다."),
+    ("t", "탐색 모드에서만 — 전 종목 화면(전 섹터를 곱 순으로 한 화면에)."),
+    ("", "        섹터 표·드릴다운에서 열리고, t·h·←·Esc 로 섹터 표로 돌아온다."),
     ("? F1", "이 도움말. 안에서 ↑↓·PgUp/PgDn·Space·g·G·Home·End 로 훑고,"),
     ("", "        q·Esc·?·Enter 로 닫는다."),
     ("q", "종료. 단 도움말 안에서는 **닫기만** 한다(한 번 더 눌러야 종료)."),
     ("", "한영 상태에서도 위 키가 그대로 듣는다. 다만 자판이 Shift 를 구분하지"),
     ("", "        않는 자리가 있어 **대문자 역방향은 w·r 만** 된다(끝으로는 End)."),
+    ("", ""),
+    ("", "── 증거 수준 — 열마다 '증거' 줄이 붙는다 ──"),
+    ("", "앞날 수익률(섹터·종목)과의 관계를 사전등록해 검정한 결과다(docs/validation/)."),
+    (B_MEAS, "지금·지난 구간을 잰 값. 앞날을 주장하지 않는다(앞날 검정 안 함)."),
+    (B_NONE, "검정함 — 증거 없음. 2018~2026, 섹터 앞날 5·20일 순위 IC."),
+    (B_G, "검정함 — 판정 불가. 관문 통과 섹터가 날마다 2~7개라 검정력이 없다."),
+    (B_X, "x 는 사실상 섹터 20일 수익률 반전이다(ρ 0.82~0.93)."),
+    ("", "        앞날 관계도 검정함 — 증거 없음(20일 지평은 경계)."),
+    (B_NEG, "종목 투신+연기금 20일의 섹터 안 순위: IC 가 음으로 확인됐다."),
+    ("", "        그러나 매수 상위 회피는 확인 구간에서 역효과였다 — 쓸 수 없다."),
+    ("", "        화면의 값은 앞날 예측이 아니라 누가 무엇을 사고파나의 관측이다."),
     ("", ""),
     ("", "── 섹터 표 ──"),
     ("섹터", "벤더 분류(stocks.sector) 27개. KRX 업종 분류와 다르다."),
@@ -1731,17 +2000,19 @@ HELP = [
     ("", "        수급 보고가 두 달 전에 끊긴 이름이 남아 있어서, 그걸 세면 표가"),
     ("", "        387 이라 하고 목록이 386 개인 일이 생긴다(실측)."),
     ("", "        10개 미만은 **~ 마커**와 회색 — 벤더 분류가 좁아 사실상 단일종목인"),
-    ("", "        라벨이 있다(부동산 3, 출판/매체복제 2). 얇은 섹터는 G 순위에서 뺀다."),
+    ("", "        라벨이 있다(부동산 3, 출판/매체복제 2). 얇은 섹터는 G 순위에서 빼고"),
+    ("", "        정렬과 무관하게 표 맨 아래로 보낸다 — 분모가 작아 가속이 쉽게 튄다."),
     ("", "        색이 없는 터미널에서도 남도록 마커를 글자로 둔다. 오른쪽 끝 열이다."),
-    ("선정", "**관문을 통과한 것들 사이**의 순위 평균 0~1. 두 화면이 같은 이름·같은"),
-    ("", "        설계다 — 섹터 표는 27개 섹터 사이, 종목 목록은 그 섹터 안 종목 사이."),
+    ("G", "탐색 모드(e)에서만. **관문을 통과한 것들 사이**의 순위 평균 0~1."),
+    ("", "        섹터 표는 27개 섹터 사이, 종목 목록은 그 섹터 안 종목 사이다."),
+    ("", "        통과 섹터가 하나뿐이면 G = 0.5 다(종목 선정은 그때 점수가 없다)."),
     ("", "        섹터 표의 관문: 얇지 않고(`~` 아님) **가속>0 · 미실현>0 · 풀림>0**."),
-    ("", "        하나라도 어기면 점수가 없다(`—`) — 예전엔 통과 여부를 `*` 로 따로"),
-    ("", "        내고 점수는 전 섹터에 줘서, '점수는 높은데 통과는 못 한' 줄이 생겼다."),
+    ("", "        하나라도 어기면 점수가 없다(`—`). `*` 는 점수가 있는 줄과 정확히"),
+    ("", "        같은 통과 표시다(탐색 모드에서만 찍힌다)."),
     ("", "        점수 = rank(가속)·rank(미실현)·rank(풀림) 평균. 동률은 중간순위."),
     ("", "        순위를 쓰는 이유: 가속은 %p(0~5), 미실현은 %p(±50), 풀림은 1e-2"),
     ("", "        스케일이라 그대로 더하면 미실현이 전부를 지배한다."),
-    ("", "        * 는 세 조건을 다 만족(a>0 · x>0 · ẍ>0). 검증된 적 없는 탐색 지표다."),
+    ("", "        * 는 세 조건을 다 만족(a>0 · x>0 · ẍ>0). 앞날 검정 — 판정 불가."),
     ("임펄스[억]", "구간 누적 순매수 [억원] = Σ(순매매 수량 × 그날 종가)."),
     ("", "        DB 는 수량만 주므로 금액은 종가 환산 근사다(참값은 VWAP 가중)."),
     ("가속[%p]", "임펄스 ÷ 구간말 섹터 시총 × 100 [%p]. 물리로 a = F/m."),
@@ -1761,22 +2032,21 @@ HELP = [
     ("수익률[%]", "그 섹터 **자체 바구니**의 구간 수익률 [%], 전일 시총 가중."),
     ("", "        KRX 업종지수가 아니다 — 구성종목이 달라 분자·분모가 어긋난다."),
     ("예상Δv", "k × 가속 + b. k·b 는 10종목 이상 섹터의 횡단면 회귀(절편 포함 OLS)."),
-    ("미실현[%p]", "예상Δv − 실제 수익률 [%p]. + 면 덜 갔고(눌림), − 면 이미 더 갔다."),
+    ("미실현[%p]", "예상Δv − 실제 수익률 [%p]. + 는 적합선 대비 덜 오른 폭이다"),
+    ("", "        (섹터 20일 반전과 ρ 0.82~0.93), − 는 더 오른 폭."),
     ("", "        OLS 잔차의 부호 반전이라 적합한 섹터의 합이 0 이다 — **상대** 지표."),
     ("포텐셜[½kx²]", "½·k·x². k 가 블록당 상수라 **k>0 인 블록에서만** |미실현| 의"),
-    ("", "        순증가 변환이다 — 실측(2026-08-28, 창 4 × 시장 3 = 12블록 전수):"),
-    ("", "        k>0 인 11블록에서 Spearman(|미실현|, 포텐셜) = +1.0000."),
+    ("", "        순증가 변환이다(순위가 |미실현| 과 같다)."),
     ("", "        **k ≤ 0 인 블록에서는 이 열이 통째로 `—` 다.** 그런 블록에서는"),
     ("", "        ½kx² 가 |미실현| 의 순**감소** 변환이라 '포텐셜 큰 순' 이"),
-    ("", "        정반대 순서가 된다(실측: 5일·코스닥 k=−0.587, t=−0.24 —"),
-    ("", "        22개 섹터 전부 U<0, ρ=−1.0000). 뜻을 잃은 값은 안 보인다."),
-    ("", "        k>0 일 때도 미실현 열과 정보가 겹치므로 정렬 옵션으로만 남겼다."),
-    ("dW/dt[%p/일]", "구간을 반으로 갈라 W=가속×수익률 의 변화. 힘과 운동이 정렬되는가."),
+    ("", "        정반대 순서가 된다. 뜻을 잃은 값은 안 보인다. 지금 블록의 k 는"),
+    ("", "        헤더 줄에 있다. k>0 일 때도 미실현 열과 정보가 겹친다."),
+    ("dW/dt[%p/일]", "구간을 반으로 갈라 본 W=가속×수익률 의 전·후반 차 ÷ 거래일."),
     ("", "        오른쪽 끝 열이라 넓은 폭에서만 보인다. 열은 폭이 모자라면 **경계에서**"),
     ("", "        통째로 빠진다 — 숫자가 자릿수 중간에서 잘려 다른 값처럼 보이지 않게."),
     ("풀림[%p/일²]", "미실현 x 가 해소되는 **가속**(ẍ). 구간을 셋으로 갈라 중앙차분한다."),
     ("", "        2차 차분이라 짧은 구간(조각 6~7일)에서는 값이 흔들린다."),
-    ("순매수상위[억]", "그 섹터에서 기관이 **가장 많이 산** 종목과 그 금액[억원]."),
+    ("순매수상위[억]", "그 섹터에서 **선택 주체**가 가장 많이 산 종목과 금액[억원]."),
     ("순매도상위[억]", "**가장 많이 판** 종목. 둘은 같은 목록(금액순)의 위/아래 끝이다."),
     ("", "        표는 1개씩, 하단 패널은 3개씩 — 같은 목록이고 시총과 무관하다."),
     ("", "        순매도상위는 화면이 더 넓어야 보인다. Enter 로 전 종목."),
@@ -1791,10 +2061,14 @@ HELP = [
     ("", "        그 위가 이 섹터를 움직인 종목이고 아래는 사실상 0 이다."),
     ("", "        실측: 전기/전자 386종목 중 **7개**가 80% 를 설명한다."),
     ("", "        순매수 정렬에서만 채운다 — 시총·이름 순의 누적은 뜻이 없다."),
-    ("선정", "**이 섹터 안 종목들** 사이의 순위 평균 0~1. 섹터 표의 G 와 다른 층이다"),
+    ("선정", "탐색 모드에서만. **이 섹터 안 종목들** 사이의 순위 평균 0~1."),
+    ("", "        섹터 표의 G 와 다른 층이다"),
     ("", "        (G 는 27개 섹터 사이, 이것은 그 섹터 안 종목 사이)."),
     ("", "        먼저 **관문** — 하나라도 어기면 점수가 없다(`—`):"),
     ("", "          · 누적 80% 안 · 순매수 > 0"),
+    ("", "          · 최근집중·상대수익·참여율이 다 있어야 한다 — 그래서 5일 창"),
+    ("", "            (최근집중이 늘 비는 창)에는 선정이 하나도 없다."),
+    ("", "          · 후보가 둘 이상이어야 한다 — 하나뿐이면 점수가 없다(G 와 다르다)."),
     ("", "          · 투신 ≥ 0 **그리고** 연기금 ≥ 0 — 기관은 6개 세부의 합이라"),
     ("", "            금투(헤지·차익)가 만든 숫자일 수 있다. 실측: 대한항공 20일"),
     ("", "            기관 +692억인데 투신 −144 다."),
@@ -1803,11 +2077,12 @@ HELP = [
     ("", "            43,543억이 같이 있다."),
     ("", "        점수 = 네 순위의 평균, 각 순위는 pos/(N−1):"),
     ("", "          rank(투신+연기금) · rank(최근집중) · rank(−상대수익) · rank(참여율)"),
-    ("", "        **상대수익만 부호를 뒤집는다** — 섹터만큼 안 갔다는 뜻이라 좋은 쪽이다."),
+    ("", "        **상대수익만 부호를 뒤집는다** — 섹터보다 덜 오른 종목이 위로 간다."),
     ("", "        순위를 쓰는 이유는 G 와 같다: 억원·%·%p 를 그대로 더하면 단위가 큰"),
     ("", "        축이 전부를 지배한다."),
-    ("", "        ⚠️ **검증된 적 없는 탐색 점수다.** 네 축 각각도 예측력이 심사된 적"),
-    ("", "        없고 평균이 그것을 만들지도 않는다. 기본 정렬이 이것이 아닌 이유다."),
+    ("", "        ⚠️ **탐색 점수다** — 탐색 모드(e)에서만 보인다. 점수 자체는 앞날"),
+    ("", "        검정을 안 했고, rank(투신+연기금) 축은 검정 결과와 **부호가 반대**다"),
+    ("", "        (섹터 안 순위 IC 음 — 많이 산 쪽을 위로 올리는 축이다)."),
     (COL_INVTRT, "그 구간 **투신**(자산운용) 순매수 [억원]."),
     (COL_PENFND, "그 구간 **연기금**(국민연금 등) 순매수 [억원]."),
     ("", "        왜 따로 보나: 기관 총액이 같아도 이 둘이 채운 것과 금투(증권사"),
@@ -1822,8 +2097,8 @@ HELP = [
     ("", "        횡단면에서 적합된 것이라 2,645종목 위에서는 적합된 적이 없다."),
     ("", "        뺄셈은 회귀 없이 같은 질문에 답한다. 더 정직하고 더 간단하다."),
     ("최근집중[%]", "5일 순매수 ÷ **이 창**의 순매수 × 100 [%]. 지속성이다."),
-    ("", "        20일 화면에서 ≈25 면 고르게 분산(꾸준히 담는 중) · ≈100 이면"),
-    ("", "        20일치가 최근 5일에 몰림(오늘 급하게 산 것) · >100 이면 앞에서는"),
+    ("", "        20일 화면에서 ≈25 면 고르게 분산 · ≈100 이면 20일치가"),
+    ("", "        최근 5일에 몰림 · >100 이면 앞에서는"),
     ("", "        팔다 최근에 방향을 튼 것 · **음수면** 최근 5일이 구간 전체와"),
     ("", "        반대 방향이다. 분모가 1억 미만이면 비율이 폭발해 비운다."),
     ("", "        가장 짧은 창(5일)에서는 분자=분모라 늘 100 이므로 역시 비운다."),
@@ -1835,33 +2110,32 @@ HELP = [
     ("시총[억]", "그 종목의 구간말 시가총액 [억원]. 시총대비의 분모다."),
     ("거래대금[억]", "그 구간 거래대금 [억원]."),
     ("", ""),
-    ("", "── 전 종목 화면 (t) ──"),
-    ("곱", "`섹터선정 × 종목선정`. **양쪽 관문을 다 통과한 종목**만 뜬다 —"),
+    ("", "── 전 종목 화면 (t, 탐색 모드에서만) ──"),
+    ("곱", "`섹터G × 종목선정`. **양쪽 관문을 다 통과한 종목**만 뜬다 —"),
     ("", "        어느 한쪽이라도 점수가 없으면 곱도 없다."),
     ("", "        **왜 곱인가**: 각 점수 **안에서는** 축 하나가 낮아도 나머지가"),
     ("", "        메우는 것이 맞다(그래서 평균이다). 층 **사이에서는** 아니다 —"),
     ("", "        평균이면 아무도 안 사는 섹터의 1등이 모두가 사는 섹터의 3등을"),
     ("", "        이긴다. 곱은 둘 다 높을 때만 산다(0.2×0.9=0.18 < 0.6×0.7=0.42)."),
-    ("섹터선정", "그 종목이 속한 섹터의 선정점수. 27개 섹터 사이의 순위다."),
+    ("섹터G", "그 종목이 속한 섹터의 G. 27개 섹터 사이의 순위다."),
     ("종목선정", "그 섹터 **안에서** 그 종목의 선정점수."),
     ("", "        둘을 같이 보이는 이유: 곱만 보이면 '섹터가 좋아서인가 종목이"),
     ("", "        좋아서인가' 를 못 묻는다."),
     ("", "        이 화면은 정렬이 없다 — 곱 내림차순 고정이다."),
     ("", ""),
     ("", "── 알아둘 것 ──"),
-    ("", "· k 는 추정치다. 구간마다 다르다(5일 15.9·20일 14.7·60일 9.2·120일 9.0)."),
-    ("", "· 위 관계는 **동시기**다. 사면 오른다는 것이지 미래를 예측하지 않는다."),
-    ("", "  예측 가설은 따로 검정해 기각됐다(research/logs/inst_flow_accel)."),
+    ("", "· k 는 추정치다. 구간마다·날마다 다르다 — 지금 블록의 값은 헤더 줄의"),
+    ("", "  k=…(t=…) 다. 도움말에 숫자로 적어 두면 다음 리포트에서 틀린 말이 된다."),
+    ("", "· 위 열들은 **동시기**(같은 구간 안)의 값이다. 앞날 수익률과의 관계는"),
+    ("", "  검정함 — 섹터 지표는 증거 없음, G 는 판정 불가(docs/validation/)."),
     ("", "· 값 0 은 '관망' 이 아니라 '0 또는 미보고' 다 — 수집기가 파싱 실패를"),
     ("", "  0 으로 준다."),
     ("", "· 코스닥 단독은 관계가 약하다(R² 0.00~0.25). 거래소가 전체를 끌고 간다."),
-    ("", "· **투신·연기금·개인은 키움에만 있다.** 그래서 페이로드가 소스를 키움으로"),
-    ("", "  좁히고(sources=(\"kiwoom\",)) 개인 생존편향을 허용한 채 만든다"),
-    ("", "  (allow_individual_survivorship=True, scripts/sector_flow.py)."),
-    ("", "  이 저장소가 알파 검증에서 엄격히 막는 생존편향이 **이 열들에는 남아**"),
-    ("", "  있다 — 상장폐지된 종목이 표본에서 빠져 있다. 관측용 화면이라 심사"),
-    ("", "  기준을 적용할 자리는 아니지만, 여기 적힌 숫자로 백테스트를 대신하면"),
-    ("", "  안 된다. 근거는 docs/GUARDRAILS.md."),
+    ("", "· **투신·연기금·개인은 키움 수집분에만 있다.** 그래서 리포트는 키움"),
+    ("", "  수집분만 쓰고, 상장폐지된 종목이 표본에서 빠진 채(생존편향) 만든다."),
+    ("", "  관측용 화면이라 심사 기준을 적용할 자리는 아니지만, 여기 적힌 숫자로"),
+    ("", "  백테스트를 대신하면 안 된다(검정 문서도 같은 한계를 적는다 —"),
+    ("", "  docs/validation/)."),
     ("", "· 종목 목록 제목에 **옛 리포트(새 열 없음)** 가 뜨면 투신·연기금·상대수익이"),
     ("", "  통째로 `—` 다. 화면 고장이 아니라 그 리포트가 이 열들이 생기기 전에"),
     ("", "  만들어진 것이다. 일일 배치는 같은 날짜 폴더가 있으면 건너뛰므로 데이터가"),
@@ -1869,6 +2143,7 @@ HELP = [
     ("", "     KR_QUANT_FORCE=1 scripts/daily_report.sh      (약 6분)"),
     ("", "  옆에 지어 마지막에 바꿔 끼우므로, 실패하면 옛 리포트가 그대로 남는다."),
 ]
+HELP = _with_evidence(HELP)
 
 
 #: 도움말 제목 — 넓은 것부터. 폭에 안 들어가면 다음 단계로 내려간다.
@@ -1917,12 +2192,13 @@ HINT_DESC = {
     "1년[%ile]": "이 순매수가 최근 1년 분포에서 몇 등 [0~100]",
     "추이[8]": "구간 동안 순매수가 누적된 경로. 왼쪽이 시작",
     "수익률[%]": "그 섹터 바구니의 구간 수익률 [%], 시총 가중",
-    "미실현[%p]": "예상Δv − 실제 수익률 [%p]. + 면 덜 갔다",
+    "미실현[%p]": "예상Δv − 실제 수익률 [%p]. + 면 덜 올랐다",
     "풀림[%p/일²]": "미실현이 해소되는 2차 변화 [%p/일²]",
-    "선정": "관문 통과분의 순위 평균 [0~1]",
+    "G": "관문 통과 섹터끼리의 순위 평균 [0~1]",
+    "선정": "관문 통과 종목끼리의 순위 평균 [0~1]",
     "포텐셜[½kx²]": "½·k·x². k≤0 인 블록은 비운다",
     "dW/dt[%p/일]": "전·후반 W=가속×수익률 의 변화 [%p/일]",
-    "투신+연금5일[억]": "그 섹터 최근 5일 투신+연기금 합 — 지금도 들어오나",
+    "투신+연금5일[억]": "그 섹터 최근 5일 투신+연기금 순매수 합 [억원]",
     "종목[수]": "이 구간에 거래된 종목 수. ~ 는 10개 미만",
     # 종목 목록(드릴다운)
     "종목": "종목명 가나다순",
@@ -2046,17 +2322,35 @@ def help_lines(width: int, offset: int, height: int,
 #: 없는 기능이라는 원칙은 그대로다. 바뀐 것은 **어느 화면에 적히느냐** 뿐이다.
 FOOTER_TIERS = (
     " w:구간 m:시장 a:주체 s:정렬 r:역순 ↑↓:섹터 g/G:처음/끝"
-    " PgUp/PgDn:쪽 Enter:종목 t:전종목 ?:도움말 q:종료",
-    " w:구간 m:시장 a:주체 s:정렬 r:역순 ↑↓:섹터 Enter:종목 t:전종목 ?:도움말 q:종료",
-    " w m a s:바꾸기 r:역순 Enter:종목 t:전종목 ?:전체 키 q:종료",
-    " w m a s r:바꾸기 Enter:종목 t:전종목 ?:키 q:종료",
+    " PgUp/PgDn:쪽 Enter:종목 e:탐색 ?:도움말 q:종료",
+    " w:구간 m:시장 a:주체 s:정렬 r:역순 ↑↓:섹터 Enter:종목 e:탐색 ?:도움말 q:종료",
+    " w m a s:바꾸기 r:역순 Enter:종목 e:탐색 ?:전체 키 q:종료",
+    " w m a s r:바꾸기 Enter:종목 e ?:키 q:종료",
     " ?:키 q:종료",
 )
 FOOTER_DRILL_TIERS = (
     " ↑↓:종목 s:정렬 r:역순 g/G:처음/끝 PgUp/PgDn:쪽 w:구간 m:시장 a:주체"
-    " t:전종목 h:돌아가기 ?:도움말 q:종료",
-    " ↑↓:종목 s:정렬 r:역순 w:구간 m:시장 a:주체 t:전종목 h:돌아가기 ?:도움말 q:종료",
+    " e:탐색 h:돌아가기 ?:도움말 q:종료",
+    " ↑↓:종목 s:정렬 r:역순 w:구간 m:시장 a:주체 e:탐색 h:돌아가기 ?:도움말 q:종료",
     " s:정렬 r:역순 w m a:바꾸기 h:돌아가기 ?:전체 키 q:종료",
+    " s r w m a:바꾸기 h:뒤로 ?:키 q:종료",
+    " ?:키 h:뒤로 q:종료",
+)
+#: 탐색 모드(`e`)의 푸터 — 탐색 전용 키 `t`(전 종목·곱)가 여기서만 적힌다. 기본 모드에서
+#: `t` 는 안 듣는다(곱은 탐색 점수다). 적혔는데 안 듣는 키가 안 적힌 키보다 나쁘다.
+FOOTER_EXPLORE_TIERS = (
+    " w:구간 m:시장 a:주체 s:정렬 r:역순 ↑↓:섹터 g/G:처음/끝"
+    " PgUp/PgDn:쪽 Enter:종목 t:전종목 e:탐색끔 ?:도움말 q:종료",
+    " w:구간 m:시장 a:주체 s:정렬 r:역순 ↑↓:섹터 Enter:종목 t:전종목 e:탐색끔 ?:도움말 q:종료",
+    " w m a s:바꾸기 r:역순 Enter:종목 t:전종목 e:탐색끔 ?:전체 키 q:종료",
+    " w m a s r:바꾸기 Enter:종목 t e ?:키 q:종료",
+    " ?:키 q:종료",
+)
+FOOTER_DRILL_EXPLORE_TIERS = (
+    " ↑↓:종목 s:정렬 r:역순 g/G:처음/끝 PgUp/PgDn:쪽 w:구간 m:시장 a:주체"
+    " t:전종목 e:탐색끔 h:돌아가기 ?:도움말 q:종료",
+    " ↑↓:종목 s:정렬 r:역순 w:구간 m:시장 a:주체 t:전종목 e:탐색끔 h:돌아가기 ?:도움말 q:종료",
+    " s:정렬 r:역순 w m a:바꾸기 t e h:돌아가기 ?:전체 키 q:종료",
     " s r w m a:바꾸기 h:뒤로 ?:키 q:종료",
     " ?:키 h:뒤로 q:종료",
 )
@@ -2069,21 +2363,23 @@ FOOTER_DRILL_TIERS = (
 #:
 #: 정렬이 없는 것은 설계다(곱 내림차순 고정) — 힌트바가 그 사실을 적는다
 #: (:data:`flow_app.HINT_ALL_TIERS`), 종합 화면이 정렬 없음을 적는 것과 같은 규칙이다.
+#: 이 화면은 탐색 모드에서만 열린다.
 FOOTER_ALL_TIERS = (
     " ↑↓:종목 g/G:처음/끝 PgUp/PgDn:쪽 w:구간 m:시장 a:주체"
-    " t·h:섹터 표로 ?:도움말 q:종료",
-    " ↑↓:종목 w:구간 m:시장 a:주체 t·h:섹터 표로 ?:도움말 q:종료",
-    " w m a:바꾸기 t·h:돌아가기 ?:전체 키 q:종료",
+    " t·h:섹터 표로 e:탐색끔 ?:도움말 q:종료",
+    " ↑↓:종목 w:구간 m:시장 a:주체 t·h:섹터 표로 e:탐색끔 ?:도움말 q:종료",
+    " w m a:바꾸기 t·h:돌아가기 e:탐색끔 ?:전체 키 q:종료",
     " w m a:바꾸기 h:뒤로 ?:키 q:종료",
     " ?:키 h:뒤로 q:종료",
 )
 #: 종합 화면의 푸터. 이 화면은 `s`·`r` 이 안 듣는다(:attr:`State.sortable`) — 적혔는데 안 듣는
-#: 키가 안 적힌 키보다 나쁘다.
+#: 키가 안 적힌 키보다 나쁘다. 종합은 G 를 섞은 축이라 탐색 모드에서만 닿는다.
 FOOTER_COMBINED_TIERS = (
-    " w:구간 m:시장 a:주체 ↑↓:섹터 g/G:처음/끝 PgUp/PgDn:쪽 Enter:종목 t:전종목 ?:도움말 q:종료",
-    " w:구간 m:시장 a:주체 ↑↓:섹터 Enter:종목 t:전종목 ?:도움말 q:종료",
-    " w m a:바꾸기 Enter:종목 t:전종목 ?:전체 키 q:종료",
-    " w m a:바꾸기 Enter t ?:키 q:종료",
+    " w:구간 m:시장 a:주체 ↑↓:섹터 g/G:처음/끝 PgUp/PgDn:쪽 Enter:종목 t:전종목 e:탐색끔"
+    " ?:도움말 q:종료",
+    " w:구간 m:시장 a:주체 ↑↓:섹터 Enter:종목 t:전종목 e:탐색끔 ?:도움말 q:종료",
+    " w m a:바꾸기 Enter:종목 t:전종목 e:탐색끔 ?:전체 키 q:종료",
+    " w m a:바꾸기 Enter t e ?:키 q:종료",
     " ?:키 q:종료",
 )
 #: 도움말 모달의 마지막 줄. 예전엔 :mod:`flow_app` 안에 **한 줄 고정 문자열**로
@@ -2103,7 +2399,7 @@ FOOTER_DRILL = FOOTER_DRILL_TIERS[1]
 
 
 def footer_tiers(drill: bool = False, allv: bool = False,
-                 combined: bool = False) -> tuple[str, ...]:
+                 combined: bool = False, explore: bool = False) -> tuple[str, ...]:
     """이 화면이 쓰는 푸터 단계 — **어느 화면이 어느 푸터를 쓰는지의 유일한 판정**.
 
     앱이 `if` 로 고르면 화면이 하나 늘 때 그 `if` 를 빠뜨리고, 실제로 빠뜨렸다
@@ -2113,8 +2409,10 @@ def footer_tiers(drill: bool = False, allv: bool = False,
     if allv and not drill:
         return FOOTER_ALL_TIERS
     if drill:
-        return FOOTER_DRILL_TIERS
-    return FOOTER_COMBINED_TIERS if combined else FOOTER_TIERS
+        return FOOTER_DRILL_EXPLORE_TIERS if explore else FOOTER_DRILL_TIERS
+    if combined:
+        return FOOTER_COMBINED_TIERS
+    return FOOTER_EXPLORE_TIERS if explore else FOOTER_TIERS
 
 
 def scroll_mark(first: int, shown: int, total: int) -> str:
@@ -2126,10 +2424,10 @@ def scroll_mark(first: int, shown: int, total: int) -> str:
 
 
 def footer_line(width: int, drill: bool = False, allv: bool = False,
-                combined: bool = False) -> str:
+                combined: bool = False, explore: bool = False) -> str:
     """폭에 **온전히** 들어가는 가장 자세한 푸터.
 
     어느 단계에서도 ``?`` 는 남긴다 — 줄어든 푸터가 "여기가 전부" 로 읽히면
     안 되기 때문이다. 나머지 키는 ``?`` 뒤에 전부 적혀 있다.
     """
-    return tier_for(footer_tiers(drill, allv, combined), width)
+    return tier_for(footer_tiers(drill, allv, combined, explore), width)

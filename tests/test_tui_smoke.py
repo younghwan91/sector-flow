@@ -168,7 +168,7 @@ def test_startup_banner_shows_first_and_any_key_moves_to_the_table():
         os.close(primary)
         t.join(timeout=2)
         assert proc.returncode == 0, err.decode("utf-8", "replace")[-1500:]
-        assert "오늘의 요약" in screen[0], "시작 배너가 안 떴다"
+        assert "오늘의 수급" in screen[0], "시작 배너가 안 떴다"
         assert "전기/전자" in screen[0], "배너 다음에 표로 안 넘어갔다"
 
 

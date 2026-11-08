@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import json
 import unicodedata
 
 import pytest
@@ -134,6 +135,7 @@ def test_pass_marker_survives_rendering(data):
     마커가 안 보인다. 실제로 그렇게 한 번 넘어갔다.)
     """
     st = State(data)
+    st.explore = True               # `*` 는 탐색 모드에서만 찍힌다
     lines, _thin, nhead = table_lines(st, 100, 20)
     body = lines[nhead:]
     by_sector = {}
@@ -582,11 +584,12 @@ def test_name_sort_highlight_matches_columns():
     for key, _ in NAME_SORTS:
         st = _S()
         st.name_sort = key
+        st.explore = True           # 선정점수 열은 탐색 모드에서만 있다
         span = name_sort_span(st)
         assert span, f"{key} 스팬 없음"
         start, w = span
         cell = 0
-        for c in names_cols():
+        for c in names_cols(True):
             if cell == start:
                 assert c.header == NAME_SORT_COL[key], f"{key} → {c.header}"
                 assert c.width == w
@@ -993,6 +996,7 @@ def test_conclusion_columns_come_after_their_inputs(data):
     from sectorflow.tui.flow_view import table_cols
 
     st = State(data)
+    st.explore = True                 # G 는 탐색 모드에서만 있다
     st.wi = WINDOWS.index("20")
     order = [c.header for c in table_cols(st, 200)]
     assert len(order) == len(set(order)), f"헤더가 중복이다: {order}"
@@ -1000,7 +1004,7 @@ def test_conclusion_columns_come_after_their_inputs(data):
     for i, h in enumerate(order):
         pos.setdefault(h, i)          # 중복이면 col_span 이 가리키는 **앞의 것**
     for inp in ("가속[%p]", "미실현[%p]", "풀림[%p/일²]"):
-        assert pos[inp] < pos["선정"], f"{inp} 가 G 보다 오른쪽이다: {order}"
+        assert pos[inp] < pos["G"], f"{inp} 가 G 보다 오른쪽이다: {order}"
     # 종목수는 판단 변수가 아니라 데이터 품질 주석이다 — 앞자리를 차지하면 안 된다.
     assert pos["종목[수]"] > pos["수익률[%]"], order
 
@@ -1628,7 +1632,7 @@ def test_the_new_axes_survive_at_eighty_columns():
     """
     from sectorflow.tui.flow_view import COL_INVTRT, fit_names, view_width
 
-    heads = [c.header for c in fit_names(view_width(80))]
+    heads = [c.header for c in fit_names(view_width(80), True)]
     for h in ("선정", "순매수[억]", "누적[%]", COL_INVTRT):
         assert h in heads, f"폭 80 에서 '{h}' 가 잘려 나갔다: {heads}"
     # 네 축은 더 넓은 화면에서 전부 살아난다 — 사라진 것이 아니라 밀린 것이다.
@@ -2204,7 +2208,7 @@ def test_pick_score_leads_the_row_like_the_sector_markers_do():
     """
     from sectorflow.tui.flow_view import names_cols
 
-    heads = [c.header for c in names_cols()]
+    heads = [c.header for c in names_cols(True)]   # 선정은 탐색 모드에서만
     assert heads.index("선정") == 2, heads       # 종목 · 코드 · 선정
     assert heads.index("선정") < heads.index("순매수[억]"), heads
 
@@ -2305,11 +2309,17 @@ def test_every_footer_tier_that_names_enter_also_names_the_all_stocks_screen():
     단계를 쓰므로, 정작 화면이 넓은 사람에게 그 키가 안 보였다. 이 코드베이스는
     "듣는데 화면 어디에도 안 적혀 있다" 를 버그로 취급해 왔다.
     """
-    from sectorflow.tui.flow_view import FOOTER_TIERS
+    from sectorflow.tui.flow_view import FOOTER_EXPLORE_TIERS, FOOTER_TIERS
 
+    # `t` 는 탐색 모드에서만 듣는다 — 그 모드의 푸터가 적는다. 기본 푸터는 대신 `e`(탐색으로
+    # 가는 길)를 적어야 한다 — 안 적으면 숨긴 화면으로 가는 길이 화면 어디에도 없다.
+    for tier in FOOTER_EXPLORE_TIERS:
+        if "종목" in tier and "Enter" in tier:
+            assert "t:전종목" in tier or " t " in tier, f"이 단계에 t 가 없다: {tier}"
     for tier in FOOTER_TIERS:
         if "종목" in tier and "Enter" in tier:
-            assert "t:전종목" in tier, f"이 단계에 t 가 없다: {tier}"
+            assert " e" in tier, f"이 단계에 e 가 없다: {tier}"
+            assert "t:" not in tier and " t " not in tier, f"기본 푸터가 안 듣는 t 를 적는다: {tier}"
 
 
 def test_the_cross_sector_title_says_which_windows_it_multiplied(data):
@@ -2322,6 +2332,7 @@ def test_the_cross_sector_title_says_which_windows_it_multiplied(data):
     from sectorflow.tui.flow_view import State, all_lines
 
     st = State(data)
+    st.explore = True              # 종합은 탐색 모드에서만 닿는다
     while st.window != "종합":
         st.cycle("w", 1)
     title = all_lines(st, 200)[0][0]
@@ -2342,6 +2353,7 @@ def test_the_cross_sector_title_never_loses_what_it_multiplied(data):
     from sectorflow.tui.flow_view import State, all_lines, cell_len, view_width
 
     st = State(data)
+    st.explore = True              # 종합은 탐색 모드에서만 닿는다
     while st.window != "종합":
         st.cycle("w", 1)
     for w in range(40, 160):
@@ -2442,77 +2454,159 @@ def test_the_selected_row_is_marked_on_every_screen_that_has_a_cursor(data):
 
 # --- 시작 배너 ---------------------------------------------------------------
 #
-# G 통과 섹터·곱순위 상위·5일 반전은 전부 **이미 계산돼 있는 값을 옮길 뿐**이다.
-# 배너가 새 판단을 만들어내지 않는지(예: G 를 못 받은 섹터를 끼워 넣는다거나,
-# 관문 통과 종목이 없는데 무언가를 보여준다거나)를 이 절이 검사한다.
+# 배너는 **사실 요약**이다 — 점수·순위·추천을 싣지 않는다(G·곱은 검정 결과 앞날 증거가 없거나
+# 판정 불가다, docs/validation/). 이 절은 (i) 추천이 다시 기어들지 않는지, (ii) 적힌 숫자가
+# 페이로드의 값을 그대로 옮긴 것인지를 본다.
 
-def test_banner_lists_gpass_sectors_and_top_picks(data):
-    st = State(data)
-    lines = banner_lines(st, 120)
-    text = "\n".join(lines)
-    assert "건설" in text and "IT 서비스" in text          # 픽스처에서 G_pass 인 섹터
-    assert "전기/전자" not in lines[2]                       # G 를 못 받은 섹터는 목록 줄에 없다
-    assert "검증 안 된 탐색 점수" in text                    # 경고 문구가 지워지지 않는다
+
+def _bdata(rows20, rows5, extra=None):
+    """배너 검사용 최소 페이로드 — 20일·5일 블록과 1년 백분위만."""
+    def mk(rows):
+        return {"rows": [dict({"forgn": 0.0, "indiv": 0.0, "etc": 0.0, "cap": 1000.0,
+                               "n_all": 30, "thin": False, "G": None, "G_pass": False}, **r)
+                         for r in rows]}
+    blocks = {"20|전체": mk(rows20), "5|전체": mk(rows5),
+              "60|전체": mk(rows20), "120|전체": mk(rows20)}
+    d = {"asof": "2026-09-04", "finalized": True, "blocks": blocks,
+         "combined": {"전체": {"windows": [], "rows": []}}, "names": {}}
+    d.update(extra or {})
+    return d
+
+
+def test_banner_states_facts_not_picks(data):
+    """배너에 G·곱·선정이 **없다** — 기본 첫 화면은 수급 사실만 말한다.
+
+    주입: 옛 배너(G 통과 섹터·곱순위 상위)를 되살리면 실패한다.
+    """
+    text = "\n".join(banner_lines(State(data), 160))
+    for word in ("G 통과", "곱순위", "곱 ", "선정"):
+        assert word not in text, f"배너에 탐색 점수가 남았다: {word!r}\n{text}"
+    for want in ("시장 전체 최근 5일 순매수", "기관 20일 순매수 상위", "기관 20일 순매수 하위",
+                 "투신+연기금 20일 순매수 상위", "투신+연기금 20일 순매수 하위", "사실 요약"):
+        assert want in text, f"배너에 {want!r} 줄이 없다\n{text}"
+
+
+def test_banner_market_totals_are_the_sum_of_the_shortest_block():
+    """시장 합계 = 가장 짧은 창 블록의 섹터 행 합. 1일 블록이 있으면 1일을 쓴다."""
+    rows = [{"sector": "가", "inst": 100.0, "forgn": -40.0, "indiv": -50.0, "etc": -10.0},
+            {"sector": "나", "inst": 23.0, "forgn": 7.0, "indiv": -30.0, "etc": 0.0}]
+    d = _bdata(rows, rows)
+    text = "\n".join(banner_lines(State(d), 160))
+    assert "최근 5일 순매수[억]: 기관 +123 · 외국인 -33 · 개인 -80 · 기타법인 -10" in text, text
+    d["blocks"]["1|전체"] = {"rows": [dict(r, inst=r["inst"] / 10) for r in d["blocks"]["5|전체"]["rows"]]}
+    text = "\n".join(banner_lines(State(d), 160))
+    assert "최근 1일 순매수" in text and "기관 +12" in text, text
+
+
+def test_banner_top_and_bottom_are_ordered_by_amount():
+    """상위·하위 3 은 **금액** 순이다 — 점수가 아니다."""
+    rows = [{"sector": s, "inst": v} for s, v in
+            (("가", 50.0), ("나", -300.0), ("다", 900.0), ("라", 10.0), ("마", -5.0))]
+    lines = banner_lines(State(_bdata(rows, rows)), 160)
+    top = next(ln for ln in lines if "기관 20일 순매수 상위" in ln)
+    bot = next(ln for ln in lines if "기관 20일 순매수 하위" in ln)
+    assert "다 +900 · 가 +50 · 라 +10" in top, top
+    assert "나 -300 · 마 -5 · 라 +10" in bot, bot
+
+
+def test_banner_trusted_is_invtrt_plus_pension_from_the_stocks(data):
+    """투신+연기금 섹터 합 = 그 섹터 종목의 `invtrt` + `penfnd_etc` 합(20일)."""
+    from sectorflow.tui.flow_view import _sector_trusted, sector_actor_win
+
+    got = _sector_trusted(data, ["거래소"], "20")
+    for sec in ("전기/전자", "건설", "IT 서비스"):
+        want = sum(sector_actor_win(data, sec, ["거래소"], k)["20"] for k in ("invtrt", "penfnd_etc"))
+        assert got[sec] == pytest.approx(want), sec
+
+
+def test_banner_says_none_rather_than_hiding_an_empty_list():
+    """반전·극단이 하나도 없으면 줄을 빼지 않고 "없음" 이라 적는다."""
+    rows = [{"sector": "가", "inst": 10.0, "pct1y": {"inst": 50.0}}]
+    text = "\n".join(banner_lines(State(_bdata(rows, [{"sector": "가", "inst": 2.0}])), 120))
+    assert "≥95: 없음" in text and "≤5: 없음" in text, text
+    assert "직전 15일과 반대" in text
+    flips_at = text.index("직전 15일과 반대")
+    assert "없음" in text[flips_at:], text
+
+
+def test_reversal_flags_compares_the_last_5_days_with_the_prior_15_for_all_sectors():
+    """직전 15일(=20일−5일)과 최근 5일의 부호가 반대인 섹터 — **G 통과와 무관하게** 전부.
+
+    주입: 직전 15일 대신 20일 누적과 비교하면 "다" 가 빠진다(20일 +100 이 양수라서).
+    G 통과 섹터만 보면 "가" 만 남는다.
+    """
+    r20 = [{"sector": "가", "inst": 3000.0, "G_pass": True, "G": 0.5},
+           {"sector": "나", "inst": -800.0},
+           {"sector": "다", "inst": 100.0},
+           {"sector": "라", "inst": 500.0}]
+    r5 = [{"sector": "가", "inst": -500.0}, {"sector": "나", "inst": 200.0},
+          {"sector": "다", "inst": 400.0}, {"sector": "라", "inst": 100.0}]
+    got = reversal_flags(State(_bdata(r20, r5)))
+    assert got == [("나", -1000.0, 200.0), ("가", 3500.0, -500.0), ("다", -300.0, 400.0)] or \
+        sorted(got) == sorted([("가", 3500.0, -500.0), ("나", -1000.0, 200.0), ("다", -300.0, 400.0)]), got
+    assert all(s != "라" for s, _, _ in got), "같은 방향인 섹터가 올라왔다"
+
+
+def test_reversal_flags_do_not_depend_on_the_screen_window():
+    """배너는 화면 창과 무관하게 20일·5일을 본다 — 5일 화면에서도 같은 답."""
+    r20 = [{"sector": "가", "inst": 3000.0}]
+    r5 = [{"sector": "가", "inst": -500.0}]
+    st = State(_bdata(r20, r5))
+    a = reversal_flags(st)
+    st.wi = WINDOWS.index("5")
+    assert reversal_flags(st) == a == [("가", 3500.0, -500.0)]
+
+
+def test_pct_extremes_are_new_relative_to_the_prior_report():
+    """직전 리포트가 있으면 **새로** 극단에 든 섹터만, 없으면 지금 극단을 적고 그렇다고 말한다.
+
+    주입: 직전 값 비교를 빼면 "가"(어제도 97) 가 새로 든 것으로 올라온다.
+    """
+    from sectorflow.tui.flow_view import pct_extremes
+
+    rows = [{"sector": "가", "inst": 1.0, "pct1y": {"inst": 98.0}},
+            {"sector": "나", "inst": 1.0, "pct1y": {"inst": 96.0}},
+            {"sector": "다", "inst": 1.0, "pct1y": {"inst": 2.0}}]
+    prior = {"asof": "2026-09-03", "pct1y": {"20|전체": {"가": {"inst": 97.0}, "나": {"inst": 80.0},
+                                                       "다": {"inst": 4.0}}}}
+    hi, lo, basis = pct_extremes(State(_bdata(rows, rows, {"prior": prior})))
+    assert hi == ["나 96"] and lo == [] and "2026-09-03 대비 새로" in basis, (hi, lo, basis)
+    hi, lo, basis = pct_extremes(State(_bdata(rows, rows)))
+    assert hi == ["가 98", "나 96"] and lo == ["다 2"] and "직전 리포트 없음" in basis
+
+
+def test_prior_pct_reads_the_latest_earlier_report_with_numbers(tmp_path):
+    """직전 리포트 = 같은 부모의 **더 앞** 기준일 중 numbers.html 이 있는 가장 최근 폴더."""
+    from sectorflow.tui.flow_view import prior_pct
+
+    def page(day, pct):
+        p = tmp_path / day
+        p.mkdir()
+        d = {"asof": day, "blocks": {"20|전체": {"rows": [{"sector": "가", "pct1y": {"inst": pct}}]}}}
+        (p / "numbers.html").write_text("<script>\nconst D = " + json.dumps(d) + ";\n</script>", "utf-8")
+    page("2026-09-01", 10.0)
+    page("2026-09-02", 20.0)
+    (tmp_path / "2026-09-03").mkdir()                      # 수집 미완 — numbers.html 없음
+    (tmp_path / "2026-09-03" / "INCOMPLETE.txt").write_text("x")
+    page("2026-09-04", 99.0)
+    got = prior_pct(str(tmp_path / "2026-09-04"), "2026-09-04")
+    assert got["asof"] == "2026-09-02" and got["pct1y"]["20|전체"]["가"]["inst"] == 20.0, got
+    assert prior_pct(str(tmp_path / "2026-09-01"), "2026-09-01") is None
 
 
 def test_banner_lines_share_one_display_width(data):
     st = State(data)
-    for line in banner_lines(st, 90):
-        assert _w(line) == 90
+    for width in (60, 80, 90, 120, 160):
+        for line in banner_lines(st, width):
+            assert _w(line) == width, f"폭 {width}: {line!r}"
 
 
-def test_banner_says_none_rather_than_hiding_an_empty_list():
-    """G_pass 가 전 섹터 False 인 페이로드 — "없음" 을 말해야지 줄을 그냥 빼면 안 된다."""
-    def row():
-        return {"sector": "전기/전자", "n_all": 5, "thin": False, "G": None,
-                "G_pass": False, "inst": 10.0, "forgn": 0.0, "indiv": 0.0,
-                "etc": 0.0, "cap": 1000.0}
-    data = {"asof": "2026-08-28", "finalized": True,
-            "blocks": {f"{w}|전체": {"rows": [row()]} for w in ("5", "20", "60", "120")},
-            "combined": {"전체": {"windows": [], "rows": []}}, "names": {}}
-    st = State(data)
-    text = "\n".join(banner_lines(st, 80))
-    assert "섹터 없음" in text
-    assert "없음(양쪽 관문을 다 통과한 종목이 없다)" in text
+def test_banner_cuts_lists_at_item_boundaries(data):
+    """좁은 폭에서 목록은 **항목 경계**에서 자르고 남은 수를 적는다 — 숫자가 중간에서 안 끊긴다."""
+    from sectorflow.tui.flow_view import _items_line
 
-
-def test_reversal_flags_catches_institutional_sign_flip():
-    """G 는 20일 누적으로 통과했는데 5일 창은 기관이 순매도로 돌아선 경우."""
-    def row(inst):
-        return {"sector": "건설", "n_all": 56, "thin": False, "G": 0.8, "G_pass": True,
-                "inst": inst, "forgn": 0.0, "indiv": 0.0, "etc": 0.0, "cap": 100000.0,
-                "U": 10.0}
-    data = {"asof": "2026-09-04", "finalized": True,
-            "blocks": {"5|전체": {"rows": [dict(row(-500.0), G_pass=False, G=None)]},
-                       "20|전체": {"rows": [row(3000.0)]},
-                       "60|전체": {"rows": [row(3000.0)]},
-                       "120|전체": {"rows": [row(3000.0)]}},
-            "combined": {"전체": {"windows": [], "rows": []}}, "names": {}}
-    st = State(data)   # 기본 창은 20일
-    assert reversal_flags(st) == [("건설", 3000.0, -500.0)]
-
-
-def test_reversal_flags_ignores_sectors_that_never_passed_the_gate():
-    def row(inst, pass_):
-        return {"sector": "화학", "n_all": 30, "thin": False,
-                "G": 0.5 if pass_ else None, "G_pass": pass_,
-                "inst": inst, "forgn": 0.0, "indiv": 0.0, "etc": 0.0, "cap": 100000.0,
-                "U": 10.0}
-    data = {"asof": "2026-09-04", "finalized": True,
-            "blocks": {"5|전체": {"rows": [row(-500.0, False)]},
-                       "20|전체": {"rows": [row(3000.0, False)]},
-                       "60|전체": {"rows": [row(3000.0, False)]},
-                       "120|전체": {"rows": [row(3000.0, False)]}},
-            "combined": {"전체": {"windows": [], "rows": []}}, "names": {}}
-    assert reversal_flags(State(data)) == []
-
-
-def test_reversal_flags_is_empty_at_the_5day_window_itself():
-    data = {"asof": "x", "blocks": {"5|전체": {"rows": []}},
-            "combined": {"전체": {"windows": [], "rows": []}}, "names": {}}
-    st = State(data)
-    st.wi = WINDOWS.index("5")
-    assert reversal_flags(st) == []
+    line = _items_line(" 앞: ", ["가 +1,234", "나 +5,678", "다 +9,999"], 24)
+    assert line.rstrip() in (" 앞: 가 +1,234 외 2", " 앞: 가 +1,234 · 나 +5,678 외 1"), line
 
 
 def test_flow_app_draws_the_banner_before_the_table():
@@ -2540,7 +2634,7 @@ def test_flow_app_draws_the_banner_before_the_table():
     st = flow_app.State(empty)
     scr = Scr(24, 100)
     flow_app._draw_banner(scr, st)
-    assert any("오늘의 요약" in t for t in scr.txt.values())
+    assert any("오늘의 수급" in t for t in scr.txt.values())
 
 
 # ── 주체 추이(투신·연기금) — 중첩 누적창을 겹치지 않는 구간으로 ────────────────
@@ -2611,29 +2705,6 @@ def test_sector_actor_win_sums_only_that_sector_and_market(data):
     assert sector_actor_win(data, "건설", ["코스닥"], "invtrt")["20"] == pytest.approx(0.0)
 
 
-def test_banner_shows_prior_and_recent_segment_for_both_actors(data):
-    """배너는 곱순위 각 줄에 **투신·연기금의 직전→최근 구간**을 붙인다.
-
-    Sias(2004) 가 보는 양은 부호가 아니라 수요의 **크기**다 — 부호만 남기면
-    문헌이 쓰는 정보를 버린다. 그래서 숫자를 남긴다.
-    """
-    lines = banner_lines(State(data), 200)
-    body = "\n".join(lines)
-    assert "투신" in body and "연기금" in body
-    # 곱순위 줄이 있으면 그 아래(또는 옆)에 두 주체가 같이 나온다.
-    picks = [ln for ln in lines if "곱 " in ln]
-    if picks:
-        joined = "\n".join(lines)
-        assert joined.count("투신") >= 1
-
-
-def test_banner_lines_are_exact_width_with_trend(data):
-    """추이를 붙여도 배너의 모든 줄이 폭에 정확히 맞는가 — 밀림 방지."""
-    for width in (80, 100, 120, 160):
-        for ln in banner_lines(State(data), width):
-            assert _w(ln) == width, f"폭 {width}: {ln!r} → {_w(ln)}"
-
-
 def test_trend_arrow_is_one_display_cell():
     """추이 표기에 쓰는 글자는 **어느 로케일에서도 1칸**이어야 한다.
 
@@ -2645,23 +2716,6 @@ def test_trend_arrow_is_one_display_cell():
     for ch in TREND_ARROW:
         assert unicodedata.east_asian_width(ch) in ("N", "Na"), \
             f"{ch!r} 는 폭이 터미널마다 다르다"
-
-
-def test_banner_pick_rows_all_use_the_same_trend_form(data):
-    """곱순위 다섯 줄은 **같은 형식**이어야 한다 — 줄마다 따로 재면 안 된다.
-
-    폭을 줄마다 재면 이름이 짧은 종목만 긴 표기를 얻어, 같은 열에 다른 것이 놓인
-    표가 된다(실측 2026-09-04 폭 80: 1·4·5행은 최근값만, 2·3행은 직전→최근).
-    """
-    from sectorflow.tui.flow_view import TREND_ARROW
-
-    for width in range(60, 201):
-        picks = [ln for ln in banner_lines(State(data), width) if "곱 " in ln]
-        if len(picks) < 2:
-            continue
-        arrows = {ln.count(TREND_ARROW) for ln in picks}
-        assert len(arrows) == 1, \
-            f"폭 {width}: 줄마다 형식이 다르다 {sorted(arrows)}\n" + "\n".join(picks)
 
 
 def test_drill_detail_shows_the_selected_stock_not_the_sector(data):
@@ -2806,3 +2860,175 @@ def test_missing_report_message_explains_incomplete_folder(tmp_path):
     (tmp_path / "INCOMPLETE.txt").write_text("수집 미완 사유\n")
     with pytest.raises(SystemExit, match="수집 미완"):
         load(str(tmp_path))
+
+
+# ── 탐색 모드 · 증거 표지 ────────────────────────────────────────────────────
+#
+# 검정 결과(docs/validation/): 섹터 지표는 앞날 증거 없음, G 는 판정 불가, 종목 선정점수의
+# 투신+연기금 축은 검정 부호와 반대다. 그래서 G·선정·곱·종합은 `e` 로 켜는 탐색 모드에서만
+# 보인다. 아래는 (i) 기본 화면에 그것들이 새어 나오지 않는지, (ii) 켜면 표지와 함께 다 보이는지,
+# (iii) 열마다 증거 표지가 붙는지를 본다.
+
+def _all_text(st, width=200):
+    from sectorflow.tui.flow_view import names_lines
+    out = header_lines(st, width) + table_lines(st, width, 40)[0]
+    st.drill = True
+    out += names_lines(st, width)[0]
+    st.drill = False
+    return "\n".join(out)
+
+
+def test_default_view_hides_every_exploration_score(data):
+    """기본 화면에는 G 열·`*`·종목 선정 열·종합 창·선정 정렬이 **없다**.
+
+    주입: `table_cols` 가 탐색 열을 안 거르면 첫 단언이, `cycle` 이 종합을 안 건너뛰면 둘째가 실패한다.
+    """
+    st = State(data)
+    assert not st.explore
+    heads = [c.header for c in table_cols(st, 400)]
+    assert "G" not in heads and "선정" not in heads, heads
+    body = table_lines(st, 400, 40)[0][1:]
+    assert not any("*" in ln for ln in body), "기본 화면에 G 통과 표시(*)가 찍혔다"
+    seen_w = set()
+    for _ in range(len(WINDOWS) * 2):
+        st.cycle("w", 1)
+        seen_w.add(st.window)
+    assert "종합" not in seen_w, "기본 모드에서 w 로 종합에 닿는다"
+    seen_s = set()
+    for _ in range(len(SORTS) * 2):
+        st.cycle("s", 1)
+        seen_s.add(st.sort_key)
+    assert "G" not in seen_s, "기본 모드에서 s 로 G 정렬에 닿는다"
+    seen_n = set()
+    for _ in range(len(NAME_SORTS) * 2):
+        st.cycle("ns", 1)
+        seen_n.add(st.name_sort)
+    assert "pick" not in seen_n, "기본 모드에서 선정점수 정렬에 닿는다"
+
+
+def test_exploration_mode_shows_the_scores_with_a_visible_label(data):
+    """`e` 를 켜면 G·선정·종합이 돌아오고, 제목 줄 맨 앞에 탐색 표지가 **어느 폭에서도** 남는다."""
+    from sectorflow.tui.flow_view import EXPLORE_LABEL_TIERS, names_cols
+
+    st = State(data)
+    st.toggle_explore()
+    assert "G" in [c.header for c in table_cols(st, 400)]
+    assert "선정" in [c.header for c in names_cols(st.explore)]
+    for width in (40, 80, 120, 200):
+        l1 = header_lines(st, width)[0]
+        assert l1.lstrip().startswith("[탐색"), f"폭 {width}: 탐색 표지가 없다 {l1!r}"
+    assert EXPLORE_LABEL_TIERS[0] in header_lines(st, 200)[0]
+    assert "검정 결과 앞날 증거 없음(G 판정 불가)" in EXPLORE_LABEL_TIERS[0]
+    assert "[탐색" not in header_lines(State(data), 200)[0], "기본 화면에 탐색 표지가 붙었다"
+
+
+def test_turning_exploration_off_leaves_no_exploration_state(data):
+    """종합 창·G 정렬·선정 정렬·전 종목 화면에 선 채로 끄면 기본 자리로 돌아간다.
+
+    주입: `toggle_explore` 의 되돌리기를 빼면 꺼진 뒤에도 G 가 화면 순서를 정한다.
+    """
+    st = State(data)
+    st.toggle_explore()
+    st.wi, st.si = WINDOWS.index("종합"), [k for k, _ in SORTS].index("G")
+    st.nsi = [k for k, _ in NAME_SORTS].index("pick")
+    st.allv = True
+    st.toggle_explore()
+    assert (st.window, st.sort_key, st.name_sort, st.allv) == ("20", "accel", "flow", False)
+
+
+def test_t_and_e_keys_follow_the_mode(data):
+    """기본 모드에서 `t` 는 아무 일도 안 한다. `e` 로 켠 뒤에만 전 종목(곱) 화면이 열린다."""
+    from sectorflow.tui.flow_app import handle_key
+
+    st = State(data)
+    handle_key(st, ord("t"))
+    assert not st.allv, "기본 모드에서 t 가 곱 화면을 열었다"
+    handle_key(st, ord("e"))
+    assert st.explore
+    handle_key(st, ord("t"))
+    assert st.allv
+    handle_key(st, ord("e"))
+    assert not st.explore and not st.allv
+
+
+def test_thin_sectors_sort_after_every_normal_sector(data):
+    """얇은 섹터(`~`)는 어떤 정렬·방향에서도 맨 아래다 — 회색 줄이 1등을 하지 않는다.
+
+    주입: 정렬 키에서 `thin` 을 빼면 가속이 큰 얇은 섹터가 위로 온다.
+    """
+    d = json.loads(json.dumps(data))
+    for b in d["blocks"].values():
+        for r in b["rows"]:
+            if r.get("thin"):
+                r["accel"] = 99.0
+                r["flow"] = r["inst"] = 1e9
+    st = State(d)
+    for si in range(len(SORTS)):
+        for rev in (False, True):
+            st.si, st.rev = si, rev
+            rows = st.rows()
+            flags = [bool(r.get("thin")) for r in rows]
+            assert flags == sorted(flags), f"{SORTS[si][0]} rev={rev}: 얇은 섹터가 위에 있다"
+
+
+def test_every_rendered_column_has_an_evidence_badge_in_help(data):
+    """화면이 그리는 모든 열(섹터 표·종목 목록·전 종목, 탐색 모드 포함)에 증거 줄이 붙는다.
+
+    주입: `_EV_SECTOR`·`_EV_NAMES` 에서 한 항목을 빼면 그 열이 걸린다.
+    """
+    import re as _re
+    from sectorflow.tui.flow_view import BADGES, HELP, all_cols, names_cols
+
+    st = State(data)
+    st.explore = True
+    heads = set()
+    for wi in range(len(WINDOWS)):
+        st.wi = wi
+        heads |= {c.header for c in table_cols(st, 400)}
+    heads |= {c.header for c in names_cols(True)} | {c.header for c in all_cols()}
+    heads -= {"", "섹터", "종목", "코드"}
+    heads = {"N일[G]" if _re.fullmatch(r"\d+일\[G\]", h) else h for h in heads}
+    missing = []
+    for h in sorted(heads):
+        idx = [i for i, (n, _d) in enumerate(HELP) if n == h]
+        assert idx, f"도움말에 {h} 항목이 없다"
+        for i in idx:
+            tail = []
+            for n, desc in HELP[i + 1:]:
+                if n:
+                    break
+                tail.append(desc)
+            if not any(desc.strip().startswith("증거 ") and any(b in desc for b in BADGES)
+                       for desc in tail):
+                missing.append(h)
+    assert not missing, f"증거 표지가 없는 열: {missing}"
+
+
+def test_help_has_no_hardcoded_k_and_no_dead_doc_links():
+    """도움말에 k 숫자를 박지 않는다(리포트마다 바뀐다 — 헤더 줄이 그날 값을 적는다).
+    도움말이 가리키는 `docs/…` 경로는 이 저장소에 실제로 있어야 한다.
+
+    주입: `· k 는 추정치다. 구간마다 다르다(5일 15.9·20일 14.7…)` 를 되살리면 첫 단언이,
+    `docs/GUARDRAILS.md` 를 되살리면 둘째 단언이 실패한다.
+    """
+    import re as _re
+    from pathlib import Path
+
+    from sectorflow.tui.flow_view import HELP
+
+    repo = Path(__file__).resolve().parent.parent
+    for _n, desc in HELP:
+        if _re.search(r"\bk\b", desc):
+            assert not _re.search(r"\d+\.\d+", desc), f"도움말에 k 숫자가 박혀 있다: {desc!r}"
+            assert not _re.search(r"\bk\s*=\s*[−+-]?\d", desc), f"도움말에 k 값이 박혀 있다: {desc!r}"
+        for path in _re.findall(r"docs/[\w./-]+", desc):
+            assert (repo / path.rstrip(".")).exists(), f"도움말이 없는 문서를 가리킨다: {path}"
+
+
+def test_help_says_tested_not_never_validated():
+    """"검증된 적 없다·심사된 적 없다" 는 이제 틀린 말이다 — 검정했고 결과가 있다."""
+    from sectorflow.tui.flow_view import HELP
+
+    text = "\n".join(d for _n, d in HELP)
+    for stale in ("검증된 적 없", "심사된 적 없", "검증 안 된", "사면 오른다", "급하게 산", "(눌림)"):
+        assert stale not in text, f"도움말에 낡은 문구가 남았다: {stale!r}"

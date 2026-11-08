@@ -31,7 +31,7 @@ from sectorflow.tui.flow_view import (
     State, banner_lines, cell_len as view_cell_len, color_spans,
     detail_lines, detail_title_span, footer_line, header_lines, help_lines,
     hint_desc, hint_line,
-    is_section, missing_report_hint, name_sort_span, names_lines, report_warnings,
+    is_section, missing_report_hint, name_sort_span, names_lines, prior_pct, report_warnings,
     scroll_mark, sort_span, staleness_warning, table_lines, tier_for,
     view_width)
 
@@ -70,6 +70,8 @@ def load(report_dir: str) -> dict:
         raise SystemExit(f"{path} 의 데이터에 없는 키: {', '.join(missing)} — "
                          f"리포트 형식이 바뀌었나?\n  있는 키: {sorted(d)}")
     d["report_warnings"] = staleness_warning(d["asof"]) + report_warnings(report_dir, d["asof"])
+    # 배너가 "새로 1년 극단에 든 섹터" 를 말하려면 직전 리포트의 백분위가 필요하다.
+    d["prior"] = prior_pct(report_dir, d["asof"])
     return d
 
 
@@ -331,8 +333,8 @@ HINT_COMBINED_TIERS = (
 #: 안 듣는다 — 화면이 자기가 무엇을 하는지 틀리게 말한 것이다. 종합 화면이 같은
 #: 이유로 자기 힌트를 가진다.
 HINT_ALL_TIERS = (
-    " 전 종목 — 섹터선정 × 종목선정 의 곱 내림차순 고정. 정렬·역순이 없다 · ? 로 열 설명",
-    " 전 종목 — 곱(섹터선정×종목선정) 내림차순 고정. 정렬·역순 없다 · ? 로 설명",
+    " 전 종목 — 섹터G × 종목선정 의 곱 내림차순 고정. 정렬·역순이 없다 · ? 로 열 설명",
+    " 전 종목 — 곱(섹터G×종목선정) 내림차순 고정. 정렬·역순 없다 · ? 로 설명",
     " 전 종목 — 곱 내림차순 고정. 정렬·역순 없다 · ? 로 설명",
     " 전 종목 — 곱순 고정. 정렬 없다 · ? 로 설명",
     " 곱순 고정 · 정렬 없다 ?",
@@ -529,7 +531,8 @@ def _draw_hint_and_footer(scr, st: State, w: int, hint_y: int, foot_y: int,
     # 전 종목 화면이 섹터 표의 푸터를 그렸다 — 안 듣는 키를 광고하면서.
     # 위치 표시가 먼저 자리를 잡는다(`help_foot` 와 같은 규칙 — 잘린 숫자는 다른 숫자다).
     room = max(w - view_cell_len(mark), 0)
-    line = pad_footer(footer_line(room, st.drill, st.allv, not st.sortable), room) + mark
+    line = pad_footer(footer_line(room, st.drill, st.allv, not st.sortable, st.explore),
+                      room) + mark
     _put(scr, foot_y, pad_footer(line, w),
          curses.color_pair(C_HEAD) if col else curses.A_REVERSE, False)
 
@@ -603,7 +606,7 @@ def _toggle_rev(st: State) -> None:
 JAMO_TO_ASCII = {
     # 구분되는 것 — Shift 로 쌍자음이 나오는 자리
     "ㅂ": "q", "ㅃ": "q", "ㅈ": "w", "ㅉ": "W", "ㄱ": "r", "ㄲ": "R",
-    "ㅅ": "t", "ㅆ": "t",
+    "ㅅ": "t", "ㅆ": "t", "ㄷ": "e", "ㄸ": "e",
     # 구분 안 되는 것 — 소문자 동작으로 떨어진다
     "ㅁ": "a", "ㄴ": "s", "ㅎ": "g", "ㅡ": "m",
     # vim 이동
@@ -611,7 +614,7 @@ JAMO_TO_ASCII = {
     # 첫가끝 자모(U+11xx) — 같은 자리를 다른 코드로 보내는 IME 대비
     "\u1107": "q", "\u1108": "q", "\u110c": "w", "\u110d": "W",
     "\u1100": "r", "\u1101": "R", "\u1106": "a", "\u1102": "s",
-    "\u1109": "t", "\u110a": "t",
+    "\u1109": "t", "\u110a": "t", "\u1103": "e", "\u1104": "e",
     "\u1112": "g", "\u1173": "m", "\u1169": "h", "\u1165": "j",
     "\u1161": "k", "\u1175": "l",
 }
@@ -698,6 +701,11 @@ def handle_key(st: State, k: int, page: int = 10, help_page: int = 10) -> bool:
     # 도착하면(ESCDELAY 기본 1초) ↓ 를 눌렀을 뿐인데 앱이 끝난다. 종료는 q.
     if k == ord("q"):
         return False
+    if k == ord("e"):
+        # 탐색 모드(G·선정·곱·종합) 켜기/끄기 — 어느 화면에서나 듣는다. 끄면 탐색 전용
+        # 자리(종합 창·선정 정렬·전 종목 화면)에서 기본 자리로 돌아간다(`toggle_explore`).
+        _keep_selection(st, st.toggle_explore)
+        return True
 
     if st.drill:
         m = max(len(st.names()), 1)
@@ -727,7 +735,7 @@ def handle_key(st: State, k: int, page: int = 10, help_page: int = 10) -> bool:
             _keep_selection(st, lambda: st.cycle("m", 1 if k == ord("m") else -1))
         elif k in (ord("a"), ord("A")):
             _keep_selection(st, lambda: st.cycle("a", 1 if k == ord("a") else -1))
-        elif k == ord("t"):
+        elif k == ord("t") and st.explore:
             # 전 종목 화면은 **여기서도 열린다.** 도움말은 늘 `t` 를 조건 없이
             # 적어 왔는데 이 분기가 그냥 삼켜서, 드릴다운에서만 없는 키였다.
             # 두 층이 겹쳐 보이지는 않으므로(전 종목은 전 섹터를 본다) 드릴다운을
@@ -768,8 +776,8 @@ def handle_key(st: State, k: int, page: int = 10, help_page: int = 10) -> bool:
         return True
 
     n = max(len(st.rows()), 1)
-    if k == ord("t"):
-        # 전 종목(곱) 화면 토글. 섹터 표 ↔ 이 화면만 오간다 — 드릴다운에서는
+    if k == ord("t") and st.explore:
+        # 전 종목(곱) 화면 토글 — **탐색 모드에서만**. 곱은 G × 종목 선정점수라 둘 다 탐색 점수다. 섹터 표 ↔ 이 화면만 오간다 — 드릴다운에서는
         # 위 분기가 먼저 처리한다.
         st.allv = not st.allv
         st.arow = 0
