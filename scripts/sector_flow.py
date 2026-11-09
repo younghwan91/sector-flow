@@ -433,6 +433,8 @@ CHANGE_WINDOW = 20
 CHANGE_ACTORS = ("inst", "invpen")
 CHANGE_TOP = 5
 #: 잠정 → 확정 비교 칸. 일별 값이 소수 2자리라 5일 합의 반올림 차는 양쪽 합쳐 최대 0.05억이다.
+#: 차이도 소수 2자리로 **반올림해서** 이 문턱과 잰다 — 7.86 − 7.81 = 0.05000000000000071 을 그대로 재면 0.05 칸이
+#: '바뀜' 으로 실리고, 반올림한 ``diff`` 를 보는 검증기가 그 칸을 거부한다(2026-11-09 리허설, 시드 22일 중 20일).
 FINAL_DIFF_WINDOWS = (1, 5)
 FINAL_DIFF_ACTORS = ("inst", "invtrt", "penfnd_etc", "forgn", "indiv", "etc")
 FINAL_DIFF_TOL = 0.05
@@ -766,6 +768,7 @@ def final_diff_block(P: dict, root: "str | None") -> "tuple[dict | None, str | N
 
     머리 숫자만 본다: (시장, 섹터, 주체) 의 1일·5일 순매수와 시장 합계. 반올림(``FINAL_DIFF_TOL``)을
     넘는 칸만 ``changed`` 에 싣는다. 시장 합계는 다 싣는다(몇 줄 안 된다).
+    바꿔 끼울 리포트가 이미 확정이면(검증 실패 재시도·강제 재생성) 잠정은 없다 — :func:`_inherit_final_diff`.
     """
     asof = P["dates"][-1]
     old, why = _read_report(root, asof)
@@ -773,20 +776,216 @@ def final_diff_block(P: dict, root: "str | None") -> "tuple[dict | None, str | N
         return None, why.replace(f"{asof} 리포트 폴더가 없다", "같은 기준일의 잠정 리포트가 없었다")
     if (why := _override_mismatch(P, old)):
         return None, why
-    built = os.path.getmtime(os.path.join(root, asof, "payload.json"))
+    built = datetime.fromtimestamp(os.path.getmtime(os.path.join(root, asof, "payload.json")), KST).strftime("%Y-%m-%d %H:%M")
+    if old.get("final"):
+        return _inherit_final_diff(P, old, built, os.path.join(root, asof))
     fd = final_diff_compute(P, old)
-    return {"base_final": fd.pop("base_final"),
-            "base_built": datetime.fromtimestamp(built, KST).strftime("%Y-%m-%d %H:%M"), **fd}, None
+    return {"base_final": fd.pop("base_final"), "base_built": built, **fd}, None
 
 
 KST = timezone(timedelta(hours=9))
+#: 확정 위에 다시 만들어 잠정 대비를 못 낼 때의 이유 머리말 — 재시도가 거듭돼도 이유가 겹겹이 붙지 않게 본다.
+REFINAL_WHY = "확정 위에 다시 만들었다 — "
 
 
-def final_diff_compute(P: dict, old: dict) -> dict:
-    """두 페이로드(확정 ``P``, 잠정 ``old``)의 차이 — :func:`final_diff_block` 의 몸통(``base_built`` 만 뺀 것).
+def _head_cells(Q: dict) -> dict:
+    """(시장, 섹터, 주체, 창) → 순매수 — 잠정 대비가 보는 칸 전부(소수 2자리)."""
+    out = {}
+    for m in Q.get("markets") or []:
+        for a in FINAL_DIFF_ACTORS:
+            for s in Q["sectors"]:
+                ser = _series(Q, [m], s, a) if _present(Q, [m], s) else None
+                if ser is not None:
+                    out.update({(m, s, a, w): round(sum(ser[-w:]), 2) for w in FINAL_DIFF_WINDOWS})
+    return out
 
-    아카이브 시드(``scripts/seed_revisions.py``)가 같은 정의로 1일 칸을 만들려고 따로 부른다.
+
+#: 첫 확정의 ``VERIFY_FAILED.txt`` 에서 찾는 검사 이름 — ``verify_report.py`` 의 ``chk`` 이름 그대로(테스트가 대조한다).
+#: 경계 칸만 걸린 옛 코드의 실패에서 이 칸이 거부된다(문턱과 같은 칸이 ``changed`` 에 실렸다).
+FD_CHECK_VALUES = "잠정 → 확정 — 확정값·차이가 페이로드에서 다시 나오는가"
+#: 진짜 잠정 리포트와 다시 세어 통과한 증거 — 첫 확정에서 나왔거나, 그 기록을 이은 재시도에서 나왔거나.
+FD_CHECKS_RECOUNT = ("잠정 → 확정 — 잠정값·차이·칸 수를 옆 잠정 리포트에서 다시 센 것과 같은가",
+                     "잠정 → 확정 — %ile 극단 목록의 들고 남 재계산",
+                     "잠정 → 확정 — 견준 리포트의 지위·생성 시각 = 옆 폴더의 것")
+FD_CHECKS_RETRY = ("확정 재시도 — 잠정 대비가 첫 확정의 기록에서 나왔는가(확정끼리 견주지 않았는가)",
+                   "확정 재시도 — 첫 확정 시각이 옆 폴더의 것인가")
+_FD_FAMILY = ("잠정 → 확정", "확정 재시도", "final_diff.json", "확정 리포트에 잠정 대비")
+_VERIFY_LINE = re.compile(r"^\s*\[(OK  |FAIL)\] T · (.+?)(?:   (.*))?$")
+#: 옛 규칙(날값 %ile)의 들고 남을 지금 규칙(반올림 %ile)에 견줄 때 봐주는 폭 — 반올림 자릿수 한 칸.
+_EXT_SLACK = 0.1
+
+
+def _failed_record_why(folder: str, fd: dict) -> "str | None":
+    """첫 확정 폴더의 ``VERIFY_FAILED.txt`` 가 그 잠정 대비 기록을 믿지 말라는가 — 이유, 믿어도 되면 ``None``.
+
+    잠정 리포트는 첫 확정 때 바뀌어 없으니 그 기록을 진짜 잠정과 다시 셀 수 있었던 것은 그때의 검증뿐이다. 그래서 그
+    파일이 증거다. 다음이 **모두** 참일 때만 믿는다(아니면 비교 없음 — 틀린 값이 이어지는 것이 하루 비는 것보다 나쁘다):
+
+    * 잠정 재계산 검사들이 ``OK`` 로 적혀 있다 — 빈 파일·검증이 도중에 죽은 파일은 증거가 없다.
+    * 잠정 대비 쪽 ``FAIL`` 이 없다. 단 하나의 예외: ``FD_CHECK_VALUES`` 가 적은 건수가 기록의 경계 칸(|차| ≤ 문턱)
+      수와 정확히 같으면 그 실패는 2026-11-09 전 코드의 경계 칸뿐이다 — 값은 잠정 재계산을 통과했고, 잇는 쪽이 그 칸을 거른다.
+      다른 칸이 하나라도 함께 걸렸으면 건수가 늘어 예외가 아니다.
     """
+    path = os.path.join(folder, "VERIFY_FAILED.txt")
+    if not os.path.isfile(path):
+        return None
+    with open(path, encoding="utf-8", errors="replace") as f:
+        marks = [m.groups() for m in map(_VERIFY_LINE.match, f) if m]
+    marks = [(st.strip(), name, detail or "") for st, name, detail in marks if name.startswith(_FD_FAMILY)]
+    oks = {name for st, name, _ in marks if st == "OK"}
+    if not (set(FD_CHECKS_RECOUNT) <= oks or set(FD_CHECKS_RETRY) <= oks):
+        return "잠정 재계산을 통과한 흔적이 없다"
+    for _st, name, detail in (x for x in marks if x[0] == "FAIL"):
+        n = re.match(r"(\d+)건", detail)
+        edge = sum(1 for r in fd.get("changed") or [] if r.get("diff") is not None
+                   and abs(r["diff"]) <= fd.get("tol", FINAL_DIFF_TOL))
+        if name != FD_CHECK_VALUES or not n or not edge or int(n.group(1)) != edge:
+            return name
+    return None
+
+
+def _near(a: "float | None", b: "float | None", room: float) -> bool:
+    return (a is None) == (b is None) and (a is None or abs(a - b) <= room)
+
+
+def _record_mismatch(Q: dict, fd: dict) -> "str | None":
+    """잠정 대비 기록이 자기 안에서·그 기록을 낸 페이로드 ``Q`` 와 어긋나면 그 칸 이름 — 잠정 없이도 보이는 것만 본다.
+
+    ``cells_1d`` 의 잠정 열이 1일 ``changed``·시장 합계와 맞는가, 확정 열이 ``Q`` 와 맞는가, 극단 들고 남이 ``Q`` 의 목록과
+    모순되지 않는가. 5일 잠정 합은 바뀐 칸에만 남아 합계를 문턱 폭 안에서만 잴 수 있다.
+    """
+    cells, rows = fd.get("cells_1d"), fd.get("changed") or []
+    if not isinstance(cells, list):
+        return "칸별 기록 없음"
+    tol, wins = fd.get("tol", FINAL_DIFF_TOL), fd.get("windows") or list(FINAL_DIFF_WINDOWS)
+    if fd.get("n_changed") != len(rows) or fd.get("n_cells") != len(cells) * len(wins):
+        return "칸 수"
+    got = {(r["market"], r["sector"], r["actor"], r["win"]): r for r in rows}
+    if len(got) != len(rows) or any(k[3] not in wins for k in got):
+        return "changed 칸 집합"
+    want = {(m, s, a): _series(Q, [m], s, a) for m in Q.get("markets") or [] for a in FINAL_DIFF_ACTORS
+            for s in Q["sectors"] if _present(Q, [m], s)}
+    want = {k: v for k, v in want.items() if v is not None}
+    if {tuple(c[:3]) for c in cells} != set(want) or len(cells) != len(want):
+        return "cells_1d 칸 집합"
+    prov = {}
+    for m, s, a, vo, vn in cells:
+        prov[(m, s, a)] = vo
+        if abs(want[(m, s, a)][-1] - vn) > 0.006:
+            return f"cells_1d 확정값 {m}/{s}/{a}"
+        r = got.get((m, s, a, 1))
+        if (vo is None or abs(round(vn - vo, 2)) > tol) != (r is not None):
+            return f"1일 바뀐 칸 {m}/{s}/{a}"
+        if r is not None and not _near(r["old"], vo, 0.006):
+            return f"cells_1d 잠정값 {m}/{s}/{a}"
+    for (m, s, a, w), r in got.items():
+        ser = want.get((m, s, a))
+        if ser is None or abs(round(sum(ser[-w:]), 2) - r["new"]) > 0.011:
+            return f"changed 확정값 {m}/{s}/{a}/{w}"
+        if r["old"] is None:
+            if r["diff"] is not None:
+                return f"changed 차이 {m}/{s}/{a}/{w}"
+        elif r["diff"] is None or abs(r["new"] - r["old"] - r["diff"]) > 0.011 or abs(r["diff"]) <= tol:
+            return f"changed 차이 {m}/{s}/{a}/{w}"
+    totals = {(t["market"], t["actor"], t["win"]): t for t in fd.get("market_totals") or []}
+    if set(totals) != {(m, a, w) for m in Q.get("markets") or [] for a in FINAL_DIFF_ACTORS for w in wins}:
+        return "market_totals 칸 집합"
+    for (m, a, w), t in totals.items():
+        keys = [k for k in want if k[0] == m and k[2] == a]
+        new, old = 0.0, 0.0
+        for k in keys:
+            vn = round(sum(want[k][-w:]), 2)
+            new += vn
+            r = got.get((*k, w))
+            vo = prov[k] if w == 1 else (r["old"] if r is not None else vn)
+            old = None if old is None or vo is None else old + vo
+        room = len(keys) * (0.011 if w == 1 else tol + 0.011) + 0.011
+        if not _near(t["new"], new, room) or not _near(t["old"], old, room):
+            return f"market_totals {m}/{a}/{w}"
+        if t["old"] is not None and abs(t["new"] - t["old"] - t["diff"]) > 0.011:
+            return f"market_totals 차이 {m}/{a}/{w}"
+    for mkey, mks in _mkeys(Q):
+        for a, ch in ((fd.get("extremes_change") or {}).get(mkey) or {}).items():
+            sers = {s: _series(Q, mks, s, a) for s in Q["sectors"] if _present(Q, mks, s)}
+            pct = {s: None if ser is None else _fact(ser)["pct"] for s, ser in sers.items()}
+            # 들어온 섹터는 지금 그 목록에 있어야 하고 나간 섹터는 없어야 한다. 값이 없으면(None) 나간 쪽만 말이 된다.
+            if (any(pct.get(s) is None or pct[s] < PCT_HI - _EXT_SLACK for s in ch.get("hi_in") or [])
+                    or any(pct.get(s) is None or pct[s] > PCT_LO + _EXT_SLACK for s in ch.get("lo_in") or [])
+                    or any(pct.get(s) is not None and pct[s] >= PCT_HI + _EXT_SLACK for s in ch.get("hi_out") or [])
+                    or any(pct.get(s) is not None and pct[s] <= PCT_LO - _EXT_SLACK for s in ch.get("lo_out") or [])):
+                return f"extremes_change {mkey}/{a}"
+    return None
+
+
+def _inherit_final_diff(P: dict, old: dict, built: str, folder: str) -> "tuple[dict | None, str | None]":
+    """확정(``old``, 폴더 ``folder``) 위에 다시 만드는 확정 ``P`` 의 잠정 대비 — 첫 확정의 기록에서 잇는다.
+
+    잠정 리포트는 첫 확정 때 바꿔 끼워져 없다. 확정끼리 견주면 "0칸 변경" 이 되고 실제로 바뀐 칸의 기록과
+    수정 폭(``revision_stats``)의 그날 칸이 사라진다. 그래서:
+
+    * 그 기록이 검증에 걸렸거나(:func:`_failed_record_why`) 자기 안에서 어긋나면(:func:`_record_mismatch`) 잇지 않고 비교 없음.
+    * 값이 첫 확정과 같으면 그대로 잇는다(``base_built`` 는 그날 저녁 잠정의 시각, ``inherited_from`` 은 첫 확정의 시각).
+    * 값이 또 바뀌었으면 잠정 열만 이어 1일 칸을 다시 센다(:func:`_rebase_final_diff`).
+
+    0칸이라고 쓰지 않는다. ``built`` 는 바꿔 끼울 리포트의 생성 시각.
+    """
+    fd, first_why = old.get("final_diff"), old.get("final_diff_reason")
+    if not isinstance(fd, dict) or fd.get("base_final"):
+        if first_why and first_why.startswith(REFINAL_WHY):
+            return None, first_why
+        return None, (REFINAL_WHY + "잠정 리포트는 첫 확정 때 바뀌어 없고 이어받을 잠정 대비 기록도 없다"
+                      + (f"(첫 확정: {first_why})" if first_why else ""))
+    if (why := _failed_record_why(folder, fd)):
+        return None, f"{REFINAL_WHY}첫 확정의 잠정 대비가 검증에 걸려 잇지 않는다({why})"
+    # 고치기 전 코드가 남긴 기록의 경계 칸(|차| = 문턱)은 지금 규칙으로 걸러 잇는다 — 안 그러면 재시도가 영영 검증에 걸린다.
+    changed = [r for r in fd.get("changed") or [] if r["diff"] is None or abs(r["diff"]) > FINAL_DIFF_TOL]
+    fd = {**fd, "changed": changed, "n_changed": len(changed)}
+    if (why := _record_mismatch(old, fd)):
+        return None, f"{REFINAL_WHY}첫 확정의 잠정 대비 기록이 어긋나 잇지 않는다({why})"
+    first = fd.get("inherited_from") or built
+    if _head_cells(P) == _head_cells(old) and not extremes_change(P, old):
+        return {**fd, "inherited_from": first}, None
+    return _rebase_final_diff(P, old, fd, first), None
+
+
+def _rebase_final_diff(P: dict, old: dict, fd: dict, first: str) -> dict:
+    """첫 확정 뒤 값이 또 바뀐 재시도 — 기록의 잠정 열을 이어 1일 칸을 새 값과 다시 센다(``windows`` = [1], ``rebased``).
+
+    폴더를 바꿔 끼우면 잠정 열은 이 기록에만 남는다. 버리면 그날이 수정 폭에서 빠진다. 5일 칸은 낼 수 없다 — 잠정
+    5일 합은 바뀐 칸에만 남았다. 극단 들고 남은 ``old`` 의 목록을 그 기록의 들고 남으로 되돌려 잠정 목록을 얻는다.
+    """
+    prov = {(m, s, a): vo for m, s, a, vo, _ in fd["cells_1d"]}
+    wins = [1]
+
+    def prov_of(m, s, a):
+        vo = prov.get((m, s, a))
+        return None if vo is None else [vo]
+
+    changed, totals, n_cells, cells_1d = _diff_cells(P, prov_of, wins)
+    ext: dict = {}
+    for mkey, mks in _mkeys(P):
+        for a in EXTREME_ACTORS:
+            new, was = _extremes(P, mks, a), _extremes(old, mks, a)
+            if new is None or was is None:
+                continue
+            ch0 = ((fd.get("extremes_change") or {}).get(mkey) or {}).get(a) or {}
+            hi = (was[0] - set(ch0.get("hi_in") or [])) | set(ch0.get("hi_out") or [])
+            lo = (was[1] - set(ch0.get("lo_in") or [])) | set(ch0.get("lo_out") or [])
+            ch = {"hi_in": sorted(new[0] - hi), "hi_out": sorted(hi - new[0]),
+                  "lo_in": sorted(new[1] - lo), "lo_out": sorted(lo - new[1])}
+            if any(ch.values()):
+                ext.setdefault(mkey, {})[a] = ch
+    return {"base_final": False, "base_built": fd.get("base_built"),
+            "windows": wins, "tol": FINAL_DIFF_TOL,
+            "n_cells": n_cells, "n_changed": len(changed),
+            "changed": changed, "market_totals": totals,
+            "cells_1d": cells_1d,
+            "pct_hi": PCT_HI, "pct_lo": PCT_LO, "extremes_change": ext,
+            "inherited_from": first, "rebased": True}
+
+
+def _diff_cells(P: dict, prov_of, windows: list[int]) -> tuple[list, list, int, list]:
+    """(바뀐 칸, 시장 합계, 칸 수, 1일 칸) — ``prov_of(시장, 섹터, 주체)`` 가 잠정 일별 값(없으면 ``None``)을 준다."""
     changed, totals, n_cells, cells_1d = [], [], 0, []
 
     def win_sum(ser, w):
@@ -794,30 +993,43 @@ def final_diff_compute(P: dict, old: dict) -> dict:
 
     for m in P["markets"]:
         for a in FINAL_DIFF_ACTORS:
-            tn = [0.0] * len(FINAL_DIFF_WINDOWS)
-            to: list = [0.0] * len(FINAL_DIFF_WINDOWS)
+            tn = [0.0] * len(windows)
+            to: list = [0.0] * len(windows)
             for s in P["sectors"]:
                 if not _present(P, [m], s):
                     continue
                 sn = _series(P, [m], s, a)
-                so = _series(old, [m], s, a) if m in (old.get("markets") or []) else None
+                so = prov_of(m, s, a)
                 if sn is None:
                     continue
                 # 1일 칸은 (잠정, 확정) 그대로 남긴다 — 다음 리포트들이 잠정→확정 수정 폭을 모은다(revision_stats).
                 cells_1d.append([m, s, a, None if so is None else so[-1], sn[-1]])
-                for j, w in enumerate(FINAL_DIFF_WINDOWS):
+                for j, w in enumerate(windows):
                     vn, vo = win_sum(sn, w), win_sum(so, w)
+                    diff = None if vo is None else round(vn - vo, 2)
                     n_cells += 1
                     tn[j] += vn
                     to[j] = None if to[j] is None or vo is None else to[j] + vo
-                    if vo is None or abs(vn - vo) > FINAL_DIFF_TOL:
+                    if diff is None or abs(diff) > FINAL_DIFF_TOL:
                         changed.append({"market": m, "sector": s, "actor": a, "win": w, "old": vo,
-                                        "new": vn, "diff": None if vo is None else round(vn - vo, 2)})
-            for j, w in enumerate(FINAL_DIFF_WINDOWS):
+                                        "new": vn, "diff": diff})
+            for j, w in enumerate(windows):
                 vo = None if to[j] is None else round(to[j], 2)
                 totals.append({"market": m, "actor": a, "win": w, "old": vo, "new": round(tn[j], 2),
                                "diff": None if vo is None else round(tn[j] - vo, 2)})
     changed.sort(key=lambda r: -(abs(r["diff"]) if r["diff"] is not None else float("inf")))
+    return changed, totals, n_cells, cells_1d
+
+
+def final_diff_compute(P: dict, old: dict) -> dict:
+    """두 페이로드(확정 ``P``, 잠정 ``old``)의 차이 — :func:`final_diff_block` 의 몸통(``base_built`` 만 뺀 것).
+
+    아카이브 시드(``scripts/seed_revisions.py``)가 같은 정의로 1일 칸을 만들려고 따로 부른다.
+    """
+    def prov_of(m, s, a):
+        return _series(old, [m], s, a) if m in (old.get("markets") or []) else None
+
+    changed, totals, n_cells, cells_1d = _diff_cells(P, prov_of, list(FINAL_DIFF_WINDOWS))
     ext_change = extremes_change(P, old)
     return {
         "base_final": bool(old.get("final")),
@@ -836,7 +1048,10 @@ EXTREME_ACTORS = ("inst", "invpen", "forgn", "indiv", "etc")
 
 
 def _extremes(P: dict, mks: list[str], actor: str) -> "tuple[set, set] | None":
-    """그 페이로드에서 (≥95 섹터, ≤5 섹터) — ``day_pct`` 로 센다. 그 시장이 없으면 ``None``."""
+    """그 페이로드에서 (≥95 섹터, ≤5 섹터) — 화면과 같은 반올림 ``pct``(:func:`_fact`)로 센다. 그 시장이 없으면 ``None``.
+
+    날값으로 재면 94.98 이 화면의 ≥95 목록에는 있는데(95.0) 들고 남에서는 빠진다.
+    """
     if not set(mks) <= set(P.get("markets") or []):
         return None
     hi, lo = set(), set()
@@ -844,7 +1059,7 @@ def _extremes(P: dict, mks: list[str], actor: str) -> "tuple[set, set] | None":
         if not _present(P, mks, s):
             continue
         ser = _series(P, mks, s, actor)
-        p = None if ser is None else day_pct(ser)
+        p = None if ser is None else _fact(ser)["pct"]
         if p is None:
             continue
         if p >= PCT_HI:
@@ -912,6 +1127,8 @@ def _usable_base(fd: dict, date: str) -> "tuple[list | None, str | None]":
 
     바꿔 끼운 리포트가 기준일 당일에 만든 것이어야 한다(``base_built`` 의 날짜 = 기준일). 다음날 확정 전에
     손으로 다시 만든 것이나 확정 위에 다시 만든 것은 "18:10 잠정이 얼마나 바뀌나" 를 말하지 않는다.
+    첫 확정의 기록에서 이은 재시도(:func:`_inherit_final_diff`)는 그날 저녁 잠정 대비 그대로라 쓸 수 있다.
+    ``base_final`` 참은 2026-11-09 전 코드가 확정끼리 견준 기록뿐이다.
     """
     if fd.get("base_final"):
         return None, "확정 위에 다시 만든 날(잠정 대비 아님)"
@@ -1073,7 +1290,12 @@ def final_diff_text(P: dict, top: int = 15) -> str:
         return f"잠정 → 확정 비교 없음: {why}\n"
     base = "확정" if fd["base_final"] else "잠정"
     lines = [f"잠정 → 확정 비교 — 바꿔 끼운 {base} 리포트({fd['base_built']} KST 생성) 대비, "
-             f"순매수[억] 1일·5일, 반올림 ±{fd['tol']}억 초과만"]
+             f"순매수[억] {'·'.join(f'{w}일' for w in fd['windows'])}, 반올림 ±{fd['tol']}억 초과만"]
+    if fd.get("rebased"):
+        lines.append(f"첫 확정({fd['inherited_from']} KST) 뒤 값이 또 바뀌어 그 기록의 잠정 열로 1일 칸만 다시 셌다"
+                     " — 5일 잠정 합은 남아 있지 않다")
+    elif fd.get("inherited_from"):
+        lines.append(f"첫 확정({fd['inherited_from']} KST)의 기록을 이어받았다")
     moved = [t for t in fd["market_totals"] if t["diff"] is None or abs(t["diff"]) > fd["tol"]]
     lines.append(f"시장 합계: {len(fd['market_totals'])}칸 중 {len(moved)}칸 바뀜")
 

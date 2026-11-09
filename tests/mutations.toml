@@ -2088,7 +2088,7 @@ id = "final-diff-ignores-rounding"
 why = "반올림 차까지 '바뀜' 으로 적으면 FINAL.txt 가 수백 줄 소음이 된다"
 guards = ["tests/test_payload_today.py::test_final_diff_lists_only_changes_beyond_rounding"]
 file = "scripts/sector_flow.py"
-find = """                    if vo is None or abs(vn - vo) > FINAL_DIFF_TOL:"""
+find = """                    if diff is None or abs(diff) > FINAL_DIFF_TOL:"""
 replace = """                    if True:"""
 
 [[mutation]]
@@ -5240,16 +5240,16 @@ id = "verify-final-provisional-values-blind"
 why = "확정 리포트 첫 화면의 잠정값(old)·차이·칸 수가 옆 잠정 리포트와 달라도 검증이 모른다(리뷰 3차 D1-M1)"
 guards = ["tests/test_streaks_revisions.py::test_the_verifier_recounts_final_diff_from_the_provisional_report_before_the_swap"]
 file = "scripts/verify_report.py"
-find = '''    chk("T", "잠정 → 확정 — 잠정값·차이·칸 수를 옆 잠정 리포트에서 다시 센 것과 같은가", not bad,'''
-replace = '''    chk("T", "잠정 → 확정 — 잠정값·차이·칸 수를 옆 잠정 리포트에서 다시 센 것과 같은가", True,'''
+find = '''    chk("T", VT_CHECK_RECOUNT, not bad,'''
+replace = '''    chk("T", VT_CHECK_RECOUNT, True,'''
 
 [[mutation]]
 id = "verify-final-extremes-blind"
 why = "잠정→확정 극단 목록의 들고 남이 틀려도 검증이 모른다"
 guards = ["tests/test_streaks_revisions.py::test_the_verifier_recounts_final_diff_from_the_provisional_report_before_the_swap"]
 file = "scripts/verify_report.py"
-find = '''    chk("T", "잠정 → 확정 — %ile 극단 목록의 들고 남 재계산", (F.get("extremes_change") or {}) == W["ext"],'''
-replace = '''    chk("T", "잠정 → 확정 — %ile 극단 목록의 들고 남 재계산", True,'''
+find = '''    chk("T", VT_CHECK_EXT, (F.get("extremes_change") or {}) == W["ext"],'''
+replace = '''    chk("T", VT_CHECK_EXT, True,'''
 
 [[mutation]]
 id = "verify-final-base-blind"
@@ -5272,8 +5272,8 @@ id = "verify-final-missing-diff-blind"
 why = "바꿔 끼울 잠정 리포트가 옆에 있는데 확정 리포트가 비교를 비워도 검증이 모른다"
 guards = ["tests/test_streaks_revisions.py::test_the_verifier_recounts_final_diff_from_the_provisional_report_before_the_swap"]
 file = "scripts/verify_report.py"
-find = '''            prov is None or _vt_fp(prov) != _vt_fp(P), f"{sib} 있음 · 지문 {_vt_fp(prov)}→{_vt_fp(P)}" if prov else "")'''
-replace = '''            True, f"{sib} 있음 · 지문 {_vt_fp(prov)}→{_vt_fp(P)}" if prov else "")'''
+find = '''            prov is None or _vt_fp(prov) != _vt_fp(P) or _vt_nothing_to_inherit(prov, sib),'''
+replace = '''            True,'''
 
 [[mutation]]
 id = "verify-final-sibling-blind"
@@ -6016,3 +6016,493 @@ guards = ["tests/test_verify_merge.py::test_unsharded_budget_scales_by_the_ci_sh
 file = "scripts/verify_merge.py"
 find = "def ci_shard_count(wt: Path, fallback: int = 4) -> int:"
 replace = "def ci_shard_count(wt: Path, fallback: int = 1) -> int:"
+
+[[mutation]]
+id = "final-diff-tol-on-raw-float"
+why = "날값으로 문턱을 재면 7.86−7.81=0.05000000000000071 칸이 실리고 검증기가 거부한다 — 무인 확정이 거짓 실패로 멈춘다"
+guards = ["tests/test_streaks_revisions.py::test_a_change_of_exactly_the_tolerance_is_rounding_for_producer_and_verifier"]
+file = "scripts/sector_flow.py"
+find = '''                    if diff is None or abs(diff) > FINAL_DIFF_TOL:'''
+replace = '''                    if diff is None or abs(vn - vo) > FINAL_DIFF_TOL:'''
+
+[[mutation]]
+id = "final-diff-tol-inclusive"
+why = "문턱과 같은 칸(반올림 차)까지 '바뀜' 으로 싣는다"
+guards = ["tests/test_streaks_revisions.py::test_a_change_of_exactly_the_tolerance_is_rounding_for_producer_and_verifier"]
+file = "scripts/sector_flow.py"
+find = '''                    if diff is None or abs(diff) > FINAL_DIFF_TOL:'''
+replace = '''                    if diff is None or abs(diff) >= FINAL_DIFF_TOL:'''
+
+[[mutation]]
+id = "verify-final-diff-tol-on-raw-float"
+why = "검증기의 재계산이 날값으로 문턱을 재면 생산자와 바뀐 칸 집합이 갈려 거짓 실패한다"
+guards = ["tests/test_streaks_revisions.py::test_a_change_of_exactly_the_tolerance_is_rounding_for_producer_and_verifier"]
+file = "scripts/verify_report.py"
+find = '''                    if vo is None or abs(round(vn - vo, 2)) > VT_FD_TOL:'''
+replace = '''                    if vo is None or abs(vn - vo) > VT_FD_TOL:'''
+
+[[mutation]]
+id = "verify-final-diff-accepts-within-tol"
+why = "문턱 안쪽 칸을 '바뀜' 으로 실어도 검증이 모른다"
+guards = ["tests/test_payload_today.py::test_final_diff_row_within_the_rounding_tolerance_fails_the_verifier"]
+file = "scripts/verify_report.py"
+find = '''                                           or abs(r["diff"]) <= F["tol"]):'''
+replace = '''                                           or False):'''
+
+[[mutation]]
+id = "final-diff-compares-final-with-final"
+why = "확정 위 재시도가 확정끼리 견줘 '잠정→확정 변경 0칸' 이라 적고 첫 확정의 기록과 수정 폭의 그날이 사라진다"
+guards = ["tests/test_streaks_revisions.py::test_retry_over_a_final_report_inherits_the_first_finals_record"]
+file = "scripts/sector_flow.py"
+find = '''    if old.get("final"):
+        return _inherit_final_diff(P, old, built, os.path.join(root, asof))'''
+replace = '''    if False:
+        return _inherit_final_diff(P, old, built, os.path.join(root, asof))'''
+
+[[mutation]]
+id = "inherit-loses-first-final-time"
+why = "이어받은 기록인지 화면이 말하지 못한다 — 재시도 시각의 비교로 읽힌다"
+guards = ["tests/test_streaks_revisions.py::test_retry_over_a_final_report_inherits_the_first_finals_record"]
+file = "scripts/sector_flow.py"
+find = '''    first = fd.get("inherited_from") or built'''
+replace = '''    first = built'''
+
+[[mutation]]
+id = "inherit-text-silent"
+why = "FINAL.txt 가 이어받은 기록이라고 적지 않는다"
+guards = ["tests/test_streaks_revisions.py::test_retry_over_a_final_report_inherits_the_first_finals_record"]
+file = "scripts/sector_flow.py"
+find = '''    elif fd.get("inherited_from"):
+        lines.append(f"첫 확정({fd['inherited_from']} KST)의 기록을 이어받았다")'''
+replace = '''    elif False:
+        lines.append(f"첫 확정({fd['inherited_from']} KST)의 기록을 이어받았다")'''
+
+[[mutation]]
+id = "inherit-reason-nests"
+why = "재시도마다 비교 없음 이유가 겹겹이 길어진다"
+guards = ["tests/test_streaks_revisions.py::test_retry_says_no_comparison_when_the_first_final_left_no_record"]
+file = "scripts/sector_flow.py"
+find = '''        if first_why and first_why.startswith(REFINAL_WHY):'''
+replace = '''        if False:'''
+
+[[mutation]]
+id = "inherit-accepts-final-to-final-record"
+why = "옛 코드의 확정끼리 비교 기록을 이으면 '0칸' 이 되살아난다"
+guards = ["tests/test_streaks_revisions.py::test_retry_does_not_inherit_a_final_to_final_record"]
+file = "scripts/sector_flow.py"
+find = '''    if not isinstance(fd, dict) or fd.get("base_final"):
+        if first_why'''
+replace = '''    if not isinstance(fd, dict):
+        if first_why'''
+
+[[mutation]]
+id = "inherit-ignores-moved-values"
+why = "첫 확정 뒤 값이 또 바뀌었는데 옛 기록을 이어 확정값이 이 리포트와 어긋난다"
+guards = ["tests/test_streaks_revisions.py::test_retry_keeps_the_provisional_column_when_values_moved_after_the_first_final"]
+file = "scripts/sector_flow.py"
+find = '''    if _head_cells(P) == _head_cells(old) and not extremes_change(P, old):'''
+replace = '''    if True:'''
+
+[[mutation]]
+id = "inherit-keeps-old-rule-rows"
+why = "고치기 전 코드가 쓴 경계 칸을 그대로 이어 재시도가 영영 검증에 걸린다"
+guards = ["tests/test_streaks_revisions.py::test_retry_drops_boundary_rows_left_by_the_old_rule"]
+file = "scripts/sector_flow.py"
+find = '''    changed = [r for r in fd.get("changed") or [] if r["diff"] is None or abs(r["diff"]) > FINAL_DIFF_TOL]'''
+replace = '''    changed = list(fd.get("changed") or [])'''
+
+[[mutation]]
+id = "verify-retry-record-blind"
+why = "재시도가 첫 확정의 기록과 다른 것을 적어도(확정끼리 0칸 포함) 검증이 모른다"
+guards = ["tests/test_streaks_revisions.py::test_the_verifier_checks_a_retry_against_the_first_final_next_door"]
+file = "scripts/verify_report.py"
+find = '''    chk("T", VT_CHECK_RETRY_RECORD, not bad, f"{len(bad)}건  " + "; ".join(bad[:3]))'''
+replace = '''    chk("T", VT_CHECK_RETRY_RECORD, True, f"{len(bad)}건  " + "; ".join(bad[:3]))'''
+
+[[mutation]]
+id = "verify-retry-values-blind"
+why = "이어받은 기록의 값이 이 리포트와 달라도 검증이 모른다"
+guards = ["tests/test_streaks_revisions.py::test_the_verifier_checks_a_retry_against_the_first_final_next_door"]
+file = "scripts/verify_report.py"
+find = '''        bool(F.get("rebased")) == (bool(S.get("rebased")) if same else True),'''
+replace = '''        True,'''
+
+[[mutation]]
+id = "verify-retry-first-time-blind"
+why = "첫 확정 시각을 틀리게 적어도 검증이 모른다"
+guards = ["tests/test_streaks_revisions.py::test_the_verifier_checks_a_retry_against_the_first_final_next_door"]
+file = "scripts/verify_report.py"
+find = '''    chk("T", VT_CHECK_RETRY_FIRST, F.get("inherited_from") == first, f"{F.get('inherited_from')} vs {first}")'''
+replace = '''    chk("T", VT_CHECK_RETRY_FIRST, True, f"{F.get('inherited_from')} vs {first}")'''
+
+[[mutation]]
+id = "verify-retry-no-inherit-rejected"
+why = "이을 것이 없어 비교 없음으로 적은 재시도를 거짓 실패시킨다"
+guards = ["tests/test_streaks_revisions.py::test_retry_says_no_comparison_when_the_first_final_left_no_record"]
+file = "scripts/verify_report.py"
+find = '''            prov is None or _vt_fp(prov) != _vt_fp(P) or _vt_nothing_to_inherit(prov, sib),'''
+replace = '''            prov is None or _vt_fp(prov) != _vt_fp(P),'''
+
+[[mutation]]
+id = "verify-retry-skips-inherit-branch"
+why = "옆이 확정인데 잠정처럼 다시 세면 이어받은 기록을 거짓 실패시킨다"
+guards = ["tests/test_streaks_revisions.py::test_retry_over_a_final_report_inherits_the_first_finals_record"]
+file = "scripts/verify_report.py"
+find = '''    if prov.get("final"):
+        _vt_inherited(P, F, prov, sib, spath)'''
+replace = '''    if False:
+        _vt_inherited(P, F, prov, sib, spath)'''
+
+[[mutation]]
+id = "tui-inherited-silent"
+why = "터미널 첫 화면이 이어받은 기록인지 말하지 않는다"
+guards = ["tests/test_tui_flow_view.py::test_final_diff_line_and_help_list"]
+file = "src/sectorflow/tui/flow_view.py"
+find = '''    first = f"첫 확정 {fd['inherited_from'][5:]} {kind}, " if fd.get("inherited_from") else ""'''
+replace = '''    first = ""'''
+
+[[mutation]]
+id = "web-inherited-silent"
+why = "웹 패널이 이어받은 기록인지 말하지 않는다"
+guards = ["tests/test_report_pages.py::test_numbers_today_panel_says_a_retry_shows_the_first_finals_record"]
+file = "scripts/templates/sector_numbers.html"
+find = '''(F.inherited_from?"첫 확정 "+F.inherited_from.slice(5)+(F.rebased?" 잠정 열, ":" 기록, "):"")'''
+replace = '''""'''
+
+[[mutation]]
+id = "trust-ignores-verify-failed"
+why = "검증에 걸린 첫 확정의 기록을 이으면 재시도가 틀린 값을 세탁한다 — rc=0, 수정 폭 오염"
+guards = ["tests/test_streaks_revisions.py::test_a_first_final_that_failed_its_recount_is_not_inherited"]
+file = "scripts/sector_flow.py"
+find = '''    if (why := _failed_record_why(folder, fd)):'''
+replace = '''    if False:'''
+
+[[mutation]]
+id = "trust-needs-no-evidence"
+why = "빈 표지·도중에 죽은 검증은 재계산을 통과한 증거가 아니다"
+guards = ["tests/test_streaks_revisions.py::test_a_first_final_that_failed_its_recount_is_not_inherited"]
+file = "scripts/sector_flow.py"
+find = '''    if not (set(FD_CHECKS_RECOUNT) <= oks or set(FD_CHECKS_RETRY) <= oks):'''
+replace = '''    if False:'''
+
+[[mutation]]
+id = "trust-any-values-failure-passes"
+why = "경계 칸 아닌 칸이 함께 걸린 실패까지 옛 코드의 거짓 실패로 친다"
+guards = ["tests/test_streaks_revisions.py::test_a_first_final_that_failed_its_recount_is_not_inherited"]
+file = "scripts/sector_flow.py"
+find = '''        if name != FD_CHECK_VALUES or not n or not edge or int(n.group(1)) != edge:'''
+replace = '''        if name != FD_CHECK_VALUES:'''
+
+[[mutation]]
+id = "trust-blocks-old-edge-failure"
+why = "옛 코드의 거짓 실패까지 막으면 내일 08:20 뒤 재시도가 그날 기록을 잃는다"
+guards = ["tests/test_streaks_revisions.py::test_the_old_codes_edge_failure_is_still_inherited"]
+file = "scripts/sector_flow.py"
+find = '''        if name != FD_CHECK_VALUES or not n or not edge or int(n.group(1)) != edge:'''
+replace = '''        if True:'''
+
+[[mutation]]
+id = "trust-blocks-unrelated-failure"
+why = "다른 층의 실패로 잠정 대비 기록을 버린다"
+guards = ["tests/test_streaks_revisions.py::test_an_unrelated_failure_does_not_block_the_inheritance"]
+file = "scripts/sector_flow.py"
+find = '''    marks = [(st.strip(), name, detail or "") for st, name, detail in marks if name.startswith(_FD_FAMILY)]'''
+replace = '''    marks = [(st.strip(), name, detail or "") for st, name, detail in marks]'''
+
+[[mutation]]
+id = "trust-rejects-retry-evidence"
+why = "이어받은 재시도가 다른 이유로 걸린 뒤 그 기록을 잃는다"
+guards = ["tests/test_streaks_revisions.py::test_a_retry_of_an_inherited_record_may_show_the_retry_evidence"]
+file = "scripts/sector_flow.py"
+find = '''    if not (set(FD_CHECKS_RECOUNT) <= oks or set(FD_CHECKS_RETRY) <= oks):'''
+replace = '''    if not set(FD_CHECKS_RECOUNT) <= oks:'''
+
+[[mutation]]
+id = "inherit-ignores-self-mismatch"
+why = "표지가 없어도(강제 재생성) 자기 안에서 어긋난 기록을 잇는다"
+guards = ["tests/test_streaks_revisions.py::test_a_record_that_contradicts_itself_is_not_inherited"]
+file = "scripts/sector_flow.py"
+find = '''    if (why := _record_mismatch(old, fd)):'''
+replace = '''    if False:'''
+
+[[mutation]]
+id = "mismatch-1d-set-blind"
+why = "잠정 열과 1일 changed 가 갈려도 모른다"
+guards = ["tests/test_streaks_revisions.py::test_a_record_that_contradicts_itself_is_not_inherited"]
+file = "scripts/sector_flow.py"
+find = '''        if (vo is None or abs(round(vn - vo, 2)) > tol) != (r is not None):'''
+replace = '''        if False:'''
+
+[[mutation]]
+id = "mismatch-changed-old-blind"
+why = "changed 의 잠정값과 잠정 열이 갈려도 모른다"
+guards = ["tests/test_streaks_revisions.py::test_a_record_that_contradicts_itself_is_not_inherited"]
+file = "scripts/sector_flow.py"
+find = '''        if r is not None and not _near(r["old"], vo, 0.006):'''
+replace = '''        if False:'''
+
+[[mutation]]
+id = "mismatch-changed-new-blind"
+why = "changed 의 확정값이 페이로드와 갈려도 모른다"
+guards = ["tests/test_streaks_revisions.py::test_a_record_that_contradicts_itself_is_not_inherited"]
+file = "scripts/sector_flow.py"
+find = '''        if ser is None or abs(round(sum(ser[-w:]), 2) - r["new"]) > 0.011:
+            return f"changed 확정값 {m}/{s}/{a}/{w}"'''
+replace = '''        if False:
+            return f"changed 확정값 {m}/{s}/{a}/{w}"'''
+
+[[mutation]]
+id = "mismatch-totals-blind"
+why = "시장 합계가 칸의 합과 갈려도 모른다"
+guards = ["tests/test_streaks_revisions.py::test_a_record_that_contradicts_itself_is_not_inherited"]
+file = "scripts/sector_flow.py"
+find = '''        if not _near(t["new"], new, room) or not _near(t["old"], old, room):'''
+replace = '''        if False:'''
+
+[[mutation]]
+id = "mismatch-totals-diff-blind"
+why = "시장 합계의 차이가 갈려도 모른다"
+guards = ["tests/test_streaks_revisions.py::test_a_record_that_contradicts_itself_is_not_inherited"]
+file = "scripts/sector_flow.py"
+find = '''        if t["old"] is not None and abs(t["new"] - t["old"] - t["diff"]) > 0.011:
+            return'''
+replace = '''        if False:
+            return'''
+
+[[mutation]]
+id = "mismatch-hi-in-blind"
+why = "지금 ≥95 가 아닌 섹터를 '들어옴' 으로 적어도 모른다"
+guards = ["tests/test_streaks_revisions.py::test_a_record_that_contradicts_itself_is_not_inherited"]
+file = "scripts/sector_flow.py"
+find = '''            if (any(pct.get(s) is None or pct[s] < PCT_HI - _EXT_SLACK for s in ch.get("hi_in") or [])'''
+replace = '''            if (False'''
+
+[[mutation]]
+id = "mismatch-lo-in-blind"
+why = "지금 ≤5 가 아닌 섹터를 '들어옴' 으로 적어도 모른다"
+guards = ["tests/test_streaks_revisions.py::test_a_record_that_contradicts_itself_is_not_inherited"]
+file = "scripts/sector_flow.py"
+find = '''                    or any(pct.get(s) is None or pct[s] > PCT_LO + _EXT_SLACK for s in ch.get("lo_in") or [])'''
+replace = '''                    or False'''
+
+[[mutation]]
+id = "rebase-drops-the-column"
+why = "값이 또 바뀐 재시도가 잠정 열을 버리면 그날이 수정 폭에서 빠진다"
+guards = ["tests/test_streaks_revisions.py::test_retry_keeps_the_provisional_column_when_values_moved_after_the_first_final"]
+file = "scripts/sector_flow.py"
+find = '''    return _rebase_final_diff(P, old, fd, first), None'''
+replace = '''    return None, REFINAL_WHY + "값이 또 바뀌었다"'''
+
+[[mutation]]
+id = "rebase-takes-the-final-column"
+why = "첫 확정값을 잠정으로 쓰면 수정 폭이 확정끼리의 차이가 된다"
+guards = ["tests/test_streaks_revisions.py::test_retry_keeps_the_provisional_column_when_values_moved_after_the_first_final"]
+file = "scripts/sector_flow.py"
+find = '''    prov = {(m, s, a): vo for m, s, a, vo, _ in fd["cells_1d"]}'''
+replace = '''    prov = {(m, s, a): vn for m, s, a, _, vn in fd["cells_1d"]}'''
+
+[[mutation]]
+id = "rebase-ext-against-first-final"
+why = "들고 남을 첫 확정 목록에 견주면 잠정 대비가 아니다"
+guards = ["tests/test_streaks_revisions.py::test_retry_keeps_the_provisional_column_when_values_moved_after_the_first_final"]
+file = "scripts/sector_flow.py"
+find = '''            hi = (was[0] - set(ch0.get("hi_in") or [])) | set(ch0.get("hi_out") or [])'''
+replace = '''            hi = was[0]'''
+
+[[mutation]]
+id = "rebase-text-says-both-windows"
+why = "1일 칸만 있는데 1일·5일이라고 적는다"
+guards = ["tests/test_streaks_revisions.py::test_retry_keeps_the_provisional_column_when_values_moved_after_the_first_final"]
+file = "scripts/sector_flow.py"
+find = '''f"순매수[억] {'·'.join(f'{w}일' for w in fd['windows'])}, 반올림'''
+replace = '''f"순매수[억] 1일·5일, 반올림'''
+
+[[mutation]]
+id = "rebase-text-silent"
+why = "다시 센 것을 이어받았다고 적는다"
+guards = ["tests/test_streaks_revisions.py::test_retry_keeps_the_provisional_column_when_values_moved_after_the_first_final"]
+file = "scripts/sector_flow.py"
+find = '''    if fd.get("rebased"):
+        lines.append('''
+replace = '''    if False:
+        lines.append('''
+
+[[mutation]]
+id = "extremes-raw-pct"
+why = "들고 남을 날값으로 재면 94.98 이 화면 목록에는 있는데 들고 남에서 빠진다"
+guards = ["tests/test_streaks_revisions.py::test_extreme_lists_round_like_the_screen"]
+file = "scripts/sector_flow.py"
+find = '''        p = None if ser is None else _fact(ser)["pct"]'''
+replace = '''        p = None if ser is None else day_pct(ser)'''
+
+[[mutation]]
+id = "verify-extremes-raw-pct"
+why = "검증기가 날값으로 재면 생산자와 들고 남이 갈려 거짓 실패한다"
+guards = ["tests/test_streaks_revisions.py::test_extreme_lists_round_like_the_screen"]
+file = "scripts/verify_report.py"
+find = '''        p = round(p, 1)                         # 화면의 ≥95 목록은 반올림한 pct 로 고른다(94.98 → 95.0)'''
+replace = '''        p = float(p)'''
+
+[[mutation]]
+id = "verify-retry-trust-blind"
+why = "생산자가 걸린 기록을 이어도 검증기가 모른다"
+guards = ["tests/test_streaks_revisions.py::test_the_verifier_rejects_a_retry_that_inherited_a_failed_record"]
+file = "scripts/verify_report.py"
+find = '''    chk("T", VT_CHECK_RETRY_TRUST, not why, why or "")'''
+replace = '''    chk("T", VT_CHECK_RETRY_TRUST, True, why or "")'''
+
+[[mutation]]
+id = "verify-trust-needs-no-evidence"
+why = "빈 표지를 증거로 치면 비어야 할 비교를 거부한다"
+guards = ["tests/test_streaks_revisions.py::test_a_first_final_that_failed_its_recount_is_not_inherited"]
+file = "scripts/verify_report.py"
+find = '''    if not ({VT_CHECK_RECOUNT, VT_CHECK_EXT, VT_CHECK_BASE} <= oks or {VT_CHECK_RETRY_RECORD, VT_CHECK_RETRY_FIRST} <= oks):'''
+replace = '''    if False:'''
+
+[[mutation]]
+id = "verify-trust-any-values-failure-passes"
+why = "검증기가 다른 칸이 함께 걸린 실패까지 거짓 실패로 친다"
+guards = ["tests/test_streaks_revisions.py::test_a_first_final_that_failed_its_recount_is_not_inherited"]
+file = "scripts/verify_report.py"
+find = '''        if name != VT_CHECK_VALUES or not n or not edge or int(n.group(1)) != edge:'''
+replace = '''        if name != VT_CHECK_VALUES:'''
+
+[[mutation]]
+id = "verify-self-check-blind"
+why = "첫 확정 기록이 자기 안에서 어긋나도 검증이 모른다"
+guards = ["tests/test_streaks_revisions.py::test_the_verifier_reports_a_self_contradicting_record_on_a_first_final"]
+file = "scripts/verify_report.py"
+find = '''            chk("T", "잠정 → 확정 — changed·cells_1d·시장 합계·극단 들고 남이 서로·페이로드와 맞는가", not bad_self,'''
+replace = '''            chk("T", "잠정 → 확정 — changed·cells_1d·시장 합계·극단 들고 남이 서로·페이로드와 맞는가", True,'''
+
+[[mutation]]
+id = "verify-self-1d-set-blind"
+why = "검증기가 잠정 열과 1일 changed 의 갈림을 모른다"
+guards = ["tests/test_streaks_revisions.py::test_a_record_that_contradicts_itself_is_not_inherited"]
+file = "scripts/verify_report.py"
+find = '''        if (vo is None or abs(round(vn - vo, 2)) > tol) != (r is not None):
+            bad.append(f"{'/'.join(k)} 1일'''
+replace = '''        if False:
+            bad.append(f"{'/'.join(k)} 1일'''
+
+[[mutation]]
+id = "verify-self-totals-blind"
+why = "검증기가 시장 합계와 칸의 합의 갈림을 모른다"
+guards = ["tests/test_streaks_revisions.py::test_a_record_that_contradicts_itself_is_not_inherited"]
+file = "scripts/verify_report.py"
+find = '''        if not _vt_close(t.get("old"), old, room):'''
+replace = '''        if False:'''
+
+[[mutation]]
+id = "verify-self-hi-in-blind"
+why = "검증기가 지금 ≥95 아닌 '들어옴' 을 모른다"
+guards = ["tests/test_streaks_revisions.py::test_a_record_that_contradicts_itself_is_not_inherited"]
+file = "scripts/verify_report.py"
+find = '''                ok = {"hi_in": p is not None and p >= 95.0 - VT_EXT_SLACK,'''
+replace = '''                ok = {"hi_in": True,'''
+
+[[mutation]]
+id = "verify-self-lo-in-blind"
+why = "검증기가 지금 ≤5 아닌 '들어옴' 을 모른다"
+guards = ["tests/test_streaks_revisions.py::test_a_record_that_contradicts_itself_is_not_inherited"]
+file = "scripts/verify_report.py"
+find = '''                      "lo_in": p is not None and p <= 5.0 + VT_EXT_SLACK,'''
+replace = '''                      "lo_in": True,'''
+
+[[mutation]]
+id = "verify-rebase-recount-blind"
+why = "다시 센 재시도의 잠정 열을 대조하지 않는다"
+guards = ["tests/test_streaks_revisions.py::test_the_verifier_recounts_a_rebased_retry_from_the_first_finals_column"]
+file = "scripts/verify_report.py"
+find = '''        bad += _vt_recount_bad(P, F, W)'''
+replace = '''        bad += []'''
+
+[[mutation]]
+id = "verify-rebase-ext-blind"
+why = "다시 센 재시도의 들고 남을 대조하지 않는다"
+guards = ["tests/test_streaks_revisions.py::test_the_verifier_recounts_a_rebased_retry_from_the_first_finals_column"]
+file = "scripts/verify_report.py"
+find = '''        if (F.get("extremes_change") or {}) != W["ext"]:
+            bad.append("극단 들고 남")'''
+replace = '''        if False:
+            bad.append("극단 들고 남")'''
+
+[[mutation]]
+id = "verify-rebase-head-blind"
+why = "다시 센 재시도의 base_built 를 대조하지 않는다"
+guards = ["tests/test_streaks_revisions.py::test_the_verifier_recounts_a_rebased_retry_from_the_first_finals_column"]
+file = "scripts/verify_report.py"
+find = '''        keep = ("base_final", "base_built", "tol")'''
+replace = '''        keep = ()'''
+
+[[mutation]]
+id = "ledger-diff-unknown-per-event"
+why = "재시도 한 번의 null 로 첫 확정이 있는 날을 '비교 불가' 로 센다"
+guards = ["tests/test_ops_ledger.py::test_final_diff_unknown_counts_days_not_events"]
+file = "scripts/ops_ledger.py"
+find = '''        if es[-1].get("diff") is None and not any(e.get("diff") is not None and e.get("verify") != "fail" for e in es):'''
+replace = '''        if any(e.get("diff") is None for e in es):'''
+
+[[mutation]]
+id = "ledger-diff-unknown-trusts-failed"
+why = "검증에 걸려 버린 기록을 '비교 있음' 으로 센다"
+guards = ["tests/test_ops_ledger.py::test_final_diff_unknown_counts_days_not_events"]
+file = "scripts/ops_ledger.py"
+find = '''        if es[-1].get("diff") is None and not any(e.get("diff") is not None and e.get("verify") != "fail" for e in es):'''
+replace = '''        if es[-1].get("diff") is None and not any(e.get("diff") is not None for e in es):'''
+
+[[mutation]]
+id = "tui-rebased-silent"
+why = "다시 센 것을 첫 확정의 기록이라고 적는다"
+guards = ["tests/test_tui_flow_view.py::test_final_diff_line_and_help_list"]
+file = "src/sectorflow/tui/flow_view.py"
+find = '''    kind = "잠정 열" if fd.get("rebased") else "기록"'''
+replace = '''    kind = "기록"'''
+
+[[mutation]]
+id = "web-rebased-silent"
+why = "다시 센 것을 첫 확정의 기록이라고 적는다"
+guards = ["tests/test_report_pages.py::test_numbers_today_panel_says_a_retry_shows_the_first_finals_record"]
+file = "scripts/templates/sector_numbers.html"
+find = '''(F.rebased?" 잠정 열, ":" 기록, ")'''
+replace = '''" 기록, "'''
+
+[[mutation]]
+id = "web-windows-hardcoded"
+why = "1일 칸만 있는데 1·5일이라고 적는다"
+guards = ["tests/test_report_pages.py::test_numbers_today_panel_says_a_retry_shows_the_first_finals_record"]
+file = "scripts/templates/sector_numbers.html"
+find = '''(F.windows||[1,5]).join("·")'''
+replace = '''"1·5"'''
+
+[[mutation]]
+id = "mismatch-rejects-a-sound-record"
+why = "일관성 검사가 정상 기록까지 거부하면 재시도가 늘 비교 없음이 된다"
+guards = ["tests/test_streaks_revisions.py::test_every_real_first_final_passes_its_own_consistency_check"]
+file = "scripts/sector_flow.py"
+find = '''        if abs(want[(m, s, a)][-1] - vn) > 0.006:'''
+replace = '''        if True:'''
+
+[[mutation]]
+id = "trust-check-name-drifts"
+why = "검사 이름이 검증기와 갈리면 규칙이 조용히 '증거 없음' 으로 돌아 옛 코드의 실패도 잇지 못한다"
+guards = ["tests/test_streaks_revisions.py::test_producer_and_verifier_read_the_names_the_verifier_really_prints"]
+file = "scripts/sector_flow.py"
+find = '''FD_CHECK_VALUES = "잠정 → 확정 — 확정값·차이가 페이로드에서 다시 나오는가"'''
+replace = '''FD_CHECK_VALUES = "잠정 → 확정 — 확정값·차이"'''
+
+[[mutation]]
+id = "inherit-ignores-moved-extremes"
+why = "머리 칸이 같아도 극단 목록이 움직였으면 그 기록의 들고 남이 낡는다"
+guards = ["tests/test_streaks_revisions.py::test_retry_rebases_the_extreme_moves_on_the_provisional_lists"]
+file = "scripts/sector_flow.py"
+find = '''    if _head_cells(P) == _head_cells(old) and not extremes_change(P, old):'''
+replace = '''    if _head_cells(P) == _head_cells(old):'''
+
+[[mutation]]
+id = "inherit-launders-the-review-tamper"
+why = "리뷰 재현 — 변조한 기록이 일관성 검사 없이 이어진다"
+guards = ["tests/test_streaks_revisions.py::test_the_review_tamper_is_not_laundered"]
+file = "scripts/sector_flow.py"
+find = '''    if (why := _record_mismatch(old, fd)):'''
+replace = '''    if False:'''

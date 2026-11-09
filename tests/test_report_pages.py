@@ -392,6 +392,19 @@ def test_numbers_today_panel_lists_the_provisional_to_final_changes(tmp_path):
 
 
 @node
+def test_numbers_today_panel_says_a_retry_shows_the_first_finals_record(tmp_path):
+    D = _today_numbers(final=True)
+    D["final_diff"]["inherited_from"] = "2026-11-10 08:21"
+    assert "1칸 / 300칸 (첫 확정 11-10 08:21 기록, ±0.05억 초과" in "\n".join(_page("sector_numbers.html", D, tmp_path))
+    D["final_diff"].update(windows=[1], rebased=True)
+    texts = "\n".join(_page("sector_numbers.html", D, tmp_path))
+    assert "(첫 확정 11-10 08:21 잠정 열, ±0.05억 초과, 1일 순매수)" in texts
+    D["final_diff"], D["final_diff_reason"] = None, "확정 위에 다시 만들었다 — 이을 기록이 없다"
+    texts = "\n".join(_page("sector_numbers.html", D, tmp_path))
+    assert "비교 없음: 확정 위에 다시 만들었다 — 이을 기록이 없다" in texts and "칸 / " not in texts
+
+
+@node
 def test_numbers_today_panel_says_when_the_report_has_no_today(tmp_path):
     assert any("'오늘' 블록이 없다" in t for t in _page("sector_numbers.html", _numbers_data(), tmp_path))
 

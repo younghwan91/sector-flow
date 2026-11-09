@@ -182,6 +182,24 @@ def _hhmm_kst(dt: datetime) -> str:
     return dt.astimezone(KST).strftime("%m-%d %H:%M")
 
 
+def final_diff_unknown(reports: list[dict]) -> list[str]:
+    """확정인데 잠정 대비가 없는 기준일 — 마지막 확정에 비교가 없고, 검증을 통과한 비교도 남지 않은 날.
+
+    사건마다 세면 첫 확정(410칸) 뒤 재시도(null) 한 번에 그날이 '비교 불가' 가 된다. 검증에 걸린 기록(diff 가 있어도
+    verify=fail) 뒤의 null 은 그 기록을 믿지 않아 비운 것이니 비교 불가가 맞다.
+    """
+    days: dict[str, list[dict]] = {}
+    for e in reports:
+        if e.get("outcome") == "final":
+            days.setdefault(e["asof"], []).append(e)
+    out = []
+    for a, es in days.items():
+        es.sort(key=lambda e: e.get("ts") or "")
+        if es[-1].get("diff") is None and not any(e.get("diff") is not None and e.get("verify") != "fail" for e in es):
+            out.append(a)
+    return sorted(out)
+
+
 def errata_rows(events: list[dict]) -> list[dict]:
     """첫 게시 뒤 숫자가 바뀐 날 — 재구성(폴더를 바꿔 끼웠다)과 잠정→확정에서 섹터 칸이 바뀐 확정(diff>0).
 
@@ -275,8 +293,7 @@ def stats(events: list[dict], days: int, now: datetime | None = None) -> dict:
                   "rebuilt_only": fin_rebuilt},
         "gate_blocked_days": gate_dates,
         "verify_failed_days": verify_dates,
-        "final_diff_unknown": sorted({e["asof"] for e in reports
-                                      if e.get("outcome") == "final" and e.get("diff") is None}),
+        "final_diff_unknown": final_diff_unknown(reports),
         "errata": err,
         "probe": {"n": len(probes), "ok": probe_ok,
                   "share": round(probe_ok / len(probes), 4) if probes else None},
