@@ -8076,7 +8076,7 @@ replace = """    if out.returncode == 0 or not out.stdout.strip():"""
 [[mutation]]
 id = "dart-moves-on-any-event-or-any-time"
 why = "구간 밖이나 주식수와 무관한 이벤트로 점을 옮겨 시총이 배수로 틀린다"
-guards = ["tests/test_collect_dart.py::test_only_a_share_event_inside_the_gap_moves_a_point"]
+guards = ["tests/test_collect_dart.py::test_a_moved_point_lands_on_the_last_share_event_inside_the_gap"]
 file = "src/sectorflow/collect/dart.py"
 find = """if d < e <= qd and _share_event(tp, rt))"""
 replace = """if d < e <= qd or _share_event(tp, rt))"""
