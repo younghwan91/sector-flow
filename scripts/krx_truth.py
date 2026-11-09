@@ -13,8 +13,13 @@
 
 **이용 범위(법적 가드).** 네이버·KRX 약관을 확인하지 못했다. 공표 수치는 **내부 대조용으로만** 받아 리포트 폴더
 (``<리포트>/krx_truth.json`` — ``serve_reports.py`` 목록 밖)에만 재운다. **페이로드와 화면에는 오차 % 와 부호
-반대 표지만 싣는다** — 공표 수치·절대차를 ``today.krx_truth`` 에 넣지 않는다(검증기가 본다). 빈도는 기준일당
-시장별 최대 2회(저녁 게시·다음날 확정)다.
+반대 표지만 싣는다** — 공표 수치·절대차를 ``today.krx_truth`` 에 넣지 않는다(검증기가 본다). 단 화면의 금액과 차이 % 로
+공표치를 되짚을 수 있다(주체 칸 하나당 후보 둘) — 비공개 리포트 밖으로 내지 않는 까닭이다.
+
+**기본 꺼짐.** 크론은 켜지 않는다(``deploy/crontab.simnode``). 약관 확인·사용자 승인 전에는 네이버를 부르지 않는다.
+
+**빈도(켰을 때).** 받으면 캐시해 기준일당 시장별 2회(저녁 게시·다음날 확정)로 끝난다. 망 오류는 시장마다 1번 더 시도하니
+장애면 빌드 한 번에 4건이고, 못 받은 기준일은 다음 빌드가 다시 시도한다.
 
 **엔드포인트.** 네이버: ``GET m.stock.naver.com/api/index/{KOSPI,KOSDAQ}/trend?bizdate=YYYYMMDD`` →
 ``personalValue``·``foreignValue``·``institutionalValue``(억, 부호·쉼표). 공표 전·휴장일은 값이 전부 0 이다.
@@ -296,7 +301,7 @@ def attach(payload: dict, build_dir: "str | None", root: "str | None", *,
 
     켜짐 = 같은 기준일 폴더(``<root>/<기준일>/krx_truth.json``)에 캐시가 있거나, 빌드 환경에
     ``KR_QUANT_KRX_TRUTH=1``. 캐시가 있으면 다시 받지 않는다 — 단 켜져 있고 그 캐시를 **기준일 당일 이전**에
-    받았는데 지금이 기준일 뒤면 한 번 다시 받는다(확정 빌드, 기준일당 최대 2회). 못 받으면 캐시를 쓴다.
+    받았는데 지금이 기준일 뒤면 한 번 다시 받는다(확정 빌드, 받은 뒤로는 기준일당 2번째가 끝이다). 못 받으면 캐시를 쓴다.
     받았거나 캐시를 썼으면 ``build_dir/krx_truth.json`` 에 재워 리포트 폴더와 같이 움직인다.
     어떤 실패도 예외가 아니라 skip 블록이다 — 리포트를 깨지 않는다(이 모듈의 버그까지 포함).
     """
@@ -322,7 +327,7 @@ def _attach(payload: dict, build_dir: "str | None", root: "str | None", *,
     today = payload.get("today") or {}
     date = today.get("date")
     cache = os.path.join(root, date, "krx_truth.json") if root and date else None
-    want_fetch = bool(env.get("KR_QUANT_KRX_TRUTH"))
+    want_fetch = env.get("KR_QUANT_KRX_TRUTH") == "1"    # =0 이 켜면 안 된다(승인 전 호출)
     if not want_fetch and not (cache and os.path.isfile(cache)):
         return None                              # 켜지 않았으면 흔적도 없다
     official = None

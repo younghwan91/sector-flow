@@ -458,6 +458,15 @@ def test_numbers_today_panel_names_the_krx_truth_skip_reason(tmp_path):
 
 
 @node
+def test_numbers_is_quiet_about_naver_when_the_switch_is_off(tmp_path):
+    """기본 꺼짐 — 오늘 패널에 네이버 칩·건너뜀·차이 줄이 없다. 도움말의 48일 실측 설명은 측정 기록이라 남는다."""
+    D = _today_numbers()
+    D["today"].pop("krx_truth", None)
+    texts = _page("sector_numbers.html", D, tmp_path)
+    assert not any(t.startswith(("⚠ 네이버", "네이버 대조", "네이버 시장값 대비")) for t in texts)
+
+
+@node
 def test_numbers_block_suspect_chip_names_the_stock_with_evidence(tmp_path):
     """대량 체결 의심 칩 — 종목과 분봉 밖 몫, 증거 표지. 목록이 비었거나 skip 이면 없다."""
     D = _today_numbers()

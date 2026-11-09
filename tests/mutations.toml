@@ -8439,12 +8439,28 @@ find = '''check_published_truth(root, prev),'''
 replace = '''(0, []),'''
 
 [[mutation]]
-id = "cron-truth-off"
-why = "크론에서 안 켜면 대조가 조용히 안 돈다"
-guards = ["tests/test_daily_report_flow.py::test_every_daily_report_cron_line_turns_on_the_published_truth_check"]
+id = "cron-truth-on-before-approval"
+why = "크론이 켜면 승인 전에 네이버를 매일 부른다"
+guards = ["tests/test_daily_report_flow.py::test_no_cron_line_calls_naver_before_approval"]
 file = "deploy/crontab.simnode"
-find = "10 18,19 * * 1-5 mkdir -p /home/young/git/sector-flow/reports && KR_QUANT_KRX_TRUTH=1 "
-replace = "10 18,19 * * 1-5 mkdir -p /home/young/git/sector-flow/reports && "
+find = "10 18,19 * * 1-5 mkdir -p /home/young/git/sector-flow/reports && "
+replace = "10 18,19 * * 1-5 mkdir -p /home/young/git/sector-flow/reports && KR_QUANT_KRX_TRUTH=1 "
+
+[[mutation]]
+id = "truth-env-zero-turns-on"
+why = "KR_QUANT_KRX_TRUTH=0 이 켜는 값이면 끈다고 적은 환경이 네이버를 부른다"
+guards = ["tests/test_krx_truth.py::test_attach_stays_off_unless_the_switch_is_exactly_one"]
+file = "scripts/krx_truth.py"
+find = "want_fetch = env.get(\"KR_QUANT_KRX_TRUTH\") == \"1\""
+replace = "want_fetch = bool(env.get(\"KR_QUANT_KRX_TRUTH\"))"
+
+[[mutation]]
+id = "truth-off-still-warns-on-screen"
+why = "꺼진 리포트에 '건너뜀' 칩이 뜨면 기본 상태가 날마다 거짓 경고다"
+guards = ["tests/test_krx_truth.py::test_switched_off_report_is_quiet_on_every_surface"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "    if kt and kt.get(\"status\") != \"ok\":\n        out.append(\"네이버 대조 건너뜀\")"
+replace = "    if not kt or kt.get(\"status\") != \"ok\":\n        out.append(\"네이버 대조 건너뜀\")"
 
 [[mutation]]
 id = "block-ignores-off-book-share"

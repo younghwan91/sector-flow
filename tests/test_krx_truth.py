@@ -289,6 +289,14 @@ def _no_fetch(*_a, **_k):
     raise AssertionError("네트워크를 타면 안 되는 경로다")
 
 
+@pytest.mark.parametrize("val", ["0", "", "true", "off"])
+def test_attach_stays_off_unless_the_switch_is_exactly_one(tmp_path, val):
+    """기본 꺼짐의 정의 — ``=1`` 말고는 네트워크를 타지 않는다. ``=0`` 이 켜는 값이면 끈 환경이 네이버를 부른다."""
+    P = _payload()
+    assert kt.attach(P, str(tmp_path), str(tmp_path), env={"KR_QUANT_KRX_TRUTH": val}, fetch=_no_fetch, pause=0) is None
+    assert "krx_truth" not in P["today"]
+
+
 def test_attach_is_silent_when_not_opted_in(tmp_path):
     """캐시도 KR_QUANT_KRX_TRUTH 도 없으면 흔적도 없다 — 선택 기능이 모든 리포트에 블록을 남기면 안 된다."""
     P = _payload()
@@ -527,7 +535,30 @@ def test_verifier_accepts_a_naver_sidecar_without_the_etc_row(tmp_path):
 def test_verifier_is_silent_when_the_feature_is_off(tmp_path, capsys):
     """파일도 블록도 없는 리포트(기능 꺼짐)에는 검사도 SKIP 줄도 없다 — 선택 기능이 기본 출력을 늘리면 안 된다."""
     assert _verify(_payload(), str(tmp_path)) == []
-    assert "공표치" not in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "공표치" not in out and "네이버" not in out
+
+
+def test_switched_off_report_is_quiet_on_every_surface(tmp_path, capsys):
+    """기본 상태(꺼짐)는 어느 표면에도 거짓 경고를 안 낸다 — 앞서 SKIP 이 쌓인 폴더가 있어도 꺼진 날은 세지 않는다."""
+    from sectorflow.tui import flow_view as fv
+
+    fc = _mod("freshness_check")
+    root = tmp_path / "reports"
+    for day in ("2026-11-03", "2026-11-04", "2026-11-05"):
+        (root / day).mkdir(parents=True)
+        (root / day / "VERIFY.txt").write_text(f"       {vr.VT_SKIP_MARK} — 망\n", "utf-8")
+    today = root / DATE
+    today.mkdir()
+    P = _payload()
+    assert kt.attach(P, str(today), str(root), env={}, fetch=_no_fetch, pause=0) is None
+    assert _verify(P, str(today)) == []
+    out = capsys.readouterr()
+    assert "네이버" not in out.out + out.err
+    (today / "VERIFY.txt").write_text(out.out, "utf-8")
+    assert fc.check_published_truth(root, DATE) == (0, [])
+    assert not [c for c in fv._gap_chips(P, ["거래소", "코스닥"]) if "네이버" in c]
+    assert fv.krx_truth_help(P) == []
 
 
 def test_verifier_flags_an_ok_block_whose_truth_file_vanished(tmp_path):
