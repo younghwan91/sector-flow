@@ -8741,6 +8741,30 @@ find = "if(age>=4&&!D.demo) document"
 replace = "if(age>=4) document"
 
 [[mutation]]
+id = "screenshot-manifest-sha-stale"
+why = """화면 코드가 바뀌었는데 원장 sha 가 옛 커밋을 가리키면 README 그림이
+없는 화면을 보여준다 — 이 변이는 sha 를 TUI 가 달랐던 옛 main(a236be3)으로 되돌린다. 앵커는 sha 앞까지라 재촬영에도 안 깨진다"""
+guards = ["tests/test_screenshots_fresh.py::test_ui_change_after_manifest_sha_demands_retake"]
+file = "docs/SCREENSHOTS.md"
+find = "| docs/images/kqflow-today.png | src/sectorflow/tui/ | "
+replace = "| docs/images/kqflow-today.png | src/sectorflow/tui/ | a236be3d78bc87c4aacc888df7e355dc788608fb | "
+
+[[mutation]]
+id = "screenshot-manifest-row-dropped"
+why = "README 가 쓰는 이미지가 원장에서 빠지면 그 이미지만 신선도 검사 밖에서 썩는다"
+guards = ["tests/test_screenshots_fresh.py::test_every_readme_image_is_in_the_manifest"]
+
+[[mutation.edits]]
+file = "docs/SCREENSHOTS.md"
+find = "| docs/images/web-today.png | scripts/templates/ | "
+replace = "| docs/images/gone.png | scripts/templates/ | "
+
+[[mutation.edits]]
+file = "docs/SCREENSHOTS.md"
+find = "| docs/images/web-today.png | src/sectorflow/demo.py | "
+replace = "| docs/images/gone.png | src/sectorflow/demo.py | "
+
+[[mutation]]
 id = "digest-published-chip-always"
 why = "다이제스트 공표치 오차 줄이 hot 과 무관하게 나온다"
 guards = ["tests/test_digest.py::test_published_error_chip_follows_krx_truth_hot"]
