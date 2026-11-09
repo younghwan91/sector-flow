@@ -1836,6 +1836,20 @@ def test_the_evidence_script_measures_the_same_way_the_screen_does():
                                                             [1.0, 2.0, 3.0])
 
 
+def test_the_evidence_script_survives_a_report_without_its_default_sector(capsys):
+    """합성 데모엔 '전기/전자' 가 없어 `ledger_numbers.py --dir <데모>` 가 `KeyError` 로 죽었다 — 거래가 가장 큰 섹터로 대신한다."""
+    import scripts.ledger_numbers as ln
+    keys = ln.ACTOR_KEYS
+    row = lambda v: {k: [v] * 30 for k in keys}             # noqa: E731
+    d = {"flows": {"A": {"작다": row(1.0), "크다": row(9.0)}, "B": {"작다": row(1.0), "크다": row(9.0), "한쪽만": row(99.0)}},
+         "markets": ["A", "B"], "dates": [f"d{i}" for i in range(30)]}
+    ln.spikes(d)
+    assert "· 크다" in capsys.readouterr().out
+    d["flows"]["A"]["전기/전자"] = d["flows"]["B"]["전기/전자"] = row(0.5)
+    ln.spikes(d)                                            # 있으면 그대로 그 섹터다
+    assert "· 전기/전자" in capsys.readouterr().out
+
+
 # ------------------------------------- 다운샘플 · 종목 수 · 비율 분모
 
 def test_downsampling_never_drops_the_last_day_of_the_window():

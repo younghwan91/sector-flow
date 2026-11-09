@@ -18,9 +18,22 @@ MEASURED_2026 = ["2026-01-01", "2026-02-16", "2026-02-17", "2026-02-18", "2026-0
                  "2026-10-09"]
 
 
+#: 아직 실측으로 대조할 수 없는 날(앞날) — 지우면 그날 장이 열린다고 보고 수급 0 을 수집 실패(1)로 울린다. 2027 은 잠정, KRX 공지가 나오면 함께 고친다.
+AHEAD = {2026: ["2026-12-25", "2026-12-31"],
+         2027: ["2027-01-01", "2027-02-08", "2027-02-09", "2027-03-01", "2027-05-03", "2027-05-05", "2027-05-13",
+                "2027-07-19", "2027-08-16", "2027-09-14", "2027-09-15", "2027-09-16", "2027-10-04", "2027-10-11",
+                "2027-12-27", "2027-12-31"]}
+
+
 def test_2026_matches_the_days_the_database_has_no_rows():
     days = [d for d in kc.HOLIDAYS[2026] if d <= "2026-11-06"]
     assert days == MEASURED_2026
+
+
+def test_days_ahead_of_the_measurement_stay_on_the_calendar():
+    assert [d for d in kc.HOLIDAYS[2026] if d > "2026-11-06"] == AHEAD[2026]
+    assert list(kc.HOLIDAYS[2027]) == AHEAD[2027]
+    assert kc.PROVISIONAL == {2027}
 
 
 @pytest.mark.parametrize("year", sorted(kc.HOLIDAYS))

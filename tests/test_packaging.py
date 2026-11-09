@@ -84,6 +84,11 @@ def test_hook_ships_offline_templates(tmp_path):
     editable: dict = {"force_include": {}}
     hook.initialize("editable", editable)
     assert editable["force_include"] == {}
+    # 임시 사본은 빌드가 끝나면 지운다 — 빌드마다 sf-templates-* 가 쌓였다.
+    folders = {Path(src).parent for src in data["force_include"]}
+    assert len(folders) == 1 and next(iter(folders)).is_dir()
+    hook.finalize("standard", data, "x.whl")
+    assert not next(iter(folders)).exists()
 
 
 def test_strip_remote_keeps_clickable_links():

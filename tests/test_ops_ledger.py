@@ -323,6 +323,14 @@ def test_unreached_probes_are_failures_with_a_count():
     assert (pr["n"], pr["ok"], pr["unreached"], pr["share"]) == (5, 3, 2, 0.6)
 
 
+def test_a_5xx_answer_failed_but_it_was_reached():
+    """5xx 는 서버가 대답한 실패다. '닿지 못함' 에 섞으면 프로세스가 죽은 것과 앱 오류가 안 갈린다 — 대응이 다르다."""
+    t0 = datetime(2026, 11, 8, 0, 0, tzinfo=timezone.utc)
+    pr = ol.stats(_probes(t0, 2) + _probes(t0 + timedelta(minutes=10), 2, status=503)
+                  + _probes(t0 + timedelta(minutes=20), 1, status=None), 30, now=t0 + timedelta(minutes=25))["probe"]
+    assert (pr["n"], pr["ok"], pr["unreached"]) == (5, 2, 1)
+
+
 # ── 정오표 — 2번째 게시부터, 게시 하나마다 한 줄 ──────────────────────────────────
 
 def _rows(*events):
