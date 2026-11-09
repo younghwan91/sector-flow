@@ -1,5 +1,5 @@
 # sw-flow · sw-ledger 화면 값의 수식 정의
-<!-- refs-verified-at: 4f4956470fbb66fb094f463bad9bd116cd5815c3 -->
+<!-- refs-verified-at: 96568b9f25e5ac2ab939151dc240041822ba0ec9 -->
 
 두 터미널 화면(`sw-flow`·`sw-ledger`)에 뜨는 모든 값의 정의를 코드 위치와 함께 모은 **정본**이다. 식마다 그것을
 계산하는 `파일:줄` 이 붙어 있고, 지표마다 **근거 수준**(앞날 수익률에 대해 검증된 것이 있나)을 적었다.
@@ -926,11 +926,11 @@ KRX 주체(기타외국인 등)의 순매수 추정치에 결측과 식 (1)의 �
 | 표시 | 뜻 | 근거 |
 |---|---|---|
 | `장중·미확정` | 기준일이 오늘이고 KST 17시 전 | `_finalized` `scripts/sector_flow.py:67-74`, `FINALIZED_KST_HOUR = 17` `scripts/sector_flow.py:58` |
-| `마감·잠정` | 수집 창이 지났다(시계만 본다). 당일 수급은 잠정치다 | `src/sectorflow/tui/flow_view.py:1991-2000`(`status_chip`) |
+| `마감·잠정` | 수집 창이 지났다(시계만 본다). 당일 수급은 잠정치다 | `src/sectorflow/tui/flow_view.py:2013-2022`(`status_chip`) |
 | `마감·확정` | 화~토 08:20 확정 모드가 `daily_finalize`(`finalize_both`·`rebuild_adjusted`) 성공을 확인하고 확정치로 다시 만든 리포트. 페이로드에 `final: true`, 폴더에 `FINAL.txt` | `scripts/daily_report.sh:183-240`(`FINAL_OK`), `scripts/daily_report.sh:361-396`, `scripts/finalize_done.py:100-148`(`def finalize_done`), `scripts/sector_flow.py:1931-1933` |
-| `⚠ 검증 실패(VERIFY_FAILED.txt)` | 저장 직후 자기 검증에 걸렸다. 게시는 하고 다음 크론이 다시 만든다 | `report_warnings` `src/sectorflow/tui/flow_view.py:2002-2020`, `scripts/daily_report.sh:327-349`(`VERIFY_RC`) |
-| `⚠ MM-DD 수집 미완` | 더 뒤 기준일 폴더에 `INCOMPLETE.txt` — 완전성 관문이 막아 `latest` 가 전날에 머문다 | `src/sectorflow/tui/flow_view.py:2018-2019`, `scripts/daily_report.sh:256-292`(`GATE_RC`) |
-| `⚠ N일 지난 리포트` | 기준일이 달력 4일 이상 지났다 | `STALE_DAYS = 4` `src/sectorflow/tui/flow_view.py:2025`, `staleness_warning` `src/sectorflow/tui/flow_view.py:2038-2044` |
+| `⚠ 검증 실패(VERIFY_FAILED.txt)` | 저장 직후 자기 검증에 걸렸다. 게시는 하고 다음 크론이 다시 만든다 | `report_warnings` `src/sectorflow/tui/flow_view.py:2024-2042`, `scripts/daily_report.sh:327-349`(`VERIFY_RC`) |
+| `⚠ MM-DD 수집 미완` | 더 뒤 기준일 폴더에 `INCOMPLETE.txt` — 완전성 관문이 막아 `latest` 가 전날에 머문다 | `src/sectorflow/tui/flow_view.py:2040-2041`, `scripts/daily_report.sh:256-292`(`GATE_RC`) |
+| `⚠ N일 지난 리포트` | 기준일이 달력 4일 이상 지났다 | `STALE_DAYS = 4` `src/sectorflow/tui/flow_view.py:2047`, `staleness_warning` `src/sectorflow/tui/flow_view.py:2060-2066` |
 
 잠정 리포트의 G 는 확정치에서 자주 바뀐다(지표 검증 Q3a: 게시본과 확정치의 G 순위가 크게 갈린 날 37%). 가속 순위는 ρ 0.999 로 안정적이다.
 
