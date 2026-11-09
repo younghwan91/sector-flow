@@ -8268,3 +8268,41 @@ guards = ["tests/test_streaks_revisions.py::test_revision_rollup_counts_empty_st
 file = "scripts/sector_flow.py"
 find = """            scells += S.get("n_cells") or 0"""
 replace = """            scells += S.get("n_cells") or 1"""
+
+# ── 관문 도구의 나머지 검사 ──
+[[mutation]]
+id = "new-report-entry-point-escapes-the-role-table"
+why = "새 진입점이 역할 표 밖이면 제 스크립트를 돌리는지 아무도 안 본다"
+guards = ["tests/test_entry_points.py::test_table_covers_every_report_entry_point"]
+file = "pyproject.toml"
+find = """sector-flow-verify = "sectorflow.report_cli:verify""""
+replace = """sector-flow-verify = "sectorflow.report_cli:verify"
+sector-flow-extra = "sectorflow.report_cli:gate""""
+
+[[mutation]]
+id = "shell-without-mutation-allowed-silently"
+why = "변이 없는 쉘이 표에 없으면 빨개야 한다 — 표를 비우면 그 파일이 드러난다"
+guards = ["tests/test_mutation_spec.py::test_every_shell_script_and_template_is_a_mutation_target"]
+file = "tests/test_mutation_spec.py"
+find = """    "scripts/freshness_check.sh": "환경 변수 사본을 만들고 exec 만 한다 — 크론 경로는 test_freshness_check 가 가짜 uv 로 태운다","""
+replace = ""
+
+[[mutation]]
+id = "rehearsal-goes-on-with-a-missing-branch"
+why = "없는 브랜치를 빼고 합친 리허설이 통과라고 말한다"
+guards = ["tests/test_rehearse_merge.py::test_bad_calls_exit_2_before_touching_anything"]
+file = "scripts/rehearse_merge.py"
+find = """    pinned = [(b, resolve(repo, b)) for b in a.branches]
+    missing = [b for b, s in pinned if s is None]
+    if missing:"""
+replace = """    pinned = [(b, resolve(repo, b)) for b in a.branches if resolve(repo, b)]
+    missing = [b for b in a.branches if not resolve(repo, b)]
+    if False:"""
+
+[[mutation]]
+id = "rehearsal-accepts-an-unknown-skip"
+why = "오타 난 --skip 을 조용히 넘겨 빼려던 관문이 돈다(또는 빠졌다고 믿는다)"
+guards = ["tests/test_rehearse_merge.py::test_bad_calls_exit_2_before_touching_anything"]
+file = "scripts/rehearse_merge.py"
+find = """    if unknown:"""
+replace = """    if False:"""

@@ -114,6 +114,7 @@ def test_every_shell_script_and_template_is_a_mutation_target():
     assert not set(NO_MUTATION_OK) - files, "지운 파일이 표에 남았다"
 
 
+# mutation-exempt: 지금 [[removed]] 가 비어 있어 주입해도 돌 행이 없다 — 선언 표의 정합성만 본다
 def test_removed_entries_have_reasons_and_are_really_gone():
     doc = tomllib.loads(SPEC.read_text("utf-8"))
     ids = {m.get("id") for m in MUTATIONS}
