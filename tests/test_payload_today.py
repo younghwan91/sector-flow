@@ -287,7 +287,7 @@ def test_final_diff_lists_only_changes_beyond_rounding(tmp_path):
     assert "코스닥/금융 기관 1일" in txt and "3칸 바뀜" in txt
     assert _t_fails(new) == []
     new["final_diff"]["changed"][0]["new"] += 1.0
-    assert _t_fails(new), "확정값을 틀리게 적어도 검증기가 모른다"
+    assert "T/잠정 → 확정 — 확정값·차이가 페이로드에서 다시 나오는가" in _t_fails(new), "확정값을 틀리게 적어도 검증기가 모른다"
 
 
 def test_final_diff_row_within_the_rounding_tolerance_fails_the_verifier(tmp_path):

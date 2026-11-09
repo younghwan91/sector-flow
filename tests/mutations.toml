@@ -6474,3 +6474,35 @@ guards = ["tests/test_report_pages.py::test_numbers_today_panel_says_a_retry_sho
 file = "scripts/templates/sector_numbers.html"
 find = '''(F.windows||[1,5]).join("·")'''
 replace = '''"1·5"'''
+
+[[mutation]]
+id = "mismatch-rejects-a-sound-record"
+why = "일관성 검사가 정상 기록까지 거부하면 재시도가 늘 비교 없음이 된다"
+guards = ["tests/test_streaks_revisions.py::test_every_real_first_final_passes_its_own_consistency_check"]
+file = "scripts/sector_flow.py"
+find = '''        if abs(want[(m, s, a)][-1] - vn) > 0.006:'''
+replace = '''        if True:'''
+
+[[mutation]]
+id = "trust-check-name-drifts"
+why = "검사 이름이 검증기와 갈리면 규칙이 조용히 '증거 없음' 으로 돌아 옛 코드의 실패도 잇지 못한다"
+guards = ["tests/test_streaks_revisions.py::test_producer_and_verifier_read_the_names_the_verifier_really_prints"]
+file = "scripts/sector_flow.py"
+find = '''FD_CHECK_VALUES = "잠정 → 확정 — 확정값·차이가 페이로드에서 다시 나오는가"'''
+replace = '''FD_CHECK_VALUES = "잠정 → 확정 — 확정값·차이"'''
+
+[[mutation]]
+id = "inherit-ignores-moved-extremes"
+why = "머리 칸이 같아도 극단 목록이 움직였으면 그 기록의 들고 남이 낡는다"
+guards = ["tests/test_streaks_revisions.py::test_retry_rebases_the_extreme_moves_on_the_provisional_lists"]
+file = "scripts/sector_flow.py"
+find = '''    if _head_cells(P) == _head_cells(old) and not extremes_change(P, old):'''
+replace = '''    if _head_cells(P) == _head_cells(old):'''
+
+[[mutation]]
+id = "inherit-launders-the-review-tamper"
+why = "리뷰 재현 — 변조한 기록이 일관성 검사 없이 이어진다"
+guards = ["tests/test_streaks_revisions.py::test_the_review_tamper_is_not_laundered"]
+file = "scripts/sector_flow.py"
+find = '''    if (why := _record_mismatch(old, fd)):'''
+replace = '''    if False:'''
