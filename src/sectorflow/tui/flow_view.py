@@ -1596,7 +1596,7 @@ def sector_day_ret(d: dict, market: str) -> dict:
 
 
 def _ranked_line(prefix: str, ranked: list, stocks: dict, side: str, width: int, rets: "dict | None" = None) -> str:
-    """섹터 3개(금액·%ile·그날 수익률) + 그 주체의 종목 — 폭이 모자라면 이름을 줄이고(16→10칸) 종목 수를 2 → 1 → 0 으로 줄인다.
+    """섹터 3개(금액·%ile·그날 수익률) + 그 주체의 종목 — 폭이 모자라면 종목 수와 이름을 줄인다(2·16칸 → 1·16칸 → 1·11칸 → 2·10칸 → 1·10칸 → 없음).
 
     넓은 화면에서 이름이 10칸에 잘리면 같은 머리글자 종목이 `가상전자…` 로 똑같아진다.
 
@@ -1604,7 +1604,7 @@ def _ranked_line(prefix: str, ranked: list, stocks: dict, side: str, width: int,
     웹 '오늘' 패널과 같은 반올림(:func:`fmt_pct`, 소수 2자리, 0.5 는 0 에서 먼 쪽)이다.
     """
     rets = rets or {}
-    tiers = [(k, 16) for k in range(BANNER_STOCKS, 0, -1)] + [(k, 10) for k in range(BANNER_STOCKS, -1, -1)]
+    tiers = [(k, 16) for k in range(BANNER_STOCKS, 0, -1)] + [(1, 11)] + [(k, 10) for k in range(BANNER_STOCKS, -1, -1)]
     for k, name_w in tiers:
         items = [f"{s} {fmt_amt(v)}{_pct_tag(p)} {_fmt_ret(rets.get(s))}{_stock_tag(stocks.get(s) or [], side, k, name_w)}"
                  for s, v, p in ranked]

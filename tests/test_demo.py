@@ -113,8 +113,10 @@ def test_demo_band_leaves_room_above_jump_targets():
 def test_first_screen_stock_names_are_whole_at_the_readme_width(built):
     """README 첫 그림(160칸)의 `[ ]` 이름이 10칸에 잘려 `가상전자…` 로 다 같았다 — 폭이 되면 다 적는다."""
     text = "\n".join(banner_lines(State(flow_app.load(str(built["dir"]))), 159))
-    tags = re.findall(r"\[(가상[^\]]*)\]", text)
-    assert tags and not [t for t in tags if "…" in t], tags[:5]
+    day = [ln for ln in text.splitlines() if ln.strip().startswith("기관 상위") or ln.strip().startswith("기관 하위")]
+    tags = re.findall(r"\[(가상[^\]]*)\]", "\n".join(day))
+    assert len(tags) >= 6 and not [t for t in tags if "…" in t], tags
+    assert not re.search(r"\[가상..…", text), "한 칸 모자란 줄도 머리글자만 남기면 안 된다(11칸 단계)"
 
 
 def test_one_day_trust_column_matches_the_first_screen(built):

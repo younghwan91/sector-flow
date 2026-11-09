@@ -3577,8 +3577,8 @@ id = "flow-help-drops-data-basis"
 why = "sw-flow 도움말에서 자료 범위 절이 빠져 화면이 KRX 몫이라는 걸 안 말한다"
 guards = ["tests/test_data_basis.py::test_basis_label_is_on_the_flow_help_screen_unclipped_at_width_80"]
 file = "src/sectorflow/tui/flow_view.py"
-find = "HELP = _with_evidence(HELP) + BASIS_HELP"
-replace = "HELP = _with_evidence(HELP)"
+find = "HELP = HELP_BODY + BASIS_HELP"
+replace = "HELP = HELP_BODY"
 
 [[mutation]]
 id = "ledger-help-drops-data-basis"
@@ -5728,8 +5728,8 @@ id = "krx-truth-help-tail-dropped"
 why = "도움말 조립에서 네이버 대조 절이 빠지면 TUI 에서 측정값을 볼 길이 없다 — 첫 화면엔 안 싣기로 한 값이다"
 guards = ["tests/test_krx_truth.py::test_help_entries_append_the_krx_truth_tail"]
 file = "src/sectorflow/tui/flow_view.py"
-find = "    return HELP + _wrap_help(final_diff_help(st.d) + krx_truth_help(st.d))"
-replace = "    return HELP + _wrap_help(final_diff_help(st.d))"
+find = "    return HELP_BODY + _wrap_help(final_diff_help(st.d) + krx_truth_help(st.d)) + BASIS_HELP"
+replace = "    return HELP_BODY + _wrap_help(final_diff_help(st.d)) + BASIS_HELP"
 
 [[mutation]]
 id = "krx-truth-build-hook-dropped"
@@ -8563,7 +8563,7 @@ id = "first-screen-names-clip-at-10"
 why = "넓은 화면에서도 이름이 10칸에 잘리면 같은 머리글자 종목이 똑같아진다"
 guards = ["tests/test_demo.py::test_first_screen_stock_names_are_whole_at_the_readme_width"]
 file = "src/sectorflow/tui/flow_view.py"
-find = "    tiers = [(k, 16) for k in range(BANNER_STOCKS, 0, -1)] + "
+find = "    tiers = [(k, 16) for k in range(BANNER_STOCKS, 0, -1)] + [(1, 11)] + "
 replace = "    tiers = "
 
 [[mutation]]
@@ -8748,8 +8748,8 @@ id = "help-report-lines-cut-at-80"
 why = "길이를 모르는 도움말 끝줄을 안 접으면 80칸에서 단어 중간에 잘린다"
 guards = ["tests/test_tui_flow_view.py::test_report_help_lines_fold_instead_of_cutting_at_80"]
 file = "src/sectorflow/tui/flow_view.py"
-find = """    return HELP + _wrap_help(final_diff_help(st.d) + krx_truth_help(st.d))"""
-replace = """    return HELP + final_diff_help(st.d) + krx_truth_help(st.d)"""
+find = """    return HELP_BODY + _wrap_help(final_diff_help(st.d) + krx_truth_help(st.d)) + BASIS_HELP"""
+replace = """    return HELP_BODY + final_diff_help(st.d) + krx_truth_help(st.d) + BASIS_HELP"""
 
 [[mutation]]
 id = "all-stocks-header-without-badges"
@@ -9610,7 +9610,7 @@ id = "fsc-inquiry-hides-stock-names"
 why = "금융위 질의서가 종목 표시를 숨긴다 — 사실이 틀린 질의의 회신은 쓸 수 없다"
 guards = ["tests/test_first_reader.py::test_inquiries_state_what_the_screen_really_shows"]
 file = "docs/strategy/inquiries/fsc_advisory_scope.md"
-find = """- **종목이 나옵니다.** 첫 화면의 종목명은 세 자리입니다. (1) 섹터마다 그날 순매수 상위 종목 1~2개의 **종목명과 금액**. (2) `분봉 밖 거래 큼` 종목 전부의 **종목명**과 그날 거래량 중 분봉 밖 몫 — 드물게 뜨는 표지입니다. (3) `거래대금 집중` — 시장 거래대금의 20% 이상인 섹터의 상위 2종목 **종목명**과 몫, 그 둘을 뺀 순매수. 섹터 표에는 순매수·순매도 상위 종목이, 섹터를 열면(드릴다운) 그 섹터 **전 종목**의 주체별 순매수와 비중이 있습니다.
+find = """- **종목이 나옵니다.** 첫 화면의 종목명은 세 자리입니다. (1) 섹터마다 그날 순매수 상위 종목 1~2개의 **종목명과 금액**. (2) `분봉 밖 거래 큼` 종목 전부의 **종목명**과 그날 거래량 중 분봉 밖 몫 — 드문 표지가 아닙니다. 내부 측정(2026-11-09)에서 2026-09-14 이후 36거래일 중 16일(44%, 22건) 떴습니다. (3) `거래대금 집중` — 시장 거래대금의 20% 이상인 섹터의 상위 2종목 **종목명**과 몫, 그 둘을 뺀 순매수. 섹터 표에는 순매수·순매도 상위 종목이, 섹터를 열면(드릴다운) 그 섹터 **전 종목**의 주체별 순매수와 비중이 있습니다.
 """
 replace = ""
 
@@ -10091,8 +10091,8 @@ id = "first-screen-q-does-not-quit"
 why = "첫 화면의 q 가 닫기만 해 두 번 눌러야 끝난다"
 guards = ["tests/test_day_facts.py::test_q_on_the_first_screen_quits"]
 file = "src/sectorflow/tui/flow_app.py"
-find = "    if k in (-1, ord(\"q\")):\n        return False\n    if k in BANNER_FORWARD:"
-replace = "    if k == -1:\n        return False\n    if k in BANNER_FORWARD:"
+find = "    if k in (-1, ord(\"q\")):\n        return False\n    if k in (ord(\"?\"), curses.KEY_F1):\n        st.help_back = True"
+replace = "    if k == -1:\n        return False\n    if k in (ord(\"?\"), curses.KEY_F1):\n        st.help_back = True"
 
 [[mutation]]
 id = "run-tag-never-says-new"

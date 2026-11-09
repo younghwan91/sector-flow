@@ -346,4 +346,4 @@ def main() -> None:
     path = ensure(a.out, force=a.force)
     print(path)                        # stdout 은 경로 한 줄 — 안내는 stderr 로
     print(f"화면: uv run sw-flow --dir {path}\n웹(저장소 체크아웃에서): uv run python scripts/serve_reports.py --root {path}"
-          " — http://127.0.0.1:8765/", file=sys.stderr)
+          " (주소는 서버가 찍는다)", file=sys.stderr)
