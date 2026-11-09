@@ -87,6 +87,9 @@ import sys
 import tempfile
 from pathlib import Path
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))   # scripts/ 는 패키지가 아니다
+import memcap  # noqa: E402 — 자식 프로세스의 메모리 상한
+
 try:                                    # 3.11+ 는 표준, 3.10 은 tomli (pytest 의존성)
     import tomllib
 except ModuleNotFoundError:             # pragma: no cover — 인터프리터에 달렸다
@@ -138,7 +141,7 @@ class Section:
 def run(cmd: list[str], cwd: Path, env: dict | None = None,
         timeout: int = 1200) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, cwd=str(cwd), capture_output=True, text=True,
-                          timeout=timeout, env=env)
+                          timeout=timeout, env=env, preexec_fn=memcap.cap_memory)
 
 
 def git(cwd: Path, *args: str) -> str:
@@ -951,6 +954,11 @@ def sec_mutations(wt: Path, py: str, base_sha: str, spec_path: Path | None,
         timings.append((dt, mid))
         if hit is not None and hit.returncode != 0 and env_full(hit.stdout + hit.stderr):
             s.fail(f"[{mid}] {env_full(hit.stdout + hit.stderr)} — 이 변이는 판정하지 못했다")
+        elif hit is not None and memcap.hit_cap(hit.returncode, hit.stdout + hit.stderr):
+            # 빨갛지만 검사가 버그를 알아본 게 아니다 — 상한(또는 커널)이 폭주를 끊었을 뿐이다.
+            s.fail(f"[{mid}] 판정 불가 — 메모리 상한에 닿았다(pytest 종료코드 {hit.returncode}). 잡힌 것으로 세지 않는다. "
+                   f"변이가 메모리를 폭주시키면 검사에 끝을 두거나 변이를 고쳐라\n"
+                   + tail(hit.stdout + hit.stderr, 800))
         elif hit is None:
             # 멈춘 검사는 버그를 잡은 게 아니다 — CI 에서는 잡 시간 상한으로 죽는다.
             s.fail(f"[{mid}] 판정 불가 — 주입 후 가드가 600초 안에 끝나지 않았다. 변이가 무한 루프를 만들면 "

@@ -53,7 +53,8 @@ def test_apply_puts_each_mutant_in_place_and_stale_ones_refuse(tmp_path):
 
 
 def test_only_a_test_failure_counts_as_killed():
-    assert [MS.verdict(r) for r in (0, 1, 2, 5, "timeout")] == ["survived", "killed", "invalid", "invalid", "timeout"]
+    assert ([MS.verdict(r) for r in (0, 1, 2, 5, -9, "memory", "timeout")]
+            == ["survived", "killed", "invalid", "invalid", "invalid", "invalid", "timeout"])
 
 
 def test_judge_runs_the_group_then_everything_and_restores_the_source(tmp_path):
@@ -115,13 +116,17 @@ def test_tmpdir_stays_outside_the_clone(tmp_path):
     assert got["verdict"] == "survived", got
 
 
-def test_memory_limit_turns_a_runaway_mutant_into_a_failure(tmp_path, monkeypatch):
-    """메모리를 먹는 변이가 머신을 흔들지 않는다 — 상한에서 ``MemoryError`` 로 검사가 빨개진다(리뷰 표본에서 SIGKILL 이 났다)."""
-    monkeypatch.setattr(MS, "MEM_LIMIT", 2 * 1024 ** 3)
-    body = "def test_grow():\n    x = []\n    while True:\n        x.append(bytearray(10 ** 8))\n"
+def test_memory_cap_stops_a_runaway_and_is_not_counted_as_killed(tmp_path, monkeypatch):
+    """메모리를 먹는 변이는 상한에서 끊기고, 그 빨강은 '잡힘' 이 아니다. 상한이 없으면 **할당하기 전에** 검사가 끝난다 —
+    이 검사가 상한 없이 진짜로 자라서 11:05·11:25 의 41GB OOM 이 났다(변이 ``sampler-has-no-memory-limit``)."""
+    monkeypatch.setenv(MS.memcap.LIMIT_ENV, "1024")
+    body = ("import resource\n\n\ndef test_grow():\n"
+            f"    assert resource.getrlimit(resource.RLIMIT_DATA)[0] == {1024 ** 3}, '상한 없음'\n"
+            "    x = []\n    while True:\n        x.append(bytearray(10 ** 8))\n")
     root, _ms = _mini(tmp_path, {"test_g.py": body})
     rc, first = MS.pytest_once(root, tmp_path / "t", [], [], 60)
-    assert rc == 1 and first == "tests/test_g.py::test_grow", (rc, first)
+    assert rc == "memory" and first == "tests/test_g.py::test_grow", (rc, first)
+    assert MS.verdict(rc) == "invalid"
 
 
 def test_draw_is_deterministic_per_seed_and_respects_coverage_and_diff(tmp_path):

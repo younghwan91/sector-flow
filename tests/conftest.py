@@ -1,8 +1,11 @@
-"""세션 전체에 거는 두 가지 — 시간 상한과, 같은 체크아웃에서 겹친 ``pytest --cov`` 거절.
+"""세션 전체에 거는 세 가지 — 시간 상한, 메모리 상한, 같은 체크아웃에서 겹친 ``pytest --cov`` 거절.
 
 **시간 상한.** ``test`` 잡에는 pytest 쪽 상한이 없어 멈춘 검사가 잡 시간(6시간)을 통째로 쓴다.
 ``faulthandler.dump_traceback_later(exit=True)`` 는 어느 스레드에 멈춰 있든(C 안이어도) 스택을 찍고 프로세스를 끝낸다 —
 종료코드가 0 이 아니라 잡이 빨개진다. 평소 5~8분이고 바쁜 머신에서 20분까지 봤다. :data:`LIMIT_ENV` 로 바꾼다(0 = 끔).
+
+**메모리 상한.** 일반 ``pytest`` 도 끝없이 자라는 검사 하나로 호스트를 OOM 으로 몰 수 있다. 세션을 시작할 때 자기에게 상한을 걸고
+자식은 물려받는다(``scripts/memcap.py``).
 
 **겹친 커버리지.** ``pytest --cov`` 는 시작할 때 ``.coverage.*`` 를 지우고, 끝날 때 남은 ``.coverage.*`` 를 합치며 지운다.
 같은 폴더의 두 실행은 서로의 **서브프로세스 측정**을 지운다 — 예외 없이 커버리지만 낮게 나온다(2026-11-09 재현: 혼자면
@@ -17,6 +20,8 @@ import sys
 from pathlib import Path
 
 import pytest
+
+from scripts.memcap import cap_memory
 
 LIMIT_ENV = "SECTOR_FLOW_PYTEST_LIMIT_S"
 #: 세션 상한(초) — 평소의 네 배쯤. 샌드박스·바쁜 머신을 빨갛게 만들 값이 아니라 멈춘 잡을 끝내는 값이다.
@@ -33,6 +38,7 @@ def _cov_active(config: pytest.Config) -> bool:
 
 def pytest_configure(config: pytest.Config) -> None:
     global _lock_fd
+    cap_memory()
     limit = float(os.environ.get(LIMIT_ENV) or SESSION_LIMIT_S)
     if limit > 0 and not hasattr(config, "workerinput"):
         # 이 시점엔 fd 2 캡처가 풀려 있다. 사본을 넘겨야 검사 도중(fd 2 = 캡처 파일)에도 스택이 잡 로그로 간다.

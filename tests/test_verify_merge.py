@@ -386,6 +386,28 @@ def test_only_a_test_failure_counts_as_caught(mini):
     assert "[add-subtracts] 잡힘" not in out
 
 
+def test_children_get_the_memory_cap(tmp_path, monkeypatch):
+    """하네스가 띄우는 모든 자식(변이 주입 pytest·기준선 포함)에 상한이 걸린다. 값만 읽는다 — 할당하지 않는다."""
+    monkeypatch.setenv(VM.memcap.LIMIT_ENV, "1024")
+    p = VM.run([sys.executable, "-c", "import resource as r; print(r.getrlimit(r.RLIMIT_DATA)[0])"], tmp_path)
+    assert int(p.stdout) == 1024 ** 3
+
+
+def test_a_mutant_stopped_by_the_memory_cap_is_not_caught(mini, monkeypatch):
+    """폭주를 상한(또는 커널)이 끊은 빨강을 '잡힘' 으로 세면 안 된다 — 11:05·11:25 의 OOM 이 그렇게 '잡힘 14.9초' 로 지나갔다.
+    상한이 없으면 변이가 할당 전에 단언으로 죽으니 이 검사 자신은 폭주하지 않는다."""
+    monkeypatch.setenv(VM.memcap.LIMIT_ENV, "1024")
+    wt, base = mini
+    grow = ("    import resource\\n    assert resource.getrlimit(resource.RLIMIT_DATA)[0] == " + str(1024 ** 3)
+            + "\\n    return [bytearray(10 ** 8) for _ in iter(int, 1)]")
+    (wt / "tests" / "mutations.toml").write_text(SPEC.replace('replace = "    return a - b"', f'replace = "{grow}"'), "utf-8")
+    _commit(wt, "runaway mutation")
+    s, out = _run(wt, base)
+    assert s.status == VM.REJECT and "[add-subtracts] 판정 불가 — 메모리 상한" in out, out
+    assert "[add-subtracts] 잡힘" not in out
+    assert (wt / "lib.py").read_text("utf-8") == LIB
+
+
 def test_changed_src_reaches_guards_through_imports_scripts_and_strings(tmp_path):
     """바뀐 src 모듈 → 그걸 import 하는 src 모듈 → 그걸 쓰는 스크립트 → 그 스크립트를 띄우는 검사까지 닿는다."""
     files = {

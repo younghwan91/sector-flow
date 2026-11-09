@@ -12,12 +12,12 @@
 
 주입은 **HEAD 의 임시 클론**(``$TMPDIR``)에서 한다 — 작업 트리·운영 체크아웃·다른 워크트리를 건드리지 않는다. 변이마다 먼저 그
 묶음의 검사(:data:`GROUPS`)만, 살아남으면 전체 pytest 를 돈다. 판정: ``killed``(pytest 종료코드 1) · ``survived``(0) · ``timeout`` ·
-``invalid``(수집 오류 등 — 변이가 문법·import 를 깨뜨렸다, 잡힌 것으로 세지 않는다).
+``invalid``(수집 오류 등 — 변이가 문법·import 를 깨뜨렸다, 잡힌 것으로 세지 않는다. 메모리 상한에 닿은 것도 여기다: ``rc`` 가 ``"memory"``).
 
 **거짓 잡힘을 세지 않는다.** 표본 숫자가 부풀면 도구가 없는 것만 못하다. 그래서 (1) 소스 글자를 보는 검사(:data:`SHALLOW` — 앵커·인용
 대조)는 돌리지 않고, (2) 잡았다는 검사를 **변이를 뺀 트리에서 다시 돌려** 거기서도 빨가면(부하 탓 등) 그 검사를 빼고 다시 판정한다
 (``flaky`` 에 적는다), (3) ``TMPDIR`` 를 클론 밖에 둔다 — 클론 안이면 "git 밖" 을 전제한 검사가 빨개진다. 무한 루프로 메모리를 먹는
-변이가 머신을 흔들지 않게 프로세스 메모리에 상한(:data:`MEM_LIMIT`)을 건다.
+변이가 머신을 흔들지 않게 검사 프로세스에 메모리 상한(``scripts/memcap.py``)을 건다.
 
 표본은 시드와 코드에 달렸다(코드·커버리지가 바뀌면 같은 시드도 다른 변이를 뽑는다) — 같은 변이를 다시 돌리려면 ``--replay``.
 """
@@ -31,7 +31,6 @@ import os
 import queue
 import random
 import re
-import resource
 import shutil
 import subprocess
 import sys
@@ -39,6 +38,9 @@ import tempfile
 import time
 from collections import Counter
 from pathlib import Path
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))   # scripts/ 는 패키지가 아니다
+import memcap  # noqa: E402 — 검사 프로세스의 메모리 상한
 
 REPO = Path(__file__).resolve().parent.parent
 _COLLECT = ("dart", "kiwoom", "fetch", "shares", "write", "busy", "auth", "run", "equiv")
@@ -61,8 +63,6 @@ CMP = {ast.Gt: ">=", ast.GtE: ">", ast.Lt: "<=", ast.LtE: "<", ast.Eq: "!=", ast
 ARITH = {ast.Add: "-", ast.Sub: "+", ast.Mult: "/", ast.Div: "*"}
 #: 소스 글자를 대조하는 검사 — 줄이 바뀌면 동작과 무관하게 빨개진다. 이걸로 잡힌 것은 잡힌 것이 아니다.
 SHALLOW = ("tests/test_mutation_spec.py", "tests/test_docs_refs.py")
-#: 검사 프로세스 하나의 주소 공간 상한(바이트). e2e 도 1GiB 안쪽이다.
-MEM_LIMIT = 8 * 1024 ** 3
 
 
 def mutants(source: str, path: str, executed: set[int] | None = None, only: set[int] | None = None) -> list[dict]:
@@ -126,10 +126,6 @@ def verdict(rc: "int | str") -> str:
     return {0: "survived", 1: "killed", "timeout": "timeout"}.get(rc, "invalid")
 
 
-def _limit_memory() -> None:
-    resource.setrlimit(resource.RLIMIT_AS, (MEM_LIMIT, MEM_LIMIT))
-
-
 def first_failure(stdout: str) -> str:
     """요약의 첫 ``FAILED``·``ERROR`` 줄의 nodeid. 없으면 빈 문자열."""
     for ln in stdout.splitlines():
@@ -143,7 +139,7 @@ def pytest_once(root: Path, tmp: Path, tests: list[str], deselect: list[str], ti
     env = {**os.environ, "PYTHONPATH": f"{root}/src{os.pathsep}{root}", "PYTHONDONTWRITEBYTECODE": "1",
            "TMPDIR": str(tmp)}
     env.pop("KR_QUANT_DB", None)
-    cmd = [sys.executable, "-m", "pytest", "-q", "-x", "-p", "no:cacheprovider", "--no-header", "--tb=no", *tests]
+    cmd = [sys.executable, "-m", "pytest", "-q", "-x", "-p", "no:cacheprovider", "--no-header", "--tb=short", *tests]
     for f in SHALLOW:
         if (root / f).exists():
             cmd += ["--ignore", f]
@@ -151,11 +147,13 @@ def pytest_once(root: Path, tmp: Path, tests: list[str], deselect: list[str], ti
         cmd += ["--deselect", d]
     try:
         p = subprocess.run(cmd, cwd=root, env=env, capture_output=True, text=True, timeout=timeout,
-                           preexec_fn=_limit_memory)
+                           preexec_fn=memcap.cap_memory)
     except subprocess.TimeoutExpired:
         return "timeout", ""
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+    if memcap.hit_cap(p.returncode, p.stdout + p.stderr):
+        return "memory", first_failure(p.stdout)      # 상한에 닿은 빨강은 검사가 잡은 것이 아니다
     return p.returncode, first_failure(p.stdout)
 
 
@@ -278,6 +276,8 @@ def main(argv: list[str] | None = None) -> int:
     if flakes:
         print(f"원본에서도 빨갛던 검사(잡힘으로 안 셌다): {dict(flakes)}")
     for r in res:
+        if r["rc"] == "memory":
+            print(f"메모리 상한(잡힘 아님) {r['file']}:{r['line']} {r['old']!r} -> {r['new']!r} | {r['text'][:100]}")
         if r["verdict"] == "survived":
             print(f"생존 {r['file']}:{r['line']} {r['old']!r} -> {r['new']!r} | {r['text'][:100]}")
     return 0

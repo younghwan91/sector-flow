@@ -10435,10 +10435,95 @@ replace = """    tmp = tmp or root / ".tmp""""
 [[mutation]]
 id = "sampler-has-no-memory-limit"
 why = "무한 루프 변이가 머신 메모리를 먹어 운영 배치까지 흔든다"
-guards = ["tests/test_mutation_sample.py::test_memory_limit_turns_a_runaway_mutant_into_a_failure"]
+guards = ["tests/test_mutation_sample.py::test_memory_cap_stops_a_runaway_and_is_not_counted_as_killed"]
 file = "scripts/mutation_sample.py"
-find = """    resource.setrlimit(resource.RLIMIT_AS, (MEM_LIMIT, MEM_LIMIT))"""
+find = """                           preexec_fn=memcap.cap_memory)"""
+replace = """                           preexec_fn=None)"""
+
+[[mutation]]
+id = "sampler-counts-a-memory-hit-as-killed"
+why = "상한이 끊은 폭주가 표본에서 '잡힘' 으로 세어 숫자가 부푼다"
+guards = ["tests/test_mutation_sample.py::test_memory_cap_stops_a_runaway_and_is_not_counted_as_killed"]
+file = "scripts/mutation_sample.py"
+find = """    if memcap.hit_cap(p.returncode, p.stdout + p.stderr):"""
+replace = """    if False:"""
+
+[[mutation]]
+id = "harness-children-have-no-memory-limit"
+why = "변이 주입 pytest 가 상한 없이 돌아 폭주하면 호스트가 OOM 난다"
+guards = ["tests/test_verify_merge.py::test_children_get_the_memory_cap"]
+file = "scripts/verify_merge.py"
+find = """timeout=timeout, env=env, preexec_fn=memcap.cap_memory)"""
+replace = """timeout=timeout, env=env)"""
+
+[[mutation]]
+id = "harness-counts-a-memory-hit-as-caught"
+why = "상한이나 커널이 끊은 폭주를 '잡힘' 으로 적어 OOM 이 조용히 지나간다"
+guards = ["tests/test_verify_merge.py::test_a_mutant_stopped_by_the_memory_cap_is_not_caught"]
+file = "scripts/verify_merge.py"
+find = """        elif hit is not None and memcap.hit_cap(hit.returncode, hit.stdout + hit.stderr):"""
+replace = """        elif False:"""
+
+[[mutation]]
+id = "pytest-session-has-no-memory-limit"
+why = "그냥 돌린 pytest 의 폭주가 호스트를 OOM 으로 몬다"
+guards = ["tests/test_memcap.py::test_pytest_session_caps_itself"]
+file = "tests/conftest.py"
+find = """    cap_memory()"""
 replace = """    pass"""
+
+[[mutation]]
+id = "memcap-caps-address-space"
+why = "RLIMIT_AS 면 가상 주소를 크게 예약하는 node·Chromium 검사가 죽는다"
+guards = ["tests/test_memcap.py::test_cap_limits_data_not_address_space"]
+file = "scripts/memcap.py"
+find = """    resource.setrlimit(resource.RLIMIT_DATA, (n, n))"""
+replace = """    resource.setrlimit(resource.RLIMIT_AS, (n, n))"""
+
+[[mutation]]
+id = "memcap-raises-a-tighter-outer-limit"
+why = "바깥 ulimit 보다 높이려다 ValueError 로 자식이 뜨지도 못한다"
+guards = ["tests/test_memcap.py::test_cap_never_raises_a_tighter_outer_limit"]
+file = "scripts/memcap.py"
+find = """        n = min(n, soft)"""
+replace = """        pass"""
+
+[[mutation]]
+id = "memcap-env-can-turn-it-off"
+why = "환경변수 0 이 상한을 0 바이트나 무제한으로 만든다"
+guards = ["tests/test_memcap.py::test_limit_env_changes_the_value_but_cannot_turn_it_off"]
+file = "scripts/memcap.py"
+find = """    return mb * 1024 ** 2 if mb > 0 else MEM_LIMIT"""
+replace = """    return mb * 1024 ** 2"""
+
+[[mutation]]
+id = "memcap-misses-a-kernel-kill"
+why = "커널이 죽인 SIGKILL 을 메모리 탓으로 못 가려 원인이 흐려진다"
+guards = ["tests/test_memcap.py::test_hit_cap_tells_exhaustion_from_a_plain_failure"]
+file = "scripts/memcap.py"
+find = """returncode in KILLED or """
+replace = """"""
+
+[[mutation]]
+id = "memcap-reads-a-quoted-word-as-exhaustion"
+why = "소스 줄·단언 메시지에 인용된 MemoryError 까지 메모리 고갈로 읽어 진짜 잡힘을 판정 불가로 만든다"
+guards = ["tests/test_memcap.py::test_hit_cap_tells_exhaustion_from_a_plain_failure"]
+file = "scripts/memcap.py"
+find = """(?:^(?:E\\s+|(?:FAILED|ERROR) \\S+ - )?|\\\\n)(?:\\w+\\.)*MemoryError"""
+replace = """MemoryError"""
+
+[[mutation]]
+id = "kiwoom-paging-has-no-page-limit"
+why = "서버가 계속 cont-yn Y 를 주면 끝없이 받아 호출 예산과 메모리를 쓴다"
+guards = ["tests/test_collect_transport.py::test_kiwoom_server_that_never_stops_saying_more_ends_at_max_pages"]
+[[mutation.edits]]
+file = "src/sectorflow/collect/kiwoom.py"
+find = """        for page in range(max_pages):"""
+replace = """        for page in range(10 ** 6):"""
+[[mutation.edits]]
+file = "src/sectorflow/collect/kiwoom.py"
+find = """            if page == max_pages - 1:"""
+replace = """            if False:"""
 
 # ── 표본 2(시드 8)의 진짜 생존 ──
 [[mutation]]

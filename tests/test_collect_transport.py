@@ -145,3 +145,15 @@ def test_kiwoom_paging_needs_both_the_flag_and_the_key(post_server, hdrs):
     api = kiwoom.KiwoomRest("KEY", "SECRET", base_url=post_server.url, rate=0)
     assert api.request_pages("ka10059", {}, "rows", max_pages=3) == [{"d": 1}]
     assert len(post_server.seen) == 2
+
+
+def test_kiwoom_server_that_never_stops_saying_more_ends_at_max_pages(post_server):
+    """서버가 계속 ``Cont-Yn: Y`` 를 주는 고장도 ``max_pages`` 에서 끝나고 잘렸다고 알린다. 가짜 서버의 대본도 유한하다 —
+    상한이 빠지면 대본이 바닥나 오류로 끝나지, 끝없이 자라지 않는다."""
+    forever = _json(200, {"rows": [{"d": 1}], "return_code": 0}, **{"Cont-Yn": "Y", "Next-Key": "k"})
+    post_server.script += [_json(200, TOKEN_REPLY), *[forever] * 6]
+    api = kiwoom.KiwoomRest("KEY", "SECRET", base_url=post_server.url, rate=0)
+    info: dict = {}
+    assert len(api.request_pages("ka10059", {}, "rows", max_pages=3, info=info)) == 3
+    assert info == {"pages": 3, "more": True, "stopped": False}
+    assert len(post_server.seen) == 4, "토큰 1 + 쪽 3 이어야 한다"
