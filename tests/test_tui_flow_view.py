@@ -2649,6 +2649,14 @@ def test_final_diff_line_and_help_list(data):
     extra = [desc for _n, desc in help_entries(State(d))[len(HELP):]]
     assert "첫 확정(2026-11-10 08:21 KST)의 기록을 이어받았다" in extra
     assert not [t for t in extra if _w(t) + 3 > 80]
+    # 값이 또 바뀐 재시도 — 잠정 열만 이었고 1일 칸뿐이라고 말한다(1·5일이라고 적지 않는다).
+    d = dict(data, final=True, final_diff=dict(fd, n_changed=7, n_cells=282, windows=[1], rebased=True,
+                                               inherited_from="2026-11-10 08:21"))
+    line = final_diff_line(d)
+    assert "첫 확정 11-10 08:21 잠정 열" in line and "1일 순매수" in line and "1·5일" not in line
+    extra = [desc for _n, desc in help_entries(State(d))[len(HELP):]]
+    assert "그 기록의 잠정 열로 1일 칸만 다시 셌다(5일 잠정 합은 없다)" in extra and "순매수[억] 1일 · 반올림 ±0.05억 초과만" in extra
+    assert not [t for t in extra if _w(t) + 3 > 80]
 
 
 def test_banner_without_today_falls_back_to_the_20_day_block():
