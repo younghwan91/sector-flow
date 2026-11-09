@@ -101,7 +101,6 @@ def test_the_harness_self_test_anchor_is_live():
 
 #: 변이가 없어도 되는 쉘·템플릿 — (경로, 이유). 그 파일에 변이가 생기면 여기서 지운다.
 NO_MUTATION_OK = {
-    "scripts/freshness_check.sh": "환경 변수 사본을 만들고 exec 만 한다 — 크론 경로는 test_freshness_check 가 가짜 uv 로 태운다",
 }
 
 

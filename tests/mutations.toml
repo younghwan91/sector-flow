@@ -11184,11 +11184,22 @@ sector-flow-extra = "sectorflow.report_cli:gate""""
 
 [[mutation]]
 id = "shell-without-mutation-allowed-silently"
-why = "변이 없는 쉘이 표에 없으면 빨개야 한다 — 표를 비우면 그 파일이 드러난다"
+why = "변이가 있는 쉘을 면제 표에 적으면 빨개야 한다 — 표와 실제가 어긋나면 면제가 근거를 잃는다"
 guards = ["tests/test_mutation_spec.py::test_every_shell_script_and_template_is_a_mutation_target"]
 file = "tests/test_mutation_spec.py"
-find = """    "scripts/freshness_check.sh": "환경 변수 사본을 만들고 exec 만 한다 — 크론 경로는 test_freshness_check 가 가짜 uv 로 태운다","""
-replace = ""
+find = """NO_MUTATION_OK = {
+}"""
+replace = """NO_MUTATION_OK = {
+    "scripts/freshness_check.sh": "면제",
+}"""
+
+[[mutation]]
+id = "freshness-wrapper-drops-its-arguments"
+why = "크론 래퍼가 인자를 안 넘긴다 — 쉘 줄은 커버리지 밖이라 변이가 유일한 근거다"
+guards = ["tests/test_freshness_check.py::test_cron_path_flags_a_missing_report"]
+file = "scripts/freshness_check.sh"
+find = """exec "${UVR[@]}" python scripts/freshness_check.py "$@""""
+replace = """exec "${UVR[@]}" python scripts/freshness_check.py"""
 
 [[mutation]]
 id = "rehearsal-goes-on-with-a-missing-branch"
