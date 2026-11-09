@@ -206,6 +206,15 @@ def collect(P: dict) -> dict:
         if g and g.get("pct") is not None and g["pct"] > warn:
             gaps.append({"market": m, "pct": g["pct"], "label": "종가·VWAP 환산 차 큼"})
 
+    # 드문 표지라 이름을 다 적는다 — 화면 첫 줄과 같은 글자(flow_view.block_items).
+    bs = T.get("block_suspects") or {}
+    blocks = []
+    if bs.get("status") == "ok":
+        for m in P.get("markets") or []:
+            names = (bs.get("markets") or {}).get(m) or []
+            if names:
+                blocks.append({"market": m, "names": [f"{x['name']} 분봉 밖 {rhu(x['off_pct'], 0):.0f}%" for x in names]})
+
     C = P.get("change")
     change = {"prev_date": None, "window": 20, "top_n": 5, "actors": [],
               "reason": P.get("change_reason") or ("비교 못 함" if not C else None)}
@@ -253,7 +262,7 @@ def collect(P: dict) -> dict:
         "prev_date": DC.get("prev_date"), "flip_min_share": DC.get("flip_min_share"),
         "net": [{"actor": a, "ko": ko, "v": _fact(net.get(a))[0], "pct": _fact(net.get(a))[1]}
                 for a, ko in NET_ACTORS],
-        "dominant": dom, "returns": rets, "approx_gap": gaps,
+        "dominant": dom, "returns": rets, "approx_gap": gaps, "blocks": blocks,
         "sectors": sectors, "pct_hi": PCT_HI, "pct_lo": PCT_LO,
         "streak": streak, "revision": revision,
         "change": change, "final_diff": final, "excluded": list(EXCLUDED_SECTORS),
@@ -394,6 +403,8 @@ def body_text(F: dict, extreme_cap: int = EXTREME_CAPS[0], streak: str = "full",
     dl = detail_line(F)
     if dl:
         L.append("- " + dl)
+    for b in F["blocks"]:
+        L.append(f"- 대량 체결 의심 — 정의 차이({b['market']}): {' · '.join(b['names'])}")
     for g in F["approx_gap"]:
         L.append(f"- {g['label']}({g['market']} {rhu(g['pct'], 1):.1f}%)")
     L += [f"- {ln}" for ln in conc_lines(F)]
@@ -535,8 +546,10 @@ def card_html(F: dict, extreme_cap: int = CARD_LADDER[0][0], streak: str = CARD_
     if fd is not None:
         notes.append(f"잠정→확정 비교 없음: {fd['reason']}" if fd["reason"] else
                      f"잠정→확정 변경: {fd['n_changed']:,}칸 / {fd['n_cells']:,}칸(±{fd['tol']}억 초과)")
-    gaps = "".join(f'<span class="chip warn">⚠ {_e(g["label"])} {_e(g["market"])} {rhu(g["pct"], 1):.1f}%</span>'
-                   for g in F["approx_gap"])
+    gaps = "".join(f'<span class="chip warn">⚠ 대량 체결 의심 — 정의 차이({_e(b["market"])}): {_e(" · ".join(b["names"]))}</span>'
+                   for b in F["blocks"])
+    gaps += "".join(f'<span class="chip warn">⚠ {_e(g["label"])} {_e(g["market"])} {rhu(g["pct"], 1):.1f}%</span>'
+                    for g in F["approx_gap"])
     fill = {
         "CARD_W": str(CARD_W), "CARD_H": str(CARD_H),
         "DATE": _e(day_label(F["asof"])), "STATUS": _e(F["status"]),

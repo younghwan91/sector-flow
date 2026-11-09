@@ -460,7 +460,8 @@ def test_numbers_block_suspect_chip_names_the_stock_with_evidence(tmp_path):
         {"code": "3", "name": "C", "off_pct": 55.4, "actor": "indiv", "amt": 4.0},
         {"code": "4", "name": "D", "off_pct": 55.0, "actor": "indiv", "amt": 3.0}]
     joined = "\n".join(_page("sector_numbers.html", D, tmp_path))
-    assert "⚠ 대량 체결 의심 — 근사 오차 큼(거래소: SK 분봉 밖 92%·B 분봉 밖 60%·C 분봉 밖 55% 외 1종목) [측정]" in joined
+    assert "⚠ 대량 체결 의심 — 정의 차이(거래소): SK 분봉 밖 92% · B 분봉 밖 60% · C 분봉 밖 55% · D 분봉 밖 55% [측정]" in joined
+    assert "근사 오차 큼" not in joined, "값이 틀린 게 아니라 정의가 갈린 것이다 — 검증 결론과 칩이 어긋났다"
     D["today"]["block_suspects"] = {"status": "skip", "reason": "분봉 표(minute_bars)가 없다"}
     assert not any("대량 체결 의심 —" in t for t in _page("sector_numbers.html", D, tmp_path))
 

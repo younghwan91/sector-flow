@@ -168,7 +168,7 @@ details.explore .xnote{margin:0; padding:10px 15px; font-size:11.5px; color:var(
     <p><b>마감·잠정 / 마감·확정.</b> 잠정 = 17시 수집 창 뒤 그날 잠정값으로 만든 리포트. 확정 = 다음날 아침 확정치(daily_finalize)를 확인하고 다시 만든 리포트. 잠정 리포트의 "오늘" 패널은 최근 확정일들의 잠정→확정 수정 폭(1일 섹터 칸 |확정−잠정|÷|확정| 중앙값, 부호 뒤집힘 수 — (시장, 주체) 안에서 Σ|확정값| 의 2% 이상인 칸만)을 적고, %ile 극단 목록에 (잠정) 표지를 단다.</p>
     <p><b>오늘 %ile</b>(1년%ile) = 그날 순매수가 오늘 포함 최근 1년(260거래일) <b>일별</b> 값 중 몇 등[0~100], 동률은 중간순위 — 0(또는 미보고)인 날이 75% 를 넘는 줄은 —. 표시는 반올림(0.5 는 위로 — 터미널 화면과 같은 규칙). <b>최대 순매매 주체</b> = 그날 시장 |순매수| 가 가장 큰 주체 — 기관·투신+연기금이 아니면 그 주체의 상위·하위 3 과 극단을 덧붙인다. 섹터 옆 [ ] 는 그 주체의 그날 상위 종목이다.</p>
     <p><b>왜 네이버의 시장 순매수와 다른가.</b> 48거래일 실측(<span class="num">docs/validation</span>)에서 시장 합계와 네이버 시장값의 차이(일별 Σ|차|÷Σ|네이버|)는 거래소 중앙 5.7%·5% 초과 28일, 코스닥 중앙 5.5%·28일이었다. 거래소의 주원인은 <b>유니버스</b>다 — 수급 자료(<span class="num">supply_demand</span>)에 우선주·리츠 등 139코드가 없어 이 페이지의 시장 합계에서 빠진다(삼성전자우 하나를 더하면 중앙 2.1%). 큰 날의 원인은 <b>분봉 밖 대량 체결</b>이다 — 2026-09-14 무렵부터 이런 체결은 네이버 <b>시장값</b>에 없는 것으로 읽힌다(뒤 22건 중 22건, 앞 6건 중 0건, 까닭은 미확인). 같은 체결이 네이버 <b>종목값</b>에는 있으니 이 페이지 값이 틀린 것이 아니라 네이버 안에서 시장값과 종목값이 갈린 것이다. <b>환산</b>은 그다음이다 — 종가를 VWAP 로 바꾸면 차이가 거래소 7%, 코스닥 47% 준다. 코스닥의 나머지는 설명하지 못했다. KRX 원표와는 대조하지 못했다(익명 조회 막힘).</p>
-    <p><b>네이버 시장값과 차이 큼</b> = 개인·외국인·기관의 Σ|차| ÷ Σ|네이버| 가 5% 초과인 시장(내부 대조 전용 — 네이버 약관 미확인이라 네이버 수치는 싣지 않는다. KRX 원표와는 대조하지 못했다). <b>대량 체결 의심</b> = 그날 거래량의 50% 이상이 분봉 밖이고 최대 주체 금액이 시장 Σ|주체| 의 1% 이상인 종목 — 시간외 대량매매라는 것은 추정이다. 큰 건은 잠정 리포트에 없고 확정에서 들어왔다. <b>종가·VWAP 환산 차</b> = Σ|4주체 수량|×종가 와 ×VWAP(거래대금÷거래량)의 차이 — 내부 자료끼리의 값이라 실제 오차가 아니다(48일 최대 3.12%).</p>
+    <p><b>네이버 시장값과 차이 큼</b> = 개인·외국인·기관의 Σ|차| ÷ Σ|네이버| 가 5% 초과인 시장(내부 대조 전용 — 네이버 약관 미확인이라 네이버 수치는 싣지 않는다. KRX 원표와는 대조하지 못했다). <b>대량 체결 의심</b> = 그날 거래량의 50% 이상이 분봉 밖이고 최대 주체 금액이 시장 Σ|주체| 의 1% 이상인 종목 — 시간외 대량매매라는 것은 추정이다. 이 페이지 값이 틀린 것이 아니라 시장값과 정의가 갈린 것이다(위 설명). 큰 건이 18시 잠정에 없던 것은 6개 시장-일에서만 확인했다. <b>종가·VWAP 환산 차</b> = Σ|4주체 수량|×종가 와 ×VWAP(거래대금÷거래량)의 차이 — 내부 자료끼리의 값이라 실제 오차가 아니다(48일 최대 3.12%).</p>
     <p><b>(미분류)</b> = 벤더 마스터(<span class="num">stocks.sector</span>)에 섹터가 빈 종목. 은행 넷(기업은행·카카오뱅크·케이뱅크·제주은행)은 KRX 업종(금융)으로 덮었다(<span class="num">sectorflow/sector_override.py</span>). 남은 수는 "오늘" 패널에 적는다.</p>
     <p><b>순매수 금액은 종가 환산 근사다</b> — DB 는 수량만 준다. 참값은 주체별 체결가 합이고 VWAP 환산도 근사다.</p>
     <p><b>0 은 "관망"이 아니라 "0 또는 미보고"</b>다. <b>종목</b> 열은 그 (시장,섹터)에서 <b>이 구간에 거래된</b> 종목 수 — 벤더 마스터(<span class="num">stocks</span>)에는 수급 보고가 두 달 전에 끊긴 이름이 남아 있어, 그걸 세면 표의 수가 실제보다 많아진다.</p>
@@ -201,8 +201,8 @@ const EV_TESTED={"inst":{"share":[20,60],"amt":[20]},"forgn":{"share":[20]}};
 const EV_TESTED_SCORE={"x":[20],"G":[20]};
 const EV_MARKET="전체", MARKET_NOTE="[측정] · 전체 시장만 검정", EV_TRUST_NOTE="[측정] · ÷시총 기준으로만 검정(S1)";
 const ONE_DAY_BLANK=new Set(["accel","x","xddot","xdot","P","G","exp","U"]);
-/** 대량 체결 의심 목록 한 줄 — TUI `flow_view.block_names` 와 같은 글자. */
-function blockNames(L){ return L.slice(0,3).map(x=>x.name+" 분봉 밖 "+RHU(x.off_pct,0).toFixed(0)+"%").join("·")+(L.length>3?" 외 "+(L.length-3)+"종목":""); }
+/** 대량 체결 의심 목록 한 줄 — TUI `flow_view.block_items` 와 같은 글자. 드문 표지라 이름을 다 적는다. */
+function blockNames(L){ return L.map(x=>x.name+" 분봉 밖 "+RHU(x.off_pct,0).toFixed(0)+"%").join(" · "); }
 function scopeNote(days){ return "[측정] · 앞날 검정은 "+days.join("·")+"일만"; }
 /** 이 표의 열 → 증거 키·주체. 이 표의 금액 열은 그 주체의 것이고 가속은 기관이다. */
 const COL_EV={"inst":["inst","inst"],"accel":["accel","inst"],"forgn":["forgn","forgn"],"trust5":["trust"],"trustw":["trust"]};
@@ -367,6 +367,13 @@ function renderToday(){
     if(iv&&fv!=null&&Math.abs(iv)>=DETAIL_SHARE_MIN*gross) { const sh=RHU(fv/iv*100); items.push("금투÷기관 "+(sh<0?"−":"")+Math.abs(sh)+"%"); }
     const dl=tline("기관 세부:",items); dl.dataset.kind="detail"; c2.append(dl);
   }
+  // 대량 체결 의심 — 분모 게이트를 통과한 종목만 producer 가 싣는다(sector_flow.block_suspects).
+  const BS=T.block_suspects;
+  if(BS&&BS.status==="ok") (mkt==="전체"?mk:[mkt]).forEach(m=>{ const L=(BS.markets||{})[m]||[]; if(!L.length) return;
+    const w=el("span","chip warn","⚠ 대량 체결 의심 — 정의 차이("+m+"): "+blockNames(L)+" "+EV.block);
+    w.title="거래량의 50% 이상이 분봉 밖 + 최대 주체 금액이 시장 Σ|주체| 의 1% 이상 — 시간외 대량매매라는 것은 추정이고, 값이 틀린 것이 아니라 시장값과 정의가 갈린 것이다"; c2.append(w); });
+  if(BS&&BS.status==="ok"&&BS.unjudged) c2.append(el("div","tnote","대량 체결 판정 못 한 종목 "+BS.unjudged+"개(분봉 없음)"));
+  else if(BS&&BS.status==="skip") c2.append(el("div","tnote","대량 체결 판정: 건너뜀 — "+(BS.reason||"이유 없음")));
   // 네이버 대조 — 칩의 판정 기준. 네이버 수치는 페이로드에 없고 차이 % 만 있다. 없으면 침묵(기능이 꺼진 리포트).
   const KT=T.krx_truth;
   if(KT&&KT.status==="ok"){ const kg=r=>(!r||r.gap_pct==null?"—":RHU(r.gap_pct,1).toFixed(1)+"%")+(r&&r.flip?" 부호 반대":"");
@@ -378,13 +385,6 @@ function renderToday(){
         +" ("+(KT.label||"내부 대조용")+")")); }); }
   else if(KT){ const w=el("span","chip warn","⚠ 네이버 대조 건너뜀"); c2.append(w);
     c2.append(el("div","tnote","네이버 대조: 건너뜀 — "+(KT.reason||"이유 없음"))); }
-  // 대량 체결 의심 — 분모 게이트를 통과한 종목만 producer 가 싣는다(sector_flow.block_suspects).
-  const BS=T.block_suspects;
-  if(BS&&BS.status==="ok") (mkt==="전체"?mk:[mkt]).forEach(m=>{ const L=(BS.markets||{})[m]||[]; if(!L.length) return;
-    const w=el("span","chip warn","⚠ 대량 체결 의심 — 근사 오차 큼("+m+": "+blockNames(L)+") "+EV.block);
-    w.title="거래량의 50% 이상이 분봉 밖 + 최대 주체 금액이 시장 Σ|주체| 의 1% 이상 — 시간외 대량매매라는 것은 추정이다"; c2.append(w); });
-  if(BS&&BS.status==="ok"&&BS.unjudged) c2.append(el("div","tnote","대량 체결 판정 못 한 종목 "+BS.unjudged+"개(분봉 없음)"));
-  else if(BS&&BS.status==="skip") c2.append(el("div","tnote","대량 체결 판정: 건너뜀 — "+(BS.reason||"이유 없음")));
   const warn=T.approx_gap_warn??5;
   (mkt==="전체"?["전체",...mk]:mk).forEach(m=>{ const gp=((T.market||{})[m]||{}).approx_gap; if(!gp||gp.pct==null) return;
     if(gp.pct>warn){ const w=el("span","chip warn","⚠ 종가·VWAP 환산 차 큼("+m+" "+RHU(gp.pct,1).toFixed(1)+"%)");

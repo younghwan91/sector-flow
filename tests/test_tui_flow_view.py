@@ -2623,7 +2623,7 @@ def test_gap_chips_follow_the_published_error_and_block_suspects(data):
 
     웹 칩과 같은 글자다(tests/test_report_pages.py).
     """
-    from sectorflow.tui.flow_view import _gap_chips, block_names
+    from sectorflow.tui.flow_view import _gap_chips, block_items
     d = json.loads(json.dumps(data))
     T = d["today"]
     T["krx_truth"] = {"status": "ok", "markets": {"거래소": {"total_pct": 7.14, "hot": True}, "코스닥": {"total_pct": 4.0, "hot": False}}}
@@ -2633,14 +2633,39 @@ def test_gap_chips_follow_the_published_error_and_block_suspects(data):
     chips = _gap_chips(d, ["전체", "거래소", "코스닥"])
     assert "네이버 시장값과 차이 큼(거래소 7.1%)" in chips
     assert not any("오차 큼(코스닥" in c for c in chips)
-    assert "대량 체결 의심 — 근사 오차 큼(거래소: SK 분봉 밖 92%·B 분봉 밖 60%·C 분봉 밖 55% 외 1종목)" in chips
-    assert block_names([{"name": "SK", "off_pct": 91.8}]) == "SK 분봉 밖 92%"
+    assert chips[:4] == ["대량 체결 의심 — 정의 차이(거래소): SK 분봉 밖 92%", "B 분봉 밖 60%", "C 분봉 밖 55%", "D 분봉 밖 55%"], \
+        "드문 대량 체결이 맨 앞이고 종목명을 다 적는다"
+    assert block_items([{"name": "SK", "off_pct": 91.8}]) == ["SK 분봉 밖 92%"]
     T["krx_truth"] = {"status": "ok", "source": "krx", "markets": {"거래소": {"total_pct": 7.14, "hot": True}}}
     assert "KRX 공표치와 차이 큼(거래소 7.1%)" in _gap_chips(d, ["거래소"])
     T["krx_truth"] = {"status": "skip", "reason": "망"}
     assert "네이버 대조 건너뜀" in _gap_chips(d, ["거래소"])
     T["block_suspects"] = {"status": "skip", "reason": "분봉 표(minute_bars)가 없다"}
     assert not any("대량 체결" in c for c in _gap_chips(d, ["거래소"]))
+
+
+@pytest.mark.parametrize("width", [80, 160])
+def test_banner_shows_every_block_suspect_name_at_every_width(data, width):
+    """대량 체결 종목명은 어느 폭에서도 첫 화면에서 다 보인다 — `외 N` 으로 접으면 볼 길이가 없었다(80칸 `⚠ … 외 2`)."""
+    d = json.loads(json.dumps(data))
+    d["today"]["krx_truth"] = {"status": "ok", "markets": {"거래소": {"total_pct": 16.8, "hot": True},
+                                                          "코스닥": {"total_pct": 6.0, "hot": True}}}
+    d["today"]["block_suspects"] = {"status": "ok", "unjudged": 7, "markets": {
+        "거래소": [{"name": f"가상종목{i}", "off_pct": 90.0 - i} for i in range(5)],
+        "코스닥": [{"name": "가상코닥", "off_pct": 88.0}], "전체": []}}
+    text = "\n".join(banner_lines(State(d), width))
+    for name in [f"가상종목{i}" for i in range(5)] + ["가상코닥"]:
+        assert name in text, f"폭 {width} 에서 {name} 이 안 보인다"
+    assert text.index("대량 체결 의심") < text.index("네이버 시장값과 차이 큼"), "드문 표지가 잦은 칩에 밀렸다"
+    assert " ⚠ " in text and "외 " not in next(ln for ln in banner_lines(State(d), width) if "대량 체결 의심" in ln)
+    assert "대량 체결 판정 못 한 종목 7개(분봉 없음)" in text
+
+
+def test_banner_says_when_block_judging_was_skipped(data):
+    """판정 건너뜀은 0 건과 다르다 — 웹에만 적고 터미널이 침묵하면 '없음' 으로 읽힌다."""
+    d = json.loads(json.dumps(data))
+    d["today"]["block_suspects"] = {"status": "skip", "reason": "그날 분봉이 없다"}
+    assert "대량 체결 판정: 건너뜀 — 그날 분봉이 없다" in "\n".join(banner_lines(State(d), 80))
 
 
 def test_final_diff_line_and_help_list(data):

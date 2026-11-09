@@ -1232,14 +1232,22 @@ def _ctx_lines(d: dict, markets: list[str], width: int) -> list[str]:
 
 
 def _gap_chips(d: dict, markets: list[str]) -> list[str]:
-    """금액 경고 칩 — 네이버 시장값 기준 차이(판정의 기준)·대량 체결 의심·종가↔VWAP 환산 차. 없으면 빈 목록.
+    """금액 경고 항목 — 대량 체결 의심(드물다)·네이버 시장값 차이·종가↔VWAP 환산 차 순. 없으면 빈 목록.
 
+    순서: 5% 문턱이 거래소 중앙값(5.7%) 바로 아래라 네이버 칩은 48일 중 28일 뜬다. 드문 쪽을 먼저 둬야 밀려나지 않는다.
+    대량 체결은 종목마다 한 항목이다 — 호출하는 쪽이 :func:`_fold_items` 로 접어 **이름을 다 보인다**.
     `네이버 시장값과 차이 큼(거래소 7.1%)` 은 ``today.krx_truth`` 의 시장 합계 판정(``hot``)이고, 대조를 건너뛴
     리포트는 `네이버 대조 건너뜀` 으로 드러낸다. 종가↔VWAP 는 내부 자료끼리의 차이라 실제 오차가 아니다 —
     48일 실측 최대 3.12% 였는데 네이버 시장값 기준 거래소 오차는 28일이 5% 를 넘었다.
     """
     T = d.get("today") or {}
     out = []
+    bs = T.get("block_suspects") or {}
+    if bs.get("status") == "ok":
+        for m in markets:
+            names = block_items((bs.get("markets") or {}).get(m) or [])
+            if names:
+                out += [f"대량 체결 의심 — 정의 차이({m}): {names[0]}", *names[1:]]
     kt = T.get("krx_truth")
     if kt and kt.get("status") != "ok":
         out.append("네이버 대조 건너뜀")
@@ -1248,12 +1256,6 @@ def _gap_chips(d: dict, markets: list[str]) -> list[str]:
             row = (kt.get("markets") or {}).get(m) or {}
             if row.get("hot"):
                 out.append(f"{truth_gap_label(kt)}({m} {rhu(row['total_pct'], 1):.1f}%)")
-    bs = T.get("block_suspects") or {}
-    if bs.get("status") == "ok":
-        for m in markets:
-            names = (bs.get("markets") or {}).get(m) or []
-            if names:
-                out.append(f"대량 체결 의심 — 근사 오차 큼({m}: {block_names(names)})")
     warn = T.get("approx_gap_warn", 5.0)
     for m in markets:
         g = ((T.get("market") or {}).get(m) or {}).get("approx_gap")
@@ -1267,10 +1269,19 @@ def _gap_chips(d: dict, markets: list[str]) -> list[str]:
     return out
 
 
-def block_names(names: list[dict], top: int = 3) -> str:
-    """대량 체결 의심 목록 한 줄 — `SK 분봉 밖 92%·넷마블 분봉 밖 99% 외 1종목`. 웹 ``blockNames`` 와 같은 글자."""
-    head = "·".join(f"{x['name']} 분봉 밖 {rhu(x['off_pct'], 0):.0f}%" for x in names[:top])
-    return head + (f" 외 {len(names) - top}종목" if len(names) > top else "")
+def block_items(names: list[dict]) -> list[str]:
+    """대량 체결 의심 종목 항목 — `SK 분봉 밖 92%`. 웹 ``blockNames`` 와 같은 글자(그쪽은 ` · ` 로 잇는다)."""
+    return [f"{x['name']} 분봉 밖 {rhu(x['off_pct'], 0):.0f}%" for x in names]
+
+
+def block_note(d: dict) -> "str | None":
+    """대량 체결을 판정 못 한 몫 — 0 건과 모름을 가른다. 웹 오늘 패널의 주석과 같은 글자. 판정을 다 했거나 옛 리포트면 None."""
+    bs = (d.get("today") or {}).get("block_suspects") or {}
+    if bs.get("status") == "ok":
+        return f"대량 체결 판정 못 한 종목 {bs['unjudged']}개(분봉 없음)" if bs.get("unjudged") else None
+    if bs.get("status") == "skip":
+        return f"대량 체결 판정: 건너뜀 — {bs.get('reason') or '이유 없음'}"
+    return None
 
 
 def unclassified_count(d: dict, markets: list[str]) -> int:
@@ -1737,7 +1748,10 @@ def _banner_today(st: State, width: int) -> list[str]:
         lines += _fold_items("   기관 세부: ", detail, width)
     chips = _gap_chips(d, mkts if mk != "전체" else ["전체", *mkts])
     if chips:
-        lines.append(_items_line(" ⚠ ", chips + ["수량×종가 근사 — ? 도움말"], width))
+        lines += _fold_items(" ⚠ ", chips + ["수량×종가 근사 — ? 도움말"], width)
+    note = block_note(d)
+    if note:
+        lines.append(pad(f" ※ {note}", width))
     unc = unclassified_count(d, mkts)
     if unc:
         lines.append(pad(_first_fitting(width, [
@@ -3020,9 +3034,11 @@ HELP = [
     ("", "        수치는 화면에 없다(약관 미확인, 내부 대조 전용). 측정값은 이"),
     ("", "        도움말 맨 끝 절. 못 받으면 '네이버 대조 건너뜀'."),
     ("대량 체결", "거래량의 50% 이상이 분봉 밖이고 최대 주체 금액이 시장 Σ|주체|"),
-    ("", "        의 1% 이상인 종목. 시간외 대량매매라는 것은 추정이다. 큰 건은"),
-    ("", "        잠정 리포트에 없고 확정에서 들어왔다. 분봉 없는 종목은 판정 못"),
-    ("", "        한다. [측정]"),
+    ("", "        의 1% 이상인 종목. 시간외 대량매매라는 것은 추정이다. 이 화면 값이"),
+    ("", "        틀린 것이 아니라 시장값과 정의가 갈린 것이다(같은 체결이 네이버"),
+    ("", "        종목값엔 있다). 큰 건이 18시 잠정에 없던 것은 6개 시장-일에서만"),
+    ("", "        확인했다. 분봉 없는 종목은 판정 못 하고 그 수를 첫 화면에 적는다."),
+    ("", "        종목명은 첫 화면 ⚠ 줄에 다 있다. [측정]"),
     ("환산 차", "Σ|4주체 수량|×종가와 ×VWAP 의 차이 — 내부 자료끼리의 값이라 실제"),
     ("", "        오차가 아니다. 5% 초과면 '종가·VWAP 환산 차 큼' 칩(섹터 최대 포함)."),
     ("기관세부", "시장 줄 아래 금투·투신·연기금의 오늘 금액(1년%ile). 금투÷기관 은"),

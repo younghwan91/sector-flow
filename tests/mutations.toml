@@ -8499,8 +8499,8 @@ id = "web-block-chip-dropped"
 why = "웹이 대량 체결 의심을 안 그린다"
 guards = ["tests/test_report_pages.py::test_numbers_block_suspect_chip_names_the_stock_with_evidence"]
 file = "scripts/templates/sector_numbers.html"
-find = "    const w=el(\"span\",\"chip warn\",\"⚠ 대량 체결 의심 — 근사 오차 큼(\"+m+\": \"+blockNames(L)+\") \"+EV.block);\n"
-replace = "    return; const w=el(\"span\",\"chip warn\",\"⚠ 대량 체결 의심 — 근사 오차 큼(\"+m+\": \"+blockNames(L)+\") \"+EV.block);\n"
+find = "    const w=el(\"span\",\"chip warn\",\"⚠ 대량 체결 의심 — 정의 차이(\"+m+\"): \"+blockNames(L)+\" \"+EV.block);\n"
+replace = "    return; const w=el(\"span\",\"chip warn\",\"⚠ 대량 체결 의심 — 정의 차이(\"+m+\"): \"+blockNames(L)+\" \"+EV.block);\n"
 
 [[mutation]]
 id = "tui-published-chip-always"
@@ -8517,6 +8517,34 @@ guards = ["tests/test_tui_flow_view.py::test_gap_chips_follow_the_published_erro
 file = "src/sectorflow/basis.py"
 find = '''"KRX 공표치와 차이 큼" if (kt or {}).get("source") == "krx" else'''
 replace = '''"KRX 공표치와 차이 큼" if False else'''
+
+[[mutation]]
+id = "tui-block-names-cut-with-remainder"
+why = "대량 체결을 다시 줄 하나로 자르면(`외 2`) 80칸·160칸에서 종목명을 볼 길이가 없다"
+guards = ["tests/test_tui_flow_view.py::test_banner_shows_every_block_suspect_name_at_every_width"]
+file = "src/sectorflow/tui/flow_view.py"
+find = """        lines += _fold_items(" ⚠ ", chips + ["수량×종가 근사 — ? 도움말"], width)"""
+replace = """        lines.append(_items_line(" ⚠ ", chips + ["수량×종가 근사 — ? 도움말"], width))"""
+
+[[mutation]]
+id = "tui-block-note-silent"
+why = "판정 건너뜀·미판정 수를 터미널이 안 적으면 0 건과 모름이 안 갈린다"
+guards = ["tests/test_tui_flow_view.py::test_banner_says_when_block_judging_was_skipped"]
+file = "src/sectorflow/tui/flow_view.py"
+find = """    note = block_note(d)
+    if note:"""
+replace = """    note = block_note(d)
+    if False:"""
+
+[[mutation]]
+id = "digest-block-names-dropped"
+why = "다이제스트만 대량 체결을 안 적으면 글로 받는 사람은 큰 차이의 원인을 모른다"
+guards = ["tests/test_digest.py::test_block_suspects_reach_the_digest_with_every_name_first"]
+file = "scripts/digest.py"
+find = """    for b in F["blocks"]:
+        L.append("""
+replace = """    for b in []:
+        L.append("""
 
 [[mutation]]
 id = "digest-published-chip-always"
