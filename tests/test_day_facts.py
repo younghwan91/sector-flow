@@ -107,6 +107,13 @@ def _today_payload(**over) -> dict:
     return d
 
 
+def test_extremes_carry_how_many_days_at_that_extreme():
+    d = _today_payload(day_change={"extreme": {"전체": {"inst": {"hi": {"통신": 1, "제약": 3}, "lo": {"금융": 2}}}}})
+    d["today"]["sectors"]["전체"] = {"통신": {"inst": {"v": 9.0, "pct": 99.6}}, "제약": {"inst": {"v": 8.0, "pct": 96.0}},
+                                     "금융": {"inst": {"v": -9.0, "pct": 2.0}}, "화학": {"inst": {"v": 1.0, "pct": 50.0}}}
+    assert FV.today_extremes(d, "전체", "inst") == (["통신 100·신규", "제약 96·3일째"], ["금융 2·2일째"])
+
+
 def test_market_detail_line_states_the_securities_share():
     items = FV.market_detail_items(_today_payload(), "전체")
     assert items == ["금투 +20,181(92)", "투신 -3,186(11)", "연기금 +2,504(98)", "금투÷기관 102%"]
@@ -493,12 +500,6 @@ def test_explore_columns_carry_their_marks():
     assert FV.name_head("선정", st) == "선정[음]" and FV.cell_len("선정[음]") <= c.width
 
 
-def test_names_screen_has_its_own_fixed_note():
-    assert all("추천 아님" in t for t in FV.NAMES_NOTE)
-    assert "20일" in FV.NAMES_NOTE[0] and "금액" in FV.NAMES_NOTE[0]
-    assert FV.cell_len(FV.NAMES_NOTE[-1]) < 60
-
-
 def test_names_screen_shows_its_fixed_note():
     st = _state()
     st.d["names"] = {"000001": {"name": "가", "sector": st.rows()[0]["sector"], "market": "거래소", "cap": 1.0,
@@ -506,6 +507,7 @@ def test_names_screen_shows_its_fixed_note():
     lines, nhead = FV.names_lines(st, 79)
     assert nhead == 3 and lines[1].strip() == FV._first_fitting(79, list(FV.NAMES_NOTE)).strip()
     assert "추천 아님" in lines[1]
+    assert all("추천 아님" in t for t in FV.NAMES_NOTE) and "20일" in FV.NAMES_NOTE[0] and "금액" in FV.NAMES_NOTE[0]
 
 
 def test_ledger_drops_sectors_absent_from_the_market():

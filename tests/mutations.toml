@@ -6592,8 +6592,8 @@ id = "digest-streak-trimmed-first"
 why = "길이가 넘칠 때 연속 줄을 극단 목록보다 먼저 떨어뜨린다 — 보통 날에도 연속 줄이 사라진다"
 guards = ["tests/test_digest.py::test_text_fits_char_limit_and_trims_extremes_first"]
 file = "scripts/digest.py"
-find = "TRIM_LADDER = ((EXTREME_CAPS[0], \"full\", TOP_N),"
-replace = "TRIM_LADDER = ((EXTREME_CAPS[0], \"none\", TOP_N),"
+find = "               *((cap, \"full\", 2) for cap in EXTREME_CAPS),"
+replace = "               *((cap, \"full\", 2) for cap in EXTREME_CAPS[:-1]), (0, \"none\", 2),"
 
 [[mutation]]
 id = "digest-streak-side-always-buy"
@@ -7409,7 +7409,7 @@ replace = "    return [_items_line(streak_prefix(mk), full, width)]"
 [[mutation]]
 id = "extreme-list-loses-run-tag"
 why = "극단 목록이 오늘 처음인지 며칠째인지 다시 말하지 않는다"
-guards = ["tests/test_web_quality.py::test_web_today_panel_tags_extremes_like_the_terminal"]
+guards = ["tests/test_day_facts.py::test_extremes_carry_how_many_days_at_that_extreme"]
 file = "src/sectorflow/tui/flow_view.py"
 find = "    return ([f\"{s} {pct_int(p)}{_run_tag(runs['hi'].get(s))}\" for s, p in hi],"
 replace = "    return ([f\"{s} {pct_int(p)}\" for s, p in hi],"
@@ -7581,3 +7581,195 @@ guards = ["tests/test_web_quality.py::test_screens_do_not_claim_what_was_not_mea
 file = "src/sectorflow/tui/flow_view.py"
 find = "    (\"\", \"        금투(증권사 자기매매)와 구분해 적는다 — `기관` 한 덩어리에는 그\"),"
 replace = "    (\"\", \"        금투(증권사 자기매매 — 방향성이 약하다)와 구분해 적는다 — `기관` 한 덩어리에는 그\"),"
+
+[[mutation]]
+id = "first-screen-arrow-leaves-at-the-end"
+why = "↓ 로 훑다 끝에서 표로 튕겨 나간다 — 나머지를 읽던 사람이 화면을 잃는다"
+guards = ["tests/test_day_facts.py::test_arrow_at_the_end_of_the_first_screen_stays"]
+file = "src/sectorflow/tui/flow_app.py"
+find = "        if k == ord(\" \") and at_end:"
+replace = "        if at_end:"
+
+[[mutation]]
+id = "concentration-items-drop-top-share"
+why = "상위 종목 몫이 줄에서 빠진다 — 섹터가 두 종목 이야기라는 걸 못 읽는다"
+guards = ["tests/test_day_facts.py::test_concentration_items_are_read_as_facts"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "        out.append(f\"상위{n} {names} {rhu(r['top_share_pct']):.0f}%\")\n"
+replace = ""
+
+[[mutation]]
+id = "digest-drops-concentration"
+why = "다이제스트에 거래대금 집중 줄이 없다"
+guards = ["tests/test_day_facts.py::test_digest_lists_detail_flip_and_concentration"]
+file = "scripts/digest.py"
+find = "    L += [f\"- {ln}\" for ln in conc_lines(F)]\n"
+replace = ""
+
+[[mutation]]
+id = "digest-percentile-truncates"
+why = "다이제스트 %ile 이 버림이라 화면과 1씩 갈린다"
+guards = ["tests/test_day_facts.py::test_digest_percentile_is_the_screens"]
+file = "scripts/digest.py"
+find = "return None if p is None else int(rhu(p))"
+replace = "return None if p is None else int(p)"
+
+[[mutation]]
+id = "digest-status-own-copy"
+why = "다이제스트가 지위 글자를 따로 적어 화면과 갈린다(재구성·확정기록없음을 잃는다)"
+guards = ["tests/test_day_facts.py::test_digest_status_is_the_screens_status"]
+file = "scripts/digest.py"
+find = "from sectorflow.basis import DATA_BASIS_SHORT, NOT_TESTED_NOTE, ret_label, rhu, status_label"
+replace = "from sectorflow.basis import DATA_BASIS_SHORT, NOT_TESTED_NOTE, ret_label, rhu\nstatus_label = lambda d: \"마감·확정\" if d.get(\"final\") else \"마감·잠정\""
+
+[[mutation]]
+id = "disclaimer-binds-percentile-to-tested"
+why = "1년 %ile 을 검정했다고 묶어 말한다 — 검정하지 않은 것을 검정했다고 말한다"
+guards = ["tests/test_day_facts.py::test_disclaimer_does_not_bind_percentile_to_tested"]
+file = "src/sectorflow/basis.py"
+find = "NOT_TESTED_NOTE = \"1일 값·1년 %ile·연속 일수는 앞날 검정 안 함\""
+replace = "NOT_TESTED_NOTE = \"1일 값·1년 %ile·연속 일수도 앞날 검정함\""
+
+[[mutation]]
+id = "elapsed-note-on-the-same-day"
+why = "오늘 리포트에도 경과일을 적는다(0일 전)"
+guards = ["tests/test_day_facts.py::test_elapsed_note_says_how_old_the_day_is"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "    if age <= 0:\n        return \"\"\n    return f\"기준일"
+replace = "    return f\"기준일"
+
+[[mutation]]
+id = "explore-mark-overflows-column"
+why = "미실현 열 폭이 표지를 못 담아 `[반` 으로 잘린다"
+guards = ["tests/test_day_facts.py::test_explore_columns_carry_their_marks"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "    Col(\"미실현[%p]\", 16, True, _num(\"x\", 1)),"
+replace = "    Col(\"미실현[%p]\", 10, True, _num(\"x\", 1)),"
+
+[[mutation]]
+id = "fold-keeps-head-with-a-long-item"
+why = "머리말 옆에 첫 항목이 안 들어가도 붙여 숫자가 잘린다"
+guards = ["tests/test_day_facts.py::test_fold_items_breaks_at_item_boundaries"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "    if cell_len(prefix + items[0]) > width:\n        lines.append(pad(prefix.rstrip(), width))\n        cur = indent\n"
+replace = ""
+
+[[mutation]]
+id = "market-detail-wrong-key"
+why = "금투 자리에 투신 값을 적는다"
+guards = ["tests/test_day_facts.py::test_market_detail_line_states_the_securities_share"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "MARKET_DETAIL = ((\"fnnc_invt\", \"금투\"), (\"invtrt\", \"투신\"), (\"penfnd_etc\", \"연기금\"))"
+replace = "MARKET_DETAIL = ((\"invtrt\", \"금투\"), (\"invtrt\", \"투신\"), (\"penfnd_etc\", \"연기금\"))"
+
+[[mutation]]
+id = "old-payload-detail-blank"
+why = "옛 리포트에 금투 — 줄이 뜬다(값이 없는 것을 칸으로 그린다)"
+guards = ["tests/test_day_facts.py::test_old_payload_without_securities_has_no_detail_line"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "    if \"fnnc_invt\" not in net:\n        return None\n    items = [f\"{ko} {fmt_amt"
+replace = "    items = [f\"{ko} {fmt_amt"
+
+[[mutation]]
+id = "first-screen-q-does-not-quit"
+why = "첫 화면의 q 가 닫기만 해 두 번 눌러야 끝난다"
+guards = ["tests/test_day_facts.py::test_q_on_the_first_screen_quits"]
+file = "src/sectorflow/tui/flow_app.py"
+find = "    if k in (-1, ord(\"q\")):\n        return False\n    if k in BANNER_FORWARD:"
+replace = "    if k == -1:\n        return False\n    if k in BANNER_FORWARD:"
+
+[[mutation]]
+id = "run-tag-never-says-new"
+why = "오늘 처음 극단에 든 섹터를 1일째로 적는다"
+guards = ["tests/test_day_facts.py::test_run_tag_is_new_on_the_first_day_and_counts_after"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "    return \"·신규\" if days == 1 else f\"·{days}일째\""
+replace = "    return f\"·{days}일째\""
+
+[[mutation]]
+id = "help-loses-a-column"
+why = "표에 있는 열이 도움말에 없다"
+guards = ["tests/test_tui_flow_view.py::test_help_covers_every_rendered_column"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "    (\"추이[8]\", \"구간 동안 순매수가 **누적된 경로**. 왼쪽이 구간 시작, 오른쪽이 끝이다.\"),\n"
+replace = ""
+
+[[mutation]]
+id = "sort-highlight-off-by-separator"
+why = "정렬 하이라이트가 열 사이 공백을 안 세어 옆 칸을 칠한다"
+guards = ["tests/test_tui_flow_view.py::test_sort_highlight_points_at_the_right_header"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "    return sum(w + 1 for w in widths[:i]), widths[i]"
+replace = "    return sum(w for w in widths[:i]), widths[i]"
+
+[[mutation]]
+id = "card-disclaimer-too-small"
+why = "카드 면책이 폰에서 6.5px 로 돌아간다"
+guards = ["tests/test_web_quality.py::test_card_disclaimer_is_readable_on_a_phone"]
+file = "scripts/templates/digest_card.html"
+find = "padding-top: 8px; font-size: 26px;"
+replace = "padding-top: 8px; font-size: 18px;"
+
+[[mutation]]
+id = "card-ink3-low-contrast"
+why = "카드 작은 글자 대비가 3:1 대로 돌아간다"
+guards = ["tests/test_web_quality.py::test_card_small_text_colours_reach_aa"]
+file = "scripts/templates/digest_card.html"
+find = "--ink-3: #6e6d68;"
+replace = "--ink-3: #8a8984;"
+
+[[mutation]]
+id = "digest-old-word-returns"
+why = "다이제스트에 옛 용어(오늘 금액이 가장 큰 주체)가 돌아온다"
+guards = ["tests/test_web_quality.py::test_digest_uses_one_word_for_one_thing"]
+file = "scripts/digest.py"
+find = "        tag = \" — 최대 순매매 주체\" if s[\"dominant\"] else \"\""
+replace = "        tag = \" — 오늘 금액이 가장 큰 주체\" if s[\"dominant\"] else \"\""
+
+[[mutation]]
+id = "help-r2-claim-returns"
+why = "검사받지 않는 코스닥 R² 숫자가 도움말로 돌아온다(게시본 재계산 0.00~0.73)"
+guards = ["tests/test_web_quality.py::test_kosdaq_r2_claim_is_gone_because_nothing_checks_it"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "    (\"\", \"· 값 0 은 '관망' 이 아니라 '0 또는 미보고' 다 — 수집기가 파싱 실패를\"),\n"
+replace = "    (\"\", \"· 코스닥 단독은 관계가 약하다(R² 0.00~0.25).\"),\n    (\"\", \"· 값 0 은 '관망' 이 아니라 '0 또는 미보고' 다 — 수집기가 파싱 실패를\"),\n"
+
+[[mutation]]
+id = "numbers-thin-opacity-returns"
+why = "얇은 섹터 행의 투명도가 대비를 다시 깎는다"
+guards = ["tests/test_web_quality.py::test_thin_rows_are_not_told_apart_by_colour_alone"]
+file = "scripts/templates/sector_numbers.html"
+find = "tbody tr.thin td{color:var(--ink-3)!important}"
+replace = "tbody tr.thin td{color:var(--ink-3)!important; opacity:.5}"
+
+[[mutation]]
+id = "viewer-mobile-title-promises-hidden-line"
+why = "폰에서 숨긴 종목 줄을 제목이 설명한다"
+guards = ["tests/test_web_quality.py::test_viewer_mobile_title_does_not_promise_the_hidden_driver_line"]
+file = "scripts/templates/sector_flow.html"
+find = " .wideonly{display:none}}"
+replace = "}"
+
+[[mutation]]
+id = "viewer-value-cell-wraps"
+why = "값 칸의 `억` 이 다음 줄로 떨어진다"
+guards = ["tests/test_web_quality.py::test_viewer_value_cell_does_not_wrap"]
+file = "scripts/templates/sector_flow.html"
+find = ".row .val{font-size:12px; text-align:right; font-weight:500; white-space:nowrap}"
+replace = ".row .val{font-size:12px; text-align:right; font-weight:500}"
+
+[[mutation]]
+id = "numbers-old-word-returns"
+why = "수치표에 시가총액·시총이 섞인다"
+guards = ["tests/test_web_quality.py::test_web_pages_use_one_word_for_one_thing"]
+file = "scripts/templates/sector_numbers.html"
+find = "  [\"cap\",\"시총\",\"n\"],"
+replace = "  [\"cap\",\"시가총액\",\"n\"],"
+
+[[mutation]]
+id = "web-extreme-loses-run-tag"
+why = "웹 극단 목록이 며칠째를 안 적어 TUI 와 갈린다"
+guards = ["tests/test_web_quality.py::test_web_today_panel_tags_extremes_like_the_terminal"]
+file = "scripts/templates/sector_numbers.html"
+find = "const runTag=d=>!d?\"\":d===1?\"·신규\":\"·\"+d+\"일째\";"
+replace = "const runTag=d=>\"\";"
