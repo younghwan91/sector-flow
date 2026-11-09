@@ -8505,7 +8505,7 @@ replace = "    if False:\n"
 [[mutation]]
 id = "detail-panel-cuts-amount"
 why = "하단 패널을 pad 로 자르면 80칸에서 +4,552억 이 +4,5 가 된다"
-guards = ["tests/test_demo.py::test_no_screen_cuts_a_number_mid_digit"]
+guards = ["tests/test_demo.py::test_no_screen_cuts_a_number_mid_digit", "tests/test_demo.py::test_detail_panel_drops_whole_items_with_a_count_at_80_cols"]
 file = "src/sectorflow/tui/flow_view.py"
 find = "        return _items_line(f\" {label}: \", [f\"{t['name']} {fmt_amt(t['flow'])}억\" for t in arr[:3]], width)"
 replace = "        return f\" {label}: \" + \" · \".join(f\"{t['name']} {fmt_amt(t['flow'])}억\" for t in arr[:3])"
@@ -8589,6 +8589,30 @@ guards = ["tests/test_report_pages.py::test_touch_targets_are_44px_on_touch_scre
 file = "scripts/templates/sector_numbers.html"
 find = "@media (pointer:coarse),(max-width:900px){.seg button,select,nav.jump a,"
 replace = "@media (pointer:coarse),(max-width:900px){nav.jump a,"
+
+[[mutation]]
+id = "web-naver-skip-chip-when-off"
+why = "꺼진 리포트의 웹에 '건너뜀' 칩이 뜨면 기본 상태가 날마다 거짓 경고다"
+guards = ["tests/test_report_pages.py::test_numbers_is_quiet_about_naver_when_the_switch_is_off"]
+file = "scripts/templates/sector_numbers.html"
+find = "  else if(KT){ const w=el(\"span\",\"chip warn\",\"⚠ 네이버 대조 건너뜀\");"
+replace = "  else if(true){ const w=el(\"span\",\"chip warn\",\"⚠ 네이버 대조 건너뜀\");"
+
+[[mutation]]
+id = "serve-accepts-folder-without-date"
+why = "기준일을 못 읽은 한 벌을 안내 없이 넘기면 이해 못 할 오류로 죽는다"
+guards = ["tests/test_serve_reports.py::test_parent_root_is_left_alone_and_a_folder_without_a_date_is_refused"]
+file = "scripts/serve_reports.py"
+find = "    if not (isinstance(day, str) and DATE_RE.match(day)):\n"
+replace = "    if False:\n"
+
+[[mutation]]
+id = "quick-start-drops-demo-web-command"
+why = "데모를 웹으로 여는 명령이 없으면 첫 독자가 404 를 만난다"
+guards = ["tests/test_serve_reports.py::test_quick_start_and_demo_cli_show_the_web_command"]
+file = "README.md"
+find = "uv run sector-flow-demo --out ~/sf-demo && uv run python scripts/serve_reports.py --root ~/sf-demo   # 같은 데모를 웹으로 — http://127.0.0.1:8765/\n"
+replace = ""
 
 [[mutation]]
 id = "truth-off-still-warns-on-screen"
