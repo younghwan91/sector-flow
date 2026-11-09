@@ -8,7 +8,11 @@
 
 DB 에는 "확정했다" 는 표시가 없다. 같은 머신의 Airflow 작업 기록에서 :data:`TASKS` 의 **마지막 시도**가
 ``Task exited with return code 0`` 으로 끝났고, 그 기록이 기준일 **다음날 이후**에 끝났고, 그 시도의 **창이 기준일을
-덮으면** 확정으로 본다. 확인이 안 되면 리포트를 그대로 둔다 — 잠정이라고 적혀 있는 리포트가 틀린 확정보다 낫다.
+덮고**, 수집기의 종목 실패율이 문턱(:data:`FAIL_RATE_MAX`) 안이면 확정으로 본다. 확인이 안 되면 리포트를 그대로 둔다 —
+잠정이라고 적혀 있는 리포트가 틀린 확정보다 낫다.
+
+**실패율.** ``collectors.combined`` 는 종목 실패를 격리하고 실패율 20% 까지 종료코드 0 을 낸다 — 500종목이 잠정치로 남아도
+종료코드만 보면 확정이다. 그래서 마지막 ``✅ 완료: done=… fail=…`` 줄도 읽는다.
 
 **창.** 수집기는 ``--days 3``·``--daily-days 3``·``--sd-days 3`` 으로 ``date.today() - 3일`` 이상(포함)만 덮는다
 (quant-airflow ``collectors/storage.date_days_ago``, ``dt >= cutoff``). ``date.today()`` 는 **태스크가 실제로 돈 순간**의
@@ -43,6 +47,12 @@ KST = timezone(timedelta(hours=9))
 #: 기다리지 않는다.
 TASKS = ("finalize_sector", "finalize_both", "rebuild_adjusted")
 OK_LINE = "Task exited with return code 0"
+#: 종목(업종)별로 받는 태스크 — 완료 줄에 ``fail=`` 이 있다. ``rebuild_adjusted`` 는 DB 안 재계산이라 종목 실패가 없다.
+FAIL_TASKS = ("finalize_sector", "finalize_both")
+#: 이 몫을 넘게 실패하면 확정이 아니다. 실측 2026-10-06~11-06 최근 24회: ``finalize_both`` 최대 13/2,633(0.49%, 중앙 1종목),
+#: ``finalize_sector`` 0/65. 평소 최대의 약 2배에 둔다 — 넘으면 평소의 개별 종목 실패가 아니라 수집 쪽 사고다.
+FAIL_RATE_MAX = 0.01
+_DONE_LINE = re.compile(r"완료: done=(\d+)(?: skip=\d+)? fail=(\d+)")
 #: 수집기 창(달력 일) — dags/daily_finalize.py 의 ``--days 3``·``--daily-days 3``·``--sd-days 3``.
 WINDOW_DAYS = 3
 #: 수집기의 ``date.today()`` 가 도는 시간대 — Airflow 컨테이너는 UTC 다.
@@ -70,6 +80,21 @@ def run_day(path: str) -> date:
     else:
         started = datetime.fromtimestamp(os.path.getmtime(path), timezone.utc)
     return started.astimezone(COLLECTOR_TZ).date()
+
+
+def fail_problem(text: str) -> str | None:
+    """시도 기록의 완료 줄을 읽어 실패율이 문턱을 넘으면 그 말을 돌려준다. 완료 줄이 없으면 그것도 문제다 —
+    종료코드 0 인데 줄이 없다는 건 수집기 출력이 바뀐 것이고, 그때 조용히 통과하면 이 검사가 죽어도 모른다."""
+    hits = _DONE_LINE.findall(text)
+    if not hits:
+        return "완료 줄(done=… fail=…)이 없다 — 수집기 출력이 바뀌었으면 finalize_done._DONE_LINE 을 맞춰라"
+    done, failed = (int(x) for x in hits[-1])
+    total = done + failed
+    if not total:
+        return "받은 종목이 0개다"
+    if failed / total > FAIL_RATE_MAX:
+        return f"실패 {failed}/{total}({failed / total:.1%}) > 문턱 {FAIL_RATE_MAX:.0%}"
+    return None
 
 
 def finalize_done(logs_root: str, asof: str) -> tuple[bool, str]:
@@ -114,8 +139,12 @@ def finalize_done(logs_root: str, asof: str) -> tuple[bool, str]:
     ended, run, logs = best
     for task, path in zip(TASKS, logs):
         with open(path, encoding="utf-8", errors="replace") as f:
-            if OK_LINE not in f.read():
-                return False, f"{os.path.basename(run)} 의 {task} 가 성공으로 끝나지 않았다({path})"
+            text = f.read()
+        if OK_LINE not in text:
+            return False, f"{os.path.basename(run)} 의 {task} 가 성공으로 끝나지 않았다({path})"
+        problem = fail_problem(text) if task in FAIL_TASKS else None
+        if problem:
+            return False, f"{os.path.basename(run)} 의 {task} 는 수집 실패가 문턱을 넘었거나 완료 줄이 없다: {problem}({path})"
     return True, f"{os.path.basename(run)} {ended:%F %T} 확정 완료({', '.join(TASKS)})"
 
 

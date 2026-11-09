@@ -282,6 +282,22 @@ def fmt_pct(v, nd: int = 2) -> str:
     return ("+" if v >= 0 else "-") + f"{abs(rhu(v, nd)):.{nd}f}"
 
 
+#: 권리락이 지났는데 신주가 아직 상장주식수에 안 들어온 종목의 시총 칸 표지. 가격은 권리락 뒤인데 주식수가 옛 값이라
+#: 시총이 작게, 시총대비가 크게(최대 약 2배) 나온다. 정의 ``storage.rights_pending``, 근거 ``docs/formulas.md`` §1.4.
+CAP_PENDING_MARK = "!"
+
+
+def _cap_mark(t: dict) -> str:
+    return CAP_PENDING_MARK if t.get("cap_pending") else ""
+
+
+def cap_pending_note(d: dict, mkts: list, sector: str) -> str:
+    """이 시장·섹터에 표지 종목이 있으면 그 수를 말하는 글 — 섹터 시총(가속의 분모)도 그만큼 작게 나온다. 없으면 빈 글."""
+    n = sum(1 for nm in (d.get("names") or {}).values()
+            if nm.get("cap_pending") and nm.get("sector") == sector and nm.get("market") in mkts)
+    return f" · {CAP_PENDING_MARK}권리락 신주 미반영 {n}종목" if n else ""
+
+
 def cell_width(ch: str) -> int:
     """문자 하나의 터미널 표시 폭.
 
@@ -721,7 +737,7 @@ class State:
             # 새 열이 생겼다고 어제 만든 리포트로 화면이 깨지면 안 된다.
             iv, pf, sr = w.get("invtrt"), w.get("penfnd_etc"), w.get("ret")
             out.append({"code": code, "name": nm.get("name", "—"),
-                        "flow": v, "tv": tv, "cap": cap,
+                        "flow": v, "tv": tv, "cap": cap, "cap_pending": nm.get("cap_pending"),
                         # 참여율 — 그 종목 거래대금 중 이 주체의 순매수가 차지한 몫.
                         # 거래대금 자체는 "얼마나 붐볐나" 일 뿐이고, 판단에 직결되는
                         # 것은 "그 거래의 몇 %가 한 방향이었나" 다.
@@ -2117,9 +2133,9 @@ _NAME_COLS = (
     Col("거래대금[억]", 13, True,
         lambda t, st: fmt_amt(t.get("tv")).replace("+", "")),
     Col("시총대비[%p]", 16, True,
-        lambda t, st: fmt_pct(t["a"]) if t.get("a") is not None else "—"),
+        lambda t, st: fmt_pct(t["a"]) + _cap_mark(t) if t.get("a") is not None else "—"),
     Col("시총[억]", 13, True,
-        lambda t, st: fmt_amt(t["cap"]).replace("+", "") if t.get("cap") else "—"),
+        lambda t, st: fmt_amt(t["cap"]).replace("+", "") + _cap_mark(t) if t.get("cap") else "—"),
 )
 
 
@@ -2224,6 +2240,9 @@ def _stock_detail_lines(st: State, width: int) -> list[str]:
     # 으로 읽히고, 그러면 최근 5일치가 네 칸에 네 번 세어진 것처럼 보인다.
     title = (f"{DETAIL_INDENT}{t.get('name', '—')}"
              f" · 구간별 순매수[억] — 겹치지 않게 차분(오래된→최근)")
+    cp = t.get("cap_pending")
+    if cp:
+        title = f"{DETAIL_INDENT}{t.get('name', '—')} · 구간별 순매수[억] · {CAP_PENDING_MARK}권리락 {cp['date'][5:]} {cp['rt']:+.1f}% 신주 미반영"
     return [pad(title, width), pad(head, width)] + [pad(b, width) for b in body]
 
 
@@ -2258,11 +2277,15 @@ def detail_lines(st: State, width: int) -> list[str]:
     # 적는다. 안 적으면 위 표(종합)와 이 줄(20일)이 다른 것을 말하는데 화면은
     # 같은 것처럼 보인다.
     note = " · 20일 기준" if st.window == "종합" else ""
-    return [pad(f"{DETAIL_INDENT}{r.get('sector','—')}"
+    out = [pad(f"{DETAIL_INDENT}{r.get('sector','—')}"
                 f" · 종목 {n}개 · Enter 로 전체", width),
-            pad(_actors_line(r, width, note, ACTORS[st.ai][1]), width),
-            pad(side("buy", "순매수 상위"), width),
-            pad(side("sell", "순매도 상위"), width)]
+           pad(_actors_line(r, width, note, ACTORS[st.ai][1]), width),
+           pad(side("buy", "순매수 상위"), width),
+           pad(side("sell", "순매도 상위"), width)]
+    pending = cap_pending_note(st.d, [st.market] if st.market != "전체" else st.markets[1:], r.get("sector"))
+    if pending and cell_len(out[0].rstrip() + pending) + 1 <= width:
+        out[0] = pad(out[0].rstrip() + pending, width)
+    return out
 
 
 #: 상세 패널의 4주체 줄 — 넓은 것부터. 폭이 모자라면 뒤에서 잘라 낸다.
@@ -2393,6 +2416,9 @@ def names_lines(st: State, width: int) -> tuple[list[str], int]:
         note = " · 옛 리포트(새 열 없음)"
         if cell_len(title + note) + 1 <= width:
             title += note
+    note = cap_pending_note(st.d, [st.market] if st.market != "전체" else st.markets[1:], r.get("sector"))
+    if note and cell_len(title + note) + 1 <= width:
+        title += note
     cols = fit_names(width, st.explore)
     head = pad(" ".join(pad(name_head(c.header, st), c.width, c.right) for c in cols), width)
     out = [pad(title, width), head]
@@ -2917,6 +2943,8 @@ HELP = [
     ("", "        유동성이라 **살 수 있는 종목인가** 를 같이 말해준다."),
     ("시총대비[%p]", "순매수 ÷ 그 종목 시총 × 100 [%p]. 시총 작은 스팩이 위로 올라온다."),
     ("시총[억]", "그 종목의 구간말 시가총액 [억원]. 시총대비의 분모다."),
+    ("", "        칸의 ! = 권리락이 지났는데 신주가 아직 상장 전. 가격만 내려가 시총이"),
+    ("", "        작게, 시총대비가 크게(최대 약 2배) 나온다. 신주가 들어오면 사라진다."),
     ("거래대금[억]", "그 구간 거래대금 [억원]."),
     ("", ""),
     ("", "── 전 종목 화면 (t, 탐색 모드에서만) ──"),

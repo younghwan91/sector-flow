@@ -15,6 +15,10 @@ DB 에 넣은 함정 — 실데이터에서 실제로 사고를 낸 모양들이
 * **거래정지 구간**, **한 시장에만 있는 섹터**(다른 시장 칸은 시총 0 → 가속도 결측),
   **폐지 종목**(네이버 소스, ``stocks`` 밖), **얇은 섹터**(10종목 미만).
 * 4주체 순매수 수량의 합은 정확히 0 이다(기타법인 포함).
+* **2:1 감자 + 늦은 스냅샷**(``upd_stkpc_tp`` 64), **권리락**(256 — 주식수를 다시 세지 않는다. 하나는 신주가 상장돼
+  스냅샷이 따라왔고 하나는 기준일까지 그대로다), **이벤트 없는 주식수 변화**(유상증자 신주 상장 모양). 이 넷이 없을 때
+  주식수 조인·이벤트 집합의 변이(``shares-nearest``·``events-add-rights``·``events-drop-reduction``)가 pytest 를
+  지나 실 DB 에서만 잡혔다(2026-11-09 리뷰 4차 D1).
 """
 from __future__ import annotations
 
@@ -44,6 +48,15 @@ SECTORS = (("전기/전자", 10, 10), ("금융", 10, 10), ("화학", 10, 10), ("
 MERGE_CODE, MERGE_DAY, SNAPSHOT_DAY = "000001", 100, 115   # 병합일·늦은 스냅샷일(거래일 순번)
 HOLE_CODE, HOLE_DAY = "000002", 110                        # 조정 종가가 빠진 날
 HALT_CODE, HALT_DAYS = "060001", range(50, 56)             # 거래정지(얇은 섹터)
+#: 코드 → (이벤트 코드, upd_rt, 이벤트일, 스냅샷일, 이벤트 뒤 원 종가 배수, 스냅샷의 주식수 배수).
+#: 이벤트 코드가 None 이면 이벤트 행 없이 스냅샷만 바뀐다. 스냅샷일 None = 기준일까지 스냅샷이 안 따라왔다.
+SHARE_CASES = {
+    "000003": ("64", 100.0, 90, 105, 2.0, 0.5),      # 2:1 감자, 보름 늦은 스냅샷
+    "000004": ("256", -50.0, 70, 90, 0.5, 2.0),      # 1:1 무상 — 권리락 뒤 신주 상장으로 스냅샷이 따라왔다
+    "000005": ("256", -50.0, 125, None, 0.5, 1.0),   # 1:1 무상 — 기준일까지 신주 미반영(시총 표지 대상)
+    "000006": (None, 0.0, 60, 60, 1.0, 1.3),         # 이벤트 없이 주식수만 늘었다(유상 신주 상장)
+}
+RIGHTS_PENDING_CODE = "000005"
 #: 씨앗 — 관문 통과 섹터가 여러 블록에 나오고 종합에 "판정된 창 일부만 통과" 한 줄이 생기는 것으로
 #: 골랐다(`test_fixture_plants_what_it_claims` 가 그 성질을 지킨다).
 SEED = 6
@@ -66,7 +79,7 @@ def build_db(path: Path, seed: int = SEED) -> dict:
     con.execute("CREATE TABLE IF NOT EXISTS delisted_stocks (code TEXT PRIMARY KEY, name TEXT, market TEXT)")
     days = [d.date().isoformat() for d in pd.bdate_range("2026-03-02", periods=DB_DAYS)]
 
-    stocks, sd, bars, raw, adj, shares, si = [], [], [], [], [], [], []
+    stocks, sd, bars, raw, adj, shares, si, events = [], [], [], [], [], [], [], []
     for j, (sec, n_k, n_q) in enumerate(SECTORS):
         for mk, cnt in (("거래소", n_k), ("코스닥", n_q)):
             for i in range(cnt):
@@ -78,6 +91,10 @@ def build_db(path: Path, seed: int = SEED) -> dict:
                 lvl *= 1 + rnd.gauss(0, 0.01)
                 si.append((c, sec, d, int(lvl)))
 
+    # KRX 종합지수 — 수준만 있으면 된다(시총/지수 비). 씨앗 난수를 안 건드린다.
+    for c, nm, lvl in (("001", "코스피", 2500.0), ("101", "코스닥", 800.0)):
+        for t, d in enumerate(days):
+            si.append((c, nm, d, lvl * (1 + 0.0005 * t)))
     sector_beta = {sec: rnd.gauss(0, 0.004) for sec, *_ in SECTORS}
     # 섹터마다 기관 순매수 쏠림 — 무작위만으로는 가속도 a>0 인 섹터가 드물어 관문이 비었다.
     inst_tilt = {sec: rnd.choice((-0.04, 0.0, 0.03, 0.06)) for sec, *_ in SECTORS}
@@ -88,11 +105,21 @@ def build_db(path: Path, seed: int = SEED) -> dict:
         merged = code == MERGE_CODE
         if merged:
             shares.append((code, days[SNAPSHOT_DAY], base_sh // 10))
+        case = SHARE_CASES.get(code)
+        if case and case[3] is not None:
+            shares.append((code, days[case[3]], int(base_sh * case[5])))
+        if case and case[0]:
+            events.append((code, days[case[2]], case[0], case[1]))
         for t, d in enumerate(days):
             px *= 1 + sector_beta[sec] + rnd.gauss(0, 0.02)
             mult = 10.0 if merged and t >= MERGE_DAY else 1.0        # 10:1 병합 → 원 종가 ×10
+            final = 10.0 if merged else 1.0
+            if case and t >= case[2]:
+                mult = case[4]
+            if case:
+                final = case[4]
             close = max(100, int(px * mult))
-            adj_close = close / mult * 10.0 if merged else float(close)   # 백조정: 병합 전이 ×10
+            adj_close = close / mult * final if final != 1.0 else float(close)   # 백조정: 이벤트 전이 × 배수
             if code == HALT_CODE and t in HALT_DAYS:
                 continue
             qty = rnd.randint(20_000, 2_000_000) // (10 if merged and t >= MERGE_DAY else 1)
@@ -128,6 +155,7 @@ def build_db(path: Path, seed: int = SEED) -> dict:
     con.executemany("INSERT INTO daily_bars_adjusted(code,date,close,high,low) VALUES (?,?,?,?,?)", adj)
     con.executemany("INSERT INTO shares_outstanding_history VALUES (?,?,?)", shares)
     con.execute("INSERT INTO corporate_actions VALUES (?,?,'16',900.0)", (MERGE_CODE, days[MERGE_DAY]))
+    con.executemany("INSERT INTO corporate_actions VALUES (?,?,?,?)", events)
     con.executemany("INSERT INTO sector_index(code,name,date,close) VALUES (?,?,?,?)", si)
     con.commit()
     con.close()
@@ -221,6 +249,13 @@ def test_fixture_plants_what_it_claims(report):
     assert all(r["xddot"] is not None for r in D["blocks"]["20|전체"]["rows"] if not r["thin"])
     # 구간 20 은 3 의 배수가 아니다 — ẍ 조각 길이 문제가 여기서 드러난다.
     assert 20 % 3
+    # 주식수 사례 — 감자·권리락·이벤트 없는 증가가 리포트 구간 안이고, 표지는 신주가 안 들어온 쪽에만 붙는다.
+    for code, (_tp, _rt, day, snap, _m, _s) in SHARE_CASES.items():
+        assert P["dates"][0] < report["days"][day] <= P["dates"][-1], code
+        assert snap is None or report["days"][snap] <= P["dates"][-1], code
+    assert {c for c, r in P["names"].items() if r.get("cap_pending")} == {RIGHTS_PENDING_CODE}
+    assert P["names"][RIGHTS_PENDING_CODE]["cap_pending"] == {"date": report["days"][SHARE_CASES[RIGHTS_PENDING_CODE][2]],
+                                                              "rt": SHARE_CASES[RIGHTS_PENDING_CODE][1]}
 
 
 def test_pipeline_report_verifies_with_no_failures(report):
@@ -266,6 +301,28 @@ def test_pipeline_db_recount_matches_returns_and_weights(report):
     """섹터 일별 수익률(전일 시총 가중)과 그 가중합·기간말 시총 — 병합 구간이 들어 있다."""
     _ok(report, "F/섹터 일별 수익률 (전일 시총 가중, 조정 종가 비)", "F/섹터 일별 가중합",
         "F/섹터 시총 (구간말, 원 종가 × 주식수)", "F/종목 구간 수익률 (기하누적)")
+
+
+def test_pipeline_db_recount_matches_stock_and_monthly_caps(report):
+    """종목 시총(시총대비의 분모)과 월별 섹터 시총(흐름 페이지 가속의 분모) — 이 둘은 F 가 안 봤다(리뷰 4차 D1:
+    ×1.1·월평균·월초 변이가 pytest·실DB 를 다 지났다). 마지막 달 = 구간말 시총은 두 화면이 같은 분모를 쓴다는 약속이다."""
+    _ok(report, "F/종목 시총 (구간말, 원 종가 × 주식수)", "F/월별 섹터 시총 (각 월 마지막 거래일의 합)",
+        "F/월별 시총의 마지막 달 = 구간말 시총")
+
+
+def test_pipeline_rights_pending_mark_is_recounted_from_the_db(report):
+    """권리락 신주 미반영 표지 — 페이로드의 종목·날짜·배율을 DB 에서 다시 고른다."""
+    _ok(report, "F/권리락 신주 미반영 표지 = DB 재계산(종목·날짜·배율)")
+
+
+def test_pipeline_screen_share_of_cap_is_recomputed_from_the_payload(report):
+    """화면의 시총대비 = 페이로드 순매수 ÷ 시총 × 100, 표지 종목의 칸엔 ``!`` 가 있다."""
+    _ok(report, "E/종목 시총대비 = 페이로드 순매수 ÷ 시총 × 100 (창×주체×섹터)",
+        "E/권리락 신주 미반영 종목의 시총 칸에 표지가 있는가")
+
+
+def test_pipeline_today_sector_turnover_is_the_last_daily_cell(report):
+    _ok(report, "T/오늘 섹터 거래대금 = 일별 배열 마지막 칸")
 
 
 def test_pipeline_derived_columns_are_recomputed(report):

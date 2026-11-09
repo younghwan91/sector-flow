@@ -10,22 +10,33 @@ import os
 from datetime import datetime
 from pathlib import Path
 
+import pytest
+
 REPO = Path(__file__).resolve().parent.parent
 _spec = importlib.util.spec_from_file_location("finalize_done", REPO / "scripts" / "finalize_done.py")
 fd = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(fd)
 
 
-def _run(root: Path, run_id: str, started_utc: str, ended_local: str, ok: bool = True) -> None:
+#: 실제 기록의 완료 줄 모양(2026-11-07 ``daily_finalize``).
+DONE = {"finalize_sector": "✅ 완료: done=65 fail=0 rows=260",
+        "finalize_both": "✅ 완료: done=2631 skip=0 fail=1 | 일봉 10,522행 수급 10,522행"}
+
+
+def _run(root: Path, run_id: str, started_utc: str, ended_local: str, ok: bool = True, done: "dict | None" = None,
+         ended: "dict | None" = None) -> None:
     """``started_utc`` 는 Airflow 가 첫 줄에 찍는 시각(UTC), ``ended_local`` 은 파일 시각(**KST** — 이 머신의 시간대와
-    무관하게. ``time.mktime`` 으로 읽으면 CI(UTC)에서 9시간 밀린다)."""
+    무관하게. ``time.mktime`` 으로 읽으면 CI(UTC)에서 9시간 밀린다). ``done``·``ended`` 는 태스크별로 완료 줄·끝난 시각을 바꾼다."""
+    lines = {**DONE, **(done or {})}
     for task in fd.TASKS:
         d = root / "dag_id=daily_finalize" / f"run_id={run_id}" / f"task_id={task}"
         d.mkdir(parents=True, exist_ok=True)
         f = d / "attempt=1.log"
         f.write_text(f"[{started_utc}.005+0000] {{local_task_job_runner.py:123}} INFO - ::group::Pre task\n"
+                     f"[{started_utc}.900+0000] {{logging_mixin.py:190}} INFO - {lines.get(task, '')}\n"
                      f"... Task exited with return code {0 if ok else 1}\n")
-        t = datetime.strptime(ended_local, "%Y-%m-%d %H:%M").replace(tzinfo=fd.KST).timestamp()
+        at = (ended or {}).get(task, ended_local)
+        t = datetime.strptime(at, "%Y-%m-%d %H:%M").replace(tzinfo=fd.KST).timestamp()
         os.utime(f, (t, t))
 
 
@@ -67,6 +78,42 @@ def test_window_edge_is_inclusive(tmp_path):
     _run(tmp_path, "scheduled__2026-11-06T21:30:00+00:00", "2026-11-09T21:31:18", "2026-11-10 07:20")
     assert fd.finalize_done(str(tmp_path), "2026-11-06")[0]
     assert not fd.finalize_done(str(tmp_path), "2026-11-05")[0]
+
+
+def test_a_run_counts_only_once_every_task_ended_after_the_day(tmp_path):
+    """"끝난 때" 는 **가장 먼저 끝난 태스크**다. 한 태스크라도 기준일 안에 끝났으면(그날 저녁 수동 재실행 등) 그 태스크는
+    기준일 다음날의 확정 시도가 아니다 — 가장 늦은 태스크로 재면 나머지가 확정을 대신 받는다."""
+    _run(tmp_path, "scheduled__2026-11-05T21:30:00+00:00", "2026-11-06T09:00:00", "2026-11-07 07:20",
+         ended={"finalize_sector": "2026-11-06 20:00"})
+    ok, why = fd.finalize_done(str(tmp_path), "2026-11-06")
+    assert not ok and "아직 안 돌았" in why, why
+
+
+def test_the_worst_failure_count_seen_in_24_runs_is_still_final(tmp_path):
+    """실측 최대(2026-11-03 실행) 13/2,633 = 0.49% — 평소의 개별 종목 실패다."""
+    _run(tmp_path, "scheduled__2026-11-05T21:30:00+00:00", "2026-11-06T21:31:18", "2026-11-07 07:20",
+         done={"finalize_both": "✅ 완료: done=2620 skip=0 fail=13 | 일봉 5,245행 수급 5,233행"})
+    ok, why = fd.finalize_done(str(tmp_path), "2026-11-06")
+    assert ok, why
+
+
+@pytest.mark.parametrize("task,line", [
+    ("finalize_both", "✅ 완료: done=2600 skip=0 fail=33 | 일봉 5,200행 수급 5,200행"),   # 1.25% — 종료코드는 0 이다(문턱 20%)
+    ("finalize_sector", "✅ 완료: done=60 fail=5 rows=240"),
+])
+def test_exit_code_zero_with_too_many_failures_is_not_final(tmp_path, task, line):
+    """``collectors.combined`` 는 실패율 20% 까지 종료코드 0 을 낸다. 그 종목들은 잠정치 그대로다."""
+    _run(tmp_path, "scheduled__2026-11-05T21:30:00+00:00", "2026-11-06T21:31:18", "2026-11-07 07:20", done={task: line})
+    ok, why = fd.finalize_done(str(tmp_path), "2026-11-06")
+    assert not ok and task in why and "문턱" in why, why
+
+
+def test_a_log_without_the_completion_line_is_named_not_passed(tmp_path):
+    """종료코드 0 인데 완료 줄이 없으면 출력 형식이 바뀐 것이다 — 조용히 통과하면 실패율 검사가 죽어도 모른다."""
+    _run(tmp_path, "scheduled__2026-11-05T21:30:00+00:00", "2026-11-06T21:31:18", "2026-11-07 07:20",
+         done={"finalize_both": "끝났다"})
+    ok, why = fd.finalize_done(str(tmp_path), "2026-11-06")
+    assert not ok and "완료 줄" in why, why
 
 
 def test_run_day_falls_back_to_file_time_without_a_stamp(tmp_path):

@@ -11,7 +11,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from sectorflow.storage import connect, market_cap_asof_bulk
+from sectorflow.storage import connect, market_cap_asof_bulk, rights_pending
 from sectorflow.tui.flow_view import status_chip
 
 REPO = Path(__file__).resolve().parent.parent
@@ -197,3 +197,88 @@ def test_numbers_carry_the_final_flag():
     assert SN.build(P)["final"] is False
     P["final"] = True
     assert SN.build(P)["final"] is True
+
+
+# ── 권리락 표지: 값은 원 종가 × 그 시점 상장주식수 그대로, 신주가 안 들어온 동안 표지만 ────────────────
+
+@pytest.fixture
+def rights_con(tmp_path):
+    c = connect(str(tmp_path / "r.db"))
+    #            코드, 권리락일, upd_rt, 스냅샷들(날짜, 주식수)
+    cases = [("PEND01", "2026-10-26", -49.75, [("2026-10-20", 1000), ("2026-11-03", 1000)]),   # 안 따라왔다
+             ("DONE01", "2026-10-05", -50.0, [("2026-09-29", 1000), ("2026-10-27", 2000)]),    # 따라왔다
+             ("SMAL01", "2026-10-26", -3.15, [("2026-10-20", 1000)]),                          # 소폭 — 소음
+             ("OLD001", "2026-07-01", -50.0, [("2026-06-30", 1000), ("2026-11-03", 1000)]),    # 100일 넘게 안 따라옴 — 끈다
+             ("LATE01", "2026-11-05", -50.0, [("2026-10-20", 1000)]),                          # 기준일 뒤
+             ("NOBS01", "2026-10-26", -50.0, [("2026-11-03", 2000)]),                          # 직전 주식수가 없어 판단 불가
+             ("NOSN01", "2026-10-29", -33.0, [("2026-10-27", 500)])]                           # 권리락 뒤 스냅샷이 아직 없다
+    for code, d, rt, snaps in cases:
+        c.execute("INSERT INTO corporate_actions VALUES (?,?,'256',?)", (code, d, rt))
+        c.executemany("INSERT INTO shares_outstanding_history VALUES (?,?,?)", [(code, sd, v) for sd, v in snaps])
+    c.commit()
+    return c, [x[0] for x in cases]
+
+
+def test_rights_pending_marks_only_what_has_not_caught_up(rights_con):
+    con, codes = rights_con
+    assert rights_pending(con, codes, "2026-11-03") == {
+        "PEND01": {"date": "2026-10-26", "rt": -49.75}, "NOSN01": {"date": "2026-10-29", "rt": -33.0}}
+
+
+def test_rights_pending_does_not_read_past_the_report_day(rights_con):
+    """지난 기준일 재구성 — 그날엔 아직 따라오지 않았던 종목은 그날의 표지다(뒤의 스냅샷을 안 본다)."""
+    con, codes = rights_con
+    assert "DONE01" in rights_pending(con, codes, "2026-10-20")
+    assert "PEND01" not in rights_pending(con, codes, "2026-10-20")
+
+
+def test_rights_are_not_counted_into_the_market_cap(rights_con):
+    """표지는 값을 바꾸지 않는다 — 상장주식수는 신주상장일에 바뀐다(storage.SHARE_EVENTS 주석)."""
+    con, _ = rights_con
+    con.execute("INSERT INTO supply_demand(code,date,close,source) VALUES ('PEND01','2026-11-03',5000,'kiwoom')")
+    q = pd.DataFrame({"code": ["PEND01"], "date": ["2026-11-03"]})
+    assert market_cap_asof_bulk(con, q).iloc[0] == 5000 * 1000
+
+
+def test_one_year_percentile_really_looks_back_260_days():
+    """리포트 구간이 260일보다 짧은 합성 DB 로는 되돌아보기 길이가 안 드러난다 — 앞쪽 큰 값이 260일 안이면 순위에 든다."""
+    ser = [1000.0] * 100 + [float(i % 7) for i in range(200)]       # 300일: 앞 100일이 크다
+    win = 5
+    span = ser[-260:]                                               # 뒤 260일 = 큰 값 60일 + 작은 값 200일
+    sums = [sum(span[i:i + win]) for i in range(len(span) - win + 1)]
+    below = sum(1 for x in sums if x < sums[-1])
+    ties = sum(1 for x in sums if x == sums[-1])
+    assert SN.rolling_pct(ser, win) == pytest.approx(100.0 * (below + (ties - 1) / 2.0) / (len(sums) - 1))
+    assert SN.rolling_pct(ser, win) < 80, "큰 값 60일이 분포에 안 들었다"
+
+
+# ── 시총/지수 비: 주식수 쪽 점프 ─────────────────────────────────────────────────
+
+def _ratio_warns(caps: dict, tmp_path) -> tuple[list, list]:
+    tmp_path.mkdir(exist_ok=True)
+    con = connect(str(tmp_path / "ratio.db"))
+    dates = sorted(caps)
+    con.executemany("INSERT INTO sector_index(code,name,date,close) VALUES ('101','코스닥',?,100.0)", [(d,) for d in dates])
+    VR.WARNS.clear()
+    VR.FAILS.clear()
+    VR._f_cap_index_ratio({"dates": dates, "markets": ["코스닥"]}, con.cursor(), "?",
+                          {("코스닥", d): v for d, v in caps.items()})
+    return list(VR.WARNS), list(VR.FAILS)
+
+
+def test_cap_to_index_jump_on_the_report_day_warns_but_does_not_fail(tmp_path):
+    """2026-01-02 모양 — 낡은 주식수가 일괄 갱신돼 코스닥 비가 하루에 +10.5%. 값이 틀린 건 아니라 실패가 아니다."""
+    w, f = _ratio_warns({"2026-01-01": 100.0, "2026-01-02": 110.5}, tmp_path)
+    assert w == [f"F/{VR.VF_CAP_INDEX_MARK}"] and not f
+
+
+def test_old_cap_to_index_jump_in_the_window_does_not_warn_every_day(tmp_path):
+    """01-02 의 점프는 1년 동안 창 안에 있다 — 기준일만 경고한다."""
+    w, _ = _ratio_warns({"2026-01-01": 100.0, "2026-01-02": 110.5, "2026-01-05": 111.0}, tmp_path)
+    assert w == []
+
+
+def test_cap_to_index_threshold_sits_above_the_largest_normal_day(tmp_path):
+    """주간 스냅샷 뒤 평소 최대 2.47%(통합 종가 ↔ 정규장 지수) — 조용해야 한다. 07-09 의 3.52% 는 울려야 한다."""
+    assert _ratio_warns({"2026-10-19": 100.0, "2026-10-20": 97.53}, tmp_path)[0] == []
+    assert _ratio_warns({"2026-07-08": 100.0, "2026-07-09": 103.52}, tmp_path / "x")[0]

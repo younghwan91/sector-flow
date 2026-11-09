@@ -97,6 +97,7 @@ MESSAGES: list[tuple[str, str, str]] = [
     ("scripts/finalize_done.py", "를 덮지 않는다", "덮지 않는다"),
     ("scripts/finalize_done.py", "아직 안 돌았거나 도는 중", "아직 안 돌았거나 도는 중"),
     ("scripts/finalize_done.py", "성공으로 끝나지 않았다", "성공으로 끝나지 않았다"),
+    ("scripts/finalize_done.py", "수집 실패가 문턱을 넘었거나 완료 줄이 없다", "수집 실패가 문턱을 넘었거나 완료 줄이 없다"),
     # krx_truth.py — (선택) KRX 공식 거래대금 대조의 ⚠️ 줄(리포트 빌드 로그 → 크론 꼬리)
     ("scripts/krx_truth.py", "[KRX 공식 대조] SKIP", "[KRX 공식 대조] SKIP"),
     ("scripts/krx_truth.py", "근사 오차 큼", "[KRX 공식 대조] 근사 오차 큼"),

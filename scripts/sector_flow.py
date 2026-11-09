@@ -37,7 +37,7 @@ from sectorflow.basis import BASIS_SLOT, DATA_BASIS
 from sectorflow.sector_override import SECTOR_OVERRIDE, SOURCE as OVERRIDE_SOURCE, UNCLASSIFIED, fingerprint
 from sectorflow.storage import (
     _is_pg,
-    connect, db_default, market_cap_asof_bulk, read_supply_demand, recent_dates)
+    connect, db_default, market_cap_asof_bulk, read_supply_demand, recent_dates, rights_pending)
 
 # pandas 는 psycopg2 연결을 "검증 안 된 DBAPI" 라며 read_sql 마다 UserWarning 을 낸다. 동작엔 문제가 없는데
 # 크론 로그를 덮어 진짜 경고를 묻는다(2026-11 cron.log 에 1,491줄). 이 메시지만 끈다 — 크론의 전역 -W 는 다른 경고까지 끈다.
@@ -1462,6 +1462,9 @@ def main():
                               sorted(df["market"].dropna().unique()), members)
     cap_monthly = sector_cap_monthly(con, df, dates)
     payload = build_payload(df, dates, caps, cap_monthly)
+    # 권리락 뒤 신주가 아직 상장 전인 종목 — 값은 그대로 두고 표지만 싣는다(storage.SHARE_EVENTS 주석).
+    for code, pending in rights_pending(con, sorted(payload["names"]), dates[-1]).items():
+        payload["names"][code]["cap_pending"] = pending
     payload["sector_override"] = override_block(OVERRIDE_APPLIED)
     market_context(con, df, payload)
     con.close()

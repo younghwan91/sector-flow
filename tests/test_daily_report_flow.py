@@ -490,7 +490,9 @@ def write_attempt(f: Path, ended_kst: str, ok: bool = True) -> None:
     from datetime import datetime, timezone
     t = kst_epoch(ended_kst)
     stamp = datetime.fromtimestamp(t, timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+    # 완료 줄은 실제 기록과 같은 모양 — finalize_done 이 fail= 을 읽는다(rebuild_adjusted 는 안 읽는다).
     f.write_text(f"[{stamp}.000+0000] {{local_task_job_runner.py:123}} INFO - ::group::Pre task\n"
+                 f"[{stamp}.100+0000] {{logging_mixin.py:190}} INFO - ✅ 완료: done=2631 skip=0 fail=1 | 일봉 10,522행\n"
                  f"... Task exited with return code {0 if ok else 1}\n")
     os.utime(f, (t, t))
 

@@ -319,6 +319,59 @@ def test_web_layer_one_day_list_does_not_care_how_ties_are_ordered(PD, tmp_path)
     D2 = SN.build(P2)
     assert not [f for f in _w_fails(P2, D2, _write(tmp_path, P2, D2)) if "1일 종목 목록" in f]
 
+# ── 권리락 신주 미반영 표지·종목 시총대비가 웹에 그려지는가 ─────────────────────────────────
+
+def _pending_payload(P):
+    """1일 기관 금액이 가장 큰 섹터의 맨 위 종목에 표지를 단다(뷰어 상위 목록에 든다)."""
+    P2 = json.loads(json.dumps(P))
+    sec = max(P2["today"]["sectors"]["전체"], key=lambda s: abs((P2["today"]["sectors"]["전체"][s].get("inst") or {}).get("v") or 0))
+    rows = [(c, n) for c, n in P2["names"].items() if n.get("sector") == sec and (n.get("win") or {}).get("1")]
+    code, nm = max(rows, key=lambda t: t[1]["win"]["1"].get("inst") or 0.0)
+    nm["win"]["1"]["inst"] = abs(nm["win"]["1"].get("inst") or 1.0) + 1000.0
+    nm["cap"] = nm.get("cap") or 5000.0
+    nm["cap_pending"] = {"date": "2026-10-26", "rt": -49.75}
+    return P2, sec, nm
+
+
+@node
+def test_viewer_marks_the_share_of_cap_of_a_rights_pending_stock(PD, tmp_path):
+    P, _ = PD
+    P2, _sec, _nm = _pending_payload(P)
+    D2 = SN.build(P2)
+    assert not [f for f in _w_fails(P2, D2, _write(tmp_path, P2, D2)) if "1일 종목 목록" in f]
+    patch = ('pp(t.a)+"%p"+(t.pend?"!":"")', 'pp(t.a)+"%p"')
+    fails = _w_fails(P2, D2, _write(tmp_path, P2, D2, viewer_patch=patch))
+    assert any("1일 종목 목록" in f for f in fails), fails
+
+
+@node
+def test_web_layer_catches_a_viewer_share_of_cap_on_the_wrong_scale(PD, tmp_path):
+    """시총대비 칸은 금액 칸 옆에 있는데 W 층이 안 떴다 — ×0.1 이어도 초록이었다."""
+    P, D = PD
+    patch = ("a:(r.cap&&r.cap>0)?v/r.cap*100:null", "a:(r.cap&&r.cap>0)?v/r.cap*10:null")
+    fails = _w_fails(P, D, _write(tmp_path, P, D, viewer_patch=patch))
+    assert any("1일 종목 목록" in f for f in fails), fails
+
+
+@node
+def test_pages_name_the_rights_pending_stocks_and_stay_silent_without_them(PD, tmp_path):
+    """수치표는 섹터 표 아래, 뷰어는 고른 섹터의 종목 목록 위에 표지 글을 적는다. 없으면 글도 없다."""
+    P, D = PD
+    probe_n = '__out({t:document.getElementById("cap-pending").textContent, h:document.getElementById("cap-pending").hidden});'
+    _write(tmp_path, P, D)
+    got = VR._w_run(shutil.which("node"), str(tmp_path / "numbers.html"), probe_n)
+    assert got == {"t": "", "h": True}, got
+    P2, sec, nm = _pending_payload(P)
+    D2 = SN.build(P2)
+    _write(tmp_path, P2, D2)
+    got = VR._w_run(shutil.which("node"), str(tmp_path / "numbers.html"), probe_n)
+    assert got["h"] is False and nm["name"] in got["t"] and "10-26" in got["t"] and "-49.8%" in got["t"], got
+    probe_v = ('i1=NDATE-1; i0=NDATE-1; market="전체"; actor="inst"; render(); picked=' + json.dumps(sec, ensure_ascii=False)
+               + '; renderNames(); __out(document.getElementById("d-pending").textContent);')
+    got = VR._w_run(shutil.which("node"), str(tmp_path / "viewer.html"), probe_v)
+    assert nm["name"] in got and "권리락 신주 미반영 1종목" in got, got
+
+
 # ── 외부 참값 연속 SKIP — 옆 기준일 폴더의 VERIFY.txt 를 거슬러 세고 3번째부터 WARN(실패 아님) ──────────
 
 _SKIP_TXT = "  [OK  ] F · KRX 지수\n       SKIP 정규장 종가 대조 — 2026-11-0x regular_close 준비 안 됨({'pending': 9})\n"
