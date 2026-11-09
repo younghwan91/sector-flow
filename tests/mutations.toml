@@ -7932,9 +7932,9 @@ why = "묶음 검사만 보면 다른 파일의 검사가 잡는 변이를 생�
 guards = ["tests/test_mutation_sample.py::test_judge_runs_the_group_then_everything_and_restores_the_source"]
 file = "scripts/mutation_sample.py"
 find = """        if rc == 0:
-            rc, first = pytest_once(root, [], deselect, timeout)"""
+            rc, first = _pytest_with_confirm(root, tmp, m, orig, mutated, [],"""
 replace = """        if rc == 2:
-            rc, first = pytest_once(root, [], deselect, timeout)"""
+            rc, first = _pytest_with_confirm(root, tmp, m, orig, mutated, [],"""
 
 [[mutation]]
 id = "sampler-does-not-restore-the-source"
