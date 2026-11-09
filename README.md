@@ -504,8 +504,8 @@ http://<서버의 Tailscale 주소>:8765/latest/viewer.html   #            — �
 옆 기준일 폴더까지 세어 **3번 연달아** 건너뛰면 `[WARN]` 을 남긴다(실패는 아니다). 저녁 신선도 점검이 그 경고를 보고 알린다.
 
 **검사가 살아 있는지도 검사한다.** [`tests/mutations.toml`](tests/mutations.toml) 은 검사마다 그것이 막는 버그를 변이로 적고,
-[`scripts/verify_merge.py`](scripts/verify_merge.py) 가 변이를 소스에 실제로 넣어 선언한 검사가 빨개지는지 본다. CI 의 `mutations`
-작업이 이 관문을 PR 마다 돌린다.
+[`scripts/verify_merge.py`](scripts/verify_merge.py) 가 변이를 소스에 실제로 넣어 선언한 검사가 빨개지는지 본다. PR 은 직접 건드린 변이만, main
+push 는 전부 돌린다(문서만 바뀌면 건너뛴다). 배포는 main 머리의 체크가 초록일 때만 받으므로 전체를 지나지 않은 코드는 나가지 않는다.
 
 ## 10. 개발
 
@@ -513,7 +513,9 @@ http://<서버의 Tailscale 주소>:8765/latest/viewer.html   #            — �
 uv run --extra dev pytest -q                  # 네트워크·DB 불요
 uv run --extra dev ruff check src/ tests/ scripts/ research/
 uv run python -m compileall -q research    # 연구 스크립트는 DB 가 있어야 돌아 문법만 본다
-uv run python scripts/verify_merge.py <워크트리>   # TUI 를 고친 뒤 — 실데이터 렌더·pty 구동·변이 검사 (수 분)
+uv run python scripts/verify_merge.py <워크트리> --only render,pty   # TUI 를 고친 뒤 — 실데이터 렌더·pty 구동 (수 분)
+uv run python scripts/verify_merge.py <워크트리> --scope changed     # 바뀐 파일에 닿는 변이까지
+uv run python scripts/verify_merge.py <워크트리>                     # 변이 전부 (23~47분, 부하에 따라)
 ```
 
 렌더는 순수함수(`flow_view.py`·`ledger_view.py`)라 curses 없이 단위테스트한다. 웹 두 장은 진짜 브라우저로도 연다 —

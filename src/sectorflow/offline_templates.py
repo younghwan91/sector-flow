@@ -12,6 +12,8 @@ import re
 
 #: wheel 에 싣는 템플릿 — 파일 하나씩 적는다(새 템플릿은 여기와 ``tests/test_packaging.py`` 에서 판단을 받는다).
 TEMPLATES = ("sector_flow.html", "sector_numbers.html")
+#: wheel 에 **안** 싣는 템플릿 — 운영 서버의 웹 전용 페이지다. 그걸 그리는 ``digest.py``·``trust_page.py`` 는 설치본에 없다.
+WEB_ONLY_TEMPLATES = ("digest_card.html", "trust.html")
 
 _REMOTE_LINK = re.compile(r"<link\b[^>]*\bhref=[\"']https?://[^>]*>\s*\n?", re.I)
 _CSS_IMPORT = re.compile(r"@import\s+url\(\s*[\"']?https?://[^)]*\)\s*;?", re.I)

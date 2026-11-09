@@ -15,7 +15,8 @@ dependencies = ["pandas>=2.0"]
 
 [project.optional-dependencies]
 pg = ["psycopg2-binary>=2.9"]
-dev = ["pytest>=8.0", "pytest-cov>=7.0", "ruff==0.16.2"]
+# hatchling: tests/test_packaging.py 가 진짜 wheel 을 네트워크 없이 빌드해 돌린다(빌드 백엔드와 같은 패키지).
+dev = ["pytest>=8.0", "pytest-cov>=7.0", "ruff==0.16.2", "hatchling"]
 
 [project.scripts]
 sw-flow = "sectorflow.tui.flow_app:main"
@@ -37,6 +38,7 @@ packages = ["src/sectorflow"]
 "scripts/sector_numbers.py" = "sectorflow/_scripts/sector_numbers.py"
 "scripts/completeness_gate.py" = "sectorflow/_scripts/completeness_gate.py"
 "scripts/verify_report.py" = "sectorflow/_scripts/verify_report.py"
+# krx_truth.py 는 일부러 안 싣는다 — 내부 검증 전용·data.krx.co.kr 이라 설계 §4.2 허용 목록 밖이다. 없으면 대조만 꺼진다.
 # 템플릿(sector_flow.html·sector_numbers.html)은 여기 말고 빌드 훅(hatch_build.py)이 파일 하나씩 싣는다 —
 # 설치본은 원격 글꼴을 부르지 않게 떼어 낸 사본이다(src/sectorflow/offline_templates.py).
 

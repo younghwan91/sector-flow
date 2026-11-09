@@ -132,15 +132,6 @@ def sector_actor_win(d: dict, sector: str, markets, key: str) -> dict:
     return out
 
 
-def trend_cell(segs: list[tuple[str, float | None]], names: tuple[str, ...]) -> str:
-    """구간 목록에서 **이름이 지정된 구간들만** 화살표로 잇는다 — 배너용 압축 표기.
-
-    부호만 남기지 않고 **금액을 남긴다.** 보고 싶은 양이 수요의 크기라서다
-    (Sias 2004 의 herding 측정치는 연속값이지 부호가 아니다).
-    """
-    pick = dict(segs)
-    return TREND_ARROW.join(fmt_amt(pick.get(n)) for n in names)
-
 #: k·b 가 기관 유입에 회귀해 나온 값들. 다른 주체로는 재계산할 수 없다.
 INST_ONLY = ("exp", "x", "U", "P", "xdot", "xddot", "G", "G_pass")
 
@@ -1748,10 +1739,6 @@ def banner_view(st: State, width: int, height: int) -> list[str]:
     st.brow = max(0, min(st.brow, len(body) - room))
     mark = f" {st.brow + 1}-{st.brow + room}/{len(body)}" if room else ""
     return [_banner_title(st.d, width, mark)] + body[st.brow:st.brow + room] + [last]
-
-
-def banner_overflows(st: State, width: int, height: int) -> bool:
-    return len(banner_lines(st, width)) > height
 
 
 _REPORT_DAY = re.compile(r"\d{4}-\d{2}-\d{2}")

@@ -1,9 +1,9 @@
 """주입 검증 하네스(`scripts/verify_merge.py`)의 속도·범위 장치가 **판정을 바꾸지 않는가**.
 
 CI 의 주입 검증이 PR 마다 4~10분씩 늘어(261개 8분 → 302개 22.7분, 잡 상한 30분) 기준선을 한 번에 돌리고,
-샤드로 나누고, 시간 예산을 걸고, 로컬 pre-push 는 바뀐 것만 돌게 했다. 빨라진 하네스가 못 잡는 변이를
+샤드로 나누고, 시간 예산을 걸고, 로컬 pre-push 와 PR 은 바뀐 것만 돌게 했다. 빨라진 하네스가 못 잡는 변이를
 "잡혔다" 고 하거나 샤드가 변이를 빠뜨리면 이 게이트는 장식이 된다 — 그걸 작은 가짜 레포로 본다.
-`--self-test` 는 진짜 레포 전체로 같은 것을 보지만 수십 분이라 주 1회(CI schedule)만 돈다.
+`--self-test` 는 진짜 레포로 같은 것을 보지만 오래 걸려 주 1회(CI schedule)만 돈다.
 """
 from __future__ import annotations
 
@@ -122,6 +122,24 @@ def test_new_test_without_mutation_is_rejected_unless_exempt_with_a_reason(mini)
     assert "샤드 1 이 한다" in out
 
 
+def test_identity_section_rejects_another_address_on_either_side(mini):
+    """작성자·커미터 어느 쪽이든 레포 설정과 다르면 REJECT, GitHub 머지 주소는 통과. 자기 검증의 같은 시나리오는 주 1회이고,
+    로컬에서는 전역 신원 훅이 그 커밋을 막아 시나리오가 성립하지 않는다 — 판정 자체는 여기서 매번 본다."""
+    wt, _ = mini
+    def commit_as(author: str, committer: str) -> str:
+        (wt / "lib.py").write_text((wt / "lib.py").read_text("utf-8") + "\n", "utf-8")
+        _git(wt, "add", "-A")
+        subprocess.run(["git", "commit", "-q", "-m", "x"], cwd=wt, check=True, capture_output=True,
+                       env={**GIT_ENV, "GIT_AUTHOR_EMAIL": author, "GIT_COMMITTER_EMAIL": committer})
+        return _git(wt, "rev-parse", "HEAD")
+    me, other = "t@example.com", "someone@corp.example.com"
+    assert VM.sec_identity(wt, [commit_as(me, me)]).status == VM.PASS
+    assert VM.sec_identity(wt, [commit_as(me, "noreply@github.com")]).status == VM.PASS
+    for a, c in ((other, me), (me, other)):
+        s = VM.sec_identity(wt, [commit_as(a, c)])
+        assert s.status == VM.REJECT and other in "\n".join(s.lines)
+
+
 def test_changed_scope_runs_only_mutations_touching_the_branch(mini):
     wt, _ = mini
     other = BLIND.replace('file = "lib.py"', 'file = "other.py"').replace(
@@ -135,6 +153,41 @@ def test_changed_scope_runs_only_mutations_touching_the_branch(mini):
     s, out = _run(wt, base, scope="changed", shard=(1, 4))
     assert "범위: changed" in out and "1/2개" in out and "샤드 1/4 은 무시한다" in out
     assert "[add-subtracts] 잡힘" in out and "[other]" not in out
+
+
+def test_direct_scope_does_not_widen_and_runs_new_declarations_first():
+    """PR 범위 — 직접 닿은 변이만. FULL_TRIGGERS 로 넓히면 머지의 절반이 다시 전체다(최근 34 머지 중 17건 이상)."""
+    a = {"id": "a", "guards": ["tests/t1.py::x"], "file": "src/a.py", "find": "1"}
+    b = {"id": "b", "guards": ["tests/t2.py::y"], "edits": [{"file": "src/b.py", "find": "2"}]}
+    c = {"id": "c", "guards": ["tests/t3.py::z"], "file": "src/c.py", "find": "3"}
+    base = {"a": a, "b": b, "c": dict(c, find="old")}
+    pick = lambda ch: [m["id"] for m in VM.direct_scope([a, b, c], ch, base)[0]]  # noqa: E731
+    assert pick(set()) == ["c"]                                  # 선언이 바뀐 것은 늘
+    assert pick({"src/a.py"}) == ["c", "a"]                      # 새 선언이 먼저
+    assert pick({"tests/t2.py"}) == ["c", "b"]
+    for full in ("uv.lock", "pyproject.toml", "scripts/sector_flow.py", "scripts/templates/x.html"):
+        assert pick({full}) == ["c"], full                       # 넓히지 않는다 — 전체는 main push 가 돈다
+    assert pick({"src/a.py", "src/b.py", "src/c.py"}) == ["c", "a", "b"]
+
+
+def test_direct_scope_runs_the_touched_mutation_and_only_warns_on_budget(mini):
+    """PR 범위가 진짜로 주입하고(이름만 바꾼 건너뛰기가 아니다), 시간이 넘치면 PR 을 막는 대신 멈추고 경고한다."""
+    wt, _ = mini
+    other = BLIND.replace('file = "lib.py"', 'file = "other.py"').replace(
+        "sub-adds-but-guard-is-blind", "other")
+    (wt / "tests" / "mutations.toml").write_text(SPEC + other, "utf-8")
+    (wt / "other.py").write_text("def sub(a, b):\n    return a - b\n", "utf-8")
+    _commit(wt, "other")
+    base = _git(wt, "rev-parse", "HEAD")
+    (wt / "lib.py").write_text(LIB + "\n", "utf-8")
+    _commit(wt, "touch lib")
+    s, out = _run(wt, base, scope="direct", budget_min=12)
+    assert s.status == VM.PASS and "범위: direct" in out and "1/2개" in out
+    assert "[add-subtracts] 잡힘" in out and "[other]" not in out
+    s, out = _run(wt, base, scope="direct", budget_min=1e-6)
+    assert s.status == VM.WARN and "돌리지 않고" in out and "main push" in out and "잡힘" not in out
+    assert "× 샤드" not in out                                   # 예산에 샤드 수를 곱하지 않는다
+    assert VM.effective_budget(12, None, wt, "direct") == (12, "")
 
 
 def test_budget_overrun_stops_and_rejects(mini):

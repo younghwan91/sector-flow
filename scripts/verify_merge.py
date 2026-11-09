@@ -38,7 +38,11 @@
                        M 은 **CI 샤드 한 몫**의 예산이다 — --shard 없이(ci-local 전체 범위처럼) 돌면
                        ci.yml matrix 의 샤드 수(못 읽으면 4)를 곱해 쓴다. 변이가 늘어 전체가 12분을
                        넘자 로컬 pre-push 가 전부 막혔다(2026-11-09) — 전체 실행은 몫 n 개의 일이다.
-    --scope all|changed|auto
+    --scope all|changed|direct|auto
+                       direct = PR CI 용 — 편집 대상·가드 파일이 바뀌었거나 선언이 새로 생긴·바뀐 변이만. 넓히지 않는다
+                       (changed 는 머지의 절반이 FULL_TRIGGERS 로 전체가 되어 PR 비용이 그대로였다). 예산은 이 실행 자체의
+                       것이고(샤드 수를 안 곱한다) 넘으면 멈추고 WARN — 나머지는 main push 의 전체 실행이 돌고
+                       ``pull-all --ci-gate`` 가 그 결과를 본다.
                        changed = merge-base 이후 바뀐 파일을 대상·가드로 갖거나, 가드가 바뀐 src 모듈·
                        스크립트를 import·문자열로 참조하거나, 선언이 새로 생긴·바뀐 변이만. 의존성·하네스·
                        sector_flow.py·템플릿이 바뀌면 전체. auto(기본)는 ``CI`` 가 있고 ``GITHUB_ACTIONS`` 가 없을 때(로컬 pre-push
@@ -255,17 +259,11 @@ def sec_identity(wt: Path, commits: list[str]) -> Section:
         return s
     s.say(f"기준 신원: {want_name} <{want_mail}>")
     for sha in commits:
-        line = git(wt, "log", "-1", "--format=%h|%an|%ae|%cn|%ce", sha)
-        h, an, ae, cn, ce = line.split("|")
-        if _ok_identity(ae, want_mail) and _ok_identity(ce, want_mail):
-            pass
-        elif True:
+        line = git(wt, "log", "-1", "--format=%h|%ae|%ce", sha)
+        h, ae, ce = line.split("|")
+        if not (_ok_identity(ae, want_mail) and _ok_identity(ce, want_mail)):
             s.fail(f"{h} 신원이 다르다 (author={ae} committer={ce}) — "
                    f"`git -c user.email=…` 금지, 레포 설정을 그대로 쓴다")
-        elif an != want_name or cn != want_name:
-            s.warn(f"{h} 이름이 다르다 (author={an} committer={cn})")
-        else:
-            s.say(f"  {h} ok")
     return s
 
 
@@ -561,6 +559,21 @@ def changed_scope(muts: list[dict], changed: set[str], base_muts: dict[str, dict
     return out, f"바뀐 파일 {len(changed)}개에 닿는 변이만(가드 파일 {len(touched)}개가 바뀐 코드를 참조)"
 
 
+def direct_scope(muts: list[dict], changed: set[str], base_muts: dict[str, dict]) -> tuple[list[dict], str]:
+    """PR CI 용 — 이 PR 이 **직접** 건드린 변이만. 넓히기(:data:`FULL_TRIGGERS`·import 폐포)는 안 한다.
+
+    넓혀서 생기는 안전은 main push 의 전체 실행(배포 관문)과 로컬 pre-push(``changed``)가 맡는다. 새로 선언한 변이를
+    앞에 둔다 — 시간 예산에 걸려 멈춰도 이 PR 이 새로 주장한 것은 먼저 돌았다."""
+    out = []
+    for m in muts:
+        files = {e.get("file") for e in mutation_edits(m)}
+        gfiles = {g.split("::")[0] for g in m.get("guards") or []}
+        if files & changed or gfiles & changed or base_muts.get(m.get("id")) != m:
+            out.append(m)
+    out.sort(key=lambda m: base_muts.get(m.get("id")) == m)     # 안정 정렬 — 새 선언 먼저, 나머지는 선언 순서
+    return out, f"바뀐 파일 {len(changed)}개가 직접 닿는 변이만"
+
+
 def auto_scope(env: dict, only: set[str]) -> str:
     """로컬 ci-local(``CI`` 는 있고 ``GITHUB_ACTIONS`` 는 없다)이 주입 검증만 부르면 changed."""
     if env.get("CI") and not env.get("GITHUB_ACTIONS") and only == {"mutations"}:
@@ -685,13 +698,14 @@ def ci_shard_count(wt: Path, fallback: int = 4) -> int:
 
 
 def effective_budget(budget_min: float | None, shard: tuple[int, int] | None,
-                     wt: Path) -> tuple[float | None, str]:
+                     wt: Path, scope: str = "all") -> tuple[float | None, str]:
     """실제로 적용할 예산(분)과 그 이유 한 줄.
 
     ``--budget-min`` 은 CI 샤드 **한 몫**의 예산이다. 샤드 없이 돌면(ci-local 이 sector_flow·템플릿을
     건드린 푸시에서 전체 범위로 돈다) 한 실행이 몫 n 개의 일을 하므로 n 을 곱한다 — 안 곱하면 변이가
-    늘 때마다 로컬 pre-push 가 전부 REJECT 로 막힌다(2026-11-09, 692개 12.3분 > 12분)."""
-    if not budget_min or shard is not None:
+    늘 때마다 로컬 pre-push 가 전부 REJECT 로 막힌다(2026-11-09, 692개 12.3분 > 12분). ``direct`` 는 PR 잡 하나의
+    일이라 곱하지 않는다 — 곱하면 잡 상한(30분)보다 예산이 커서 잡이 이유 없이 죽는다."""
+    if not budget_min or shard is not None or scope == "direct":
         return budget_min, ""
     n = ci_shard_count(wt)
     return budget_min * n, (f"예산 {budget_min * n:g}분 = --budget-min {budget_min:g}분 × 샤드 {n} — "
@@ -710,7 +724,7 @@ def sec_mutations(wt: Path, py: str, base_sha: str, spec_path: Path | None,
     import time
     t_start = time.monotonic()
     s = Section("mutations")
-    budget_min, budget_why = effective_budget(budget_min, shard, wt)
+    budget_min, budget_why = effective_budget(budget_min, shard, wt, scope)
     if budget_why:
         s.say(budget_why)
     spec = spec_path or (wt / "tests/mutations.toml")
@@ -739,7 +753,7 @@ def sec_mutations(wt: Path, py: str, base_sha: str, spec_path: Path | None,
     # 새 검사의 변이 미선언 판정은 **선언 전체**를 본다(내 몫만 보면 다른 몫의 가드가 미선언으로 뜬다).
     all_guarded = {g for m in muts for g in m.get("guards") or []}
     declared = len(muts)
-    if scope == "changed":
+    if scope in ("changed", "direct"):
         try:
             rel = spec.resolve().relative_to(wt.resolve()).as_posix()
             base_text = git(wt, "show", f"{base_sha}:{rel}")
@@ -747,9 +761,14 @@ def sec_mutations(wt: Path, py: str, base_sha: str, spec_path: Path | None,
                          (tomllib.loads(base_text).get("mutation", []) if base_text else [])}
         except (ValueError, tomllib.TOMLDecodeError):
             base_muts = {}
-        muts, why = changed_scope(muts, changed_files(wt, base_sha), base_muts, wt)
-        s.say(f"범위: changed — {why}: {len(muts)}/{declared}개 "
-              f"(로컬 pre-push 용. 전체는 GitHub CI 가 돈다. --scope all 로 전체)")
+        if scope == "direct":
+            muts, why = direct_scope(muts, changed_files(wt, base_sha), base_muts)
+            s.say(f"범위: direct — {why}: {len(muts)}/{declared}개 "
+                  f"(PR 용. 전체는 main push 가 돌고 ci-gate 가 그 결과를 본다)")
+        else:
+            muts, why = changed_scope(muts, changed_files(wt, base_sha), base_muts, wt)
+            s.say(f"범위: changed — {why}: {len(muts)}/{declared}개 "
+                  f"(로컬 pre-push 용. 전체는 GitHub CI 가 돈다. --scope all 로 전체)")
         if shard:
             s.say(f"샤드 {shard[0]}/{shard[1]} 은 무시한다(changed 모드는 한 번에 돈다)")
             shard = None
@@ -941,6 +960,9 @@ def sec_mutations(wt: Path, py: str, base_sha: str, spec_path: Path | None,
     for dt, mid in sorted(timings, reverse=True)[:10]:
         s.say(f"    느린 변이 {dt:6.1f}초  {mid}")
     verdict, msg = budget_verdict(elapsed, budget_min, stopped)
+    if scope == "direct" and verdict == REJECT:
+        # 시간 때문에 PR 을 막지 않는다 — 안 돈 변이는 main push 의 전체 실행이 돌고, 그게 빨가면 배포가 멈춘다.
+        verdict, msg = WARN, f"{msg} — PR 범위는 피드백이다. 전체는 main push 가 돈다"
     if verdict == REJECT:
         s.fail(msg)
     elif verdict == WARN:
@@ -1542,8 +1564,10 @@ def self_test(py: str, report: str) -> int:
         subprocess.run(["git", "commit", "-q", "-m", msg], cwd=str(wt),
                        capture_output=True, env=env)
 
-    # ① 대조군 — 손 안 댄 기준 트리는 PASS 여야 한다(늘 REJECT 도 장식이다).
-    scenario("clean", {"identity", "lint", "tests", "mutations"},
+    # ① 대조군 — 손 안 댄 기준 트리는 PASS 여야 한다(늘 REJECT 도 장식이다). 변이 전부를 여기서 다시 돌지 않는다:
+    #    주입 검증의 PASS 는 ⑤ real-guard 가 보고, 선언 전체의 PASS 는 main push 의 전체 실행이 코드가 바뀔 때마다 본다.
+    #    이 한 칸이 주간 잡의 대부분(838개 약 30분)이었다.
+    scenario("clean", {"identity", "lint", "tests"},
              PASS, lambda wt: None)
 
     # ② 테스트 실패
@@ -1643,8 +1667,8 @@ def main(argv: list[str] | None = None) -> int:
                     help="주입 검증을 n 몫으로 나눠 i 번째만: i/n (CI matrix). changed 범위에선 무시")
     ap.add_argument("--budget-min", type=float, default=None,
                     help="주입 검증 시간 예산(분). 넘으면 REJECT, 75%% 넘으면 WARN, 두 배면 멈춘다")
-    ap.add_argument("--scope", choices=("auto", "all", "changed"), default="auto",
-                    help="주입할 변이 범위. auto: CI 이고 GITHUB_ACTIONS 가 아니며(로컬 ci-local) "
+    ap.add_argument("--scope", choices=("auto", "all", "changed", "direct"), default="auto",
+                    help="주입할 변이 범위. direct: PR CI — 직접 건드린 변이만(넓히지 않는다). auto: CI 이고 GITHUB_ACTIONS 가 아니며(로컬 ci-local) "
                          "--only mutations 이면 changed(merge-base 이후 바뀐 파일에 닿는 변이만), "
                          "그 밖은 all. 전체는 GitHub CI 가 돈다")
     a = ap.parse_args(argv)

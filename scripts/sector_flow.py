@@ -27,6 +27,7 @@ import argparse
 import json
 import os
 import re
+import sys
 import warnings
 from datetime import datetime, timedelta, timezone
 
@@ -1386,14 +1387,33 @@ def market_context(con, df: pd.DataFrame, P: dict) -> None:
         M["approx_gap"] = gaps.get(mkey)
 
 
-def _krx_truth():
-    """옆 스크립트 ``krx_truth.py`` — ``scripts/`` 는 패키지가 아니라 importlib 로 읽는다(선택 기능)."""
+#: 설치본(wheel)에는 일부러 없는 옆 스크립트 — 내부 검증 전용이고 목적지가 data.krx.co.kr 이라 BYO 설계 §4.2 허용 목록 밖이다.
+KRX_TRUTH_SCRIPT = "krx_truth.py"
+
+
+def _attach_krx_truth(payload: dict, build_dir: "str | None", root: "str | None",
+                      path: "str | None" = None) -> None:
+    """KRX 공식 거래대금 대조(선택 기능) — 어떤 실패도 리포트를 깨지 않는다.
+
+    ``attach`` 안의 실패는 그쪽이 skip 블록으로 바꾼다. 여기는 그 앞, **모듈을 읽는 단계**의 보호다. ``scripts/`` 는
+    패키지가 아니라 importlib 로 읽는다. 파일이 없으면(설치본) 꺼진 것과 같고, 못 읽으면 skip 블록을 남긴다.
+    """
+    p = path or os.path.join(os.path.dirname(os.path.abspath(__file__)), KRX_TRUTH_SCRIPT)
+    if not os.path.isfile(p):
+        if os.environ.get("KR_QUANT_KRX_TRUTH") == "1":
+            print(f"⚠️ [KRX 공식 대조] {KRX_TRUTH_SCRIPT} 가 없는 설치본이라 건너뛴다", file=sys.stderr)
+        return
     import importlib.util  # noqa: PLC0415
-    p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "krx_truth.py")
-    spec = importlib.util.spec_from_file_location("krx_truth", p)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+    try:
+        spec = importlib.util.spec_from_file_location("krx_truth", p)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+    except Exception as e:  # noqa: BLE001 — 선택 기능의 버그가 본 리포트를 죽이면 안 된다
+        if isinstance(payload.get("today"), dict):
+            payload["today"]["krx_truth"] = {"status": "skip", "reason": f"모듈 로드 실패: {e!r}"}
+        print(f"⚠️ [KRX 공식 대조] 내부 오류 — 모듈 로드 실패 {e!r}. 리포트는 그대로 만든다", file=sys.stderr)
+        return
+    mod.attach(payload, build_dir, root)
 
 
 def script_json(payload: dict) -> str:
@@ -1468,10 +1488,10 @@ def main():
                     json.dump(payload["final_diff"], f, ensure_ascii=False)
     payload["revision_stats"] = revision_stats(payload, root)
     # KRX 공식 거래대금 대조(선택, D1-m2) — 같은 기준일 캐시(krx_truth.json)가 있거나
-    # KR_QUANT_KRX_TRUTH=1 일 때만. 실패·버그는 attach 안에서 skip 블록이 된다 — 리포트를 깨지 않는다.
-    _krx_truth().attach(payload,
-                        os.path.dirname(os.path.abspath(a.json or a.html)) if (a.json or a.html) else None,
-                        root)
+    # KR_QUANT_KRX_TRUTH=1 일 때만. 실패·버그는 skip 블록이 된다 — 리포트를 깨지 않는다.
+    _attach_krx_truth(payload,
+                      os.path.dirname(os.path.abspath(a.json or a.html)) if (a.json or a.html) else None,
+                      root)
     if a.rebuilt:
         # 키를 재구성일 때만 싣는다 — 화면이 "재구성" 을 붙인다.
         payload["rebuilt"] = True
