@@ -3132,7 +3132,7 @@ id = "web-stale-warning-never-shows"
 why = "배치가 멈춰 리포트가 며칠 지나도 목록 첫 화면이 말하지 않는다"
 guards = ["tests/test_serve_reports.py::test_index_warns_when_the_latest_report_is_old"]
 file = "scripts/serve_reports.py"
-find = "f'<code>reports/cron.log</code> 를 보라</span></p>') if age >= STALE_DAYS else \"\""
+find = "f'<code>reports/cron.log</code> 를 보라</span></p>') if age >= STALE_DAYS and not demo else \"\""
 replace = "f'<code>reports/cron.log</code> 를 보라</span></p>') if age >= STALE_DAYS * 10 else \"\""
 
 [[mutation]]
@@ -4912,7 +4912,7 @@ id = "first-screen-drops-basis-line"
 why = "TUI 첫 화면에서 자료 범위(KRX 단독·NXT 제외) 줄이 빠져 도움말 끝까지 내려가야 보인다"
 guards = ["tests/test_data_basis.py::test_first_screen_states_the_data_basis_right_under_the_title"]
 file = "src/sectorflow/tui/flow_view.py"
-find = "    lines = [_banner_title(d, width), basis_line(width, elapsed_note(d.get(\"asof\", \"\")))]"
+find = "    lines = [_banner_title(d, width), basis_line(width, \"\" if d.get(\"demo\") else elapsed_note(d.get(\"asof\", \"\")))]"
 replace = "    lines = [_banner_title(d, width)]"
 
 [[mutation]]
@@ -8606,6 +8606,75 @@ guards = ["tests/test_tui_flow_view.py::test_all_stocks_screen_header_carries_th
 file = "src/sectorflow/tui/flow_view.py"
 find = """    out = [pad(title, width), note, head]"""
 replace = """    out = [pad(title, width), pad("", width), head]"""
+
+[[mutation]]
+id = "demo-trust-link-stays-404"
+why = "데모의 근거 링크를 안 고치면 면책 문구의 '검증·품질' 이 404 다 — 고객에겐 이 길뿐이다"
+guards = ["tests/test_demo.py::test_demo_links_stay_inside_the_folder_and_the_trust_page_gives_the_grounds"]
+file = "src/sectorflow/demo.py"
+find = """        html, n_l = re.subn(r'href="\\.\\./latest/trust\\.html', 'href="trust.html', html)"""
+replace = """        n_l = 1"""
+
+[[mutation]]
+id = "demo-without-trust-page"
+why = "안내 페이지를 안 쓰면 링크만 고쳐도 404 다"
+guards = ["tests/test_demo.py::test_demo_links_stay_inside_the_folder_and_the_trust_page_gives_the_grounds"]
+file = "src/sectorflow/demo.py"
+find = """    (out / "trust.html").write_text(trust_page(), "utf-8")"""
+replace = """    pass"""
+
+[[mutation]]
+id = "demo-no-minute-bars"
+why = "분봉이 없으면 대량 체결 판정이 건너뛰어져 데모에서 그 표지를 영영 못 본다"
+guards = ["tests/test_demo.py::test_demo_shows_every_mark_a_customer_can_meet"]
+file = "src/sectorflow/demo.py"
+find = """    con.executemany("INSERT INTO minute_bars(code,ts,volume) VALUES (?,?,?)", minute)"""
+replace = """    pass"""
+
+[[mutation]]
+id = "demo-not-final"
+why = "확정으로 안 만들면 확정 표지·잠정→확정 변경을 데모에서 못 본다"
+guards = ["tests/test_demo.py::test_demo_shows_every_mark_a_customer_can_meet"]
+file = "src/sectorflow/demo.py"
+find = """        _run("sector_flow.py", "--db", str(db), "--days", str(REPORT_DAYS), "--reports-root", str(root), "--final",
+             "--json", str(out / "payload.json"))"""
+replace = """        _run("sector_flow.py", "--db", str(db), "--days", str(REPORT_DAYS), "--reports-root", str(root),
+             "--json", str(out / "payload.json"))"""
+
+[[mutation]]
+id = "demo-synthetic-truth-gone"
+why = "네이버 대조 칩을 데모에서 못 보면 고객이 처음 보는 경고가 실 리포트에서 나온다"
+guards = ["tests/test_demo.py::test_demo_shows_every_mark_a_customer_can_meet"]
+file = "src/sectorflow/demo.py"
+find = """    attach_synthetic_truth(payload, out)
+"""
+replace = ""
+
+[[mutation]]
+id = "serve-demo-list-unmarked"
+why = "합성 데모 목록이 실 리포트처럼 읽히고 cron.log 를 보라고 한다"
+guards = ["tests/test_serve_reports.py::test_demo_list_page_says_it_is_synthetic_and_sends_no_one_to_the_cron_log"]
+file = "scripts/serve_reports.py"
+find = """    demo = _demo_notice(root, latest) if latest else None"""
+replace = """    demo = None"""
+
+[[mutation]]
+id = "smoke-skips-optional-pages"
+why = "목록·안내 페이지를 안 열면 390폭 넘침·표지 빠짐을 스모크가 못 본다"
+guards = ["tests/test_web_smoke.py::test_smoke_opens_trust_and_list_pages_and_checks_demo_links"]
+file = "scripts/web_smoke.py"
+find = """    if list_page:
+        targets.append((LIST_PAGE, list_page, False))"""
+replace = """    if False:
+        targets.append((LIST_PAGE, list_page, False))"""
+
+[[mutation]]
+id = "smoke-ignores-dead-links"
+why = "데모 안 깨진 링크를 안 세면 면책 근거 404 를 다시 못 본다"
+guards = ["tests/test_web_smoke.py::test_smoke_opens_trust_and_list_pages_and_checks_demo_links"]
+file = "scripts/web_smoke.py"
+find = """        if not (page.parent / unquote(u.path)).exists():"""
+replace = """        if False:"""
 
 [[mutation]]
 id = "digest-published-chip-always"

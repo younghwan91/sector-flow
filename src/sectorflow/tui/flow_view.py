@@ -1948,7 +1948,8 @@ def banner_lines(st: State, width: int) -> list[str]:
     마지막 줄은 언제나 :data:`BANNER_DISCLAIMER` 다(:func:`banner_view` 가 높이와 무관하게 남긴다).
     """
     d = st.d
-    lines = [_banner_title(d, width), basis_line(width, elapsed_note(d.get("asof", "")))]
+    # 합성 데모의 기준일은 고정이다 — 'N일 전' 은 뜻이 없고 그림이 날마다 달라진다.
+    lines = [_banner_title(d, width), basis_line(width, "" if d.get("demo") else elapsed_note(d.get("asof", "")))]
     lines += _banner_today(st, width) if st.has_today else _banner_20d(st, width)
     lines.append(pad("", width))
     ko = ACTORS[st.ai][1]

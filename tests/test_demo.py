@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import re
@@ -19,6 +20,7 @@ from sectorflow.basis import DEMO_MARK, DEMO_NOTICE
 from sectorflow.storage import connect
 from sectorflow.tui import flow_app, ledger_view
 from sectorflow.tui.flow_view import State, banner_lines, header_lines
+from sectorflow.wording import page_hits
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -26,7 +28,7 @@ REPO = Path(__file__).resolve().parent.parent
 @pytest.fixture(scope="module")
 def built(tmp_path_factory):
     root = tmp_path_factory.mktemp("demo")
-    db, out = root / "demo.db", root / "report"
+    db, out = root / "demo.db", root / demo.ASOF.isoformat()   # 게시 폴더 이름 — 검증기는 옆 폴더를 잠정 리포트로 읽는다
     demo.build_db(db)
     demo.write_report(db, out)
     return {"db": db, "dir": out}
@@ -60,6 +62,55 @@ def test_demo_shows_what_a_real_report_shows(built):
     rows = d["blocks"]["20|전체"]["rows"]
     assert any(r.get("thin") for r in rows) and any(not r.get("thin") for r in rows)
     assert any(r.get("G") is not None for B in d["blocks"].values() for r in B["rows"])
+
+
+def test_demo_shows_every_mark_a_customer_can_meet(built):
+    """대량 체결(판정 못 한 종목 포함)·권리락·거래대금 집중·확정·잠정→확정 변경·들고 남·네이버 대조 — 화면 표지가 데모에서 다 뜬다."""
+    d = flow_app.load(str(built["dir"]))
+    T = d["today"]
+    bs = T["block_suspects"]
+    assert bs["status"] == "ok" and bs["markets"]["거래소"] and bs["markets"]["코스닥"] and bs["unjudged"] >= 1, bs
+    assert any(n.get("cap_pending") for n in d["names"].values())
+    assert any(T["concentration"]["markets"].values())
+    assert d["final"] is True and d["final_diff"] and d["final_diff"]["n_changed"] > 0
+    assert d["change"] and any(x["entered"] or x["exited"] for x in d["change"]["top"]["전체"].values())
+    assert T["krx_truth"]["markets"]["거래소"]["hot"] and not T["krx_truth"]["markets"]["코스닥"]["hot"]
+    assert any(any(rows.values()) for rows in T["day_change"]["flips"].values()), "부호 바뀜 줄이 비었다"
+    text = "\n".join(banner_lines(State(d), 160))
+    for mark in ("대량 체결 의심", "네이버 시장값과 차이 큼", "거래대금 집중", "잠정→확정 변경", "마감·확정", "들어옴", "대량 체결 판정 못 한"):
+        assert mark in text, mark
+
+
+def test_demo_identities_hold_after_the_provisional_edit(built, tmp_path):
+    """잠정 사본도 4주체 합 = 0·기관 세부 합 = 기관이다 — 실 DB 의 항등식을 데모가 깨면 검증기가 빨개진다."""
+    path = tmp_path / "prov.db"
+    demo.provisional_db(built["db"], path)
+    con = connect(str(path))
+    a, b = con.execute("SELECT MAX(ABS(individual + foreign_ + institution + etc_corp)), "
+                       "MAX(ABS(institution - fnnc_invt - insrnc - invtrt - bank - penfnd_etc - samo_fund)) FROM supply_demand "
+                       "WHERE date = ?", (demo.ASOF.isoformat(),)).fetchone()
+    con.close()
+    assert (a, b) == (0, 0)
+
+
+def test_demo_links_stay_inside_the_folder_and_the_trust_page_gives_the_grounds(built):
+    """면책 문구의 '검증·품질' 링크가 데모에서 404 였다 — 고객에겐 데모가 유일한 길이다. 판정 글자는 실 페이지와 같다."""
+    pages = {n: (built["dir"] / n).read_text("utf-8") for n in ("numbers.html", "viewer.html", "trust.html")}
+    for name, html in pages.items():
+        for href in re.findall(r'<a [^>]*href="([^"#]+)', html):
+            if not href.startswith("http"):
+                assert (built["dir"] / href).exists(), f"{name}: {href}"
+    assert 'href="trust.html#validation"' in pages["numbers.html"]
+    trust = pages["trust.html"]
+    assert DEMO_NOTICE in trust and "data-demo-banner" in trust and "[합성 데모]" in trust and 'id="validation"' in trust
+    assert not page_hits(trust), page_hits(trust)
+    spec = importlib.util.spec_from_file_location("_tp", REPO / "scripts" / "trust_page.py")
+    tp = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(tp)
+    verdicts = {r["id"]: r["verdict"] for r in tp.VALIDATION}
+    assert (verdicts["Q3d-sector"], verdicts["Q3d-G"], verdicts["S1-S3"]) == ("증거 없음", "판정 불가", "증거 없음")
+    said = {v for _q, v, _w in demo.TRUST_RESULTS}
+    assert said <= set(verdicts.values()), said - set(verdicts.values())
 
 
 @pytest.mark.parametrize("width", (40, 80, 160))

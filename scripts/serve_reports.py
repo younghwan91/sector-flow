@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import errno
 import gzip
+import html
 import os
 import re
 import signal
@@ -172,9 +173,25 @@ def day_tags(root: str, d: str) -> list[str]:
     return tags
 
 
+INDEX_TITLE = "섹터 자금흐름 리포트"
+INDEX_LEGEND = """<p class=dim>평일 18:10 리포트는 그날 <b>잠정치</b>로 만든다. 다음날 08:20 에 그 기준일을 확정치로 다시 만들면
+<b>확정</b> 표시가 붙는다(확정치가 확인되지 않으면 잠정 그대로 둔다). 크론은 그보다 앞선 날을 다시 만들지 않는다.
+<b>재구성</b> 은 지난 기준일을 나중 코드와 확정 데이터로 다시 만든 날이다 — 그날 저녁 게시본이 아니다.</p>"""
+
+
+def _demo_notice(root: str, day: "str | None") -> "str | None":
+    """그 기준일이 합성 데모면 안내 문구(``DEMO.txt`` 첫 줄) — 목록도 실 리포트처럼 읽히면 안 된다."""
+    try:
+        with open(os.path.join(root, day or "", "DEMO.txt"), encoding="utf-8") as f:
+            return f.readline().strip() or "[합성 데모]"
+    except OSError:
+        return None
+
+
 def index_html(root: str, today: date | None = None) -> str:
     today = today or date.today()
     latest = latest_date(root)
+    demo = _demo_notice(root, latest) if latest else None
     rows = []
     for d in report_dates(root):
         p = os.path.join(root, d)
@@ -191,16 +208,19 @@ def index_html(root: str, today: date | None = None) -> str:
     if latest:
         age = (today - date.fromisoformat(latest)).days
         stale = (f'<p><span class="tag warn">⚠ {age}일 지난 리포트 — 배치가 멈췄는지 '
-                 f'<code>reports/cron.log</code> 를 보라</span></p>') if age >= STALE_DAYS else ""
+                 f'<code>reports/cron.log</code> 를 보라</span></p>') if age >= STALE_DAYS and not demo else ""
         head = (f'<div class="hero"><p class="big">최신 <b>{latest}</b> '
                 f'<span class="tags">{" ".join(day_tags(root, latest))}</span></p>{stale}'
                 + "<p>" + " ".join(f'<a class="btn" href="/latest/{f}">{ko}</a>' for f, ko in (
                     *PAGES, *((f, ko) for f, ko in EXTRAS if os.path.exists(os.path.join(root, latest, f)))))
                 + "</p><p class=dim>위 단추는 즐겨찾기해도 늘 최신을 연다.</p></div>")
+    title = f"[합성 데모] {INDEX_TITLE}" if demo else INDEX_TITLE
+    bar = f'<p class="demo" data-demo-banner>{html.escape(demo)}</p>' if demo else ""
+    legend = "" if demo else INDEX_LEGEND
     return f"""<!DOCTYPE html>
 <html lang="ko"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>섹터 자금흐름 리포트</title>
+<title>{title}</title>
 <style>
 body{{font:15px/1.5 system-ui,sans-serif;margin:24px auto;max-width:760px;padding:0 12px;color:#1d2433;background:#f7f8fa}}
 h1{{font-size:20px;margin:0 0 12px}} a{{color:#2457c5}} .big{{font-size:18px;margin:0 0 4px}}
@@ -211,7 +231,8 @@ h1{{font-size:20px;margin:0 0 12px}} a{{color:#2457c5}} .big{{font-size:18px;mar
 .tag{{display:inline-block;font-size:12px;line-height:1.6;padding:0 6px;border-radius:4px;background:#e8ecf3;color:#374151;text-decoration:none;white-space:nowrap}}
 .tag.new{{background:#2457c5;color:#fff;font-weight:600}} .tag.ok{{background:#dcfce7;color:#166534}}
 .tag.prov{{background:#f1f5f9;color:#475569;border:1px dashed #94a3b8}}
-.tag.warn{{background:#fef3c7;color:#92400e;font-weight:600}}
+.tag.warn{{background:#fef3c7;color:#92400e;font-weight:600;white-space:normal}}
+.demo{{background:#b45309;color:#fff;font-weight:700;padding:6px 12px;border-radius:6px;margin:0 0 12px}}
 .tag.rebuilt{{background:#ede9fe;color:#5b21b6}}
 ul.days{{list-style:none;margin:0;padding:0;background:#fff;border:1px solid #e2e5ea;border-radius:8px}}
 ul.days li{{display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px;padding:8px 10px;border-bottom:1px solid #e2e5ea}}
@@ -221,11 +242,9 @@ ul.days li.latest{{background:#eef3fd;border-left:4px solid #2457c5;font-weight:
 .tags{{display:inline-flex;flex-wrap:wrap;gap:4px}}
 @media (max-width:480px){{body{{margin:12px auto}} .d{{min-width:0;width:100%}}}}
 </style></head><body>
-<h1>섹터 자금흐름 리포트</h1>
+{bar}<h1>섹터 자금흐름 리포트</h1>
 {head}
-<p class=dim>평일 18:10 리포트는 그날 <b>잠정치</b>로 만든다. 다음날 08:20 에 그 기준일을 확정치로 다시 만들면
-<b>확정</b> 표시가 붙는다(확정치가 확인되지 않으면 잠정 그대로 둔다). 크론은 그보다 앞선 날을 다시 만들지 않는다.
-<b>재구성</b> 은 지난 기준일을 나중 코드와 확정 데이터로 다시 만든 날이다 — 그날 저녁 게시본이 아니다.</p>
+{legend}
 <ul class="days">{''.join(rows)}</ul>
 </body></html>"""
 
