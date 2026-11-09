@@ -30,8 +30,8 @@
 20 10 * * 2-6 mkdir -p /home/young/git/sector-flow/reports && KR_QUANT_FINAL=1 KR_QUANT_KRX_TRUTH=1 /home/young/git/sector-flow/scripts/cron_run.sh sector-flow-report -- timeout -k 2m 40m /home/young/git/sector-flow/scripts/daily_report.sh >> /home/young/git/sector-flow/reports/cron.log 2>&1
 
 # 신선도 점검 — 평일 20:30(19:10 재시도·18:47 까지 간 수집 뒤). 결과만 본다(scripts/freshness_check.py):
-# 오늘 수급이 왔는데 latest 가 오늘이 아니면 1, 수급이 없는데 장중 틱이 있으면 75(틱도 없으면 휴장으로 0),
-# 전 거래일에 FINAL.txt 가 없으면 75, alert.sh 가 읽을 ALERT_WEBHOOK_URL 이 비었거나 GET 에 죽어 있으면 75 —
+# 오늘 수급이 왔는데 latest 가 오늘이 아니면 1, 달력상 거래일인데 수급이 없으면 1(달력의 휴장은 0),
+# 전 거래일에 FINAL.txt 가 없으면·미게시면·원장이 비면 75, alert.sh 가 읽을 ALERT_WEBHOOK_URL 이 비었거나 GET 에 죽어 있으면 75 —
 # 그러면 위의 모든 알림이 로그에만 남는다. 리포트·수급·확정 점검이 0 이면 HEARTBEAT_URL(있으면)로 하트비트를 보낸다 —
 # 웹훅이 없어도 보낸다(하트비트만 써도 된다). 웹훅이 **있는데 죽었으면** 안 보낸다 — 그날은 외부 감시가 유일한 통로다.
 30 20 * * 1-5 mkdir -p /home/young/git/sector-flow/reports && /home/young/git/sector-flow/scripts/cron_run.sh sector-flow-fresh -- timeout -k 1m 10m /home/young/git/sector-flow/scripts/freshness_check.sh >> /home/young/git/sector-flow/reports/cron.log 2>&1

@@ -7,7 +7,8 @@
 # 규칙:
 # * 한 사건 = 한 줄. `>>`(O_APPEND) 에 printf 한 번 — 짧은 줄(<4KB)은 쓰기 하나로 나가 동시 기록이 섞이지 않는다.
 # * 절대 자르지 않는다. 쓰던 파일이 SF_LEDGER_MAX_BYTES(기본 50MB)를 넘으면 events.jsonl.2, .3 … 으로 이어 쓴다.
-# * 기록 실패는 리포트·점검을 멈추지 않는다 — stderr 한 줄만 남기고 0 으로 돌아간다.
+# * 기록 실패는 리포트·점검을 멈추지 않는다 — stderr 한 줄만 남기고 0 으로 돌아간다. 그 공백은 읽는 쪽이 잡는다
+#   (freshness_check.check_slo·check_ledger_today 가 75, 알림 ⚠️ [원장]).
 # * 값은 이 레포가 만든 날짜·숫자·열거형·sha 뿐이다 — 따옴표·역슬래시가 없어 이스케이프가 필요 없다.
 #   자유 문장을 실으려면 ops_ledger.append_event(파이썬, json.dumps)를 쓴다.
 

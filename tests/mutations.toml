@@ -1937,14 +1937,11 @@ replace = "    if False:"
 
 [[mutation]]
 id = "fresh-no-rows-silent"
-why = "평일에 수급이 통째로 없는 날(수집 실패)을 조용히 넘긴다"
-guards = ["tests/test_freshness_check.py::test_no_rows_on_a_weekday_is_a_warning"]
+why = "달력상 거래일에 수급이 없어도 오류로 안 끝나면 수집이 통째로 빠진 날에 아무도 안 알린다"
+guards = ["tests/test_freshness_check.py::test_no_rows_on_a_trading_day_is_an_error_even_without_ticks", "tests/test_freshness_check.py::test_cron_path_calendar_holiday_is_quiet_and_a_trading_day_without_rows_is_an_error"]
 file = "scripts/freshness_check.py"
-find = """    elif rows_today == 0:
-        rc = worse(rc, WARN)"""
-replace = """    elif rows_today == 0:
-        rc = rc"""
-
+find = "        if krx_calendar.covers(today):\n            rc = worse(rc, 1)"
+replace = "        if krx_calendar.covers(today):\n            rc = rc"
 [[mutation]]
 id = "webhook-empty-silent"
 why = "알림 웹훅이 비어 모든 알림이 로그에만 남는데 아무도 모른다"
@@ -2927,9 +2924,8 @@ id = "prev-day-final-unchecked"
 why = "08:20 확정 모드를 놓친 날을 아무도 안 본다 — 다음 거래일 수집이 들어오면 그 날은 영영 잠정이다"
 guards = ["tests/test_freshness_check.py::test_cron_path_previous_day_not_final_warns"]
 file = "scripts/freshness_check.py"
-find = """            prc, plines = check_prev_final(Path(a.root), prev)"""
-replace = """            prc, plines = 0, []"""
-
+find = "for xrc, xlines in (check_prev_final(root, prev), check_external_truth"
+replace = "for xrc, xlines in ((0, []), check_external_truth"
 [[mutation]]
 id = "prev-day-provisional-counts-as-final"
 why = "잠정 리포트만 있는 전 거래일을 확정으로 본다"
@@ -2940,31 +2936,25 @@ replace = """    if (d / "numbers.html").is_file():"""
 
 [[mutation]]
 id = "holiday-not-recognized"
-why = "수급도 틱도 없는 평일 휴장마다 '수집 실패' 경고 — 연 10번 울리면 경고를 안 읽게 된다"
-guards = ["tests/test_freshness_check.py::test_weekday_holiday_is_quiet",
-          "tests/test_freshness_check.py::test_cron_path_holiday_without_ticks_is_quiet"]
+why = "달력의 휴장을 못 알아보면 연 10번 '수집 실패' 오류가 난다 — 경고를 안 읽게 된다"
+guards = ["tests/test_freshness_check.py::test_calendar_holiday_is_quiet", "tests/test_freshness_check.py::test_cron_path_calendar_holiday_is_quiet_and_a_trading_day_without_rows_is_an_error", "tests/test_freshness_check.py::test_rows_on_a_calendar_holiday_say_the_calendar_is_wrong"]
 file = "scripts/freshness_check.py"
-find = """    elif rows_today == 0 and market_open is False:"""
-replace = """    elif False:"""
-
+find = "    holiday = krx_calendar.holiday_name(today)"
+replace = "    holiday = None"
 [[mutation]]
 id = "holiday-swallows-collection-failure"
-why = "수급이 빈 날을 전부 휴장으로 본다 — 장이 열렸는데(틱 있음) 수집이 실패한 날이 조용해진다"
-guards = ["tests/test_freshness_check.py::test_open_market_without_rows_still_warns",
-          "tests/test_freshness_check.py::test_no_rows_on_a_weekday_is_a_warning",
-          "tests/test_freshness_check.py::test_cron_path_holiday_without_ticks_is_quiet"]
+why = "틱이 없으면 휴장이라고 보던 옛 규약으로 돌아가면 수집과 scalp-it 이 함께 죽은 거래일이 조용하고 하트비트까지 나간다"
+guards = ["tests/test_freshness_check.py::test_no_rows_on_a_trading_day_is_an_error_even_without_ticks", "tests/test_freshness_check.py::test_cron_path_calendar_holiday_is_quiet_and_a_trading_day_without_rows_is_an_error"]
 file = "scripts/freshness_check.py"
-find = """    elif rows_today == 0 and market_open is False:"""
-replace = """    elif rows_today == 0:"""
-
+find = "    elif rows_today == 0 and holiday:"
+replace = "    elif rows_today == 0 and (holiday or market_open is False):"
 [[mutation]]
 id = "holiday-ticks-never-read"
-why = "틱 표를 안 읽으면 휴장 판정이 죽는다 — 판정 함수 시험만으로는 DB 쪽이 끊긴 것을 못 본다"
-guards = ["tests/test_freshness_check.py::test_cron_path_holiday_without_ticks_is_quiet"]
+why = "틱을 못 읽으면 본문이 '못 읽었다' 가 된다 — 수집 실패를 보는 사람이 장이 열렸었는지 사실을 잃는다"
+guards = ["tests/test_freshness_check.py::test_cron_path_calendar_holiday_is_quiet_and_a_trading_day_without_rows_is_an_error"]
 file = "scripts/freshness_check.py"
-find = """                market_open = bool(cur.fetchone()[0])"""
-replace = """                market_open = None"""
-
+find = "                market_open = bool(cur.fetchone()[0])"
+replace = "                market_open = None"
 [[mutation]]
 id = "finalize-window-ignored"
 why = "기준일 뒤에 끝났기만 하면 확정으로 본다 — 창(달력 3일)이 그 날을 안 덮은 실행(놓친 날·재구성)도 확정이라 적는다"
@@ -5035,12 +5025,11 @@ replace = "        return WARN, [f\"[외부 참값] 전 거래일({prev}) 확정
 
 [[mutation]]
 id = "freshness-main-skips-external-truth"
-why = "점검 함수는 있는데 크론 경로(main)가 안 부른다"
+why = "main 이 외부 참값 점검을 안 부르면 대조가 며칠째 안 돌아도 아무도 모른다"
 guards = ["tests/test_freshness_check.py::test_cron_path_flags_a_previous_day_external_truth_skip_streak"]
 file = "scripts/freshness_check.py"
-find = "            xrc, xlines = check_external_truth(Path(a.root), prev)"
-replace = "            xrc, xlines = 0, []"
-
+find = "check_external_truth(root, prev), check_slo(root, prev),"
+replace = "(0, []), check_slo(root, prev),"
 [[mutation]]
 id = "freshness-skip-mark-drifts"
 why = "verify_report 와 다른 글을 찾아 연속 SKIP 경고를 영영 못 본다"
@@ -5804,15 +5793,8 @@ id = "ledger-reader-dies-on-torn-line"
 why = "동시 기록·손 편집으로 깨진 줄 하나가 읽기를 던지게 하면 통계·SLO 점검이 통째로 못 돈다"
 guards = ["tests/test_ops_ledger.py::test_reader_skips_torn_lines"]
 file = "scripts/ops_ledger.py"
-find = """            try:
-                e = json.loads(line)
-            except ValueError:
-                continue"""
-replace = """            try:
-                e = json.loads(line)
-            except ValueError:
-                raise"""
-
+find = "            try:\n                e = json.loads(line)\n            except ValueError:\n                e = None"
+replace = "            try:\n                e = json.loads(line)\n            except ValueError:\n                raise"
 [[mutation]]
 id = "ledger-leaks-to-web"
 why = "운영 원장이 웹 허용 목록에 들어가면 비공개 운영 기록(실패·커밋 sha)이 밖으로 샌다"
@@ -5852,20 +5834,18 @@ replace = "    since = now - timedelta(days=3650)"
 
 [[mutation]]
 id = "errata-ignores-rebuilds"
-why = "재구성은 게시된 숫자를 바꿔 끼운 날이다 — 정정 목록에서 빠지면 신뢰 페이지가 거짓말한다"
+why = "재구성을 정정으로 안 세면 폴더를 통째로 바꿔 낀 날이 정오표에 없다"
 guards = ["tests/test_ops_ledger.py::test_errata_lists_rebuilds_and_changed_finals_only"]
 file = "scripts/ops_ledger.py"
-find = """        if e.get("event") == "report" and e.get("outcome") == "rebuilt":"""
-replace = """        if False:"""
-
+find = "            if e.get(\"event\") == \"archive\" or e.get(\"outcome\") == \"rebuilt\":"
+replace = "            if False:"
 [[mutation]]
 id = "errata-counts-unchanged-finals"
-why = "diff=0(한 칸도 안 바뀐 확정)까지 정정으로 세면 매일이 정정이 된다 — 목록이 무의미해진다"
-guards = ["tests/test_ops_ledger.py::test_errata_lists_rebuilds_and_changed_finals_only"]
+why = "칸이 안 바뀐 확정까지 정정으로 세면 매일이 정정이 된다"
+guards = ["tests/test_ops_ledger.py::test_first_final_is_judged_by_its_diff_and_the_next_final_is_a_republish"]
 file = "scripts/ops_ledger.py"
-find = """        elif is_final_confirmation(e) and isinstance(e.get("diff"), int) and e["diff"] > 0:"""
-replace = """        elif is_final_confirmation(e) and isinstance(e.get("diff"), int):"""
-
+find = "                if isinstance(e.get(\"diff\"), int) and e[\"diff\"] > 0:"
+replace = "                if isinstance(e.get(\"diff\"), int):"
 [[mutation]]
 id = "backfill-forgets-provenance"
 why = "복원 사건에 source=backfill 이 빠지면 mtime 기반 추정이 실측 기록인 척 통계에 섞인다"
@@ -5893,12 +5873,11 @@ replace = """    if False:"""
 
 [[mutation]]
 id = "slo-prov-breach-stays-quiet"
-why = "잠정이 기한을 넘긴 기록이 있는데 경고(75)가 안 나가면 SLO 는 측정만 있고 감시가 없다"
-guards = ["tests/test_ops_ledger.py::test_slo_check_warns_on_late_provisional"]
+why = "기한을 넘긴 첫 게시에 경고하지 않으면 SLO 는 집계로만 남는다"
+guards = ["tests/test_ops_ledger.py::test_slo_check_warns_on_late_provisional", "tests/test_ops_ledger.py::test_slo_check_flags_a_first_publication_by_the_morning_final"]
 file = "scripts/freshness_check.py"
-find = "    if prov is not None and prov > ops_ledger.prov_deadline(prev):"
+find = "    if prov > ops_ledger.prov_deadline(prev):"
 replace = "    if False:"
-
 [[mutation]]
 id = "slo-final-breach-stays-quiet"
 why = "확정이 다음날 10:40 을 넘긴 날을 안 알리면 확정 지연이 원장에만 남고 아무도 모른다"
@@ -5909,21 +5888,18 @@ replace = "    if False:"
 
 [[mutation]]
 id = "slo-unrecorded-day-false-alarms"
-why = "원장에 기록이 없는 날(도입 전·백필 공백)은 측정 불가지 위반이 아니다 — 경고로 울리면 늑대 소년이 된다"
+why = "원장 도입 전 날을 위반으로 세면 도입 첫 주가 경고로 도배된다"
 guards = ["tests/test_ops_ledger.py::test_slo_check_is_quiet_when_on_time_or_unrecorded"]
 file = "scripts/freshness_check.py"
-find = """        return 0, [f"[SLO] 원장에 전 거래일({prev}) 기록이 없다 — 재지 않는다(기록은 reports/events.jsonl, """
-replace = """        return WARN, [f"[SLO] 원장에 전 거래일({prev}) 기록이 없다 — 재지 않는다(기록은 reports/events.jsonl, """
-
+find = "        return 0, [f\"[SLO] 원장에 전 거래일({prev}) 첫 게시 기록이 없다"
+replace = "        return WARN, [f\"[SLO] 원장에 전 거래일({prev}) 첫 게시 기록이 없다"
 [[mutation]]
 id = "freshness-forgets-its-verdict"
-why = "점검 자신의 판정이 원장에 안 남으면 '점검이 돌긴 했나' 를 나중에 셀 수 없다(죽은 크론 줄과 구분 불가)"
+why = "이 점검의 판정을 원장에 안 남기면 신선도 통계가 비고, 쓰기 실패도 못 알아본다"
 guards = ["tests/test_ops_ledger.py::test_freshness_main_appends_its_verdict"]
 file = "scripts/freshness_check.py"
-find = """    ops_ledger.append_event(Path(a.root), {"ts": ops_ledger.utc_now_iso(), "event": "freshness",
-                                           "today": today, "rc": rc})"""
-replace = ""
-
+find = "    if not ops_ledger.append_event(root, {\"ts\": ops_ledger.utc_now_iso(), \"event\": \"freshness\",\n                                          \"today\": today, \"rc\": rc}):"
+replace = "    if False:"
 [[mutation]]
 id = "report-run-leaves-no-ledger-event"
 why = "EXIT 트랩이 빠지면 실행 결말이 원장에 안 남는다 — 준시성·차단·정정 전부 셀 수 없게 된다"
@@ -6394,6 +6370,464 @@ guards = ["tests/test_trust_page.py::test_parse_verify_reads_both_summary_format
 file = "scripts/trust_page.py"
 find = 'MARK_RE = re.compile(r"^\s*\[(OK  |FAIL|OK   |CLAIM)\] ", re.M)'
 replace = 'MARK_RE = re.compile(r"^\s*\[(OK  |OK   |CLAIM)\] ", re.M)'
+
+# ── 4회차 운영: SLO 분모(거래일)·프로브 표본·백필 관문·정오표·KRX 달력·배포 지연·healthz·복구 ──────────
+
+[[mutation]]
+id = "ledger-broken-lines-uncounted"
+why = "못 읽은 줄을 안 세면 실패 프로브 줄이 사라져 5회 중 2회 실패가 100% 로 읽힌다"
+guards = ["tests/test_ops_ledger.py::test_reader_counts_what_it_skipped_and_stats_say_so"]
+file = "scripts/ops_ledger.py"
+find = "                broken.append(f\"{f.name}:{n}\")"
+replace = "                pass"
+
+[[mutation]]
+id = "serve-probe-writes-000"
+why = "닿지 못한 프로브를 status:000 으로 쓰면 JSON 이 아니라 그 줄이 통계에서 사라진다"
+guards = ["tests/test_ops_ledger.py::test_serve_probe_that_cannot_reach_writes_null_and_stays_readable"]
+file = "scripts/serve.sh"
+find = "case \"$CODE\" in [1-9][0-9][0-9]) _PS=\"$CODE\" ;;"
+replace = "case \"$CODE\" in [0-9][0-9][0-9]) _PS=\"$CODE\" ;;"
+
+[[mutation]]
+id = "slo-denominator-is-the-ledger"
+why = "분모가 원장에 나온 날이면 크론이 안 돈 날·DB 가 끊긴 날이 분모에서 사라져 놓친 날이 0 이 된다"
+guards = ["tests/test_ops_ledger.py::test_trading_day_with_no_events_is_unpublished_not_absent", "tests/test_ops_ledger.py::test_denominator_skips_weekends_and_calendar_holidays"]
+file = "scripts/ops_ledger.py"
+find = "    for a in sorted(set(trading) | published):"
+replace = "    for a in sorted(asofs):"
+
+[[mutation]]
+id = "slo-denominator-counts-holidays"
+why = "휴장일을 거래일로 세면 휴장마다 미게시가 쌓인다"
+guards = ["tests/test_ops_ledger.py::test_denominator_skips_weekends_and_calendar_holidays"]
+file = "scripts/krx_calendar.py"
+find = "    return holiday_name(d) is None"
+replace = "    return True"
+
+[[mutation]]
+id = "slo-before-ledger-called-unpublished"
+why = "원장 도입 전 날을 미게시로 세면 도입 첫날 통계가 전부 위반이다"
+guards = ["tests/test_ops_ledger.py::test_days_before_the_ledger_are_not_called_unpublished"]
+file = "scripts/ops_ledger.py"
+find = "            elif not is_measured(a, start):\n                prov_before.append(a)"
+replace = "            elif False:\n                prov_before.append(a)"
+
+[[mutation]]
+id = "slo-today-called-unpublished"
+why = "오늘 18:30 전에 미게시로 세면 낮에 통계를 볼 때마다 위반이 하나 있다"
+guards = ["tests/test_ops_ledger.py::test_today_before_its_deadline_is_pending"]
+file = "scripts/ops_ledger.py"
+find = "            elif prov_deadline(a) >= now:"
+replace = "            elif False:"
+
+[[mutation]]
+id = "slo-first-publication-normal-only"
+why = "첫 게시를 normal 모드만 보면 관문 차단 뒤 다음날 08:25 첫 게시가 '기한 안' 이다"
+guards = ["tests/test_ops_ledger.py::test_first_publication_ignores_mode", "tests/test_ops_ledger.py::test_slo_check_flags_a_first_publication_by_the_morning_final"]
+file = "scripts/ops_ledger.py"
+find = "    if not is_publication(e):\n        return False\n    if e.get(\"source\") == \"backfill\":"
+replace = "    if not is_prov_publication(e):\n        return False\n    if e.get(\"source\") == \"backfill\":"
+
+[[mutation]]
+id = "slo-verified-column-ignores-deadline"
+why = "뒤늦은 검증 통과로 '제때·검증 통과' 를 메우면 두 칸이 같아져 따로 세는 뜻이 없다"
+guards = ["tests/test_ops_ledger.py::test_on_time_and_verified_are_counted_separately"]
+file = "scripts/ops_ledger.py"
+find = "            if v is not None and v <= prov_deadline(a):"
+replace = "            if v is not None:"
+
+[[mutation]]
+id = "slo-live-rebuild-excused"
+why = "원장이 돌던 날의 재구성 첫 게시를 안 세면 며칠 뒤 손으로 만든 날이 지각이 아니다"
+guards = ["tests/test_ops_ledger.py::test_a_live_rebuild_is_a_late_publication_but_a_restored_one_is_not"]
+file = "scripts/ops_ledger.py"
+find = "    return measured or e.get(\"mode\") != \"rebuild\""
+replace = "    return e.get(\"mode\") != \"rebuild\""
+
+[[mutation]]
+id = "slo-old-rebuild-called-late"
+why = "원장 도입 전 날의 재구성을 첫 게시로 세면 복원이 지각으로 둔갑한다"
+guards = ["tests/test_ops_ledger.py::test_a_live_rebuild_is_a_late_publication_but_a_restored_one_is_not"]
+file = "scripts/ops_ledger.py"
+find = "    return measured or e.get(\"mode\") != \"rebuild\""
+replace = "    return True"
+
+[[mutation]]
+id = "probe-window-coverage-hidden"
+why = "창 대비 비율이 1 이면 4시간 표본이 30일 전체를 잰 것처럼 읽힌다"
+guards = ["tests/test_ops_ledger.py::test_a_few_hours_of_probes_do_not_read_as_thirty_days"]
+file = "scripts/ops_ledger.py"
+find = "\"window_coverage\": round(min(span / window, 1.0), 4) if window > 0 else 0.0,"
+replace = "\"window_coverage\": 1.0,"
+
+[[mutation]]
+id = "probe-gaps-not-counted"
+why = "공백을 안 세면 서버가 내려가 있던 시간이 응답률 100% 뒤에 숨는다"
+guards = ["tests/test_ops_ledger.py::test_probe_gaps_are_counted", "tests/test_ops_ledger.py::test_silence_up_to_now_is_a_gap", "tests/test_ops_ledger.py::test_probe_silence_warns_and_a_past_gap_is_a_note"]
+file = "scripts/ops_ledger.py"
+find = "    wide = [s for s in steps if s > PROBE_GAP_S]"
+replace = "    wide = []"
+
+[[mutation]]
+id = "probe-tail-silence-not-a-gap"
+why = "지금까지 이어진 침묵을 안 세면 서버가 죽은 뒤로는 공백이 0 이다"
+guards = ["tests/test_ops_ledger.py::test_silence_up_to_now_is_a_gap"]
+file = "scripts/ops_ledger.py"
+find = "zip([*ts], [*ts[1:], now])"
+replace = "zip([*ts, now], [*ts[1:], now, now])"
+
+[[mutation]]
+id = "probe-unreached-not-counted"
+why = "닿지 못한 프로브와 503 을 못 가르면 어떤 실패인지 안 보인다"
+guards = ["tests/test_ops_ledger.py::test_unreached_probes_are_failures_with_a_count"]
+file = "scripts/ops_ledger.py"
+find = "if e.get(\"status\") is None),"
+replace = "if e.get(\"status\") == 0),"
+
+[[mutation]]
+id = "errata-ignores-republish"
+why = "2번째 게시를 안 보면 FORCE 재게시·검증 실패 뒤 재생성이 정오표에서 사라진다"
+guards = ["tests/test_ops_ledger.py::test_force_republish_with_new_numbers_is_an_erratum", "tests/test_ops_ledger.py::test_regeneration_after_a_failed_verification_is_named", "tests/test_ops_ledger.py::test_republish_without_a_hash_says_it_cannot_tell", "tests/test_ops_ledger.py::test_first_final_is_judged_by_its_diff_and_the_next_final_is_a_republish"]
+file = "scripts/ops_ledger.py"
+find = "                if not (was and now and was == now):"
+replace = "                if False:"
+
+[[mutation]]
+id = "errata-same-payload-listed"
+why = "같은 숫자를 다시 만든 재실행까지 정정이라 하면 정오표를 안 읽게 된다"
+guards = ["tests/test_ops_ledger.py::test_republish_with_the_same_numbers_is_not_an_erratum"]
+file = "scripts/ops_ledger.py"
+find = "                if not (was and now and was == now):"
+replace = "                if True:"
+
+[[mutation]]
+id = "errata-verify-retry-unnamed"
+why = "검증 실패 뒤 재생성을 재게시로 뭉개면 왜 다시 만들었는지 사라진다"
+guards = ["tests/test_ops_ledger.py::test_regeneration_after_a_failed_verification_is_named"]
+file = "scripts/ops_ledger.py"
+find = "row = (\"검증 실패 뒤 재생성\" if prev.get(\"verify\") == \"fail\" else \"재게시\","
+replace = "row = (\"재게시\","
+
+[[mutation]]
+id = "errata-no-hash-claims-a-change"
+why = "해시가 없을 때 바뀌었다고 단정하면 없는 사실을 적는다"
+guards = ["tests/test_ops_ledger.py::test_republish_without_a_hash_says_it_cannot_tell"]
+file = "scripts/ops_ledger.py"
+find = "else \"payload 해시 없음 — 숫자가 바뀌었는지 모른다\")"
+replace = "else \"payload 변경\")"
+
+[[mutation]]
+id = "errata-every-final-judged-by-diff"
+why = "두 번째 확정을 칸 차이로만 보면 FORCE 재게시가 정오표에 안 나온다"
+guards = ["tests/test_ops_ledger.py::test_first_final_is_judged_by_its_diff_and_the_next_final_is_a_republish"]
+file = "scripts/ops_ledger.py"
+find = "            if is_final_confirmation(e) and not finalized:"
+replace = "            if is_final_confirmation(e):"
+
+[[mutation]]
+id = "errata-rebuilds-collapse"
+why = "한 기준일의 재구성을 하나로 묶으면 두 번 다시 만든 사실이 사라진다(예전 (기준일, 종류) 키)"
+guards = ["tests/test_ops_ledger.py::test_two_rebuilds_of_one_day_are_two_rows_with_times"]
+file = "scripts/ops_ledger.py"
+find = "                if near:\n"
+replace = "                if last_rebuild is not None:\n"
+
+[[mutation]]
+id = "errata-backfill-traces-double"
+why = "한 재구성의 표시 파일·.archive 를 두 줄로 세면 정정 수가 부푼다"
+guards = ["tests/test_ops_ledger.py::test_backfill_traces_of_one_rebuild_merge_into_one_row"]
+file = "scripts/ops_ledger.py"
+find = "                if near:\n"
+replace = "                if False:\n"
+
+[[mutation]]
+id = "errata-marker-counted-as-republish"
+why = "표시 파일 복원을 재게시로 세면 같은 실행이 정정이 된다"
+guards = ["tests/test_ops_ledger.py::test_marker_restored_publications_are_not_republications"]
+file = "scripts/ops_ledger.py"
+find = "            if backfill and e.get(\"origin\") != \"cron.log\":\n                continue"
+replace = "            if False:\n                continue"
+
+[[mutation]]
+id = "backfill-gate-always-pass"
+why = "관문 도입 전 게시를 gate:pass 로 복원하면 10-27 부분 수집을 관문이 통과시킨 것처럼 읽힌다"
+guards = ["tests/test_ops_ledger.py::test_backfill_before_the_gate_existed_has_no_gate_result"]
+file = "scripts/ops_ledger.py"
+find = "gate = {\"gate\": \"pass\"} if parse_ts(ts) >= GATE_SINCE else {\"gate\": None, \"gate_note\": GATE_NOTE}"
+replace = "gate = {\"gate\": \"pass\"}"
+
+[[mutation]]
+id = "old-backfill-gate-read-as-is"
+why = "이미 들어간 옛 백필 줄을 그대로 읽으면 거짓 pass 가 통계에 남는다 — 고쳐 쓸 수는 없다"
+guards = ["tests/test_ops_ledger.py::test_old_backfill_lines_are_read_without_their_false_pass"]
+file = "scripts/ops_ledger.py"
+find = "    if e.get(\"source\") == \"backfill\" and e.get(\"gate\") == \"pass\":"
+replace = "    if False:"
+
+[[mutation]]
+id = "slo-unpublished-is-in-time"
+why = "게시가 없는 날이 rc 0 이면 18:10·19:10 이 다 실패해도 SLO 가 조용하다"
+guards = ["tests/test_ops_ledger.py::test_slo_check_calls_a_day_with_no_publication_unpublished", "tests/test_ops_ledger.py::test_slo_check_sees_db_outages_with_no_asof"]
+file = "scripts/freshness_check.py"
+find = "    if prov is None:\n        return WARN, [f\"⚠️ [SLO]"
+replace = "    if prov is None:\n        return 0, [f\"⚠️ [SLO]"
+
+[[mutation]]
+id = "slo-silent-day-excused"
+why = "원장이 돌던 날에 실행 기록이 없는데 조용하면 쓰기 실패·크론 누락이 안 보인다"
+guards = ["tests/test_ops_ledger.py::test_slo_check_treats_a_silent_day_as_a_ledger_gap"]
+file = "scripts/freshness_check.py"
+find = "    if prov is None and not evs and not nulls:\n        return WARN,"
+replace = "    if prov is None and not evs and not nulls:\n        return 0,"
+
+[[mutation]]
+id = "slo-unreadable-lines-unsaid"
+why = "못 읽은 줄을 점검이 말하지 않으면 집계가 빠진 것을 모른다"
+guards = ["tests/test_ops_ledger.py::test_slo_check_mentions_unreadable_lines"]
+file = "scripts/freshness_check.py"
+find = "({', '.join(broken[:3])})\"] if broken else [])"
+replace = "({', '.join(broken[:3])})\"] if False else [])"
+
+[[mutation]]
+id = "ledger-today-gap-silent"
+why = "게시는 됐는데 원장 쓰기만 실패한 날을 못 잡는다 — 통계만 조용히 빈다"
+guards = ["tests/test_ops_ledger.py::test_todays_silence_in_the_ledger_warns"]
+file = "scripts/freshness_check.py"
+find = "    return WARN, [f\"⚠️ [원장] 오늘({today}) 18:10 뒤"
+replace = "    return 0, [f\"⚠️ [원장] 오늘({today}) 18:10 뒤"
+
+[[mutation]]
+id = "probe-silence-not-warned"
+why = "프로브가 끊긴 것을 안 알리면 웹이 내려간 채로 며칠 간다"
+guards = ["tests/test_ops_ledger.py::test_probe_silence_warns_and_a_past_gap_is_a_note"]
+file = "scripts/freshness_check.py"
+find = "    if silent > PROBE_STALE_MIN:"
+replace = "    if False:"
+
+[[mutation]]
+id = "calendar-year-outside-is-a-holiday"
+why = "달력 밖 해의 수급 0 을 거래일 오류로 내면 원인(달력 없음)을 잘못 말한다"
+guards = ["tests/test_freshness_check.py::test_year_outside_the_calendar_warns_instead_of_calling_it_a_holiday"]
+file = "scripts/freshness_check.py"
+find = "        if krx_calendar.covers(today):\n            rc = worse(rc, 1)"
+replace = "        if True:\n            rc = worse(rc, 1)"
+
+[[mutation]]
+id = "verify-failed-latest-is-ok"
+why = "검증에 걸린 게시를 OK 로 보면 그날 하트비트까지 나간다"
+guards = ["tests/test_freshness_check.py::test_published_but_failed_verification_is_not_ok"]
+file = "scripts/freshness_check.py"
+find = "        if (root / today / \"VERIFY_FAILED.txt\").is_file():"
+replace = "        if False:"
+
+[[mutation]]
+id = "verify-failed-final-is-ok"
+why = "검증에 걸린 확정본을 '확정 있음' 으로 넘기면 틀린 확정이 조용하다"
+guards = ["tests/test_freshness_check.py::test_previous_final_that_failed_verification_warns"]
+file = "scripts/freshness_check.py"
+find = "        if (d / \"VERIFY_FAILED.txt\").is_file():"
+replace = "        if False:"
+
+[[mutation]]
+id = "calendar-running-out-silent"
+why = "12월에 다음 해 달력이 없어도 조용하면 1월 첫 거래일부터 못 가른다"
+guards = ["tests/test_freshness_check.py::test_calendar_running_out_warns_ahead"]
+file = "scripts/freshness_check.py"
+find = "    if d.month == 12 and d.year + 1 not in krx_calendar.HOLIDAYS:"
+replace = "    if False:"
+
+[[mutation]]
+id = "deploy-gap-silent"
+why = "07:50 이 받았어야 할 커밋을 안 알리면 결제 정지로 CI 가 멈춘 동안 고친 코드가 며칠째 안 돈다"
+guards = ["tests/test_freshness_check.py::test_deploy_warns_when_the_morning_sync_should_have_taken_a_commit"]
+file = "scripts/freshness_check.py"
+find = "    missed = [t for t in stamps if t < sync.timestamp()]"
+replace = "    missed = []"
+
+[[mutation]]
+id = "deploy-warns-about-todays-merge"
+why = "오늘 낮 머지까지 경고하면 머지한 날마다 울려 경고를 안 읽는다"
+guards = ["tests/test_freshness_check.py::test_deploy_does_not_warn_about_todays_merge"]
+file = "scripts/freshness_check.py"
+find = "    missed = [t for t in stamps if t < sync.timestamp()]"
+replace = "    missed = stamps"
+
+[[mutation]]
+id = "deploy-level-still-talks"
+why = "뒤처지지 않았는데도 한 줄 내면 매일 잡음이다"
+guards = ["tests/test_freshness_check.py::test_deploy_is_quiet_when_level"]
+file = "scripts/freshness_check.py"
+find = "    if not stamps:\n        return rc, out"
+replace = "    if False:\n        return rc, out"
+
+[[mutation]]
+id = "deploy-stale-fetch-silent"
+why = "동기화가 안 돌면 받아 둔 ref 가 옛것이라 뒤처짐이 0 으로 보인다"
+guards = ["tests/test_freshness_check.py::test_deploy_warns_when_nothing_was_fetched_for_days"]
+file = "scripts/freshness_check.py"
+find = "        if age_h is not None and age_h > FETCH_STALE_H:"
+replace = "        if False:"
+
+[[mutation]]
+id = "prev-day-from-last-rows"
+why = "전 거래일을 DB 마지막 수급일로 물으면 수집이 통째로 빠진 날이 점검에서 사라진다"
+guards = ["tests/test_freshness_check.py::test_previous_trading_day_comes_from_the_calendar_not_the_last_rows"]
+file = "scripts/freshness_check.py"
+find = "            prev = krx_calendar.prev_trading_day(today) or db_prev"
+replace = "            prev = db_prev"
+
+[[mutation]]
+id = "ledger-write-failure-quiet"
+why = "원장 기록 실패가 rc 를 안 바꾸면 stderr 한 줄로 끝나 아무에게도 안 간다"
+guards = ["tests/test_freshness_check.py::test_cron_path_ledger_write_failure_warns_and_withholds_the_heartbeat"]
+file = "scripts/freshness_check.py"
+find = "        rc, data_rc = worse(rc, WARN), worse(data_rc, WARN)"
+replace = "        pass"
+
+[[mutation]]
+id = "krx-truth-rewrites-published"
+why = "게시 폴더 보호를 빼면 재현 명령이 게시 payload 를 고쳐 쓴다"
+guards = ["tests/test_krx_truth.py::test_cli_refuses_to_rewrite_a_published_report_and_out_leaves_it_alone"]
+file = "scripts/krx_truth.py"
+find = "    if not a.out and os.path.exists(os.path.join(source_dir, \"numbers.html\")):"
+replace = "    if False:"
+
+[[mutation]]
+id = "runbook-repro-rewrites-published"
+why = "런북의 재현 명령이 --out 을 잃으면 그대로 따라 한 사람이 2 로 막히거나 게시본을 건드린다"
+guards = ["tests/test_krx_truth.py::test_runbook_repro_commands_never_rewrite_a_published_payload"]
+file = "README.md"
+find = "--fetch --out \"$(mktemp -d -p ~/.cache)\""
+replace = "--fetch"
+
+[[mutation]]
+id = "report-trap-inherits-build"
+why = "트랩 전에 BUILD 를 안 비우면 환경변수가 가리키는 폴더를 rm -rf 한다"
+guards = ["tests/test_ops_ledger.py::test_inherited_build_variable_is_not_deleted_by_the_trap", "tests/test_ops_ledger.py::test_every_variable_the_exit_trap_reads_is_set_before_the_trap"]
+file = "scripts/daily_report.sh"
+find = "BUILD=\"\"\n_dr_event() {"
+replace = "_dr_event() {"
+
+[[mutation]]
+id = "report-rm-target-unassigned"
+why = "rm -rf 대상이 앞에서 안 정해지면 환경값을 지운다 — 같은 부류의 다음 변수를 잡는 검사다"
+guards = ["tests/test_ops_ledger.py::test_rm_rf_targets_in_shell_scripts_are_assigned_first"]
+file = "scripts/daily_report.sh"
+find = "  OLD=\"$DEST.replaced.$$\"\n"
+replace = "  : \n"
+
+[[mutation]]
+id = "report-term-records-rc-0"
+why = "TERM 트랩이 없으면 시간 초과로 끊긴 실행이 원장에 rc:0, outcome:error 로 남는다"
+guards = ["tests/test_ops_ledger.py::test_timeout_term_is_recorded_as_a_signal_not_as_success"]
+file = "scripts/daily_report.sh"
+find = "trap 'exit 143' TERM\n"
+replace = ""
+
+[[mutation]]
+id = "report-sha-not-recorded"
+why = "게시 지문이 없으면 재게시에서 숫자가 바뀌었는지 영영 모른다"
+guards = ["tests/test_ops_ledger.py::test_daily_report_ledger_records_what_it_published"]
+file = "scripts/daily_report.sh"
+find = "EV_SHA=\"$(sha256sum \"$DEST/payload.json\" 2>/dev/null | cut -d' ' -f1)\" || true"
+replace = "EV_SHA=\"\""
+
+[[mutation]]
+id = "healthz-ignores-latest"
+why = "latest 를 안 보면 끊긴 링크에도 200 이라 serve.sh 가 그대로 둔다"
+guards = ["tests/test_serve_reports.py::test_healthz_fails_when_latest_is_dangling_or_hollow"]
+file = "scripts/serve_reports.py"
+find = "            sick = latest_problem(self.root)"
+replace = "            sick = None"
+
+[[mutation]]
+id = "healthz-accepts-empty-page"
+why = "빈 파일을 건강하다고 보면 흰 화면이 200 이다"
+guards = ["tests/test_serve_reports.py::test_healthz_fails_when_latest_is_dangling_or_hollow"]
+file = "scripts/serve_reports.py"
+find = "and os.path.getsize(os.path.join(target, f)) > 0)]"
+replace = "and True)]"
+
+[[mutation]]
+id = "healthz-no-link-is-fine"
+why = "링크만 사라진 상태를 건강하다고 보면 화면이 안 열린다"
+guards = ["tests/test_serve_reports.py::test_healthz_without_a_latest_link_depends_on_whether_reports_exist"]
+file = "scripts/serve_reports.py"
+find = "return \"latest 링크가 없다\" if has_reports else None"
+replace = "return None"
+
+[[mutation]]
+id = "healthz-new-root-restarts-forever"
+why = "아직 리포트가 없는 새 루트를 고장으로 보면 복구 중 5분마다 재시작·알림이다"
+guards = ["tests/test_serve_reports.py::test_healthz_without_a_latest_link_depends_on_whether_reports_exist"]
+file = "scripts/serve_reports.py"
+find = "return \"latest 링크가 없다\" if has_reports else None"
+replace = "return \"latest 링크가 없다\""
+
+[[mutation]]
+id = "calendar-misses-a-measured-holiday"
+why = "실측 휴장을 빠뜨리면 그날 수급 0 이 오류가 된다"
+guards = ["tests/test_krx_calendar.py::test_2026_matches_the_days_the_database_has_no_rows"]
+file = "scripts/krx_calendar.py"
+find = "        \"2026-07-17\": \"제헌절\",\n"
+replace = ""
+
+[[mutation]]
+id = "calendar-lists-a-weekend"
+why = "토요일을 적으면(대체공휴일을 잘못 옮겼다) 진짜 휴장이 거래일로 남는다"
+guards = ["tests/test_krx_calendar.py::test_every_entry_is_a_weekday_of_its_year_in_order"]
+file = "scripts/krx_calendar.py"
+find = "\"2027-07-19\": \"제헌절 대체\""
+replace = "\"2027-07-17\": \"제헌절\""
+
+[[mutation]]
+id = "calendar-outside-is-trading"
+why = "달력 밖을 거래일로 단정하면 모르는 것을 안다고 한다"
+guards = ["tests/test_krx_calendar.py::test_trading_day_answers"]
+file = "scripts/krx_calendar.py"
+find = "    if not covers(d):\n        return None\n    return holiday_name"
+replace = "    if not covers(d):\n        return True\n    return holiday_name"
+
+[[mutation]]
+id = "calendar-prev-includes-today"
+why = "'앞의 거래일' 이 오늘이면 전 거래일 점검이 오늘을 본다"
+guards = ["tests/test_krx_calendar.py::test_previous_trading_day_steps_over_weekends_and_holidays"]
+file = "scripts/krx_calendar.py"
+find = "    d = _d(day) - timedelta(days=1)\n    for _ in range(31):"
+replace = "    d = _d(day)\n    for _ in range(31):"
+
+[[mutation]]
+id = "calendar-unknown-days-dropped"
+why = "달력 밖 평일을 안 세면 분모에서 조용히 빠진다"
+guards = ["tests/test_krx_calendar.py::test_trading_days_split_known_from_unknown"]
+file = "scripts/krx_calendar.py"
+find = "            unknown.append(d.isoformat())"
+replace = "            pass"
+
+[[mutation]]
+id = "seed-missing-archive-traceback"
+why = "아카이브가 없을 때 Traceback 이면 복구 절차가 거기서 끊긴다"
+guards = ["tests/test_streaks_revisions.py::test_seed_with_a_missing_archive_says_so_instead_of_a_traceback"]
+file = "scripts/seed_revisions.py"
+find = "        if not os.path.isdir(a):"
+replace = "        if False:"
+
+[[mutation]]
+id = "runbook-billing-row-dropped"
+why = "결제 정지 줄이 없으면 CI 가 멈춘 원인을 코드에서 찾는다"
+guards = ["tests/test_runbook.py::test_runbook_names_the_github_billing_stop"]
+file = "README.md"
+find = "The job was not started because recent account payments have failed or your spending limit needs to be increased"
+replace = "잡이 안 돈다"
+
+[[mutation]]
+id = "recovery-section-dropped"
+why = "복구 절차의 리허설 시간이 사라지면 얼마나 걸릴지 모른 채 시작한다"
+guards = ["tests/test_runbook.py::test_recovery_runbook_is_there_and_was_rehearsed"]
+file = "README.md"
+find = "### 3.2 디스크 소실·새 머신 복구"
+replace = "### 3.2 복구"
 
 # ── 오늘의 수급 다이제스트(scripts/digest.py) — 밖에 나갈 글이라 "말하면 안 되는 것" 쪽 검사가 중심이다.
 

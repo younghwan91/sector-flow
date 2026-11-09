@@ -14,6 +14,8 @@ import stat
 import subprocess
 import sys
 import threading
+import time as _time
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -82,10 +84,12 @@ def test_incomplete_mark_is_pointed_at(tmp_path):
     assert rc == 1 and any("INCOMPLETE.txt" in x for x in lines)
 
 
-def test_no_rows_on_a_weekday_is_a_warning(tmp_path):
-    """휴장과 수집 실패를 못 가른다 — 오류가 아니라 경고로."""
-    rc, lines = fc.judge(_reports(tmp_path, "2026-11-05"), TODAY, 0)
-    assert rc == 75 and "수집이" in lines[0]
+def test_no_rows_on_a_trading_day_is_an_error_even_without_ticks(tmp_path):
+    """수집과 scalp-it 이 같은 거래일에 함께 죽으면 틱도 없다 — 틱으로 휴장을 추정하면 그날 하트비트까지 나갔다. 달력이 정본이다."""
+    for market_open in (None, False, True):
+        rc, lines = fc.judge(_reports(tmp_path, "2026-11-05") if market_open is None else tmp_path / "reports",
+                             TODAY, 0, market_open=market_open)
+        assert rc == 1 and "달력상 거래일" in lines[0] and "수집이 실패했다" in lines[0], lines
 
 
 def test_todays_report_is_fine(tmp_path):
@@ -200,16 +204,112 @@ def test_heartbeat_absent_is_a_one_line_note():
 
 # ── 휴장·전 거래일 확정 ─────────────────────────────────────────────────────
 
-def test_weekday_holiday_is_quiet(tmp_path):
-    """수급도 장중 틱도 없으면 휴장이다 — 연 10번 '수집 실패' 경고를 내면 경고를 안 읽게 된다."""
-    rc, lines = fc.judge(_reports(tmp_path, "2026-11-05"), TODAY, 0, market_open=False)
-    assert rc == 0 and "휴장" in lines[0]
+def test_calendar_holiday_is_quiet(tmp_path):
+    """달력의 휴장 — 연 10번 '수집 실패' 경고를 내면 경고를 안 읽게 된다. 틱 유무와 무관하다."""
+    rc, lines = fc.judge(_reports(tmp_path, "2026-10-08"), "2026-10-09", 0, market_open=None)
+    assert rc == 0 and "휴장(한글날" in lines[0]
 
 
-def test_open_market_without_rows_still_warns(tmp_path):
-    """틱이 있는데(장이 열렸다) 수급이 없으면 수집 실패다 — 휴장으로 넘기면 안 된다."""
-    rc, lines = fc.judge(_reports(tmp_path, "2026-11-05"), TODAY, 0, market_open=True)
-    assert rc == 75 and "수집이 실패했다" in lines[0]
+def test_rows_on_a_calendar_holiday_say_the_calendar_is_wrong(tmp_path):
+    """달력이 틀린 날을 조용히 넘기면 그 날이 SLO 분모에서 사라진다."""
+    rc, lines = fc.judge(_reports(tmp_path, "2026-10-09"), "2026-10-09", 2500)
+    assert rc == 75 and "[달력]" in lines[0] and "krx_calendar.py" in lines[0]
+
+
+def test_year_outside_the_calendar_warns_instead_of_calling_it_a_holiday(tmp_path):
+    rc, lines = fc.judge(_reports(tmp_path, "2029-01-04"), "2029-01-05", 0, market_open=False)
+    assert rc == 75 and "휴장일이면 무시" in lines[0] and "krx_calendar.py" in lines[0]
+
+
+def test_published_but_failed_verification_is_not_ok(tmp_path):
+    """검증에 걸려도 게시는 된다 — "latest 가 오늘" 만 보면 OK·하트비트가 나간다."""
+    root = _reports(tmp_path, TODAY, today_mark="VERIFY_FAILED.txt")
+    rc, lines = fc.judge(root, TODAY, 2500)
+    assert rc == 75 and any("자기 검증에 걸린 채" in x for x in lines), lines
+
+
+def test_previous_final_that_failed_verification_warns(tmp_path):
+    root = _reports(tmp_path, TODAY)
+    d = root / "2026-11-05"
+    d.mkdir()
+    (d / "FINAL.txt").write_text("x")
+    assert fc.check_prev_final(root, "2026-11-05")[0] == 0
+    (d / "VERIFY_FAILED.txt").write_text("x")
+    rc, lines = fc.check_prev_final(root, "2026-11-05")
+    assert rc == 75 and "자기 검증에 걸렸다" in lines[0]
+
+
+@pytest.mark.parametrize(("today", "rc", "said"), [("2026-11-06", 0, None), ("2026-12-01", 0, None),
+                                                   ("2027-03-02", 0, "잠정"), ("2027-12-01", 75, "2028년"),
+                                                   ("2029-01-02", 75, "2029년")])
+def test_calendar_running_out_warns_ahead(today, rc, said):
+    got, lines = fc.check_calendar(today)
+    assert got == rc and (said is None or said in lines[0]), lines
+
+
+# ── 배포 지연 — 07:50 pull-all --ci-gate 가 CI 없이 멈춘다 ─────────────────────────
+
+def _git(repo: Path, *args: str, **env) -> str:
+    # 임시 레포의 git 은 사용자 설정에 기대지 않는다 — 전역 훅·서명이 끼어들면 시험이 머신마다 갈린다.
+    e = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1", "GIT_AUTHOR_NAME": "t",
+         "GIT_AUTHOR_EMAIL": "t@example.invalid", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.invalid",
+         **env}
+    return subprocess.run(["git", "-C", str(repo), "-c", f"core.hooksPath={os.devnull}", "-c", "commit.gpgsign=false", *args],
+                          capture_output=True, text=True, check=True, env=e).stdout
+
+
+@pytest.fixture
+def clone(tmp_path):
+    """운영 체크아웃 흉내 — origin/main 이 HEAD 보다 커밋 하나 앞이다. 커밋 시각은 인자로."""
+    up = tmp_path / "up"
+    up.mkdir()
+    _git(up, "init", "-q", "-b", "main")
+    _git(up, "commit", "-q", "--allow-empty", "-m", "a")
+    work = tmp_path / "work"
+    _git(tmp_path, "clone", "-q", str(up), str(work))
+
+    def make(stamp: str | None):
+        if stamp:
+            _git(up, "commit", "-q", "--allow-empty", "-m", "b", GIT_COMMITTER_DATE=stamp, GIT_AUTHOR_DATE=stamp)
+            _git(work, "fetch", "-q", "origin")
+        return work
+    return make
+
+
+def _kst(y, m, d, hh, mm):
+    return datetime(y, m, d, hh, mm, tzinfo=fc.KST)
+
+
+def test_deploy_is_quiet_when_level(clone):
+    assert fc.check_deploy(clone(None), _kst(2030, 1, 7, 20, 30)) == (0, [])
+
+
+def test_deploy_warns_when_the_morning_sync_should_have_taken_a_commit(clone):
+    """CI 가 안 돌면(결제 정지) pull-all --ci-gate 가 커밋을 안 받는다 — 어제 머지가 오늘 저녁까지 안 내려왔다."""
+    work = clone("2030-01-06T12:00:00+09:00")
+    rc, lines = fc.check_deploy(work, _kst(2030, 1, 7, 20, 30))
+    assert rc == 75 and "[배포]" in lines[-1] and "커밋 1개 뒤처졌다" in lines[-1], lines
+
+
+def test_deploy_does_not_warn_about_todays_merge(clone):
+    """오늘 낮 머지는 내일 07:50 에 내려오는 게 정상이다 — 머지한 날마다 울리면 경고를 안 읽는다."""
+    work = clone("2030-01-07T12:00:00+09:00")
+    rc, lines = fc.check_deploy(work, _kst(2030, 1, 7, 20, 30))
+    assert rc == 0 and "다음 07:50" in lines[-1], lines
+
+
+def test_deploy_warns_when_nothing_was_fetched_for_days(clone):
+    work = clone(None)
+    old = _time.time() - 100 * 3600
+    (work / ".git" / "FETCH_HEAD").write_text("")
+    os.utime(work / ".git" / "FETCH_HEAD", (old, old))
+    rc, lines = fc.check_deploy(work, _kst(2030, 1, 7, 20, 30))
+    assert rc == 75 and "안 받았다" in lines[0], lines
+
+
+# mutation-exempt: 첫 줄의 조기 반환을 빼도 git 실패가 빈 값으로 흘러 결과가 같다 — 깨질 때를 위한 회귀다
+def test_deploy_outside_a_git_checkout_is_silent(tmp_path):
+    assert fc.check_deploy(tmp_path, _kst(2030, 1, 7, 20, 30)) == (0, [])
 
 
 def test_previous_day_without_final_warns(tmp_path):
@@ -273,7 +373,7 @@ def test_error_outranks_warning():
 def repo(tmp_path):
     r = tmp_path / "sector-flow"
     (r / "scripts").mkdir(parents=True)
-    for name in ("_env.sh", "freshness_check.sh", "freshness_check.py", "ops_ledger.py"):
+    for name in ("_env.sh", "freshness_check.sh", "freshness_check.py", "ops_ledger.py", "krx_calendar.py"):
         shutil.copy(REPO / "scripts" / name, r / "scripts" / name)
     db = tmp_path / "db.sqlite"
     con = sqlite3.connect(db)
@@ -445,27 +545,50 @@ def test_cron_path_flags_a_previous_day_published_truth_skip_streak(repo, hook):
     assert "[공표치]" in p.stdout and "연속 SKIP 3회" in p.stdout, p.stdout
 
 
-def test_cron_path_holiday_without_ticks_is_quiet(repo, hook):
-    """평일 휴장 — 수급도 틱도 없다. 틱 표가 있는 DB 에서만 휴장이라 말한다."""
+def test_cron_path_calendar_holiday_is_quiet_and_a_trading_day_without_rows_is_an_error(repo, hook):
+    """달력의 평일 휴장은 조용하고, 달력에 없는 평일은 틱이 없어도 수집 실패다(하트비트도 안 간다)."""
+    beat, beats = hook(200, b"OK")
+    _reports(repo, "2026-10-08")
+    (repo / "reports" / "2026-10-08" / "FINAL.txt").write_text("x")
+    _qa_env(repo, f"ALERT_WEBHOOK_URL={hook(200, b'{}')[0]}\nHEARTBEAT_URL={beat}\n")
+    p = _run(repo, "--today", "2026-10-09")                           # 뒤의 --today 가 이긴다
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert "휴장(한글날" in p.stdout and beats == ["GET"]
     con = sqlite3.connect(repo.parent / "db.sqlite")
     con.execute("DELETE FROM supply_demand WHERE date = ?", (TODAY,))
     con.execute("CREATE TABLE ticks(code TEXT, ts TEXT)")
-    con.execute("INSERT INTO ticks VALUES('000001', '2026-11-05 15:19:59')")      # 전날 장 끝
+    con.execute("INSERT INTO ticks VALUES('000001', '2026-11-05 15:19:59')")      # 전날 장 끝 — 오늘 틱은 없다
     con.commit()
     con.close()
-    _reports(repo, "2026-11-05")
-    (repo / "reports" / "2026-11-05" / "FINAL.txt").write_text("x")
+    p = _run(repo)
+    assert p.returncode == 1 and "달력상 거래일" in p.stdout and "장중 틱도 없다" in p.stdout, p.stdout + p.stderr
+    assert beats == ["GET"], "수집이 실패한 날 하트비트가 나갔다"
+
+
+def test_previous_trading_day_comes_from_the_calendar_not_the_last_rows(repo, hook):
+    """수집이 통째로 빠진 날은 DB 의 마지막 수급일에 없다 — 그걸 전 거래일로 물으면 그 날이 점검에서 사라진다."""
+    con = sqlite3.connect(repo.parent / "db.sqlite")
+    con.execute("DELETE FROM supply_demand WHERE date = '2026-11-05'")
+    con.execute("INSERT INTO supply_demand VALUES('000001', '2026-11-04')")
+    con.commit()
+    con.close()
+    _reports(repo, TODAY)
+    (repo / "reports" / "2026-11-04").mkdir()
+    (repo / "reports" / "2026-11-04" / "FINAL.txt").write_text("x")
     _qa_env(repo, f"ALERT_WEBHOOK_URL={hook(200, b'{}')[0]}\n")
     p = _run(repo)
-    assert p.returncode == 0, p.stdout + p.stderr
-    assert "휴장으로 본다" in p.stdout
-    # 같은 날 틱이 있으면(장이 열렸다) 수집 실패다.
-    con = sqlite3.connect(repo.parent / "db.sqlite")
-    con.execute("INSERT INTO ticks VALUES('000001', ?)", (f"{TODAY} 09:00:02",))
-    con.commit()
-    con.close()
+    assert p.returncode == 75 and "전 거래일(2026-11-05)" in p.stdout, p.stdout + p.stderr
+
+
+def test_cron_path_ledger_write_failure_warns_and_withholds_the_heartbeat(repo, hook):
+    """원장 기록 실패는 stderr 한 줄뿐이었다 — 아무에게도 안 가고 통계만 조용히 빈다."""
+    beat, beats = hook(200, b"OK")
+    _fresh(repo)
+    (repo / "reports" / "events.jsonl").mkdir()                       # 파일이 아니라 폴더 — 모든 기록이 실패한다
+    _qa_env(repo, f"ALERT_WEBHOOK_URL={hook(200, b'{}')[0]}\nHEARTBEAT_URL={beat}\n")
     p = _run(repo)
-    assert p.returncode == 75 and "수집이 실패했다" in p.stdout, p.stdout + p.stderr
+    assert p.returncode == 75, p.stdout + p.stderr
+    assert "⚠️ [원장] 이 점검의 판정을 원장에 못 썼다" in p.stdout and beats == []
 
 
 def test_cron_path_db_failure_is_an_error_and_hides_the_password(repo, hook):

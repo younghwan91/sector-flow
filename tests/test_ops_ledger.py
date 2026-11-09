@@ -8,14 +8,16 @@ cron.log 는 5MB 회전) 원장이 없으면 "제때 게시됐나·몇 번 막�
 """
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import os
+import re
 import shutil
 import stat
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -94,6 +96,20 @@ def test_reader_skips_torn_lines(tmp_path):
     assert [e["event"] for e in ol.iter_events(tmp_path)] == ["a", "b"]
 
 
+def test_reader_counts_what_it_skipped_and_stats_say_so(tmp_path):
+    """옛 serve.sh 의 "status":000 은 JSON 이 아니다 — 조용히 버리면 실패 프로브가 사라져 5회 중 2회 실패가 100% 가 됐다."""
+    (tmp_path / "events.jsonl").write_text(
+        '{"ts":"2026-11-08T00:00:00Z","event":"probe","status":200,"ok":true}\n'
+        '{"ts":"2026-11-08T00:05:00Z","event":"probe","status":000,"ok":false}\n'
+        '[1, 2]\n', "utf-8")
+    broken: list[str] = []
+    events = list(ol.iter_events(tmp_path, broken=broken))
+    assert len(events) == 1 and broken == ["events.jsonl:2", "events.jsonl:3"]
+    s = ol.stats(events, 30, now=NOW, broken=broken)
+    assert s["broken_lines"] == broken
+    assert "못 읽은 원장 줄 2개" in ol.render(s)
+
+
 # ── 웹 — 원장은 허용 목록에 없다 ──────────────────────────────────────────────
 
 def test_ledger_is_not_in_the_web_allowlist():
@@ -127,7 +143,8 @@ FIX = [
     _report("2026-11-05T09:08:00Z", "2026-11-05", "published", verify="fail", rc=1),  # 18:08 — 제때
     _report("2026-11-08T09:14:00Z", "2026-11-05", "final", mode="final", diff=None),  # 11-08 18:14 — SLO 초과
     _report("2026-11-06T09:12:00Z", "2026-11-06", "published"),                     # 확정 기한 지났는데 확정 없음
-    _report("2026-11-07T02:00:00Z", "2026-11-02", "rebuilt", mode="rebuild", commit="abc123", final=True),
+    _report("2026-11-07T02:00:00Z", "2026-11-02", "rebuilt", mode="rebuild", commit="abc123", final=True,
+            source="backfill", origin="marker"),
     _report("2026-10-30T09:12:00Z", "2026-10-30", "published"),                     # 제때 — 그러나 확정 기록은
     _report("2026-11-08T05:00:00Z", "2026-10-30", "rebuilt", mode="rebuild", final=True),  # 재구성뿐(시각 불명)
     _ev("2026-11-05T09:00:00Z", event="probe", status=200, ok=True),
@@ -142,7 +159,8 @@ def test_stats_measures_punctuality_gate_verify_final_delays_and_rebuilds():
     assert s["asof_days"] == 6
     assert s["prov"]["on_time"] == 4                                  # 10-30·11-03·11-05·11-06
     assert [r["asof"] for r in s["prov"]["late"]] == ["2026-11-04"]
-    assert s["prov"]["no_record"] == ["2026-11-02"]                   # 재구성만 남은 날
+    assert s["prov"]["no_record"] == ["2026-11-02"]                   # 복원된 재구성만 남은 날
+    assert s["prov"]["unpublished"] == []
     assert s["final"]["by_target"] == 1
     assert [r["asof"] for r in s["final"]["by_slo"]] == ["2026-11-04"]
     assert [r["asof"] for r in s["final"]["late"]] == ["2026-11-05"]
@@ -152,7 +170,7 @@ def test_stats_measures_punctuality_gate_verify_final_delays_and_rebuilds():
     assert s["gate_blocked_days"] == ["2026-11-05"]
     assert s["verify_failed_days"] == ["2026-11-05"]
     assert s["final_diff_unknown"] == ["2026-11-05"]
-    assert s["probe"] == {"n": 2, "ok": 1, "share": 0.5}
+    assert (s["probe"]["n"], s["probe"]["ok"], s["probe"]["share"]) == (2, 1, 0.5)
     assert s["job_failures"] == {"sector-flow-report rc=1": 1}
     assert s["freshness"] == {"n": 1, "warn": 1, "error": 0}
 
@@ -178,6 +196,212 @@ def test_render_speaks_the_numbers():
     assert "관문 차단(INCOMPLETE): 2026-11-05" in text
     assert "정정(첫 게시 뒤 숫자 변경): 3건" in text
     assert "재구성으로만 확정 1일" in text
+
+
+# ── SLO 분모 — 거래일이다(원장에 나온 날이 아니다) ─────────────────────────────────
+
+_LIVE = _ev("2026-11-02T00:00:00Z", event="probe", status=200, ok=True)     # 원장이 이때부터 돌고 있었다
+
+
+def _prov(events, now=NOW, days=30):
+    return ol.stats([_LIVE, *events], days, now=now)["prov"]
+
+
+def test_trading_day_with_no_events_is_unpublished_not_absent():
+    """18:10·19:10 이 다 실패해 게시가 없거나 크론이 안 돌면 원장에 그날이 안 나오거나 게시가 없다 — 분모에서 빠지면 "놓친 날 없음" 이다."""
+    now = datetime(2026, 11, 7, 0, 0, tzinfo=timezone.utc)
+    p = _prov([_report("2026-11-03T09:12:00Z", "2026-11-03", "published", verify="pass"),
+               _report("2026-11-04T09:12:00Z", "2026-11-04", "incomplete", gate="blocked", rc=75),
+               _ev("2026-11-05T09:12:00Z", event="report", asof=None, mode="normal", outcome="error", rc=1)], now=now)
+    assert p["on_time"] == 1
+    assert {r["asof"]: r["why"] for r in p["unpublished"]} == {
+        "2026-11-02": "실행 기록 없음", "2026-11-04": "incomplete×1", "2026-11-05": "기준일 못 읽음×1",
+        "2026-11-06": "실행 기록 없음"}
+
+
+def test_denominator_skips_weekends_and_calendar_holidays():
+    now = datetime(2026, 10, 12, 0, 0, tzinfo=timezone.utc)           # 10-05·10-09 휴장, 10-10·11 주말
+    s = ol.stats([_ev("2026-10-01T00:00:00Z", event="probe", status=200, ok=True)], 11, now=now)
+    assert [r["asof"] for r in s["prov"]["unpublished"]] == ["2026-10-01", "2026-10-02", "2026-10-06",
+                                                             "2026-10-07", "2026-10-08"]
+    assert s["prov"]["pending"] == ["2026-10-12"] and s["trading_days"] == 6
+
+
+def test_days_before_the_ledger_are_not_called_unpublished():
+    s = ol.stats([_LIVE], 30, now=datetime(2026, 11, 3, 0, 0, tzinfo=timezone.utc))
+    assert "2026-10-30" in s["prov"]["before_ledger"] and s["prov"]["unpublished"] == [
+        {"asof": "2026-11-02", "why": "실행 기록 없음"}]
+
+
+def test_today_before_its_deadline_is_pending():
+    now = datetime(2026, 11, 3, 8, 0, tzinfo=timezone.utc)            # 11-03 17:00 KST
+    assert "2026-11-03" in _prov([], now=now)["pending"]
+
+
+def test_first_publication_ignores_mode():
+    """관문에 막힌 날의 첫 게시가 다음날 08:25 확정 모드면 "제때" 가 아니다 — normal 만 보면 그날이 안 잡혔다."""
+    now = datetime(2026, 11, 7, 0, 0, tzinfo=timezone.utc)
+    p = _prov([_report("2026-11-03T09:12:00Z", "2026-11-03", "incomplete", gate="blocked", rc=75),
+               _report("2026-11-03T23:25:00Z", "2026-11-03", "final", mode="final", verify="pass")], now=now)
+    assert [r["asof"] for r in p["late"]] == ["2026-11-03"] and "11-04 08:25" in p["late"][0]["at"]
+
+
+def test_on_time_and_verified_are_counted_separately():
+    """제때 게시됐지만 검증에 걸린 날은 "제때" 이지 "제때·검증 통과" 가 아니다 — 뒤늦은 통과로 메워지지도 않는다."""
+    now = datetime(2026, 11, 5, 0, 0, tzinfo=timezone.utc)
+    p = _prov([_report("2026-11-03T09:12:00Z", "2026-11-03", "published", verify="fail"),
+               _report("2026-11-03T10:12:00Z", "2026-11-03", "published", verify="pass"),
+               _report("2026-11-04T09:12:00Z", "2026-11-04", "published", verify="pass")], now=now)
+    assert p["on_time"] == 2 and p["on_time_verified"] == 1
+
+
+def test_a_live_rebuild_is_a_late_publication_but_a_restored_one_is_not():
+    now = datetime(2026, 11, 10, 0, 0, tzinfo=timezone.utc)
+    live = _prov([_report("2026-11-06T01:00:00Z", "2026-11-03", "rebuilt", mode="rebuild", final=True)], now=now)
+    assert [r["asof"] for r in live["late"]] == ["2026-11-03"]
+    old = ol.stats([_ev("2026-11-08T00:00:00Z", event="probe", status=200, ok=True),
+                    _report("2026-11-09T01:00:00Z", "2026-11-03", "rebuilt", mode="rebuild", final=True)], 30, now=now)
+    assert old["prov"]["no_record"] == ["2026-11-03"] and old["prov"]["late"] == []
+
+
+# ── 프로브 — 표본·범위·공백을 말한다 ────────────────────────────────────────────
+
+def _probes(start: datetime, n: int, step_min: int = 5, status=200) -> list[dict]:
+    return [_ev((start + timedelta(minutes=i * step_min)).strftime("%Y-%m-%dT%H:%M:%SZ"), event="probe",
+                status=status, ok=status == 200) for i in range(n)]
+
+
+def test_a_few_hours_of_probes_do_not_read_as_thirty_days():
+    """프로브 48회(약 4시간)가 "최근 30일 100%" 로 적혔다 — 범위와 창 대비 비율을 같이 낸다."""
+    first = datetime(2026, 11, 8, 20, 0, tzinfo=timezone.utc)
+    now = first + timedelta(minutes=47 * 5)
+    s = ol.stats(_probes(first, 48), 30, now=now)
+    pr = s["probe"]
+    assert pr["n"] == 48 and pr["span_hours"] == 3.9 and pr["window_coverage"] < 0.01
+    text = ol.render(s)
+    assert "표본 48회" in text and "약 3.9시간" in text and "창의 0.5%" in text
+
+
+def test_probe_gaps_are_counted():
+    """서버가 내려가 있던 주기는 줄 자체가 없다 — 응답률 100% 뒤에 숨는다."""
+    t0 = datetime(2026, 11, 8, 0, 0, tzinfo=timezone.utc)
+    evs = _probes(t0, 3) + _probes(t0 + timedelta(minutes=40), 3)    # 00:10 → 00:40: 5칸 빠졌다
+    now = t0 + timedelta(minutes=50)
+    pr = ol.stats(evs, 30, now=now)["probe"]
+    assert (pr["gaps"], pr["gap_cycles"], pr["max_gap_min"], pr["tail_gap_min"]) == (1, 5, 30, 0)
+    assert pr["share"] == 1.0
+
+
+def test_silence_up_to_now_is_a_gap():
+    t0 = datetime(2026, 11, 8, 0, 0, tzinfo=timezone.utc)
+    pr = ol.stats(_probes(t0, 2), 30, now=t0 + timedelta(minutes=65))["probe"]
+    assert (pr["gaps"], pr["gap_cycles"], pr["tail_gap_min"]) == (1, 11, 60)
+
+
+def test_unreached_probes_are_failures_with_a_count():
+    t0 = datetime(2026, 11, 8, 0, 0, tzinfo=timezone.utc)
+    pr = ol.stats(_probes(t0, 3) + _probes(t0 + timedelta(minutes=15), 2, status=None), 30,
+                  now=t0 + timedelta(minutes=25))["probe"]
+    assert (pr["n"], pr["ok"], pr["unreached"], pr["share"]) == (5, 3, 2, 0.6)
+
+
+# ── 정오표 — 2번째 게시부터, 게시 하나마다 한 줄 ──────────────────────────────────
+
+def _rows(*events):
+    return [(r["kind"], r["ts"]) for r in ol.errata_rows(list(events))]
+
+
+def test_force_republish_with_new_numbers_is_an_erratum():
+    a = _report("2026-11-03T09:12:00Z", "2026-11-03", "published", verify="pass", payload_sha="a" * 64)
+    b = _report("2026-11-03T12:00:00Z", "2026-11-03", "published", verify="pass", payload_sha="b" * 64)
+    assert _rows(a, b) == [("재게시", "2026-11-03T12:00:00Z")]
+    assert "aaaaaaaa → bbbbbbbb" in ol.errata_rows([a, b])[0]["detail"]
+
+
+def test_republish_with_the_same_numbers_is_not_an_erratum():
+    a = _report("2026-11-03T09:12:00Z", "2026-11-03", "published", verify="pass", payload_sha="a" * 64)
+    b = _report("2026-11-03T12:00:00Z", "2026-11-03", "published", verify="pass", payload_sha="a" * 64)
+    assert _rows(a, b) == []
+
+
+def test_regeneration_after_a_failed_verification_is_named():
+    a = _report("2026-11-03T09:12:00Z", "2026-11-03", "published", verify="fail", payload_sha="a" * 64)
+    b = _report("2026-11-03T10:12:00Z", "2026-11-03", "published", verify="pass", payload_sha="b" * 64)
+    assert _rows(a, b) == [("검증 실패 뒤 재생성", "2026-11-03T10:12:00Z")]
+
+
+def test_republish_without_a_hash_says_it_cannot_tell():
+    a = _report("2026-11-03T09:12:00Z", "2026-11-03", "published")
+    b = _report("2026-11-03T12:00:00Z", "2026-11-03", "published")
+    rows = ol.errata_rows([a, b])
+    assert rows[0]["kind"] == "재게시" and "모른다" in rows[0]["detail"]
+
+
+def test_first_final_is_judged_by_its_diff_and_the_next_final_is_a_republish():
+    """첫 확정은 원래 숫자가 바뀌는 자리라 칸 차이로 보고, 그 뒤의 확정 재생성(FORCE)은 2번째 게시다."""
+    a = _report("2026-11-03T09:12:00Z", "2026-11-03", "published", payload_sha="a" * 64)
+    f0 = _report("2026-11-03T23:25:00Z", "2026-11-03", "final", mode="final", diff=0, payload_sha="b" * 64)
+    f1 = _report("2026-11-04T03:00:00Z", "2026-11-03", "final", mode="final", diff=0, payload_sha="c" * 64)
+    assert _rows(a, f0) == [] and _rows(a, f0, f1) == [("재게시", "2026-11-04T03:00:00Z")]
+
+
+def test_two_rebuilds_of_one_day_are_two_rows_with_times(relics, capsys):
+    a = _report("2026-11-07T02:00:00Z", "2026-11-02", "rebuilt", mode="rebuild", commit="aaa")
+    b = _report("2026-11-08T02:00:00Z", "2026-11-02", "rebuilt", mode="rebuild", commit="bbb")
+    assert _rows(a, b) == [("재구성", "2026-11-07T02:00:00Z"), ("재구성", "2026-11-08T02:00:00Z")]
+    ol.append_event(relics, a)
+    ol.append_event(relics, b)
+    assert ol.main(["--root", str(relics), "--errata"]) == 0
+    out = capsys.readouterr().out
+    assert "2026-11-07 11:00 KST" in out and "2026-11-08 11:00 KST" in out
+
+
+def test_backfill_traces_of_one_rebuild_merge_into_one_row(relics):
+    """표시 파일(REBUILT.txt)과 .archive 는 같은 재구성의 흔적이다 — 시각을 넣어도 두 줄로 불어나면 안 된다."""
+    assert ol.backfill(relics, [relics / "cron.log"])[0] == 0
+    rows = [r for r in ol.errata_rows(list(ol.iter_events(relics))) if r["asof"] == "2026-11-02"]
+    assert [r["kind"] for r in rows] == ["재구성"] and rows[0]["detail"].startswith("commit abcdef")
+
+
+def test_marker_restored_publications_are_not_republications():
+    a = {**_report("2026-11-03T09:12:00Z", "2026-11-03", "published"), "source": "backfill", "origin": "cron.log"}
+    m = {**_report("2026-11-03T10:00:00Z", "2026-11-03", "published", verify="fail"),
+         "source": "backfill", "origin": "marker"}
+    assert ol.errata_rows([a, m]) == []
+
+
+# ── 관문 도입 전 — 통과가 아니다 ────────────────────────────────────────────────
+
+def test_backfill_before_the_gate_existed_has_no_gate_result(tmp_path):
+    """관문은 2026-11-02 19:07 에 생겼다. 10-27 의 부분 수집을 gate:"pass" 로 복원하면 관문이 통과시킨 것처럼 읽힌다."""
+    log = tmp_path / "cron.log"
+    log.write_text("[2026-10-27 18:10:03] 생성 시작 — 기준일 2026-10-27, 구간 260거래일\n"
+                   "[2026-10-27 18:12:21] 완료 — /x\n"
+                   "[2026-11-02 18:15:26] 생성 시작 — 기준일 2026-11-02, 구간 260거래일\n"
+                   "[2026-11-02 18:15:27] 완료 — /x\n"
+                   "[2026-11-03 18:10:03] 생성 시작 — 기준일 2026-11-03, 구간 260거래일\n"
+                   "[2026-11-03 18:12:21] 완료 — /x\n", "utf-8")
+    got = {e["asof"]: e for e in ol.backfill_from_cron_log(log)}
+    assert got["2026-10-27"]["gate"] is None and got["2026-10-27"]["gate_note"] == ol.GATE_NOTE
+    assert got["2026-11-02"]["gate"] is None, "19:07 관문 커밋보다 앞선 18:15 게시다"
+    assert got["2026-11-03"]["gate"] == "pass"
+
+
+def test_old_backfill_lines_are_read_without_their_false_pass(tmp_path):
+    """이미 운영 원장에 들어간 줄은 고치지 않는다(덧붙이기 전용) — 읽을 때 푼다. 파일은 그대로다."""
+    line = ('{"ts":"2026-10-27T09:12:00Z","event":"report","asof":"2026-10-27","mode":"normal","outcome":"published",'
+            '"gate":"pass","source":"backfill","origin":"cron.log"}\n')
+    keep = ('{"ts":"2026-11-03T09:12:00Z","event":"report","asof":"2026-11-03","mode":"normal","outcome":"published",'
+            '"gate":"pass","source":"backfill","origin":"cron.log"}\n')
+    live = '{"ts":"2026-10-28T09:12:00Z","event":"report","asof":"2026-10-28","outcome":"published","gate":"pass"}\n'
+    (tmp_path / "events.jsonl").write_text(line + keep + live, "utf-8")
+    evs = list(ol.iter_events(tmp_path))
+    assert evs[0]["gate"] is None and evs[0]["gate_note"] == ol.GATE_NOTE
+    assert evs[1]["gate"] == "pass" and evs[2]["gate"] == "pass"
+    assert (tmp_path / "events.jsonl").read_text("utf-8") == line + keep + live
+    s = ol.stats(evs, 30, now=datetime(2026, 11, 5, 0, 0, tzinfo=timezone.utc))
+    assert s["gate_before_intro_days"] == ["2026-10-27"]
+    assert "관문 도입 전 게시 1일" in ol.render(s)
 
 
 # ── 백필 — 남아 있는 흔적에서, 출처를 밝히고 ───────────────────────────────────
@@ -274,11 +498,71 @@ def test_slo_check_warns_on_late_final(tmp_path):
 def test_slo_check_is_quiet_when_on_time_or_unrecorded(tmp_path):
     assert fc.check_slo(tmp_path, None) == (0, [])
     rc, lines = fc.check_slo(tmp_path, "2026-11-04")                 # 원장이 비었다 — 위반이 아니라 측정 불가
-    assert rc == 0 and any("기록이 없다" in x for x in lines)
+    assert rc == 0 and any("도입 전" in x for x in lines)
     ol.append_event(tmp_path, _report("2026-11-04T09:12:00Z", "2026-11-04", "published"))
     ol.append_event(tmp_path, _report("2026-11-04T23:25:00Z", "2026-11-04", "final", mode="final"))
     rc, lines = fc.check_slo(tmp_path, "2026-11-04")
     assert rc == 0 and any("기한 안이다" in x for x in lines)
+
+
+def test_slo_check_calls_a_day_with_no_publication_unpublished(tmp_path):
+    """18:10·19:10 이 다 막힌 날이 rc 0 "기한 안이다" 였다."""
+    ol.append_event(tmp_path, _report("2026-11-04T09:12:00Z", "2026-11-04", "incomplete", gate="blocked", rc=75))
+    rc, lines = fc.check_slo(tmp_path, "2026-11-04")
+    assert rc == fc.WARN and "미게시" in lines[0] and "incomplete×1" in lines[0], lines
+
+
+def test_slo_check_sees_db_outages_with_no_asof(tmp_path):
+    ol.append_event(tmp_path, _ev("2026-11-03T00:00:00Z", event="probe", status=200, ok=True))
+    ol.append_event(tmp_path, _ev("2026-11-04T09:12:00Z", event="report", asof=None, outcome="error", rc=1))
+    rc, lines = fc.check_slo(tmp_path, "2026-11-04")
+    assert rc == fc.WARN and "미게시" in lines[0] and "기준일 못 읽음×1" in lines[0], lines
+
+
+def test_slo_check_flags_a_first_publication_by_the_morning_final(tmp_path):
+    """관문 차단 뒤 다음날 08:25 첫 게시가 "기한 안이다" 였다 — normal 모드 게시만 봤다."""
+    ol.append_event(tmp_path, _report("2026-11-04T09:12:00Z", "2026-11-04", "incomplete", gate="blocked", rc=75))
+    ol.append_event(tmp_path, _report("2026-11-04T23:25:00Z", "2026-11-04", "final", mode="final"))
+    rc, lines = fc.check_slo(tmp_path, "2026-11-04")
+    assert rc == fc.WARN and any("잠정 리포트가 기한" in x and "11-05 08:25" in x for x in lines), lines
+    assert not any("기한 안이다" in x for x in lines)
+
+
+def test_slo_check_treats_a_silent_day_as_a_ledger_gap(tmp_path):
+    """원장이 돌고 있었는데 그 거래일 실행이 없다 — 크론이 안 돌았거나 쓰기가 실패했다. "재지 않는다" 로 넘기면 공백이 조용하다."""
+    ol.append_event(tmp_path, _ev("2026-11-03T00:00:00Z", event="probe", status=200, ok=True))
+    rc, lines = fc.check_slo(tmp_path, "2026-11-04")
+    assert rc == fc.WARN and "[원장]" in lines[0] and "실행 기록이 원장에 없다" in lines[0], lines
+
+
+def test_slo_check_mentions_unreadable_lines(tmp_path):
+    (tmp_path / "events.jsonl").write_text('{"ts":"2026-11-04T09:12:00Z","ev\n', "utf-8")
+    assert any("못 읽은 줄 1개" in x for x in fc.check_slo(tmp_path, "2026-11-04")[1])
+
+
+def test_todays_silence_in_the_ledger_warns(tmp_path):
+    """게시는 됐는데 원장 쓰기만 실패한 날 — latest 는 멀쩡해 신선도 점검이 못 본다."""
+    now = datetime(2026, 11, 6, 20, 30, tzinfo=fc.KST)
+    assert fc.check_ledger_today(tmp_path, "2026-11-06", now) == (0, [])     # 원장 도입 전
+    ol.append_event(tmp_path, _ev("2026-11-05T00:00:00Z", event="probe", status=200, ok=True))
+    rc, lines = fc.check_ledger_today(tmp_path, "2026-11-06", now)
+    assert rc == fc.WARN and "오늘(2026-11-06) 18:10 뒤 실행 기록" in lines[0]
+    assert fc.check_ledger_today(tmp_path, "2026-10-09", datetime(2026, 11, 6, 20, 30, tzinfo=fc.KST))[0] == 0  # 휴장
+    assert fc.check_ledger_today(tmp_path, "2026-11-06", datetime(2026, 11, 6, 17, 0, tzinfo=fc.KST))[0] == 0   # 아직 전
+    ol.append_event(tmp_path, _report("2026-11-06T09:12:00Z", "2026-11-06", "skipped"))
+    assert fc.check_ledger_today(tmp_path, "2026-11-06", now) == (0, [])
+
+
+def test_probe_silence_warns_and_a_past_gap_is_a_note(tmp_path):
+    now = datetime(2026, 11, 6, 11, 30, tzinfo=timezone.utc)
+    assert fc.check_probes(tmp_path, now) == (0, [])                  # 표본이 없다 — 말할 것 없다
+    ol.append_event(tmp_path, _ev("2026-11-06T09:00:00Z", event="probe", status=200, ok=True))
+    rc, lines = fc.check_probes(tmp_path, now)
+    assert rc == fc.WARN and "150분째 없다" in lines[0]
+    for t in ("11:00", "11:05", "11:10", "11:15", "11:20", "11:25", "11:30"):
+        ol.append_event(tmp_path, _ev(f"2026-11-06T{t}:00Z", event="probe", status=200, ok=True))
+    rc, lines = fc.check_probes(tmp_path, now)
+    assert rc == 0 and "공백 1곳" in lines[0]
 
 
 def test_freshness_main_appends_its_verdict(tmp_path, monkeypatch):
@@ -302,7 +586,7 @@ def repo(tmp_path):
     r = tmp_path / "sector-flow"
     (r / "scripts").mkdir(parents=True)
     for name in ("daily_report.sh", "_env.sh", "_ledger.sh", "cron_run.sh", "completeness_gate.py",
-                 "finalize_done.py", "serve.sh", "ops_ledger.py"):
+                 "finalize_done.py", "serve.sh", "ops_ledger.py", "krx_calendar.py"):
         shutil.copy(REPO / "scripts" / name, r / "scripts" / name)
     (r / "scripts" / "sector_flow.py").write_text(drf.FAKE_SECTOR_FLOW)
     (r / "scripts" / "sector_numbers.py").write_text(drf.FAKE_NUMBERS)
@@ -357,6 +641,86 @@ def test_daily_report_ledger_never_blocks_the_report(repo):
     assert p.returncode == 0, p.stdout + p.stderr
     assert (repo / "reports" / drf.TODAY / "numbers.html").is_file()
     assert "기록하지 못했다" in p.stderr
+
+
+def test_daily_report_ledger_records_what_it_published(repo):
+    """게시한 payload 의 지문 — 같은 기준일 재게시에서 숫자가 바뀌었는지를 이것으로 가른다(--errata)."""
+    _seed(repo.parent / "db.sqlite", today_kosdaq=50)
+    assert _run(repo).returncode == 0
+    pub = next(e for e in _events(repo) if e.get("outcome") == "published")
+    want = hashlib.sha256((repo / "reports" / drf.TODAY / "payload.json").read_bytes()).hexdigest()
+    assert pub["payload_sha"] == want
+    assert _run(repo).returncode == 0
+    assert next(e for e in _events(repo) if e.get("outcome") == "skipped")["payload_sha"] is None
+
+
+def test_inherited_build_variable_is_not_deleted_by_the_trap(repo):
+    """EXIT 트랩이 $BUILD 를 rm -rf 한다 — 본문이 정하기 전에 끝나면(건너뜀·잠금·DB 실패) 환경에서 물려받은 값을 지웠다."""
+    _seed(repo.parent / "db.sqlite", today_kosdaq=50)
+    victim = repo.parent / "남의폴더"
+    victim.mkdir()
+    (victim / "소중한것").write_text("x")
+    assert _run(repo).returncode == 0                                 # 먼저 게시
+    assert _run(repo, BUILD=str(victim)).returncode == 0              # 이번 실행은 건너뛰고 끝난다
+    assert (victim / "소중한것").exists(), "환경변수 BUILD 가 가리키는 폴더를 지웠다"
+
+
+def test_every_variable_the_exit_trap_reads_is_set_before_the_trap():
+    """같은 부류의 검사 — 트랩이 읽는 변수는 전부 트랩 전에 정한다(환경 상속 금지). 새 변수를 트랩에 넣고 초기화를 잊으면 빨개진다."""
+    src = (REPO / "scripts" / "daily_report.sh").read_text("utf-8")
+    body = src[src.index("_dr_event() {"):src.index("\n}\n", src.index("_dr_event() {"))]
+    before = src[:src.index("trap '_dr_event $?' EXIT")]
+    names = set(re.findall(r"\$\{?([A-Z][A-Z0-9_]+)", body)) - {"KR_QUANT_CODE_REV"}   # 환경에서 받는 것이 목적인 값
+    assert {"BUILD", "EV_OUTCOME", "EV_SHA", "OUT_ROOT"} <= names, "트랩을 못 읽었다 — 이 검사가 빈손이다"
+    unset = sorted(n for n in names if not re.search(rf"(^|[\s;]){n}=", before, re.M))
+    assert not unset, f"트랩이 읽는데 트랩 전에 안 정한 변수: {unset}"
+
+
+def test_rm_rf_targets_in_shell_scripts_are_assigned_first():
+    """rm -rf "$X" 의 X 가 그 줄 앞에 대입되지 않으면 환경값을 지운다."""
+    for sh in sorted((REPO / "scripts").glob("*.sh")):
+        src = sh.read_text("utf-8")
+        for m in re.finditer(r'rm -rf? "\$\{?([A-Za-z_]+)', src):
+            assert re.search(rf"(^|[\s;]){m.group(1)}=", src[:m.start()], re.M), (sh.name, m.group(1))
+
+
+def test_timeout_term_is_recorded_as_a_signal_not_as_success(repo):
+    """크론 timeout 의 TERM 으로 끝난 실행이 rc:0, outcome:error 로 남았다 — 트랩의 $? 는 직전 명령의 것이다."""
+    _seed(repo.parent / "db.sqlite", today_kosdaq=50)
+    (repo / "scripts" / "sector_flow.py").write_text("import time\ntime.sleep(30)\n")
+    p = subprocess.run(["timeout", "-k", "5s", "3s", str(repo / "scripts" / "daily_report.sh")],
+                       capture_output=True, text=True, env=_env(repo), timeout=60)
+    assert p.returncode == 124, p.stdout + p.stderr
+    last = [e for e in _events(repo) if e.get("event") == "report"][-1]
+    assert last["rc"] == 143 and last["outcome"] == "error", last
+    assert not list((repo / "reports").glob("*.building.*")), "끊긴 실행의 짓던 폴더가 남았다"
+
+
+def test_serve_probe_that_cannot_reach_writes_null_and_stays_readable(repo, tmp_path):
+    """닿지 못하면 curl 은 000 을 준다 — "status":000 은 JSON 이 아니라 그 줄이 사라졌다(SIGSTOP 재현에서 5회 중 2회)."""
+    (repo / "reports").mkdir(exist_ok=True)
+    lock = repo / "reports" / ".serve.lock"
+    shim = tmp_path / "bin"
+    shim.mkdir()
+    (shim / "curl").write_text('#!/bin/sh\nprintf "curl: (28) timed out\\n000"\n')
+    (shim / "curl").chmod(0o755)
+    holder = subprocess.Popen(["flock", str(lock), "sleep", "30"])
+    try:
+        import time as _t
+        deadline = _t.monotonic() + 10
+        while subprocess.run(["flock", "-n", str(lock), "true"]).returncode == 0:
+            assert _t.monotonic() < deadline, "잠금을 못 잡았다"
+            _t.sleep(0.05)
+        subprocess.run([str(repo / "scripts" / "serve.sh")], capture_output=True, text=True, timeout=30,
+                       env={**os.environ, "PATH": f"{shim}{os.pathsep}{os.environ['PATH']}",
+                            "SECTOR_FLOW_HOST": "127.0.0.1", "SECTOR_FLOW_PORT": "1"})
+    finally:
+        holder.terminate()
+        holder.wait(timeout=10)
+    broken: list[str] = []
+    probes = [e for e in ol.iter_events(repo / "reports", broken=broken) if e.get("event") == "probe"]
+    assert broken == [] and len(probes) == 1
+    assert probes[0]["status"] is None and probes[0]["ok"] is False
 
 
 def test_cron_run_appends_a_job_event(repo):

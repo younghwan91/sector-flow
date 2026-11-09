@@ -79,6 +79,32 @@ def test_healthz_checks_the_reports_can_be_shown(get, root, monkeypatch):
     assert status == 503 and b"FileNotFoundError" in body
 
 
+def test_healthz_fails_when_latest_is_dangling_or_hollow(get, root):
+    """목록은 가장 늦은 폴더로 넘어가 멀쩡해 보여 latest 가 끊겨도 200 이었다 — 화면(sw-flow)이 여는 것은 그 링크다."""
+    (root / "latest").unlink()
+    os.symlink(root / "2026-11-99", root / "latest")
+    status, _, body = get("/healthz")
+    assert status == 503 and "numbers.html" in body.decode()
+    (root / "latest").unlink()
+    os.symlink(root / "2026-11-06", root / "latest")
+    assert get("/healthz")[0] == 200
+    (root / "2026-11-06" / "viewer.html").unlink()
+    status, _, body = get("/healthz")
+    assert status == 503 and "viewer.html" in body.decode()
+    (root / "2026-11-06" / "viewer.html").write_text("")               # 빈 파일도 보여 줄 수 없다
+    assert get("/healthz")[0] == 503
+
+
+def test_healthz_without_a_latest_link_depends_on_whether_reports_exist(get, root):
+    """리포트가 있는데 링크만 없으면 고장이다. 아직 아무것도 없는 새 루트(복구 중·새 머신)는 건강하다 — 5분마다 재시작하면 안 된다."""
+    (root / "latest").unlink()
+    status, _, body = get("/healthz")
+    assert status == 503 and "latest 링크가 없다" in body.decode()
+    for d in ("2026-11-05", "2026-11-06", "2026-11-07"):
+        shutil.rmtree(root / d)
+    assert get("/healthz")[0] == 200
+
+
 def test_latest_redirects_to_the_dated_page(get):
     status, h, _ = get("/latest/viewer.html")
     assert status == 302 and h["Location"] == "/2026-11-06/viewer.html"

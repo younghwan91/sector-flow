@@ -50,7 +50,7 @@
 | `sw-flow` (`flow_view.py`) | `numbers.html` 의 JSON 을 읽어 섹터 표·종목 목록·전 종목 화면을 그린다. 주체 투영·종목 파생량·종목 선정은 여기서 낸다 | 터미널 |
 | `sw-ledger` (`ledger_view.py`) | `payload.json` 을 직접 읽는다(`sector_numbers` 를 거치지 않는다). 원장·전개·동시성·한계 | 터미널 |
 
-출처 — `scripts/sector_numbers.py:294`(`build`), `src/sectorflow/tui/ledger_view.py:121`(`load`), `scripts/daily_report.sh:302-304`.
+출처 — `scripts/sector_numbers.py:294`(`build`), `src/sectorflow/tui/ledger_view.py:121`(`load`), `scripts/daily_report.sh:309-311`.
 두 앱은 같은 폴더를 본다. 같은 (시장, 섹터, 구간)에 대해 두 화면이 다른 수를 말하면 정의가 갈린 것이지 데이터가 다른 것이 아니다.
 
 ### 0.2 기호

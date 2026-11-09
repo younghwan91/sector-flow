@@ -36,7 +36,8 @@ if ! flock -n "$LOCK" true; then
   # 서버가 내려가 있으면(잠금이 비어 이 분기에 안 온다) 줄 자체가 없다 — 공백이 곧 재기동 주기다.
   if [ -f "$REPO/scripts/_ledger.sh" ]; then
     . "$REPO/scripts/_ledger.sh"
-    case "$CODE" in [0-9][0-9][0-9]) _PS="$CODE" ;; *) _PS=null ;; esac
+    # 닿지 못하면 curl 의 %{http_code} 는 000 이다 — 000 은 JSON 숫자가 아니라 그대로 쓰면 읽는 쪽이 줄째 버린다(실패가 사라진다).
+    case "$CODE" in [1-9][0-9][0-9]) _PS="$CODE" ;; *) _PS=null ;; esac
     sf_event_append "$REPO/reports" "{\"ts\":\"$(date -u +%FT%TZ)\",\"event\":\"probe\",\"status\":$_PS,\"ok\":$([ "$CODE" = "200" ] && echo true || echo false)}"
   fi
   if [ "$CODE" = "200" ]; then

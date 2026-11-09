@@ -83,6 +83,28 @@ def report_dates(root: str) -> list[str]:
                   reverse=True)
 
 
+def latest_problem(root: str) -> str | None:
+    """``latest`` 가 쓸 수 있는 리포트를 가리키나 — 이유 또는 None. 아직 아무 리포트가 없는 새 루트는 문제가 아니다.
+
+    끊긴 링크에도 목록·``latest_date`` 는 가장 늦은 폴더로 넘어가 멀쩡해 보이는데, ``reports/latest`` 를 여는 화면(sw-flow·sw-ledger)과
+    게시 경로는 죽어 있다. 바꿔 끼우는 순간(배치가 옆에 짓고 옮긴다)은 짧게 기다려 넘긴다.
+    """
+    link = os.path.join(root, "latest")
+    why = None
+    for wait in (0, *SWAP_RETRY):
+        time.sleep(wait)
+        if not os.path.lexists(link):
+            has_reports = any(os.path.exists(os.path.join(root, d, "numbers.html")) for d in report_dates(root))
+            return "latest 링크가 없다" if has_reports else None
+        target = os.path.realpath(link)
+        missing = [f for f, _ in PAGES if not (os.path.isfile(os.path.join(target, f))
+                                               and os.path.getsize(os.path.join(target, f)) > 0)]
+        if not missing:
+            return None
+        why = f"latest({os.path.basename(target)})에 {', '.join(missing)} 가 없다"
+    return why
+
+
 def latest_date(root: str) -> str | None:
     """``latest`` 링크가 가리키는 기준일. 링크가 없거나 이상하면 가장 늦은 폴더."""
     for wait in (0, *SWAP_RETRY):
@@ -339,7 +361,7 @@ class Handler(BaseHTTPRequestHandler):
         return self._send(HTTPStatus.OK, ctype, body, cache)
 
     def _healthz(self):
-        """대답만이 아니라 **보여 줄 수 있나**를 본다 — 리포트 루트를 읽을 수 있고 목록이 그려지나(수 ms).
+        """대답만이 아니라 **보여 줄 수 있나**를 본다 — 리포트 루트를 읽을 수 있고 목록이 그려지고 latest 가 살아 있나(수 ms).
 
         예전엔 프로세스가 대답하면 200 이었다. 루트가 지워지거나(마운트 빠짐) 권한이 바뀌어도, 목록이 예외로
         죽어도 serve.sh 는 "건강하다" 며 그대로 뒀다. 503 이면 serve.sh 가 다시 띄우고, 다시 떠도 안 되면
@@ -348,9 +370,12 @@ class Handler(BaseHTTPRequestHandler):
         try:
             os.listdir(self.root)
             index_html(self.root)
+            sick = latest_problem(self.root)
         except Exception as e:  # noqa: BLE001 — 무엇이든 "보여 줄 수 없다"
+            sick = f"{type(e).__name__}: {e}"
+        if sick:
             return self._send(HTTPStatus.SERVICE_UNAVAILABLE, "text/plain; charset=utf-8",
-                              f"unhealthy — {type(e).__name__}: {e}\n".encode())
+                              f"unhealthy — {sick}\n".encode())
         return self._send(HTTPStatus.OK, "text/plain; charset=utf-8", b"ok\n")
 
     def _not_modified_since(self, st) -> bool:

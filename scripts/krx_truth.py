@@ -365,15 +365,25 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="공표 시장값 ↔ 리포트 시장 합계 금액 대조(내부 대조 전용)")
     ap.add_argument("--payload", required=True, help="리포트 payload.json — today.krx_truth 를 제자리에 채운다")
     ap.add_argument("--fetch", action="store_true", help="캐시가 없으면 공표치를 받는다(기본 소스 네이버)")
+    ap.add_argument("--out", help="결과를 이 폴더에 쓴다(payload.json·krx_truth.json) — 게시된 리포트를 볼 때는 이것을 쓴다")
     a = ap.parse_args(argv)
     path = os.path.abspath(a.payload)
+    source_dir = os.path.dirname(os.path.realpath(path))
+    # 게시된 폴더는 고쳐 쓰지 않는다 — numbers.html 과 payload 가 갈리고, 재현 명령 하나가 게시본을 바꾼다.
+    if not a.out and os.path.exists(os.path.join(source_dir, "numbers.html")):
+        print(f"게시된 리포트({source_dir})는 고쳐 쓰지 않는다 — 재현은 --out <임시 폴더> 를 붙여라. 게시본에 반영하려면 "
+              "KR_QUANT_KRX_TRUTH=1 KR_QUANT_FORCE=1 scripts/daily_report.sh", file=sys.stderr)
+        return 2
     with open(path, encoding="utf-8") as f:
         payload = json.load(f)
-    build_dir = os.path.dirname(path)
+    build_dir = os.path.abspath(a.out) if a.out else os.path.dirname(path)
+    if a.out:
+        os.makedirs(build_dir, exist_ok=True)
+        path = os.path.join(build_dir, "payload.json")
     env = dict(os.environ)
     if a.fetch:
         env["KR_QUANT_KRX_TRUTH"] = "1"
-    block = attach(payload, build_dir, _root_of(path), env=env)
+    block = attach(payload, build_dir, _root_of(os.path.abspath(a.payload)), env=env)
     if block is None:
         print("켜져 있지 않다 — 캐시(krx_truth.json)도 --fetch 도 없다. 아무것도 안 바꿨다")
         return 0

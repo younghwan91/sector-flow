@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
+import re
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -401,6 +403,32 @@ def test_attach_falls_back_to_the_cache_when_the_refresh_fails(tmp_path):
         raise kt.KrxFetchError("망")
     got = kt.attach(_payload(), str(build), str(root), env=KRX_ENV, fetch=dead, pause=0, now="2026-11-07T08:20:00+09:00")
     assert got["status"] == "ok"
+
+
+def test_cli_refuses_to_rewrite_a_published_report_and_out_leaves_it_alone(tmp_path, monkeypatch):
+    """런북의 재현 명령이 게시 payload 를 고쳐 썼다 — numbers.html 과 갈린다. 게시 폴더는 --out 으로만 본다."""
+    monkeypatch.setattr(kt, "fetch_market", _fake_fetch)
+    monkeypatch.setattr(kt.time, "sleep", lambda _s: None)
+    folder = tmp_path / DATE
+    folder.mkdir()
+    p = folder / "payload.json"
+    p.write_text(json.dumps(_payload(), ensure_ascii=False), "utf-8")
+    (folder / "numbers.html").write_text("<html>")
+    os.symlink(folder, tmp_path / "latest")
+    before = p.read_bytes()
+    for via in (p, tmp_path / "latest" / "payload.json"):             # latest 를 거쳐도 같은 폴더다
+        assert kt.main(["--payload", str(via), "--fetch"]) == 2
+    out = tmp_path / "재현"
+    assert kt.main(["--payload", str(tmp_path / "latest" / "payload.json"), "--fetch", "--out", str(out)]) == 0
+    assert p.read_bytes() == before and not (folder / "krx_truth.json").exists()
+    assert json.loads((out / "payload.json").read_text("utf-8"))["today"]["krx_truth"]["status"] == "ok"
+    assert (out / "krx_truth.json").exists()
+
+
+def test_runbook_repro_commands_never_rewrite_a_published_payload():
+    text = (REPO / "README.md").read_text("utf-8")
+    cmds = re.findall(r"krx_truth\.py --payload [^`]*", text)
+    assert cmds and all("--out" in c for c in cmds), cmds
 
 
 # ── 검증기 — 공표 행에서 다시 세기 ───────────────────────────────────────────

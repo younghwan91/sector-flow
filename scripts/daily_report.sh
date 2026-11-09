@@ -41,14 +41,16 @@ EV_STARTED="$(date -u +%FT%TZ)"
 EV_MODE="normal"
 [ -z "${KR_QUANT_FINAL:-}" ] || EV_MODE="final"
 [ -z "${KR_QUANT_ASOF:-}" ] || EV_MODE="rebuild"
-EV_ASOF="" EV_OUTCOME="error" EV_GATE="" EV_VERIFY="" EV_CHECKS="" EV_FAILS="" EV_FINAL="" EV_DIFF=""
+EV_ASOF="" EV_OUTCOME="error" EV_GATE="" EV_VERIFY="" EV_CHECKS="" EV_FAILS="" EV_FINAL="" EV_DIFF="" EV_SHA=""
+# 트랩이 읽는 변수는 트랩을 걸기 **전에** 비운다 — 환경에서 물려받은 BUILD 를 트랩이 rm -rf 한다(tests/test_ops_ledger.py 가 본다).
+BUILD=""
 _dr_event() {
   local rc="$1"
   # 옆에 짓던 폴더 청소 — 성공해 옮겼으면($BUILD 없음) 아무 일도 없다. 원장 기록과 한 트랩에 묶는다.
   [ -z "${BUILD:-}" ] || rm -rf "$BUILD" 2>/dev/null || true
   local commit
   commit="${KR_QUANT_CODE_REV:-$(git -C "$REPO" rev-parse HEAD 2>/dev/null || true)}"
-  sf_event_append "$OUT_ROOT" "{\"ts\":\"$(date -u +%FT%TZ)\",\"event\":\"report\",\"asof\":$(sf_q "$EV_ASOF"),\"mode\":\"$EV_MODE\",\"rc\":$rc,\"outcome\":\"$EV_OUTCOME\",\"gate\":$(sf_q "$EV_GATE"),\"verify\":$(sf_q "$EV_VERIFY"),\"verify_checks\":${EV_CHECKS:-null},\"verify_fails\":${EV_FAILS:-null},\"final\":${EV_FINAL:-false},\"diff\":${EV_DIFF:-null},\"commit\":$(sf_q "$commit"),\"started\":\"$EV_STARTED\"}"
+  sf_event_append "$OUT_ROOT" "{\"ts\":\"$(date -u +%FT%TZ)\",\"event\":\"report\",\"asof\":$(sf_q "$EV_ASOF"),\"mode\":\"$EV_MODE\",\"rc\":$rc,\"outcome\":\"$EV_OUTCOME\",\"gate\":$(sf_q "$EV_GATE"),\"verify\":$(sf_q "$EV_VERIFY"),\"verify_checks\":${EV_CHECKS:-null},\"verify_fails\":${EV_FAILS:-null},\"final\":${EV_FINAL:-false},\"diff\":${EV_DIFF:-null},\"payload_sha\":$(sf_q "$EV_SHA"),\"commit\":$(sf_q "$commit"),\"started\":\"$EV_STARTED\"}"
 }
 
 # **겹쳐 돌지 않는다.** 크론(18:10·19:10·08:20)끼리는 timeout 40m 이라 안 겹치지만, 손으로 돌린
@@ -58,6 +60,11 @@ _dr_event() {
 # 자식(파이썬)도 fd 9 를 물려받아, 셸이 죽어도 자식이 다 끝날 때까지 잠금이 남는다.
 mkdir -p "$OUT_ROOT"
 trap '_dr_event $?' EXIT
+# 시그널로 끝나면 bash 는 EXIT 트랩을 돌리되 $? 가 직전 명령의 것(대개 0)이다 — 크론 timeout 이 끊은 실행이 원장에 rc:0, outcome:error
+# 로 남았다. 관례대로 128+시그널 번호로 끝내 그 값이 트랩에 가게 한다.
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 LOCK="$OUT_ROOT/.report.lock"
 exec 9>>"$LOCK"
 if ! flock -n 9; then
@@ -222,7 +229,7 @@ fi
 if [ -f "$DEST/numbers.html" ] && [ ! -f "$DEST/VERIFY_FAILED.txt" ] && [ -z "${KR_QUANT_FORCE:-}" ] \
    && [ -z "$FINAL_REBUILD" ]; then
   echo "[$(date '+%F %T')] $ASOF 리포트가 이미 있다 — 건너뛴다(휴장일이거나 재실행)."
-  # 달력이 없어 휴장과 수집 실패를 못 가른다 — 갈라야 할 사람에게 사실을 준다.
+  # 여기서는 휴장과 수집 실패를 안 가른다(갈라 내는 것은 20:30 freshness_check 와 KRX 달력) — 지금 보는 사람에게 사실을 준다.
   if [[ "$ASOF" < "$TODAY" ]]; then
     echo "    최신 수급이 오늘($TODAY)이 아니다. 오늘이 거래일이면 수집이 안 된 것이다 — quant-airflow 를 확인하라."
   fi
@@ -402,6 +409,8 @@ else
 fi
 # 게시됐다 — 원장의 결말(검증에 걸렸어도 게시는 됐다. verify 필드가 그걸 말한다).
 [ -z "$FINAL_OK" ] || EV_FINAL=true
+# 게시한 숫자의 지문 — 같은 기준일을 다시 게시했을 때 정말 바뀌었는지를 --errata 가 가른다.
+EV_SHA="$(sha256sum "$DEST/payload.json" 2>/dev/null | cut -d' ' -f1)" || true
 if [ -n "$REBUILD" ]; then
   EV_OUTCOME="rebuilt"
 elif [ -n "$FINAL_OK" ]; then
