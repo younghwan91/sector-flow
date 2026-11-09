@@ -15,17 +15,17 @@ uv run --with playwright --with pillow python scripts/demo_shots.py
 
 | 이미지 | 감시 경로 | 찍은 커밋 |
 |---|---|---|
-| docs/images/kqflow-today.png | src/sectorflow/tui/ | 2b76ef28d77a6b57abd378b262cc41aae3ec2f92 |
-| docs/images/kqflow-today.png | src/sectorflow/demo.py | 2b76ef28d77a6b57abd378b262cc41aae3ec2f92 |
-| docs/images/kqflow-table.png | src/sectorflow/tui/ | 2b76ef28d77a6b57abd378b262cc41aae3ec2f92 |
-| docs/images/kqflow-table.png | src/sectorflow/demo.py | 2b76ef28d77a6b57abd378b262cc41aae3ec2f92 |
-| docs/images/kqflow-names.png | src/sectorflow/tui/ | 2b76ef28d77a6b57abd378b262cc41aae3ec2f92 |
-| docs/images/kqflow-names.png | src/sectorflow/demo.py | 2b76ef28d77a6b57abd378b262cc41aae3ec2f92 |
-| docs/images/kqflow-combined.png | src/sectorflow/tui/ | 2b76ef28d77a6b57abd378b262cc41aae3ec2f92 |
-| docs/images/kqflow-combined.png | src/sectorflow/demo.py | 2b76ef28d77a6b57abd378b262cc41aae3ec2f92 |
-| docs/images/kqledger-table.png | src/sectorflow/tui/ | 2b76ef28d77a6b57abd378b262cc41aae3ec2f92 |
-| docs/images/kqledger-table.png | src/sectorflow/demo.py | 2b76ef28d77a6b57abd378b262cc41aae3ec2f92 |
-| docs/images/web-today.png | scripts/templates/ | 2b76ef28d77a6b57abd378b262cc41aae3ec2f92 |
-| docs/images/web-today.png | src/sectorflow/demo.py | 2b76ef28d77a6b57abd378b262cc41aae3ec2f92 |
-| docs/images/web-today-mobile.png | scripts/templates/ | 2b76ef28d77a6b57abd378b262cc41aae3ec2f92 |
-| docs/images/web-today-mobile.png | src/sectorflow/demo.py | 2b76ef28d77a6b57abd378b262cc41aae3ec2f92 |
+| docs/images/kqflow-today.png | src/sectorflow/tui/ | 572ef27209224d298c36582329deafce4700e52c |
+| docs/images/kqflow-today.png | src/sectorflow/demo.py | 572ef27209224d298c36582329deafce4700e52c |
+| docs/images/kqflow-table.png | src/sectorflow/tui/ | 572ef27209224d298c36582329deafce4700e52c |
+| docs/images/kqflow-table.png | src/sectorflow/demo.py | 572ef27209224d298c36582329deafce4700e52c |
+| docs/images/kqflow-names.png | src/sectorflow/tui/ | 572ef27209224d298c36582329deafce4700e52c |
+| docs/images/kqflow-names.png | src/sectorflow/demo.py | 572ef27209224d298c36582329deafce4700e52c |
+| docs/images/kqflow-combined.png | src/sectorflow/tui/ | 572ef27209224d298c36582329deafce4700e52c |
+| docs/images/kqflow-combined.png | src/sectorflow/demo.py | 572ef27209224d298c36582329deafce4700e52c |
+| docs/images/kqledger-table.png | src/sectorflow/tui/ | 572ef27209224d298c36582329deafce4700e52c |
+| docs/images/kqledger-table.png | src/sectorflow/demo.py | 572ef27209224d298c36582329deafce4700e52c |
+| docs/images/web-today.png | scripts/templates/ | 572ef27209224d298c36582329deafce4700e52c |
+| docs/images/web-today.png | src/sectorflow/demo.py | 572ef27209224d298c36582329deafce4700e52c |
+| docs/images/web-today-mobile.png | scripts/templates/ | 572ef27209224d298c36582329deafce4700e52c |
+| docs/images/web-today-mobile.png | src/sectorflow/demo.py | 572ef27209224d298c36582329deafce4700e52c |
