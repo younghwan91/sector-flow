@@ -401,3 +401,51 @@ def test_pre_listing_value_of_a_new_listing_is_not_used(tmp_path):
     _ledger(con2, [(2024, "11011", "2024-12-31", "2024-12-31", 9_000_000, "20250320000001")])
     D.apply_history(con2, ["012170"])
     assert con2.execute("SELECT count(*) FROM shares_provenance WHERE source='dart'").fetchone() == (1,)
+
+
+def test_two_points_moved_to_the_same_day_keep_one():
+    """같은 병합을 사이에 둔 두 분기 점이 같은 날로 옮겨지면 한 행만 남는다(키가 (종목, 날짜)다)."""
+    pts = [("2026-03-31", 18_907_130), ("2026-06-30", 18_907_130)]
+    got = D.align_to_listing(pts, [("2026-11-08", 18_907_000)], MERGER)
+    assert [r[0] for r in got] == ["2026-07-03"] and got[0][2] == "dart_moved"
+
+
+@pytest.mark.parametrize("extra", [
+    ("2026-12-01", "16", 400.0),                   # 주식수 이벤트지만 구간 밖(다음 실측 뒤)
+    ("2026-08-01", "4", 400.0),                    # 구간 안이지만 주식수 이벤트가 아니다(배당락)
+])
+def test_a_moved_point_lands_on_the_last_share_event_inside_the_gap(extra):
+    """옮겨 갈 날은 구간 안 **주식수 이벤트**의 마지막 날이다 — 다른 이벤트 날로 가면 그 사이 시총이 배수로 틀린다."""
+    pts = [("2026-06-30", 18_907_130)]
+    got = D.align_to_listing(pts, [("2026-11-08", 18_907_000)], [*MERGER, extra])
+    assert got == [("2026-07-03", 18_907_130, "dart_moved")]
+
+
+def test_later_filing_wins_whichever_row_comes_first(tmp_path):
+    """같은 기준일의 두 공시 — 접수번호가 늦은 쪽이다. 행 순서(사업연도·보고서 코드 순)와 무관하다."""
+    con = _db(tmp_path, snap=("2025-12-31", 7_000_000))
+    _ledger(con, [(2025, "11011", "2025-12-31", "2025-09-30", 6_000_000, "20251114000001"),
+                  (2025, "11014", "2025-09-30", "2025-09-30", 6_100_000, "20251229000001")])
+    D.apply_history(con, ["012170"])
+    rows = dict(con.execute("SELECT date, shares_outstanding FROM shares_outstanding_history").fetchall())
+    assert rows["2025-09-30"] == 6_100_000
+
+
+@pytest.mark.parametrize("raw,want", [("20251231", "2025-12-31"), (" 20251231 ", "2025-12-31"),
+                                      ("2025-12-31", "2025-12-31"), ("2025123", "2025123"), ("2025123x", "2025123x")])
+def test_iso_only_rewrites_eight_digits(raw, want):
+    assert D._iso(raw) == want
+
+
+def test_apply_history_touches_only_the_named_codes_unless_none_is_given(tmp_path):
+    con = _db(tmp_path, snap=("2025-12-31", 7_000_000))
+    rows = [(2025, "11014", "2025-09-30", "2025-09-30", 6_000_000, "20251114000001")]
+    _ledger(con, rows)
+    con.execute("UPDATE dart_fetch SET code = '000020' WHERE rowid = (SELECT max(rowid) FROM dart_fetch)")
+    _ledger(con, rows)
+    def dart_codes():
+        return {r[0] for r in con.execute("SELECT code FROM shares_provenance WHERE source = 'dart'").fetchall()}
+    D.apply_history(con, ["012170"])
+    assert dart_codes() == {"012170"}
+    D.apply_history(con)
+    assert dart_codes() == {"012170", "000020"}

@@ -23,7 +23,8 @@
 #
 # 앵커(find)가 사라지면 REJECT 다 — 예전엔 경고였고, 그 사이 변이 셋이 조용히 죽었다.
 # 리팩터로 앵커가 바뀌었으면 앵커를 지금 코드에 맞추고, 버그가 표현 불가능해졌으면
-# 변이를 지운다. 앵커 1회·가드 존재·id 중복은 tests/test_mutation_spec.py 가 CI 에서 본다.
+# 변이를 지우고 파일 끝의 [[removed]] 에 id·why 를 남긴다(없으면 REJECT). 앵커 1회·가드 존재·id 중복은
+# tests/test_mutation_spec.py 가 CI 에서 본다.
 
 [[mutation]]
 id = "accel-cell-shows-wrong-field"
@@ -9773,3 +9774,965 @@ guards = ["tests/test_web_quality.py::test_web_today_panel_tags_extremes_like_th
 file = "scripts/templates/sector_numbers.html"
 find = "const runTag=d=>!d?\"\":d===1?\"·신규\":\"·\"+d+\"일째\";"
 replace = "const runTag=d=>\"\";"
+
+# ── BYO 실전송 경로(루프백 서버) ──
+[[mutation]]
+id = "kiwoom-transport-headers-not-lowered"
+why = "실서버 응답 헤더 Cont-Yn 을 못 읽어 1쪽만 받고 오류 없이 끝난다"
+guards = ["tests/test_collect_transport.py::test_kiwoom_real_transport_pages_on_mixed_case_response_headers"]
+file = "src/sectorflow/collect/kiwoom.py"
+find = "return status, {k.lower(): v for k, v in hdrs.items()}, parsed"
+replace = "return status, dict(hdrs), parsed"
+
+[[mutation]]
+id = "kiwoom-transport-uses-get"
+why = "키움 REST 는 POST 다 — GET 으로 보내면 모든 호출이 실패한다"
+guards = ["tests/test_collect_transport.py::test_kiwoom_real_transport_pages_on_mixed_case_response_headers"]
+file = "src/sectorflow/collect/kiwoom.py"
+find = """req = urllib.request.Request(url, data=data, headers=headers, method="POST")"""
+replace = """req = urllib.request.Request(url, data=data, headers=headers, method="GET")"""
+
+[[mutation]]
+id = "kiwoom-transport-http-error-escapes"
+why = "429 가 예외로 새면 재시도(백오프)가 돌지 않고 수집이 죽는다"
+guards = ["tests/test_collect_transport.py::test_kiwoom_real_transport_hands_http_errors_back_as_values"]
+file = "src/sectorflow/collect/kiwoom.py"
+find = """        raw, status, hdrs = e.read() or b"", e.code, dict(e.headers.items()) if e.headers else {}"""
+replace = """        raise"""
+
+[[mutation]]
+id = "kiwoom-transport-html-body-kills-parser"
+why = "게이트웨이 오류 페이지(HTML)에서 JSON 파서 예외로 죽어 상태를 못 말한다"
+guards = ["tests/test_collect_transport.py::test_kiwoom_real_transport_survives_a_body_that_is_not_json"]
+file = "src/sectorflow/collect/kiwoom.py"
+find = """    except (UnicodeDecodeError, json.JSONDecodeError):
+        parsed = {"_raw": raw[:200].decode("utf-8", "replace")}"""
+replace = """    except (UnicodeDecodeError, KeyError):
+        parsed = {"_raw": raw[:200].decode("utf-8", "replace")}"""
+
+[[mutation]]
+id = "dart-transport-http-error-escapes"
+why = "DART 4xx 가 통신 오류로 뭉뚱그려져 재시도하고 상태를 잃는다"
+guards = ["tests/test_collect_transport.py::test_dart_real_transport_reports_http_errors_without_the_key"]
+file = "src/sectorflow/collect/dart.py"
+find = """        return e.code, e.read() or b"\""""
+replace = "        raise"
+
+[[mutation]]
+id = "dart-transport-uses-post"
+why = "OpenDART 는 GET 이다"
+guards = ["tests/test_collect_transport.py::test_dart_real_transport_gets_and_retries_server_errors"]
+file = "src/sectorflow/collect/dart.py"
+find = """headers={"User-Agent": "sector-flow-collect"}, method="GET")"""
+replace = """headers={"User-Agent": "sector-flow-collect"}, method="POST")"""
+
+# ── 생산자-파서 계약(실산출물을 파서에 넣는다) ──
+[[mutation]]
+id = "verify-summary-wording-drift"
+why = "검증 요약줄 문구가 바뀌면 신뢰 페이지가 checks 0·complete False, 쉘 원장이 null 을 낸다"
+guards = ["tests/test_artifact_contracts.py::test_real_verify_output_parses_on_the_trust_page_and_in_the_shell_summary"]
+file = "scripts/verify_report.py"
+find = """print(f"\\n검사 {CHECKS}건 · 실패 {len(FAILS)}건 · 문서 주장 어긋남 {len(CLAIMS)}건")"""
+replace = """print(f"\\n검사 {CHECKS}건, 실패 {len(FAILS)}건, 문서 주장 어긋남 {len(CLAIMS)}건")"""
+
+[[mutation]]
+id = "shell-summary-sed-drifts-from-verifier"
+why = "daily_report.sh 의 sed 가 요약줄과 어긋나면 원장의 검사·실패 수가 조용히 null 이 된다"
+guards = ["tests/test_artifact_contracts.py::test_real_verify_output_parses_on_the_trust_page_and_in_the_shell_summary"]
+file = "scripts/daily_report.sh"
+find = """sed -n 's/^검사 \\([0-9][0-9]*\\)건 · 실패"""
+replace = """sed -n 's/^검사수 \\([0-9][0-9]*\\)건 · 실패"""
+
+[[mutation]]
+id = "trust-summary-regex-drifts-from-verifier"
+why = "파서 쪽이 어긋나도 같다 — 손으로 쓴 글자만 읽는 검사는 양쪽을 같이 고치면 초록이다"
+guards = ["tests/test_artifact_contracts.py::test_real_verify_output_parses_on_the_trust_page_and_in_the_shell_summary"]
+file = "scripts/trust_page.py"
+find = """SUMMARY_RE = re.compile(r"^검사 (\\d+)건 · 실패 (\\d+)건(?: · 문서 주장 어긋남 (\\d+)건)?\\s*$", re.M)"""
+replace = """SUMMARY_RE = re.compile(r"^검사 (\\d+)건 · 실패 (\\d+)건\\s*$", re.M)"""
+
+[[mutation]]
+id = "verify-fail-list-wording-drift"
+why = "실패 목록 머리말이 바뀌면 페이지 사유 칸이 빈다"
+guards = ["tests/test_artifact_contracts.py::test_real_failing_verify_names_its_failures"]
+file = "scripts/verify_report.py"
+find = """print("실패 목록: " + ", ".join(FAILS))"""
+replace = """print("실패 항목: " + ", ".join(FAILS))"""
+
+[[mutation]]
+id = "verify-layer-heading-drift"
+why = "층 머리줄 꼴이 바뀌면 신뢰 페이지 방법 절에서 그 층이 사라진다"
+guards = ["tests/test_artifact_contracts.py::test_real_verify_output_parses_on_the_trust_page_and_in_the_shell_summary"]
+file = "scripts/verify_report.py"
+find = """print("\\nT. 오늘 — 1일 값·1년 백분위·시장 합계·직전 리포트 대비")"""
+replace = """print("\\nT) 오늘 — 1일 값·1년 백분위·시장 합계·직전 리포트 대비")"""
+
+[[mutation]]
+id = "gate-head-wording-drift"
+why = "관문 머리줄이 바뀌면 parse_gate 가 {} — 페이지의 관문 칸이 통째로 빈다"
+guards = ["tests/test_artifact_contracts.py::test_real_gate_pass_output_parses_with_its_minimum"]
+file = "scripts/completeness_gate.py"
+find = """print(f"완전성 관문 — 기준일 {a.asof}"""
+replace = """print(f"완전성 검사 — 기준일 {a.asof}"""
+
+[[mutation]]
+id = "gate-counts-wording-drift"
+why = "관문 수치줄이 바뀌면 최저 비율이 None — 페이지의 최저치가 공백이 된다"
+guards = ["tests/test_artifact_contracts.py::test_real_gate_pass_output_parses_with_its_minimum"]
+file = "scripts/completeness_gate.py"
+find = """{market}: 수급 {n}/"""
+replace = """{market}: 수급: {n}/"""
+
+[[mutation]]
+id = "gate-fail-tag-drift"
+why = "막힌 줄 표지가 바뀌면 블록이 끊겨 막힌 시장이 페이지에서 사라진다"
+guards = ["tests/test_artifact_contracts.py::test_real_gate_block_output_is_read_as_blocked_from_the_folder"]
+file = "scripts/completeness_gate.py"
+find = """lines.append(f"[FAIL] {market}: " + " · ".join(why))"""
+replace = """lines.append(f"[막힘] {market}: " + " · ".join(why))"""
+
+[[mutation]]
+id = "final-market-wording-drift"
+why = "FINAL 의 시장 합계 줄이 바뀌면 market None — 페이지의 시장 변경 칸이 빈다"
+guards = ["tests/test_artifact_contracts.py::test_real_final_text_parses_market_and_sector_counts"]
+file = "scripts/sector_flow.py"
+find = """lines.append(f"시장 합계: {len(fd['market_totals'])}칸 중 {len(moved)}칸 바뀜")"""
+replace = """lines.append(f"시장합계: {len(fd['market_totals'])}칸 중 {len(moved)}칸 바뀜")"""
+
+[[mutation]]
+id = "final-sector-wording-drift"
+why = "FINAL 의 섹터 칸 줄이 바뀌면 kind unknown — 정정 목록에서 빠진다"
+guards = ["tests/test_artifact_contracts.py::test_real_final_text_parses_market_and_sector_counts"]
+file = "scripts/sector_flow.py"
+find = """lines.append(f"섹터 칸: {fd['n_cells']}칸 중 {fd['n_changed']}칸 바뀜\""""
+replace = """lines.append(f"섹터칸: {fd['n_cells']}칸 중 {fd['n_changed']}칸 바뀜\""""
+
+[[mutation]]
+id = "final-none-wording-drift"
+why = "비교 없음 줄이 바뀌면 이유가 페이지에서 사라진다(kind unknown)"
+guards = ["tests/test_artifact_contracts.py::test_real_final_without_a_provisional_says_why"]
+file = "scripts/sector_flow.py"
+find = """return f"잠정 → 확정 비교 없음: {why}\\n\""""
+replace = """return f"잠정 → 확정 비교 안 함: {why}\\n\""""
+
+[[mutation]]
+id = "scan-day-reads-final-as-provisional"
+why = "실산출 폴더의 확정을 잠정으로 읽는다"
+guards = ["tests/test_artifact_contracts.py::test_scan_and_page_read_a_real_report_folder"]
+file = "scripts/trust_page.py"
+find = "    elif has[\"FINAL.txt\"]:\n        # 재구성의 확정은"
+replace = "    elif has[\"REBUILT.txt\"] and has[\"FINAL.txt\"]:\n        # 재구성의 확정은"
+
+[[mutation]]
+id = "digest-reads-a-stale-longest-key"
+why = "페이로드 키와 어긋나면 연속 줄의 섹터가 조용히 사라진다 — 합성 페이로드는 자기 키를 같이 고친다"
+guards = ["tests/test_artifact_contracts.py::test_digest_runs_on_the_pipeline_payload_and_says_its_numbers"]
+file = "scripts/digest.py"
+find = """sec = ((S.get("longest") or {}).get(MARKET) or {}).get(dom)"""
+replace = """sec = ((S.get("longest_run") or {}).get(MARKET) or {}).get(dom)"""
+
+[[mutation]]
+id = "digest-net-reads-the-wrong-actor"
+why = "실페이로드의 시장 순매수를 다른 주체 칸에서 읽는다"
+guards = ["tests/test_artifact_contracts.py::test_digest_runs_on_the_pipeline_payload_and_says_its_numbers"]
+file = "scripts/digest.py"
+find = """NET_ACTORS = (("inst", "기관"), ("forgn", "외국인"), ("indiv", "개인"), ("etc", "기타법인"))"""
+replace = """NET_ACTORS = (("forgn", "기관"), ("forgn", "외국인"), ("indiv", "개인"), ("etc", "기타법인"))"""
+
+# ── 카드 표지·꼬리(브라우저 없는 CSS 검사)·PNG 사다리 ──
+[[mutation]]
+id = "card-provisional-note-inverted"
+why = "확정 카드에 '잠정치다' 가 붙고 잠정 카드에서 빠진다"
+guards = ["tests/test_digest.py::test_card_says_provisional_only_on_a_provisional_card",
+          "tests/test_artifact_contracts.py::test_digest_on_the_final_payload_drops_the_provisional_label"]
+file = "scripts/digest.py"
+find = "    if not F[\"closed\"]:\n        notes.append(\"잠정치다"
+replace = "    if F[\"closed\"]:\n        notes.append(\"잠정치다"
+
+[[mutation]]
+id = "card-footer-hidden"
+why = "면책·출처가 HTML 글자엔 남고 PNG 에서는 사라진다"
+guards = ["tests/test_digest.py::test_card_disclaimer_and_source_are_visible_without_a_browser"]
+file = "scripts/templates/digest_card.html"
+find = "  footer { margin-top: auto;"
+replace = "  footer { display: none; margin-top: auto;"
+
+[[mutation]]
+id = "card-footer-same-color-as-background"
+why = "꼬리 글자색이 바탕색이면 PNG 에서 안 보인다"
+guards = ["tests/test_digest.py::test_card_disclaimer_and_source_are_visible_without_a_browser"]
+file = "scripts/templates/digest_card.html"
+find = "font-size: 26px; color: var(--ink-2); line-height: 1.3; }"
+replace = "font-size: 26px; color: var(--surface); line-height: 1.3; }"
+
+[[mutation]]
+id = "card-disclaimer-slot-removed"
+why = "템플릿에서 면책 자리를 빼면 채울 자리가 없어 글자가 통째로 빠진다"
+guards = ["tests/test_digest.py::test_card_disclaimer_and_source_are_visible_without_a_browser"]
+file = "scripts/templates/digest_card.html"
+find = "  <div>__DISCLAIMER__</div>\n"
+replace = ""
+
+[[mutation]]
+id = "card-buy-sell-colors-swapped"
+why = "범례는 빨강 = 순매수인데 막대 색이 반대다"
+guards = ["tests/test_digest.py::test_card_colors_match_its_legend"]
+file = "scripts/templates/digest_card.html"
+find = "--buy: #e34948; --sell: #2a78d6;"
+replace = "--buy: #2a78d6; --sell: #e34948;"
+
+[[mutation]]
+id = "change-phrase-either-side-empty-is-no-change"
+why = "새로 든 섹터가 있어도 빠진 섹터가 없으면 '변동 없음' 이라고 쓴다"
+guards = ["tests/test_digest.py::test_change_phrase_table"]
+file = "scripts/digest.py"
+find = """if not a["entered"] and not a["exited"]:"""
+replace = """if not a["entered"] or not a["exited"]:"""
+
+[[mutation]]
+id = "digest-default-top-n-drifts"
+why = "옛 페이로드의 상위 N 기본값이 글과 어긋난다"
+guards = ["tests/test_digest.py::test_old_format_payload_falls_back_to_the_stated_defaults"]
+file = "scripts/digest.py"
+find = """top_n=C.get("top_n", 5))"""
+replace = """top_n=C.get("top_n", 6))"""
+
+[[mutation]]
+id = "digest-default-changed-cells-nonzero"
+why = "옛 페이로드의 바뀐 칸 기본값이 0 이 아니면 없는 변경을 말한다"
+guards = ["tests/test_digest.py::test_old_format_payload_falls_back_to_the_stated_defaults"]
+file = "scripts/digest.py"
+find = """{"n_changed": fd.get("n_changed", 0),"""
+replace = """{"n_changed": fd.get("n_changed", 1),"""
+
+[[mutation]]
+id = "text-trim-ladder-keeps-a-name-after-counts"
+why = "줄이는 사다리가 뒷칸에서 다시 늘어나 상한을 못 맞춘다"
+guards = ["tests/test_digest.py::test_trim_ladders_end_with_counts_only_and_no_streak"]
+file = "scripts/digest.py"
+find = "(0, \"nosector\", 2), (0, \"none\", 2), (0, \"none\", 1))"
+replace = "(1, \"nosector\", 2), (0, \"none\", 2), (0, \"none\", 1))"
+
+[[mutation]]
+id = "extreme-caps-never-reach-counts-only"
+why = "극단 목록이 개수만 남는 칸에 끝내 안 닿는다"
+guards = ["tests/test_digest.py::test_trim_ladders_end_with_counts_only_and_no_streak"]
+file = "scripts/digest.py"
+find = "EXTREME_CAPS = (4, 2, 1, 0)"
+replace = "EXTREME_CAPS = (4, 2, 1, 1)"
+
+[[mutation]]
+id = "card-ladder-last-rung-keeps-names"
+why = "카드 마지막 판이 이름을 남겨 끝까지 넘칠 수 있다"
+guards = ["tests/test_digest.py::test_trim_ladders_end_with_counts_only_and_no_streak"]
+file = "scripts/digest.py"
+find = "(0, \"none\", 2, False), (0, \"none\", 1, False))"
+replace = "(0, \"none\", 2, False), (1, \"none\", 1, False))"
+
+[[mutation]]
+id = "png-overflow-does-not-try-the-next-rung"
+why = "넘치면 줄여 다시 찍어야 하는데 바로 포기한다"
+guards = ["tests/test_digest.py::test_png_ladder_shoots_the_next_smaller_card_after_an_overflow"]
+file = "scripts/digest.py"
+find = "                    if i == len(pages) - 1:\n                        raise"
+replace = "                    if True:\n                        raise"
+
+[[mutation]]
+id = "png-failure-leaves-a-truncated-file"
+why = "못 찍은 카드 파일이 폴더에 남아 게시된다"
+guards = ["tests/test_digest.py::test_png_gives_up_when_every_rung_overflows"]
+file = "scripts/digest.py"
+find = """            (out / "digest.png").unlink(missing_ok=True)
+            print(f"[digest] 카드를 못 찍었다"""
+replace = """            print(f"[digest] 카드를 못 찍었다"""
+
+[[mutation]]
+id = "png-require-tolerates-missing-playwright"
+why = "require 인데 Playwright 가 없어도 성공으로 끝난다"
+guards = ["tests/test_digest.py::test_png_without_playwright_skips_or_fails_by_mode"]
+file = "scripts/digest.py"
+find = """            if a.png == "require":
+                print("[digest] Playwright 가 없다"""
+replace = """            if a.png == "never":
+                print("[digest] Playwright 가 없다"""
+
+[[mutation]]
+id = "png-skip-still-shoots"
+why = "skip 이어도 브라우저를 띄운다(5분 상한을 쓴다)"
+guards = ["tests/test_digest.py::test_png_skip_never_calls_the_browser"]
+file = "scripts/digest.py"
+find = """    if a.png != "skip":"""
+replace = """    if a.png != "never":"""
+
+# ── 무작위 변이 표본의 진짜 생존(docs/validation/2026-11-09-mutation-sample.md) ──
+[[mutation]]
+id = "latest-dir-accepts-a-dangling-link"
+why = "latest 가 사라진 폴더를 가리키면 그 폴더를 최신으로 삼아 방법 절이 빈다"
+guards = ["tests/test_trust_page.py::test_latest_dir_ignores_a_dangling_or_foreign_link"]
+file = "scripts/trust_page.py"
+find = """if DATE_RE.match(t) and os.path.isdir(os.path.join(root, t)):"""
+replace = """if DATE_RE.match(t) or os.path.isdir(os.path.join(root, t)):"""
+
+[[mutation]]
+id = "folder-errata-counts-zero-cells"
+why = "섹터 칸이 안 바뀐 확정도 정정으로 센다"
+guards = ["tests/test_trust_page.py::test_folder_errata_lists_a_final_only_when_a_sector_cell_moved"]
+file = "scripts/trust_page.py"
+find = """f["sector"][0] > 0 and d["rebuilt"] is None:"""
+replace = """f["sector"][0] >= 0 and d["rebuilt"] is None:"""
+
+[[mutation]]
+id = "folder-errata-misses-a-single-cell"
+why = "한 칸만 바뀐 정정을 빠뜨린다"
+guards = ["tests/test_trust_page.py::test_folder_errata_lists_a_final_only_when_a_sector_cell_moved"]
+file = "scripts/trust_page.py"
+find = """f["sector"][0] > 0 and d["rebuilt"] is None:"""
+replace = """f["sector"][0] > 1 and d["rebuilt"] is None:"""
+
+[[mutation]]
+id = "share-event-zero-test-on-wrong-value"
+why = "배율 0 을 이벤트로, 1% 를 비이벤트로 친다 — 주식수가 그만큼 틀린다"
+guards = ["tests/test_collect_shares.py::test_share_event_counts_only_real_share_count_changes"]
+file = "src/sectorflow/collect/shares.py"
+find = "rt is not None and rt != 0 and rt > -100"
+replace = "rt is not None and rt != 1 and rt > -100"
+
+[[mutation]]
+id = "any-end-windows-miss-a-viewer-preset"
+why = "뷰어가 고를 수 있는 60일 창을 대조가 안 본다"
+guards = ["tests/test_collect_equiv.py::test_any_end_windows_cover_every_preset_the_viewer_offers"]
+file = "src/sectorflow/collect/equiv.py"
+find = "ANY_END_WINDOWS = (1, 5, 20, 60, 120, 260)"
+replace = "ANY_END_WINDOWS = (1, 5, 21, 61, 120, 260)"
+
+[[mutation]]
+id = "any-end-missing-day-is-not-flat"
+why = "결측 날을 +1% 로 쳐서 없는 차이를 보고한다"
+guards = ["tests/test_collect_equiv.py::test_any_end_treats_a_missing_day_as_flat_on_either_side"]
+file = "src/sectorflow/collect/equiv.py"
+find = "cb.append(cb[-1] * (1 + (y or 0.0) / 100.0))"
+replace = "cb.append(cb[-1] * (1 + (y or 1.0) / 100.0))"
+
+[[mutation]]
+id = "dart-duplicate-moved-day-kept"
+why = "같은 날로 옮겨진 두 점이 다 남아 (종목, 날짜) 키를 어긴다"
+guards = ["tests/test_collect_dart.py::test_two_points_moved_to_the_same_day_keep_one"]
+file = "src/sectorflow/collect/dart.py"
+find = "        seen.add(row[0])"
+replace = "        seen.add(row[1])"
+
+[[mutation]]
+id = "verifier-driver-cut-drifts"
+why = "검증기의 주도주 문턱이 정의(80%)에서 벗어난다 — 양쪽 비교만으로는 producer 도 같이 움직이면 안 보인다"
+guards = ["tests/test_verifier_depth.py::test_stock_layer_recount_matches_hand_numbers"]
+file = "scripts/verify_report.py"
+find = "VT_STK_CUT, VT_STK_TOL, VT_STK_CAP, VT_STK_MIN = 80.0,"
+replace = "VT_STK_CUT, VT_STK_TOL, VT_STK_CAP, VT_STK_MIN = 81.0,"
+
+[[mutation]]
+id = "verifier-revision-divides-wrong-way"
+why = "수정 폭 분모가 곱셈이 된다"
+guards = ["tests/test_verifier_depth.py::test_stock_layer_recount_matches_hand_numbers"]
+file = "scripts/verify_report.py"
+find = "rel.append(abs(vn - vo) / abs(vn) * 100.0)\n                flips += vo * vn < 0"
+replace = "rel.append(abs(vn - vo) * abs(vn) * 100.0)\n                flips += vo * vn < 0"
+
+[[mutation]]
+id = "verifier-gate-total-starts-above-zero"
+why = "게이트 합이 1억 부풀어 경계 칸이 빠진다"
+guards = ["tests/test_verifier_depth.py::test_stock_layer_recount_matches_hand_numbers"]
+file = "scripts/verify_report.py"
+find = "tot[(m, s, a)] = tot.get((m, s, a), 0.0) + abs(w.get(a) or 0.0)"
+replace = "tot[(m, s, a)] = tot.get((m, s, a), 1.0) + abs(w.get(a) or 0.0)"
+
+[[mutation]]
+id = "verifier-gate-counts-a-missing-cell-as-one"
+why = "결측 칸을 1억으로 쳐서 게이트가 움직인다"
+guards = ["tests/test_verifier_depth.py::test_stock_layer_recount_matches_hand_numbers"]
+file = "scripts/verify_report.py"
+find = "tot[(m, s, a)] = tot.get((m, s, a), 0.0) + abs(w.get(a) or 0.0)"
+replace = "tot[(m, s, a)] = tot.get((m, s, a), 0.0) + abs(w.get(a) or 1.0)"
+
+[[mutation]]
+id = "verifier-rollup-fills-zero-kept-with-one"
+why = "유지 0 인 날을 1 로 쳐서 유지율 재계산이 부푼다"
+guards = ["tests/test_verifier_depth.py::test_stock_revision_rollup_counts_zero_kept_as_zero"]
+file = "scripts/verify_report.py"
+find = """kp += S.get("top3_kept") or 0"""
+replace = """kp += S.get("top3_kept") or 1"""
+
+# ── 관문 구멍 ──
+[[mutation]]
+id = "new-test-matched-by-name-only"
+why = "다른 파일의 동명 가드가 새 검사의 변이 미선언을 덮는다"
+guards = ["tests/test_verify_merge.py::test_a_same_named_guard_in_another_file_does_not_cover_a_new_test"]
+file = "scripts/verify_merge.py"
+find = """    return g_file == t_file and g_rest.split("::")[-1].split("[")[0] == t_name"""
+replace = """    return g_rest.split("::")[-1].split("[")[0] == t_name"""
+
+[[mutation]]
+id = "removed-mutation-passes-silently"
+why = "변이를 지운 PR 이 이유 없이 통과한다"
+guards = ["tests/test_verify_merge.py::test_removed_mutation_needs_a_written_reason"]
+file = "scripts/verify_merge.py"
+find = """    for mid in sorted(base_ids - kept):"""
+replace = """    for mid in sorted(set()):"""
+
+[[mutation]]
+id = "removed-mutation-accepts-an-empty-reason"
+why = "이유 칸에 아무 글자나 넣으면 통과한다"
+guards = ["tests/test_verify_merge.py::test_removed_mutation_needs_a_written_reason"]
+file = "scripts/verify_merge.py"
+find = """        if len(reason) < EXEMPT_MIN_REASON or EXEMPT_PLACEHOLDER.match(reason):
+            out.append(f"변이 [{mid}]"""
+replace = """        if not reason:
+            out.append(f"변이 [{mid}]"""
+
+[[mutation]]
+id = "diff-coverage-ignores-unmeasurable-files"
+why = "바뀐 .sh·템플릿에 변이가 없어도 관문이 통과한다"
+guards = ["tests/test_diff_coverage.py::test_changed_shell_and_template_need_a_mutation"]
+file = "scripts/diff_coverage.py"
+find = """    if blind:
+        ok = False"""
+replace = """    if blind:
+        ok = ok"""
+
+[[mutation]]
+id = "diff-coverage-misses-multi-edit-targets"
+why = "다중 편집 변이의 대상을 안 세어 거짓 실패한다"
+guards = ["tests/test_diff_coverage.py::test_changed_shell_and_template_need_a_mutation"]
+file = "scripts/diff_coverage.py"
+find = """out.update(e.get("file") for e in m.get("edits") or [m])"""
+replace = """out.update(e.get("file") for e in [m])"""
+
+[[mutation]]
+id = "diff-coverage-asks-about-deleted-files"
+why = "지운 파일까지 변이를 요구한다"
+guards = ["tests/test_diff_coverage.py::test_changed_shell_and_template_need_a_mutation"]
+file = "scripts/diff_coverage.py"
+find = """names = git("diff", "--name-only", "--diff-filter=d", mb, "--", *ROOTS, cwd=cwd).splitlines()"""
+replace = """names = git("diff", "--name-only", mb, "--", *ROOTS, cwd=cwd).splitlines()"""
+
+[[mutation]]
+id = "verify-entry-point-runs-the-gate"
+why = "sector-flow-verify 가 검증기 대신 관문을 돌린다 — 초록으로 끝나 검증한 줄 안다"
+guards = ["tests/test_entry_points.py::test_entry_point_runs_its_own_script"]
+file = "src/sectorflow/report_cli.py"
+find = """_run("verify_report.py")"""
+replace = """_run("completeness_gate.py")"""
+
+[[mutation]]
+id = "session-limit-does-not-exit"
+why = "상한에서 스택만 찍고 멈춘 채 잡 시간을 다 쓴다"
+guards = ["tests/test_session_guards.py::test_a_hung_session_is_killed_red_with_a_stack"]
+file = "tests/conftest.py"
+find = "faulthandler.dump_traceback_later(limit, exit=True, file=os"
+replace = "faulthandler.dump_traceback_later(limit, exit=False, file=os"
+
+[[mutation]]
+id = "session-limit-cannot-be-turned-off"
+why = "0 이 즉시 끝남이 되어 상한을 끌 수 없다"
+guards = ["tests/test_session_guards.py::test_limit_zero_turns_the_limit_off"]
+file = "tests/conftest.py"
+find = "    if limit > 0 and not hasattr(config, \"workerinput\"):"
+replace = "    if not hasattr(config, \"workerinput\"):"
+
+[[mutation]]
+id = "overlapping-coverage-second-run-proceeds"
+why = "겹친 실행을 거절하지 않아 서로의 측정을 지운다"
+guards = ["tests/test_session_guards.py::test_overlapping_coverage_runs_both_end_red"]
+file = "tests/conftest.py"
+find = """        pytest.exit(f"이 체크아웃({root})에서 다른 pytest --cov 가 돌고 있다 — 서로의 측정 파일을 지운다. "
+                    "끝난 뒤 다시 돌리거나 다른 클론에서 돌려라", returncode=3)
+    _lock_fd = fd"""
+replace = """        pass
+    _lock_fd = fd"""
+
+[[mutation]]
+id = "overlapping-coverage-first-run-stays-green"
+why = "측정을 잃은 먼저 쪽이 초록으로 끝나 낮은 숫자를 믿게 된다"
+guards = ["tests/test_session_guards.py::test_overlapping_coverage_runs_both_end_red"]
+file = "tests/conftest.py"
+find = """        (root / CLOBBER_NAME).write_text(f"pid {os.getpid()}\\n", "utf-8")"""
+replace = """        pass"""
+
+[[mutation]]
+id = "overlap-marker-outlives-the-run"
+why = "지난 겹침의 표시가 남아 다음 정상 실행을 빨갛게 만든다"
+guards = ["tests/test_session_guards.py::test_a_lone_coverage_run_is_untouched_even_after_a_crashed_overlap"]
+file = "tests/conftest.py"
+find = """    _lock_fd = fd
+    (root / CLOBBER_NAME).unlink(missing_ok=True)"""
+replace = """    _lock_fd = fd"""
+
+[[mutation]]
+id = "session-limit-stack-goes-to-the-capture-file"
+why = "fd 2 를 그대로 넘기면 멈춘 검사의 스택이 캡처 파일로 사라진다 — 왜 멈췄는지 모른다"
+guards = ["tests/test_session_guards.py::test_a_hung_session_is_killed_red_with_a_stack"]
+file = "tests/conftest.py"
+find = "file=os.dup(sys.__stderr__.fileno()))"
+replace = "file=sys.__stderr__.fileno())"
+
+# ── 조합 리허설(scripts/rehearse_merge.py) ──
+[[mutation]]
+id = "rehearsal-stops-after-the-first-branch"
+why = "두 번째 브랜치부터 안 합쳐 조합을 안 재고 통과한다"
+guards = ["tests/test_rehearse_merge.py::test_gates_see_every_branch_merged_and_the_repo_is_untouched"]
+file = "scripts/rehearse_merge.py"
+find = """        done.append(f"{name} {sha[:10]}")"""
+replace = """        done.append(f"{name} {sha[:10]}")
+        break"""
+
+[[mutation]]
+id = "rehearsal-ignores-a-failing-gate"
+why = "관문이 빨개도 통과로 끝난다"
+guards = ["tests/test_rehearse_merge.py::test_a_failing_gate_fails_the_run_and_later_gates_still_run"]
+file = "scripts/rehearse_merge.py"
+find = """    bad = [r["name"] for r in rows if r["rc"] != 0]"""
+replace = """    bad = []"""
+
+[[mutation]]
+id = "rehearsal-stops-at-the-first-red-gate"
+why = "첫 실패에서 멈춰 나머지 관문의 상태를 모른다"
+guards = ["tests/test_rehearse_merge.py::test_a_failing_gate_fails_the_run_and_later_gates_still_run"]
+file = "scripts/rehearse_merge.py"
+find = """        out.append(row)
+"""
+replace = """        out.append(row)
+        if row["rc"]:
+            break
+"""
+
+[[mutation]]
+id = "rehearsal-runs-gates-on-a-half-merged-tree"
+why = "충돌을 무시하고 합쳐지지 않은 트리를 잰다"
+guards = ["tests/test_rehearse_merge.py::test_a_conflict_names_the_file_and_runs_no_gate"]
+file = "scripts/rehearse_merge.py"
+find = """    if conflict:
+        print(f"충돌"""
+replace = """    if False:
+        print(f"충돌"""
+
+[[mutation]]
+id = "rehearsal-passes-the-production-db-to-gates"
+why = "변이 주입·테스트가 실 DB 접속정보를 물려받는다"
+guards = ["tests/test_rehearse_merge.py::test_gates_never_see_the_production_db_or_reports"]
+file = "scripts/rehearse_merge.py"
+find = """SCRUB_ENV = ("KR_QUANT_DB", "KR_QUANT_REPORTS", "UV_PROJECT_ENVIRONMENT", "VIRTUAL_ENV", "PYTHONPATH")"""
+replace = """SCRUB_ENV = ("UV_PROJECT_ENVIRONMENT", "VIRTUAL_ENV", "PYTHONPATH")"""
+
+[[mutation]]
+id = "rehearsal-keeps-no-repo-identity"
+why = "클론에 신원이 없어 병합 커밋이 실패하거나 다른 신원이 된다"
+guards = ["tests/test_rehearse_merge.py::test_branches_merge_in_the_given_order_with_the_repo_identity"]
+file = "scripts/rehearse_merge.py"
+find = """            git(wt, "config", key, v)"""
+replace = """            pass"""
+
+[[mutation]]
+id = "rehearsal-merges-against-the-repo-instead-of-a-clone"
+why = "원래 레포 HEAD 를 움직인다 — 운영 체크아웃이면 크론이 그 트리를 돈다"
+guards = ["tests/test_rehearse_merge.py::test_gates_see_every_branch_merged_and_the_repo_is_untouched"]
+file = "scripts/rehearse_merge.py"
+find = """    done, conflict = merge_all(wt, pinned)  # type: ignore[arg-type]"""
+replace = """    done, conflict = merge_all(repo, pinned)  # type: ignore[arg-type]"""
+
+[[mutation]]
+id = "rehearsal-leaves-doc-ref-fix-uncommitted"
+why = "인용 보정을 커밋하지 않으면 관문이 다른 트리를 잰 것이 된다"
+guards = ["tests/test_rehearse_merge.py::test_shifted_doc_refs_are_fixed_and_reported"]
+file = "scripts/rehearse_merge.py"
+find = """    git(wt, "commit", "-q", "-m", "rehearsal: docs_refs --fix")"""
+replace = """    pass"""
+
+[[mutation]]
+id = "rehearsal-default-gates-drop-the-mutation-gate"
+why = "변이 주입을 뺀 리허설이 전체 관문 통과라고 말한다"
+guards = ["tests/test_rehearse_merge.py::test_default_gates_match_the_ci_steps"]
+file = "scripts/rehearse_merge.py"
+find = """    ("verify-merge", "uv run --extra dev python scripts/verify_merge.py . --base {base} --only mutations --scope all"),
+"""
+replace = ""
+
+# ── 무작위 변이 표본 도구 ──
+[[mutation]]
+id = "sampler-counts-collection-errors-as-killed"
+why = "문법을 깬 변이를 잡았다고 세면 표본 숫자가 부푼다"
+guards = ["tests/test_mutation_sample.py::test_only_a_test_failure_counts_as_killed"]
+file = "scripts/mutation_sample.py"
+find = """    return {0: "survived", 1: "killed", "timeout": "timeout"}.get(rc, "invalid")"""
+replace = """    return {0: "survived", "timeout": "timeout"}.get(rc, "killed")"""
+
+[[mutation]]
+id = "sampler-never-runs-the-full-suite"
+why = "묶음 검사만 보면 다른 파일의 검사가 잡는 변이를 생존으로 센다"
+guards = ["tests/test_mutation_sample.py::test_judge_runs_the_group_then_everything_and_restores_the_source"]
+file = "scripts/mutation_sample.py"
+find = """        if rc == 0:
+            rc, first = _pytest_with_confirm(root, tmp, m, orig, mutated, [],"""
+replace = """        if rc == 2:
+            rc, first = _pytest_with_confirm(root, tmp, m, orig, mutated, [],"""
+
+[[mutation]]
+id = "sampler-does-not-restore-the-source"
+why = "앞 변이가 남아 뒤 변이의 판정이 전부 틀린다"
+guards = ["tests/test_mutation_sample.py::test_judge_runs_the_group_then_everything_and_restores_the_source"]
+file = "scripts/mutation_sample.py"
+find = """        (root / m["file"]).write_bytes(orig)"""
+replace = """        pass"""
+
+[[mutation]]
+id = "sampler-applies-to-a-stale-place"
+why = "코드가 바뀐 뒤 replay 가 엉뚱한 자리에 넣는다"
+guards = ["tests/test_mutation_sample.py::test_apply_puts_each_mutant_in_place_and_stale_ones_refuse"]
+file = "scripts/mutation_sample.py"
+find = """    if ln[m["c0"]:m["c1"]].decode() != m["old"]:"""
+replace = """    if False:"""
+
+[[mutation]]
+id = "sampler-draws-from-unexecuted-lines"
+why = "실행 안 된 줄의 변이는 커버리지가 이미 말한다 — 생존률만 부푼다"
+guards = ["tests/test_mutation_sample.py::test_mutants_cover_each_operator_and_skip_unexecuted_lines"]
+file = "scripts/mutation_sample.py"
+find = """        if (executed is not None and lno not in executed) or (only is not None and lno not in only):"""
+replace = """        if only is not None and lno not in only:"""
+
+[[mutation]]
+id = "sampler-ignores-the-seed"
+why = "시드가 안 먹으면 재현도, 새 표본도 안 된다"
+guards = ["tests/test_mutation_sample.py::test_draw_is_deterministic_per_seed_and_respects_coverage_and_diff"]
+file = "scripts/mutation_sample.py"
+find = """        rnd.shuffle(pool)"""
+replace = """        rnd.shuffle(pool) if False else None"""
+
+[[mutation]]
+id = "sampler-counts-a-red-baseline-test-as-a-kill"
+why = "원본에서도 빨간 검사를 잡힘으로 세어 표본이 부푼다(첫 재실행에서 12건이 이렇게 부풀었다)"
+guards = ["tests/test_mutation_sample.py::test_a_test_red_without_the_mutant_is_not_a_kill"]
+file = "scripts/mutation_sample.py"
+find = """        if clean == 0:
+            return 1, first"""
+replace = """        if True:
+            return 1, first"""
+
+[[mutation]]
+id = "sampler-runs-shallow-source-checks"
+why = "앵커 대조 검사가 모든 변이를 잡는 것처럼 보인다"
+guards = ["tests/test_mutation_sample.py::test_shallow_source_checks_do_not_count_as_kills"]
+file = "scripts/mutation_sample.py"
+find = """            cmd += ["--ignore", f]"""
+replace = """            pass"""
+
+[[mutation]]
+id = "sampler-tmpdir-inside-the-clone"
+why = "클론 안의 TMPDIR 이 git 밖을 전제한 검사를 거짓으로 빨갛게 한다"
+guards = ["tests/test_mutation_sample.py::test_tmpdir_stays_outside_the_clone"]
+file = "scripts/mutation_sample.py"
+find = """    tmp = tmp or Path(tempfile.gettempdir()) / f"sf-mutsample-{root.name}-tmp""""
+replace = """    tmp = tmp or root / ".tmp""""
+
+[[mutation]]
+id = "sampler-has-no-memory-limit"
+why = "무한 루프 변이가 머신 메모리를 먹어 운영 배치까지 흔든다"
+guards = ["tests/test_mutation_sample.py::test_memory_limit_turns_a_runaway_mutant_into_a_failure"]
+file = "scripts/mutation_sample.py"
+find = """    resource.setrlimit(resource.RLIMIT_AS, (MEM_LIMIT, MEM_LIMIT))"""
+replace = """    pass"""
+
+# ── 표본 2(시드 8)의 진짜 생존 ──
+[[mutation]]
+id = "card-default-rung-drifts"
+why = "card_html 기본값이 사다리 첫 칸과 어긋난다"
+guards = ["tests/test_digest.py::test_card_defaults_are_the_first_rung"]
+file = "scripts/digest.py"
+find = """extreme_cap: int = CARD_LADDER[0][0], streak"""
+replace = """extreme_cap: int = CARD_LADDER[1][0], streak"""
+
+[[mutation]]
+id = "card-missing-net-draws-a-bar"
+why = "값이 없는 주체에 막대가 그려진다"
+guards = ["tests/test_digest.py::test_card_missing_net_value_draws_no_bar"]
+file = "scripts/digest.py"
+find = """        w = 0.0 if v is None else abs(v) / vmax * 50.0"""
+replace = """        w = 1.0 if v is None else abs(v) / vmax * 50.0"""
+
+[[mutation]]
+id = "empty-extreme-list-prints-none"
+why = "글·카드에 파이썬 None 이 찍힌다"
+guards = ["tests/test_digest.py::test_empty_extreme_list_says_none_in_words"]
+file = "scripts/digest.py"
+find = """    if not xs:
+        return "없음""""
+replace = """    if not xs:
+        return None"""
+
+[[mutation]]
+id = "digest-asof-ignores-today-date"
+why = "기준일을 today 가 아니라 날짜 목록 끝에서 읽는다"
+guards = ["tests/test_digest.py::test_reference_day_comes_from_today_then_from_the_report_dates"]
+file = "scripts/digest.py"
+find = """asof = T.get("date") or (P.get("dates") or [None])[-1]"""
+replace = """asof = T.get("date") and (P.get("dates") or [None])[-1]"""
+
+[[mutation]]
+id = "verify-cell-without-record-prints-none"
+why = "검증 기록이 없는 날 칸이 빈다"
+guards = ["tests/test_trust_page.py::test_day_without_a_verify_record_says_so"]
+file = "scripts/trust_page.py"
+find = """    v = day["verify"]
+    if v is None:
+        return '<span class="dim">기록 없음</span>'"""
+replace = """    v = day["verify"]
+    if v is None:
+        return None"""
+
+[[mutation]]
+id = "state-cell-commit-reads-unknown"
+why = "재구성 칸이 커밋 대신 '?' 를 적는다"
+guards = ["tests/test_trust_page.py::test_rebuilt_commit_is_shown_short_or_as_unknown"]
+file = "scripts/trust_page.py"
+find = """        commit = (day["rebuilt"].get("commit") or "?")[:12]"""
+replace = """        commit = (day["rebuilt"].get("commit") and "?")[:12]"""
+
+[[mutation]]
+id = "errata-commit-length-drifts"
+why = "정정 목록의 커밋 글자가 표와 갈린다"
+guards = ["tests/test_trust_page.py::test_rebuilt_commit_is_shown_short_or_as_unknown"]
+file = "scripts/trust_page.py"
+find = """            commit = (d["rebuilt"].get("commit") or "?")[:12]"""
+replace = """            commit = (d["rebuilt"].get("commit") or "?")[:13]"""
+
+[[mutation]]
+id = "git-info-returns-none-on-success"
+why = "사전등록 커밋 시각이 전부 빠진다"
+guards = ["tests/test_trust_page.py::test_git_info_reads_a_real_commit_and_shrugs_at_a_missing_one"]
+file = "scripts/trust_page.py"
+find = """    if out.returncode != 0 or not out.stdout.strip():"""
+replace = """    if out.returncode == 0 or not out.stdout.strip():"""
+
+[[mutation]]
+id = "dart-moves-on-any-event-or-any-time"
+why = "구간 밖이나 주식수와 무관한 이벤트로 점을 옮겨 시총이 배수로 틀린다"
+guards = ["tests/test_collect_dart.py::test_a_moved_point_lands_on_the_last_share_event_inside_the_gap"]
+file = "src/sectorflow/collect/dart.py"
+find = """if d < e <= qd and _share_event(tp, rt))"""
+replace = """if d < e <= qd or _share_event(tp, rt))"""
+
+[[mutation]]
+id = "producer-driver-cut-excludes-the-boundary"
+why = "누적이 문턱에 딱 닿아도 한 종목 더 간다 — 정의와 어긋난다"
+guards = ["tests/test_streaks_revisions.py::test_stock_drivers_stop_at_exactly_the_cut_of_the_sum"]
+file = "scripts/sector_flow.py"
+find = """            if cum >= STOCK_DIFF_CUT / 100.0 * tot:"""
+replace = """            if cum > STOCK_DIFF_CUT / 100.0 * tot:"""
+
+[[mutation]]
+id = "producer-driver-cut-denominator-drifts"
+why = "문턱 분모가 움직여 일찍 멈춘다"
+guards = ["tests/test_streaks_revisions.py::test_stock_drivers_stop_at_exactly_the_cut_of_the_sum"]
+file = "scripts/sector_flow.py"
+find = """            if cum >= STOCK_DIFF_CUT / 100.0 * tot:"""
+replace = """            if cum >= STOCK_DIFF_CUT / 101.0 * tot:"""
+
+[[mutation]]
+id = "verifier-top3-skips-the-minimum-size"
+why = "6종목 섹터를 상위 3 유지에서 뺀다 — 문턱은 '6 미만' 이다"
+guards = ["tests/test_verifier_depth.py::test_stock_layer_recount_matches_hand_numbers"]
+file = "scripts/verify_report.py"
+find = """if ms in dropped or len(rn) < VT_STK_MIN or len(ro) < VT_STK_MIN:"""
+replace = """if ms in dropped or len(rn) <= VT_STK_MIN or len(ro) < VT_STK_MIN:"""
+
+[[mutation]]
+id = "verifier-gate-total-subtracts"
+why = "게이트 합이 음수가 되어 작은 칸이 다 들어온다"
+guards = ["tests/test_verifier_depth.py::test_stock_layer_recount_matches_hand_numbers"]
+file = "scripts/verify_report.py"
+find = "tot[(m, s, a)] = tot.get((m, s, a), 0.0) + abs(w.get(a) or 0.0)"
+replace = "tot[(m, s, a)] = tot.get((m, s, a), 0.0) - abs(w.get(a) or 0.0)"
+
+[[mutation]]
+id = "verifier-viewer-expect-fills-missing-cell"
+why = "없는 칸을 1억으로 메워 뷰어 대조가 틀린 값을 기대한다"
+guards = ["tests/test_verifier_depth.py::test_viewer_expect_treats_a_sector_missing_from_one_market_as_zero"]
+file = "scripts/verify_report.py"
+find = """.get(k, [0.0] * nd)[i0:i1 + 1]) for mk in mks)"""
+replace = """.get(k, [1.0] * nd)[i0:i1 + 1]) for mk in mks)"""
+
+# ── 표본 3(시드 9)의 진짜 생존 ──
+[[mutation]]
+id = "streak-line-sector-on-the-wrong-rung"
+why = "줄인 판에 최장 섹터가 남고 첫 판에서 빠진다"
+guards = ["tests/test_digest.py::test_streak_line_keeps_the_sector_only_on_the_full_rung"]
+file = "scripts/digest.py"
+find = """streak_line(F, with_sector=streak == "full")
+    if sl:
+        notes.append(sl)"""
+replace = """streak_line(F, with_sector=streak != "full")
+    if sl:
+        notes.append(sl)"""
+
+[[mutation]]
+id = "no-comparison-default-top-n-drifts"
+why = "비교 없는 날 머리에 다른 상위 N 을 적는다"
+guards = ["tests/test_digest.py::test_no_comparison_still_states_the_default_window_and_top_n"]
+file = "scripts/digest.py"
+find = """change = {"prev_date": None, "window": 20, "top_n": 5, "actors": [],"""
+replace = """change = {"prev_date": None, "window": 20, "top_n": 6, "actors": [],"""
+
+[[mutation]]
+id = "final-cell-speaks-for-a-provisional-day"
+why = "잠정 폴더의 칸에 변경 수를 적고, 기록 없는 확정에서 죽는다"
+guards = ["tests/test_trust_page.py::test_final_cell_speaks_only_for_a_final_with_a_record"]
+file = "scripts/trust_page.py"
+find = "    if day[\"state\"] not in (\"확정\", \"확정 미확인\") or f is None:"
+replace = "    if day[\"state\"] not in (\"확정\", \"확정 미확인\") and f is None:"
+
+[[mutation]]
+id = "parse-verify-invents-a-failure"
+why = "멈춘 검증기에 없는 실패 1건을 적는다"
+guards = ["tests/test_trust_page.py::test_parse_verify_without_marks_counts_zero"]
+file = "scripts/trust_page.py"
+find = """"fails": marks.get("FAIL", 0), "claims": marks.get("CLAIM", 0),"""
+replace = """"fails": marks.get("FAIL", 1), "claims": marks.get("CLAIM", 0),"""
+
+[[mutation]]
+id = "every-day-says-archived"
+why = "보관본이 없는 날도 '원본 보관 1' 이라고 적는다"
+guards = ["tests/test_trust_page.py::test_only_days_with_an_archive_say_so"]
+file = "scripts/trust_page.py"
+find = "day[\"archived\"] = len(arc.get(d, ()))"
+replace = "day[\"archived\"] = len(arc.get(d, (1,)))"
+
+[[mutation]]
+id = "dart-iso-mangles-non-dates"
+why = "여덟 자가 아닌 숫자·숫자 아닌 여덟 자를 날짜 꼴로 자른다"
+guards = ["tests/test_collect_dart.py::test_iso_only_rewrites_eight_digits"]
+file = "src/sectorflow/collect/dart.py"
+find = """    if len(s) == 8 and s.isdigit():"""
+replace = """    if len(s) == 8 or s.isdigit():"""
+
+[[mutation]]
+id = "dart-first-row-wins-over-the-later-filing"
+why = "정정 공시가 있어도 먼저 읽은 행이 남는다"
+guards = ["tests/test_collect_dart.py::test_later_filing_wins_whichever_row_comes_first"]
+file = "src/sectorflow/collect/dart.py"
+find = """if stlm not in best or (rcept or "") > best[stlm][0]:"""
+replace = """if stlm not in best or (rcept and "") > best[stlm][0]:"""
+
+[[mutation]]
+id = "stock-top3-fills-missing-with-one"
+why = "값 없는 종목이 1억으로 상위 3 에 든다"
+guards = ["tests/test_streaks_revisions.py::test_stock_top3_ranks_a_missing_value_last"]
+file = "scripts/sector_flow.py"
+find = """top_n = {c for c, _w in sorted(by_new[ms], key=lambda t: (-(t[1].get(a) or 0.0), t[0]))[:n]}"""
+replace = """top_n = {c for c, _w in sorted(by_new[ms], key=lambda t: (-(t[1].get(a) or 1.0), t[0]))[:n]}"""
+
+# ── 표본 4(시드 10)의 진짜 생존 ──
+[[mutation]]
+id = "digest-ties-follow-payload-order"
+why = "동률의 순서가 페이로드에 달려 같은 수치가 다른 글이 된다"
+guards = ["tests/test_digest.py::test_ties_rank_by_sector_name_whatever_the_payload_order"]
+file = "scripts/digest.py"
+find = """    out.sort(key=lambda t: (-t[1], t[0]))
+    return out"""
+replace = """    out.sort(key=lambda t: (-t[1], t[1]))
+    return out"""
+
+[[mutation]]
+id = "prereg-gap-adds-instead-of-subtracts"
+why = "사전등록→결과 간격이 터무니없는 수로 나온다"
+guards = ["tests/test_trust_page.py::test_prereg_gap_is_result_minus_preregistration_in_minutes"]
+file = "scripts/trust_page.py"
+find = """gaps.append(round((info[res[1]][1] - info[pre[1]][1]) / 60))"""
+replace = """gaps.append(round((info[res[1]][1] + info[pre[1]][1]) / 60))"""
+
+[[mutation]]
+id = "kiwoom-paging-continues-on-one-signal"
+why = "키 없는 연속 표시나 표시 없는 키로 같은 쪽을 상한까지 다시 받는다"
+guards = ["tests/test_collect_transport.py::test_kiwoom_paging_needs_both_the_flag_and_the_key"]
+file = "src/sectorflow/collect/kiwoom.py"
+find = """            if cont_h != "Y" or not nxt_h:"""
+replace = """            if cont_h != "Y" and not nxt_h:"""
+
+[[mutation]]
+id = "dart-apply-ignores-the-code-list"
+why = "한 종목만 다시 맞추라는데 전 종목을 고친다(또는 None 에서 죽는다)"
+guards = ["tests/test_collect_dart.py::test_apply_history_touches_only_the_named_codes_unless_none_is_given"]
+file = "src/sectorflow/collect/dart.py"
+find = """    if codes is None:
+        codes = [r[0] for r in con.execute("SELECT DISTINCT code FROM dart_fetch").fetchall()]"""
+replace = """    if not (codes is None):
+        codes = [r[0] for r in con.execute("SELECT DISTINCT code FROM dart_fetch").fetchall()]"""
+
+[[mutation]]
+id = "verifier-flip-counts-from-zero"
+why = "0 → 값을 부호 뒤집힘으로 센다"
+guards = ["tests/test_verifier_depth.py::test_stock_layer_recount_matches_hand_numbers"]
+file = "scripts/verify_report.py"
+find = """                flips += vo * vn < 0
+        if dmax is not None and dmax > VT_STK_TOL:"""
+replace = """                flips += vo * vn <= 0
+        if dmax is not None and dmax > VT_STK_TOL:"""
+
+[[mutation]]
+id = "verifier-rollup-fills-empty-cells-with-one"
+why = "칸 수가 빈 날을 1 로 메운다"
+guards = ["tests/test_verifier_depth.py::test_stock_revision_rollup_counts_zero_kept_as_zero"]
+file = "scripts/verify_report.py"
+find = """        sc += S.get("n_cells") or 0"""
+replace = """        sc += S.get("n_cells") or 1"""
+
+[[mutation]]
+id = "producer-gate-excludes-the-boundary"
+why = "합의 2% 에 딱 걸린 칸을 뺀다 — 검증기(>=)와 갈린다"
+guards = ["tests/test_streaks_revisions.py::test_stock_diff_counts_a_cell_exactly_at_the_gate_and_no_flip_from_zero"]
+file = "scripts/sector_flow.py"
+find = """if vn and abs(vn) >= REV_GATE_SHARE * tot[(m, s, a)]:"""
+replace = """if vn and abs(vn) > REV_GATE_SHARE * tot[(m, s, a)]:"""
+
+[[mutation]]
+id = "producer-rollup-fills-empty-cells-with-one"
+why = "일별 요약에 칸 수가 없으면 1 로 친다"
+guards = ["tests/test_streaks_revisions.py::test_revision_rollup_counts_empty_stock_summaries_as_zero"]
+file = "scripts/sector_flow.py"
+find = """            scells += S.get("n_cells") or 0"""
+replace = """            scells += S.get("n_cells") or 1"""
+
+# ── 관문 도구의 나머지 검사 ──
+[[mutation]]
+id = "new-report-entry-point-escapes-the-role-table"
+why = "새 진입점이 역할 표 밖이면 제 스크립트를 돌리는지 아무도 안 본다"
+guards = ["tests/test_entry_points.py::test_table_covers_every_report_entry_point"]
+file = "pyproject.toml"
+find = """sector-flow-verify = "sectorflow.report_cli:verify""""
+replace = """sector-flow-verify = "sectorflow.report_cli:verify"
+sector-flow-extra = "sectorflow.report_cli:gate""""
+
+[[mutation]]
+id = "shell-without-mutation-allowed-silently"
+why = "변이 없는 쉘이 표에 없으면 빨개야 한다 — 표를 비우면 그 파일이 드러난다"
+guards = ["tests/test_mutation_spec.py::test_every_shell_script_and_template_is_a_mutation_target"]
+file = "tests/test_mutation_spec.py"
+find = """    "scripts/freshness_check.sh": "환경 변수 사본을 만들고 exec 만 한다 — 크론 경로는 test_freshness_check 가 가짜 uv 로 태운다","""
+replace = ""
+
+[[mutation]]
+id = "rehearsal-goes-on-with-a-missing-branch"
+why = "없는 브랜치를 빼고 합친 리허설이 통과라고 말한다"
+guards = ["tests/test_rehearse_merge.py::test_bad_calls_exit_2_before_touching_anything"]
+file = "scripts/rehearse_merge.py"
+find = """    pinned = [(b, resolve(repo, b)) for b in a.branches]
+    missing = [b for b, s in pinned if s is None]
+    if missing:"""
+replace = """    pinned = [(b, resolve(repo, b)) for b in a.branches if resolve(repo, b)]
+    missing = [b for b in a.branches if not resolve(repo, b)]
+    if False:"""
+
+[[mutation]]
+id = "rehearsal-accepts-an-unknown-skip"
+why = "오타 난 --skip 을 조용히 넘겨 빼려던 관문이 돈다(또는 빠졌다고 믿는다)"
+guards = ["tests/test_rehearse_merge.py::test_bad_calls_exit_2_before_touching_anything"]
+file = "scripts/rehearse_merge.py"
+find = """    if unknown:"""
+replace = """    if False:"""

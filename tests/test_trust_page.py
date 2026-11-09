@@ -716,3 +716,84 @@ def test_stale_claims_about_the_screen_are_gone(page):
     assert "[판정 불가: G]" in _qrow(page, "Q3d-G")
     assert "앞날 검정을 하지 않았다" in _qrow(page, "untested")
     assert "1년%ile" in _qrow(page, "untested") and "앞날 검정을 하지 않았다" in t.split("검정된 적 없는 값")[1]
+
+
+def test_latest_dir_ignores_a_dangling_or_foreign_link(tmp_path):
+    """``latest`` 가 사라진 기준일이나 날짜가 아닌 폴더를 가리키면 리포트가 있는 가장 늦은 폴더로 간다."""
+    root = tmp_path / "r"
+    for d, files in (("2026-11-05", ["numbers.html"]), ("2026-11-06", ["numbers.html"]), ("2026-11-07", [])):
+        (root / d).mkdir(parents=True)
+        for f in files:
+            (root / d / f).write_text("x", "utf-8")
+    (root / "scratch").mkdir()
+    link = root / "latest"
+    link.symlink_to(root / "2026-11-30")                        # 날짜 꼴인데 폴더가 없다
+    assert tp.latest_dir(str(root)) == "2026-11-06"
+    link.unlink()
+    link.symlink_to(root / "scratch")                           # 폴더는 있는데 날짜가 아니다
+    assert tp.latest_dir(str(root)) == "2026-11-06"
+    link.unlink()
+    link.symlink_to(root / "2026-11-05")                        # 멀쩡한 링크는 그대로 따른다
+    assert tp.latest_dir(str(root)) == "2026-11-05"
+
+
+def test_folder_errata_lists_a_final_only_when_a_sector_cell_moved():
+    """확정이 섹터 칸을 **하나라도** 바꿔야 정정이다 — 0칸은 정정이 아니고 1칸은 정정이다."""
+    def day(n):
+        return {"date": "2026-11-05", "rebuilt": None, "final": {"kind": "diff", "sector": (n, 240), "market": None}}
+    assert tp.folder_errata([day(0)]) == []
+    assert [e["detail"] for e in tp.folder_errata([day(1)])] == ["섹터 칸 1개 변경"]
+
+
+def test_day_without_a_verify_record_says_so():
+    assert "기록 없음" in tp.verify_cell({"verify": None, "date": "2026-11-05", "verify_status": "unknown"})
+
+
+def test_rebuilt_commit_is_shown_short_or_as_unknown(page):
+    """재구성 커밋은 앞 12자리로 — 표와 정정 목록이 같은 글자이고, 기록이 없으면 '?' 다."""
+    assert "나중 코드(abcdef012345)" in _row(page, "2026-11-06")
+    def day(commit):
+        return {"date": "2026-11-06", "final": None, "rebuilt": {"commit": commit, "finalize": "verified"}}
+    assert tp.folder_errata([day("abcdef0123456789")])[0]["detail"] == "commit abcdef012345 · finalize verified"
+    assert tp.folder_errata([day(None)])[0]["detail"] == "commit ? · finalize verified"
+
+
+def test_git_info_reads_a_real_commit_and_shrugs_at_a_missing_one(tmp_path):
+    env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1", "GIT_AUTHOR_NAME": "t",
+           "GIT_AUTHOR_EMAIL": "t@example.com", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.com",
+           "GIT_AUTHOR_DATE": "2026-01-02T03:04:00+09:00", "GIT_COMMITTER_DATE": "2026-01-02T03:04:00+09:00"}
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True, env=env)
+    subprocess.run(["git", "-C", str(tmp_path), "commit", "-q", "--allow-empty", "-m", "x"], check=True, env=env)
+    sha = subprocess.run(["git", "-C", str(tmp_path), "rev-parse", "HEAD"], capture_output=True, text=True,
+                         env=env).stdout.strip()
+    got = tp.git_info(sha, str(tmp_path))
+    assert got is not None and got[0] == "2026-01-02 03:04" and isinstance(got[1], int)
+    assert tp.git_info("deadbeef" * 5, str(tmp_path)) is None
+
+
+def test_parse_verify_without_marks_counts_zero():
+    """표시가 하나도 없는 출력(검증기가 시작도 못 함)은 0건 — 없는 실패를 지어내지 않는다."""
+    got = tp.parse_verify("Traceback (most recent call last):\nImportError: x\n")
+    assert got == {"checks": 0, "fails": 0, "claims": 0, "complete": False, "fail_names": []}
+
+
+def test_only_days_with_an_archive_say_so(page):
+    assert "원본 보관 1" in _row(page, "2026-11-05")
+    assert "원본 보관" not in _row(page, "2026-11-03")
+
+
+def test_final_cell_speaks_only_for_a_final_with_a_record():
+    diff = {"kind": "diff", "sector": (5, 240), "market": None}
+    def cell(state, f):
+        return tp.final_cell({"state": state, "final": f, "date": "2026-11-05"})
+    assert "섹터 5/240칸" in cell("확정", diff) and "섹터 5/240칸" in cell("확정 미확인", diff)
+    assert ">—<" in cell("확정", None)                         # 확정인데 기록이 없다 — 죽지 않는다
+    assert ">—<" in cell("잠정", diff)                         # 잠정 폴더에 남은 기록은 말하지 않는다
+    assert ">—<" in cell("잠정", None)
+
+
+def test_prereg_gap_is_result_minus_preregistration_in_minutes():
+    """간격은 (결과 커밋 − 사전등록 커밋)/60 — 페이지가 '사전등록 N분 뒤 결과' 로 적는 값이다."""
+    label, pre, res = next(lk for r in tp.VALIDATION for lk in r["links"] if lk[1] and lk[2][1])
+    gaps = tp.prereg_gaps({pre[1]: ("x", 1_000_000), res[1]: ("y", 1_000_000 + 600)})
+    assert 10 in gaps and all(g == 10 for g in gaps), (label, gaps)

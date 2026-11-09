@@ -71,7 +71,7 @@ pytest 가 변이당 두 번이었다). 주입 후 실행은 ``-x`` 로 첫 실�
 모호해진다). **한 번도 안 나오면 REJECT 다** — 앵커를 잃은 변이는 아무것도 증명하지
 않는다. 주입 후에는 원본 바이트로 되돌리고 ``git status`` 로 확인한다.
 선언 자체의 정합성(앵커 1회·가드 존재·id 중복)은 ``tests/test_mutation_spec.py`` 가
-DB 없이 pytest 에서 먼저 본다.
+DB 없이 pytest 에서 먼저 본다. 기준에 있던 변이를 지우려면 ``[[removed]]`` 에 ``id``·``why`` 를 남긴다(없으면 REJECT).
 """
 
 from __future__ import annotations
@@ -374,6 +374,16 @@ def _exempt_reason(lines: list[str], lo: int, hi: int,
     return None
 
 
+def guard_names_test(guard: str, test: str) -> bool:
+    """변이의 가드 nodeid 가 이 새 검사를 가리키는가 — **파일까지** 같아야 한다.
+
+    함수 이름만 맞대면 다른 파일의 동명 가드(지금도 9쌍 있다)가 새 검사의 변이 미선언을 덮는다. 새 검사 쪽은
+    ``파일::함수`` 이고 가드는 클래스·매개변수가 붙을 수 있다(``파일::Class::test_x[a]``)."""
+    g_file, _, g_rest = guard.partition("::")
+    t_file, _, t_name = test.partition("::")
+    return g_file == t_file and g_rest.split("::")[-1].split("[")[0] == t_name
+
+
 def changed_files(wt: Path, base_sha: str) -> set[str]:
     """merge-base 이후 커밋 + 작업 트리(커밋 안 된 것 포함)에서 바뀐 경로."""
     out = set(git(wt, "diff", "--name-only", f"{base_sha}..HEAD").splitlines())
@@ -418,6 +428,28 @@ def new_test_functions(wt: Path, base_sha: str) -> dict[str, str | None]:
     return out
 
 
+def removed_mutations(base_text: str, spec_doc: dict) -> list[str]:
+    """기준에는 있었는데 지금 없는 변이 — ``[[removed]]`` 에 이유가 없으면 그 이유로 REJECT 할 문장들.
+
+    버그가 표현 불가능해져 지우는 것은 정상이다. 다만 이유가 diff 에 남아야 한다 — 검사를 약하게 만든 PR 이 변이를
+    같이 지우면 아무 신호 없이 통과했다."""
+    if not base_text:
+        return []
+    try:
+        base_ids = {m.get("id") for m in tomllib.loads(base_text).get("mutation", [])}
+    except tomllib.TOMLDecodeError:
+        return []
+    kept = {m.get("id") for m in spec_doc.get("mutation", [])}
+    why = {r.get("id"): (r.get("why") or "").strip() for r in spec_doc.get("removed", [])}
+    out = []
+    for mid in sorted(base_ids - kept):
+        reason = why.get(mid, "")
+        if len(reason) < EXEMPT_MIN_REASON or EXEMPT_PLACEHOLDER.match(reason):
+            out.append(f"변이 [{mid}] 가 기준 이후 사라졌다 — 지운 이유를 mutations.toml 의 "
+                       f'[[removed]] (id = "{mid}", why = "…")에 적어라. 앵커를 잃었으면 지우지 말고 앵커를 고친다')
+    return out
+
+
 def mutation_edits(m: dict) -> list[dict]:
     """한 변이의 편집 목록 — 단일 편집(file·find·replace)도 목록 하나로."""
     return m.get("edits") or [{"file": m.get("file"), "find": m.get("find"),
@@ -437,6 +469,8 @@ GUARD_COST = {
     "tests/test_verify_report.py": 3.0,
     "tests/test_serve_reports.py": 2.0,
     "tests/test_daily_report_flow.py": 2.0,
+    "tests/test_artifact_contracts.py": 15.0,
+    "tests/test_session_guards.py": 3.0,
 }
 
 
@@ -750,6 +784,11 @@ def sec_mutations(wt: Path, py: str, base_sha: str, spec_path: Path | None,
         s.fail(f"{spec} 에 [[mutation]] 이 하나도 없다")
         return s
 
+    # 지운 변이는 사유를 남겨야 한다 — 지우기만 하면 하네스가 볼 것이 줄어 초록이 된다(샤드 1 이 판정).
+    if spec_path is None and (not shard or shard[0] == 1):
+        spec_doc = tomllib.loads(spec.read_text("utf-8"))
+        for msg in removed_mutations(git(wt, "show", f"{base_sha}:tests/mutations.toml"), spec_doc):
+            s.fail(msg)
     # 새 검사의 변이 미선언 판정은 **선언 전체**를 본다(내 몫만 보면 다른 몫의 가드가 미선언으로 뜬다).
     all_guarded = {g for m in muts for g in m.get("guards") or []}
     declared = len(muts)
@@ -941,8 +980,7 @@ def sec_mutations(wt: Path, py: str, base_sha: str, spec_path: Path | None,
         s.say("새 검사의 변이 선언 판정은 샤드 1 이 한다")
     else:
         uncovered = {t: why for t, why in new_tests.items()
-                     if not any(t == g or t.split("::")[-1] == g.split("::")[-1]
-                                for g in all_guarded)}
+                     if not any(guard_names_test(g, t) for g in all_guarded)}
         exempt = {t: why for t, why in uncovered.items() if why}
         missing_mut = sorted(t for t, why in uncovered.items() if not why)
         for t in sorted(exempt):

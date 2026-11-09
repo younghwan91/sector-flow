@@ -13,6 +13,13 @@
 
 coverage 가 모르는 바뀐 파일(어느 테스트도 import 하지 않은 새 파일)은 **실행 가능한 줄을 직접 세어**
 전부 안 덮인 것으로 친다 — 측정 안 된 파일을 빼고 세면 아무도 안 돌린 새 스크립트가 통과한다.
+
+줄을 잴 수 없는 ``.sh``·``.html``(크론 배치·화면 템플릿)은 **변이**로 대신 본다. 바뀐 파일을 대상으로 하는 변이가
+``tests/mutations.toml`` 에 하나도 없으면 실패한다 — 그 파일의 버그를 잡는 검사가 있는지 아무도 모르는 상태다.
+
+**결과는 격리된 체크아웃에서만 믿는다.** ``pytest --cov`` 는 시작할 때 ``.coverage.*`` 를 지운다. 같은 폴더에서 다른
+``--cov`` 가 돌면 먼저 돌던 쪽의 서브프로세스 측정이 통째로 사라져 커버리지가 낮게 나온다(2026-11-09 리뷰의
+``report_cli.py`` 47.8%). ``tests/conftest.py`` 가 그 겹침을 실패로 끝낸다.
 """
 from __future__ import annotations
 
@@ -22,9 +29,12 @@ import json
 import re
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 ROOTS = ("src/", "scripts/")
+#: 줄 커버리지를 잴 수 없어 변이 유무로 보는 파일.
+UNMEASURABLE = (".sh", ".html")
 
 
 def git(*args: str, cwd: Path | None = None) -> str:
@@ -64,6 +74,24 @@ def changed_lines(base: str, cwd: Path | None = None) -> dict[str, set[int]]:
             start, n = int(m.group(1)), int(m.group(2) or 1)
             out.setdefault(path, set()).update(range(start, start + n))
     return {p: s for p, s in out.items() if s}
+
+
+def changed_unmeasurable(base: str, cwd: Path | None = None) -> set[str]:
+    """merge-base 이후 바뀐 ``.sh``·``.html`` (지운 파일 제외)."""
+    mb = git("merge-base", base, "HEAD", cwd=cwd).strip()
+    names = git("diff", "--name-only", "--diff-filter=d", mb, "--", *ROOTS, cwd=cwd).splitlines()
+    return {p for p in map(_unquote, names) if p.endswith(UNMEASURABLE)}
+
+
+def mutation_targets(root: Path) -> set[str]:
+    """``tests/mutations.toml`` 이 주입하는 파일들. 선언이 없으면 빈 집합."""
+    spec = root / "tests" / "mutations.toml"
+    if not spec.is_file():
+        return set()
+    out: set[str] = set()
+    for m in tomllib.loads(spec.read_text("utf-8")).get("mutation", []):
+        out.update(e.get("file") for e in m.get("edits") or [m])
+    return out
 
 
 def statement_lines(source: str) -> set[int]:
@@ -160,6 +188,12 @@ def main(argv: list[str] | None = None) -> int:
     ok, text = report(measure(changed_lines(a.base, root), cov, root), a.min,
                       new_files(a.base, root), a.min_new_file)
     print(text)
+    blind = sorted(changed_unmeasurable(a.base, root) - mutation_targets(root))
+    if blind:
+        ok = False
+        print("실패 — 줄을 잴 수 없는 바뀐 파일에 변이가 없다(tests/mutations.toml 에 그 파일을 고치는 변이를 더하라):")
+        for p in blind:
+            print(f"  {p}")
     return 0 if ok else 1
 
 
