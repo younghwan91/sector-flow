@@ -607,6 +607,25 @@ def test_reference_day_comes_from_today_then_from_the_report_dates():
     assert dg.collect(P)["asof"] == "2026-11-07"
 
 
+def test_streak_line_keeps_the_sector_only_on_the_full_rung():
+    """연속 줄의 꼴 — 첫 판은 최장 섹터까지, 줄인 판은 시장만, 마지막 판은 줄 없이."""
+    F, _t, pages = dg.build(fixture_payload())
+    full, nosector, none = pages[:3]
+    assert "최장 섹터 반도체" in full
+    assert "연속 순매매" in nosector and "최장 섹터" not in nosector
+    assert "연속 순매매" not in none
+    assert "최장 섹터" not in dg.body_text(F, 0, "nosector")
+
+
+def test_no_comparison_still_states_the_default_window_and_top_n():
+    """직전 리포트가 없는 날의 머리 — 20일·상위5(비교 없음이라 값이 어디서도 안 온다)."""
+    P = fixture_payload()
+    P["change"], P["change_reason"] = None, "직전 리포트가 없다"
+    F, _t, pages = dg.build(P)
+    assert (F["change"]["window"], F["change"]["top_n"]) == (20, 5)
+    assert "20일 순매수 상위5 변동" in pages[0] and "비교 없음 — 직전 리포트가 없다" in pages[0]
+
+
 # ── PNG 경로 — 브라우저 없이 `main` 의 사다리·실패 처리를 돈다(찍는 함수만 바꿔 끼운다). 실제 찍기는 위 Playwright 검사.
 
 def _png_dir(tmp_path: Path) -> Path:

@@ -8120,3 +8120,80 @@ guards = ["tests/test_verifier_depth.py::test_viewer_expect_treats_a_sector_miss
 file = "scripts/verify_report.py"
 find = """.get(k, [0.0] * nd)[i0:i1 + 1]) for mk in mks)"""
 replace = """.get(k, [1.0] * nd)[i0:i1 + 1]) for mk in mks)"""
+
+# ── 표본 3(시드 9)의 진짜 생존 ──
+[[mutation]]
+id = "streak-line-sector-on-the-wrong-rung"
+why = "줄인 판에 최장 섹터가 남고 첫 판에서 빠진다"
+guards = ["tests/test_digest.py::test_streak_line_keeps_the_sector_only_on_the_full_rung"]
+file = "scripts/digest.py"
+find = """streak_line(F, with_sector=streak == "full")
+    if sl:
+        notes.append(sl)"""
+replace = """streak_line(F, with_sector=streak != "full")
+    if sl:
+        notes.append(sl)"""
+
+[[mutation]]
+id = "no-comparison-default-top-n-drifts"
+why = "비교 없는 날 머리에 다른 상위 N 을 적는다"
+guards = ["tests/test_digest.py::test_no_comparison_still_states_the_default_window_and_top_n"]
+file = "scripts/digest.py"
+find = """change = {"prev_date": None, "window": 20, "top_n": 5, "actors": [],"""
+replace = """change = {"prev_date": None, "window": 20, "top_n": 6, "actors": [],"""
+
+[[mutation]]
+id = "final-cell-speaks-for-a-provisional-day"
+why = "잠정 폴더의 칸에 변경 수를 적고, 기록 없는 확정에서 죽는다"
+guards = ["tests/test_trust_page.py::test_final_cell_speaks_only_for_a_final_with_a_record"]
+file = "scripts/trust_page.py"
+find = """    if day["state"] not in ("확정", "재구성") or f is None:"""
+replace = """    if day["state"] not in ("확정", "재구성") and f is None:"""
+
+[[mutation]]
+id = "git-head-success-falls-to-main"
+why = "docs 링크가 늘 main 을 가리켜 그 커밋의 문서가 아니게 된다"
+guards = ["tests/test_trust_page.py::test_git_head_falls_back_to_main_outside_a_repo"]
+file = "scripts/trust_page.py"
+find = """return out.stdout.strip() if out.returncode == 0 and out.stdout.strip() else "main""""
+replace = """return out.stdout.strip() if out.returncode == 1 and out.stdout.strip() else "main""""
+
+[[mutation]]
+id = "parse-verify-invents-a-failure"
+why = "멈춘 검증기에 없는 실패 1건을 적는다"
+guards = ["tests/test_trust_page.py::test_parse_verify_without_marks_counts_zero"]
+file = "scripts/trust_page.py"
+find = """"fails": marks.get("FAIL", 0), "claims": marks.get("CLAIM", 0),"""
+replace = """"fails": marks.get("FAIL", 1), "claims": marks.get("CLAIM", 0),"""
+
+[[mutation]]
+id = "every-day-says-archived"
+why = "보관본이 없는 날도 '원본 보관 1' 이라고 적는다"
+guards = ["tests/test_trust_page.py::test_only_days_with_an_archive_say_so"]
+file = "scripts/trust_page.py"
+find = """day["archived"] = arc.get(d, 0)"""
+replace = """day["archived"] = arc.get(d, 1)"""
+
+[[mutation]]
+id = "dart-iso-mangles-non-dates"
+why = "여덟 자가 아닌 숫자·숫자 아닌 여덟 자를 날짜 꼴로 자른다"
+guards = ["tests/test_collect_dart.py::test_iso_only_rewrites_eight_digits"]
+file = "src/sectorflow/collect/dart.py"
+find = """    if len(s) == 8 and s.isdigit():"""
+replace = """    if len(s) == 8 or s.isdigit():"""
+
+[[mutation]]
+id = "dart-first-row-wins-over-the-later-filing"
+why = "정정 공시가 있어도 먼저 읽은 행이 남는다"
+guards = ["tests/test_collect_dart.py::test_later_filing_wins_whichever_row_comes_first"]
+file = "src/sectorflow/collect/dart.py"
+find = """if stlm not in best or (rcept or "") > best[stlm][0]:"""
+replace = """if stlm not in best or (rcept and "") > best[stlm][0]:"""
+
+[[mutation]]
+id = "stock-top3-fills-missing-with-one"
+why = "값 없는 종목이 1억으로 상위 3 에 든다"
+guards = ["tests/test_streaks_revisions.py::test_stock_top3_ranks_a_missing_value_last"]
+file = "scripts/sector_flow.py"
+find = """top_n = {c for c, _w in sorted(by_new[ms], key=lambda t: (-(t[1].get(a) or 0.0), t[0]))[:n]}"""
+replace = """top_n = {c for c, _w in sorted(by_new[ms], key=lambda t: (-(t[1].get(a) or 1.0), t[0]))[:n]}"""

@@ -474,3 +474,32 @@ def test_git_info_reads_a_real_commit_and_shrugs_at_a_missing_one(tmp_path):
     got = tp.git_info(sha, str(tmp_path))
     assert got is not None and got[0] == "2026-01-02 03:04" and isinstance(got[1], int)
     assert tp.git_info("deadbeef" * 5, str(tmp_path)) is None
+
+
+def test_parse_verify_without_marks_counts_zero():
+    """표시가 하나도 없는 출력(검증기가 시작도 못 함)은 0건 — 없는 실패를 지어내지 않는다."""
+    got = tp.parse_verify("Traceback (most recent call last):\nImportError: x\n")
+    assert got == {"checks": 0, "fails": 0, "claims": 0, "complete": False, "fail_names": []}
+
+
+def test_only_days_with_an_archive_say_so(page):
+    assert "원본 보관 1" in _row(page, "2026-11-05")
+    assert "원본 보관" not in _row(page, "2026-11-03")
+
+
+def test_final_cell_speaks_only_for_a_final_with_a_record():
+    diff = {"kind": "diff", "sector": (5, 240), "market": None}
+    def cell(state, f):
+        return tp.final_cell({"state": state, "final": f, "date": "2026-11-05"})
+    assert "섹터 5/240칸" in cell("확정", diff) and "섹터 5/240칸" in cell("재구성", diff)
+    assert ">—<" in cell("확정", None)                         # 확정인데 기록이 없다 — 죽지 않는다
+    assert ">—<" in cell("잠정", diff)                         # 잠정 폴더에 남은 기록은 말하지 않는다
+    assert ">—<" in cell("잠정", None)
+
+
+def test_git_head_falls_back_to_main_outside_a_repo(tmp_path):
+    env_free = tmp_path / "plain"
+    env_free.mkdir()
+    assert tp.git_head(str(env_free)) == "main"
+    head = subprocess.run(["git", "-C", str(REPO), "rev-parse", "--short=7", "HEAD"], capture_output=True, text=True)
+    assert tp.git_head(str(REPO)) == head.stdout.strip()

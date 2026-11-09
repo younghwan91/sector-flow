@@ -585,3 +585,14 @@ def test_stock_drivers_stop_at_exactly_the_cut_of_the_sum():
     assert sf._stock_drivers(w1(A=50.0, B=30.0, C=15.0, D=5.0)) == {"A", "B"}
     assert sf._stock_drivers(w1(A=49.6, B=30.0, C=15.4, D=5.0)) == {"A", "B", "C"}
     assert sf._stock_drivers(w1(A=0.0, B=0.0)) == set()
+
+
+def test_stock_top3_ranks_a_missing_value_last():
+    """1일 값이 없는 종목은 순위 맨 뒤(0) — 값을 메우면 없는 종목이 상위 3 에 든다."""
+    def w1(**inst):
+        return {c: ("거래소", "보험", c, dict.fromkeys(sf.STOCK_DIFF_ACTORS, 0.0) | {"inst": v}) for c, v in inst.items()}
+    new = w1(A=None, B=0.5, C=0.4, D=0.3, E=-0.1, F=-0.2)
+    old = w1(A=0.1, B=0.5, C=0.4, D=0.3, E=-0.1, F=-0.2)
+    kept, lists = sf._stock_top3(new, old, set(), 3)
+    # inst: {B,C,D} 대 {B,C,D} = 3. 나머지 세 주체는 전부 0 → 코드순 {A,B,C} 끼리 = 3.
+    assert (kept, lists) == (3 * len(sf.STOCK_DIFF_ACTORS), len(sf.STOCK_DIFF_ACTORS))

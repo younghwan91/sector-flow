@@ -419,3 +419,19 @@ def test_a_moved_point_lands_on_the_last_share_event_inside_the_gap(extra):
     pts = [("2026-06-30", 18_907_130)]
     got = D.align_to_listing(pts, [("2026-11-08", 18_907_000)], [*MERGER, extra])
     assert got == [("2026-07-03", 18_907_130, "dart_moved")]
+
+
+def test_later_filing_wins_whichever_row_comes_first(tmp_path):
+    """같은 기준일의 두 공시 — 접수번호가 늦은 쪽이다. 행 순서(사업연도·보고서 코드 순)와 무관하다."""
+    con = _db(tmp_path, snap=("2025-12-31", 7_000_000))
+    _ledger(con, [(2025, "11011", "2025-12-31", "2025-09-30", 6_000_000, "20251114000001"),
+                  (2025, "11014", "2025-09-30", "2025-09-30", 6_100_000, "20251229000001")])
+    D.apply_history(con, ["012170"])
+    rows = dict(con.execute("SELECT date, shares_outstanding FROM shares_outstanding_history").fetchall())
+    assert rows["2025-09-30"] == 6_100_000
+
+
+@pytest.mark.parametrize("raw,want", [("20251231", "2025-12-31"), (" 20251231 ", "2025-12-31"),
+                                      ("2025-12-31", "2025-12-31"), ("2025123", "2025123"), ("2025123x", "2025123x")])
+def test_iso_only_rewrites_eight_digits(raw, want):
+    assert D._iso(raw) == want
