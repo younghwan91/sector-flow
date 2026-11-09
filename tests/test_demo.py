@@ -113,6 +113,18 @@ def test_demo_links_stay_inside_the_folder_and_the_trust_page_gives_the_grounds(
     assert said <= set(verdicts.values()), said - set(verdicts.values())
 
 
+def test_inquiry_attachment_quotes_the_current_screens(built):
+    """질의서 첨부 A 는 지금 화면이다 — 기관 세부·부호 바뀜이 없는 옛 화면을 인용하면 질의의 사실관계가 틀린다."""
+    spec = importlib.util.spec_from_file_location("_shots", REPO / "scripts" / "demo_shots.py")
+    shots = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(shots)
+    doc = shots.ATTACHMENT.read_text("utf-8")
+    assert shots.attachment_blocks(doc) == shots.attachment_screens(str(built["dir"])), (
+        "첨부 A 가 지금 화면과 다르다 — uv run python scripts/demo_shots.py --attachment")
+    for mark in ("기관 세부", "오늘 달라진 것", "부호가 바뀐 섹터", "대량 체결 의심", "거래대금 집중", "네이버 시장값과 차이 큼", "[합성 데모]"):
+        assert mark in shots.attachment_blocks(doc)[0], mark
+
+
 @pytest.mark.parametrize("width", (40, 80, 160))
 def test_demo_mark_survives_at_every_width_on_every_title(built, width):
     """표지는 제목 줄 **맨 앞** — 뒤에 두면 좁은 창에서 잘려 가짜 숫자가 진짜처럼 보인다."""

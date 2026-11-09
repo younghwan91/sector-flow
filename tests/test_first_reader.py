@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from sectorflow.tui.flow_view import B_SHORT, EXPLORE_LABEL_TIERS
+from sectorflow.tui.flow_view import B_SHORT, BANNER_DISCLAIMER, EXPLORE_LABEL_TIERS
 
 REPO = Path(__file__).resolve().parent.parent
 README = (REPO / "README.md").read_text("utf-8")
@@ -149,6 +149,17 @@ def test_inquiries_state_what_the_screen_really_shows():
     assert "점수·등급·판정" not in FSC
     assert "탐색 모드" in KRX and "전 종목" in KRX
     assert "탐색 모드" in KIWOOM
+
+
+def test_inquiries_state_what_the_first_screen_names_and_where_the_data_comes_from():
+    """첫 화면 종목명은 섹터 옆만이 아니다. 네이버 대조도 원천이다. '열마다 표지' 는 부풀린 말이었다. 면책 인용은 지금 글자다."""
+    facts = _section(FSC, "## 1. 사실관계", "## 2. 질의 사항")
+    for must in ("대량 체결 의심", "거래대금 집중", "네이버", "기관 세부", "부호가 바뀐"):
+        assert must in facts, must
+    assert "열마다 근거 수준 표지" not in FSC
+    assert BANNER_DISCLAIMER[0].strip() in facts, "질의서의 면책 인용이 지금 화면과 다르다"
+    legal = (REPO / "docs/strategy/research_notes/섹터 수급 리포트 수익화 전략/legal_licensing.md").read_text("utf-8")
+    assert "m.stock.naver.com" in legal and "m.stock.naver.com" in KRX
 
 
 def test_inquiries_state_the_publication_schedule_and_window():

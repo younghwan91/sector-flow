@@ -8685,6 +8685,54 @@ find = "| ⚠ `대량 체결 의심` |"
 replace = "| ⚠ `큰 체결` |"
 
 [[mutation]]
+id = "attachment-a-drifts-from-the-screen"
+why = "첨부 A 의 화면이 낡으면 질의의 사실관계가 틀린다 — 기관 세부·부호 바뀜 없는 옛 화면을 인용했었다"
+guards = ["tests/test_demo.py::test_inquiry_attachment_quotes_the_current_screens"]
+file = "docs/strategy/inquiries/attachments/A_screen_example.md"
+find = " ── 오늘 달라진 것 ──"
+replace = " ── 달라진 것 ──"
+
+[[mutation]]
+id = "inquiry-overclaims-evidence-marks"
+why = "'열마다 표지' 는 지금 화면에 없는 주장이다 — 질의서에 다시 적으면 사실관계가 틀린다"
+guards = ["tests/test_first_reader.py::test_inquiries_state_what_the_first_screen_names_and_where_the_data_comes_from"]
+file = "docs/strategy/inquiries/fsc_advisory_scope.md"
+find = "첫 화면(사실 요약)의 줄마다 붙어 있지는 않습니다."
+replace = "열마다 근거 수준 표지가 있습니다."
+
+[[mutation]]
+id = "inquiry-drops-naver-source"
+why = "네이버도 원천이다 — 빼면 질의의 원천 설명이 거짓이다"
+guards = ["tests/test_first_reader.py::test_inquiries_state_what_the_first_screen_names_and_where_the_data_comes_from"]
+file = "docs/strategy/inquiries/krx_market_data.md"
+find = "- **네이버 금융**(m.stock.naver.com)의"
+replace = "- 다른 곳의"
+
+[[mutation]]
+id = "shots-stamp-first-row-only"
+why = "원장 sha 를 한 줄만 고치면 나머지 그림은 옛 코드로 적혀 재촬영 경보가 안 맞는다"
+guards = ["tests/test_screenshots_fresh.py::test_stamp_rewrites_every_manifest_row_and_only_those"]
+file = "scripts/demo_shots.py"
+find = """    new, n = ROW.subn(lambda m: f"{m.group(1)}{sha}{m.group(3)}", text)"""
+replace = """    new, n = ROW.subn(lambda m: f"{m.group(1)}{sha}{m.group(3)}", text, count=1)"""
+
+[[mutation]]
+id = "shots-wide-char-single-cell"
+why = "한글을 1칸 격자에 넣으면 그림 속 표의 열이 어긋난다"
+guards = ["tests/test_screenshots_fresh.py::test_ansi_to_html_keeps_color_width_and_trims_only_when_asked"]
+file = "scripts/demo_shots.py"
+find = """            w = 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1"""
+replace = """            w = 1"""
+
+[[mutation]]
+id = "shots-attachment-format-unchecked"
+why = "블록 수가 달라도 쓰면 첨부 A 의 화면이 엉뚱한 절로 들어간다"
+guards = ["tests/test_screenshots_fresh.py::test_attachment_rewrite_replaces_blocks_in_order_and_refuses_a_changed_format"]
+file = "scripts/demo_shots.py"
+find = """    if len(attachment_blocks(text)) != len(screens):"""
+replace = """    if False:"""
+
+[[mutation]]
 id = "digest-published-chip-always"
 why = "다이제스트 공표치 오차 줄이 hot 과 무관하게 나온다"
 guards = ["tests/test_digest.py::test_published_error_chip_follows_krx_truth_hot"]
@@ -9370,8 +9418,8 @@ id = "fsc-inquiry-hides-stock-names"
 why = "금융위 질의서가 종목 표시를 숨긴다 — 사실이 틀린 질의의 회신은 쓸 수 없다"
 guards = ["tests/test_first_reader.py::test_inquiries_state_what_the_screen_really_shows"]
 file = "docs/strategy/inquiries/fsc_advisory_scope.md"
-find = "- **종목이 나옵니다.** 첫 화면에 섹터마다 그날 순매수 상위 종목 1~2개의 **종목명과 금액**이 있고, 섹터 표에 순매수·순매도 상위 종목이, 섹터를 열면(드릴다운) 그 섹터 **전 종목**의 주체별 순매수와 비중이 있습니다.\n"
-replace = ""
+find = "- **종목이 나옵니다.** 첫 화면의 종목명은 세 자리입니다."
+replace = "- 종목은 나오지 않습니다."
 
 [[mutation]]
 id = "krx-inquiry-window-back-to-250"
