@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
 import sys
@@ -407,6 +408,8 @@ def build_payload(df: pd.DataFrame, dates: list[str], caps: pd.DataFrame,
     }
     out["today"] = today_block(out, _market_daily(df, dates, markets))
     out["today"]["streaks"] = streak_block(out)
+    out["today"]["day_change"] = day_change_block(out)
+    out["today"]["concentration"] = concentration_block(out)
     return out
 
 
@@ -425,8 +428,9 @@ TODAY_MIN_LIVE = 0.25
 TODAY_ACTORS = (("inst", "기관"), ("invtrt", "투신"), ("penfnd_etc", "연기금"),
                 ("invpen", "투신+연기금"), ("forgn", "외국인"), ("indiv", "개인"),
                 ("etc", "기타법인"))
-#: 시장 합계에 싣는 주체 — 4주체(합 ≈ 0)와 투신·연기금.
-MARKET_ACTORS = ("inst", "forgn", "indiv", "etc", "invtrt", "penfnd_etc", "invpen")
+#: 시장 합계에 싣는 주체 — 4주체(합 ≈ 0)와 기관 세부 금투·투신·연기금. 금투가 기관 총액을 채우는 날을 화면이 적는다
+#: (2026-11-06 기관 +19,714억 중 금투 +20,181억·투신 −3,186억).
+MARKET_ACTORS = ("inst", "forgn", "indiv", "etc", "fnnc_invt", "invtrt", "penfnd_etc", "invpen")
 #: 시장 맥락 수익률의 구간(거래일).
 MARKET_RET_WINDOWS = (1, 20)
 #: 직전 리포트 대비 — 이 구간 순매수 순위와 상위 몇 섹터의 들고 남.
@@ -654,6 +658,130 @@ def streak_block(P: dict) -> dict:
                 if f["days"] and (best is None or key < best):
                     best = key
             out["longest"].setdefault(mkey, {})[a] = best[2] if best else None
+    return out
+
+
+# ─────────────────────────────────────────────── 하루 단위 변화 — 어제와 무엇이 다른가
+#
+# 극단 목록은 오늘 값만 말하고, 부호 반전 줄은 5일 대 15일을 말한다. 어제 하루와의 차이는 어디에도 없었다
+# (11-05→11-06 기관 전기/전자 −1,625→+7,057). 세기만 한다 — 앞날을 말하지 않는다(CLAUDE.md 화면·리포트 규칙).
+
+#: 극단(1년 %ile)의 **보이는 정수** 문턱 — 화면에 95 로 적힌 날은 95 로 센다(``digest.pct_int`` 와 같은 반올림).
+DAY_PCT_HI, DAY_PCT_LO = 95, 5
+#: 하루 단위 변화를 싣는 주체 — 첫 화면이 적을 수 있는 주체(기관·투신+연기금·그날 최대 순매매 주체).
+DAY_ACTORS = ("inst", "invpen", "forgn", "indiv", "etc")
+#: 부호가 바뀐 섹터의 크기 문턱 — |어제| 와 |오늘| 이 각각 그날 (시장, 주체) 섹터 목록 Σ|값| 의 이 몫 이상.
+#: 작은 칸의 +2억 → −3억 은 부호가 잡음이다. 문턱은 목록 안 몫으로 잡는다(CLAUDE.md 화면·리포트 규칙).
+DAY_FLIP_MIN_SHARE = 0.02
+
+
+def _visible_pct(p: float) -> int:
+    """화면이 적는 백분위 정수 — 소수 1자리로 실은 값을 0.5 올림(``flow_view.pct_int`` 와 같은 값)."""
+    return int(math.floor(round(p, 1) + 0.5 + 1e-9))
+
+
+def extreme_run(ser: list[float], hi: bool) -> int:
+    """마지막 날부터 거슬러 **그날 값의 1년 %ile** 이 같은 쪽 극단인 날 수. 오늘이 극단이 아니면 0.
+
+    날마다 그날까지의 일별 값으로 다시 잰다(:func:`day_pct`) — 오늘 분포로 어제를 재면 미래를 본다.
+    페이로드 첫날보다 앞은 모르므로 그 앞에서 끊긴다.
+    """
+    k = 0
+    for end in range(len(ser), 1, -1):
+        p = day_pct(ser[:end])
+        if p is None:
+            break
+        q = _visible_pct(p)
+        if not (q >= DAY_PCT_HI if hi else q <= DAY_PCT_LO):
+            break
+        k += 1
+    return k
+
+
+def day_change_block(P: dict) -> dict:
+    """``payload["today"]["day_change"]`` — 극단 목록의 지속 일수와 어제와 부호가 바뀐 섹터.
+
+    ``extreme[시장][주체]["hi"|"lo"][섹터]`` = 그 극단에 며칠째인가(1 = 오늘 처음). ``flips[시장][주체]`` = 어제와
+    부호가 반대이고 양일 다 크기 문턱을 넘은 섹터(|오늘| 큰 순). 얇은 섹터·``(미분류)`` 는 부호 줄에서 뺀다.
+    """
+    dates = P["dates"]
+    out: dict = {"prev_date": dates[-2] if len(dates) > 1 else None, "pct_hi": DAY_PCT_HI, "pct_lo": DAY_PCT_LO,
+                 "flip_min_share": DAY_FLIP_MIN_SHARE, "min_members": STREAK_MIN_MEMBERS, "extreme": {}, "flips": {}}
+    for mkey, mks in _mkeys(P):
+        present = [s for s in P["sectors"] if _present(P, mks, s)]
+        for a in DAY_ACTORS:
+            sers = {s: x for s in present if (x := _series(P, mks, s, a)) is not None}
+            ext: dict = {"hi": {}, "lo": {}}
+            for s, x in sers.items():
+                for side, hi in (("hi", True), ("lo", False)):
+                    k = extreme_run(x, hi)
+                    if k:
+                        ext[side][s] = k
+            out["extreme"].setdefault(mkey, {})[a] = ext
+            flips = []
+            if len(dates) > 1:
+                g_now = sum(abs(x[-1]) for x in sers.values())
+                g_prev = sum(abs(x[-2]) for x in sers.values())
+                for s, x in sers.items():
+                    if s == UNCLASSIFIED or _members(P, mks, s) < STREAK_MIN_MEMBERS:
+                        continue
+                    if (x[-1] * x[-2] < 0 and abs(x[-1]) >= DAY_FLIP_MIN_SHARE * g_now
+                            and abs(x[-2]) >= DAY_FLIP_MIN_SHARE * g_prev):
+                        flips.append({"sector": s, "prev": x[-2], "now": x[-1]})
+                flips.sort(key=lambda f: (-abs(f["now"]), f["sector"]))
+            out["flips"].setdefault(mkey, {})[a] = flips
+    return out
+
+
+# ─────────────────────────────────────────────── 거래대금 집중 — 섹터 하나가 사실상 두 종목인 날
+#
+# 전기/전자는 2026-11-06 전체 시장 거래대금의 63% 이고 그 76% 가 두 종목이다(외국인 |순매수| 1위 48일 중 44일).
+# 섹터 합계만 적으면 그 칸이 두 종목의 이야기라는 걸 모른다. 분류는 그대로 두고 두 종목을 뺀 값을 나란히 적는다.
+
+#: 집중 줄에 싣는 섹터 — 그날 그 시장 거래대금의 이 몫 이상. 문턱은 목록 안 몫이다.
+CONCENTRATION_MIN_SHARE = 0.20
+#: 거래대금 상위 몇 종목을 보나.
+CONCENTRATION_TOP = 2
+#: 두 종목을 뺀 값을 적는 주체.
+CONCENTRATION_ACTORS = ("inst", "invpen", "forgn", "indiv", "etc")
+
+
+def concentration_block(P: dict) -> dict:
+    """``payload["today"]["concentration"]`` — 시장별로 거래대금 몫이 큰 섹터의 상위 종목 몫과 그 종목을 뺀 순매수.
+
+    종목 값은 ``names[code].win["1"]``(소수 1자리), 섹터 값은 ``today.sectors`` 다. 얇은 섹터·``(미분류)`` 는 뺀다.
+    """
+    T = P["today"]
+    out: dict = {"min_share": CONCENTRATION_MIN_SHARE, "top_n": CONCENTRATION_TOP, "markets": {}}
+    for mkey, mks in _mkeys(P):
+        total = ((T["market"].get(mkey) or {}).get("tv")) or 0.0
+        rows = T["sectors"].get(mkey) or {}
+        picked = []
+        for s, row in rows.items():
+            tv = row.get("tv") or 0.0
+            if (s == UNCLASSIFIED or _members(P, mks, s) < STREAK_MIN_MEMBERS or not total
+                    or tv < CONCENTRATION_MIN_SHARE * total):
+                continue
+            stocks = []
+            for code, nm in (P.get("names") or {}).items():
+                w = (nm.get("win") or {}).get("1")
+                if w and nm.get("sector") == s and nm.get("market") in mks and w.get("tv"):
+                    stocks.append((-w["tv"], str(code), nm.get("name", "—"), w))
+            stocks.sort(key=lambda t: t[:2])
+            top = stocks[:CONCENTRATION_TOP]
+            if not top:
+                continue
+
+            def stock_value(w: dict, a: str) -> float:
+                return ((w.get("invtrt") or 0.0) + (w.get("penfnd_etc") or 0.0)) if a == "invpen" else (w.get(a) or 0.0)
+            rest = {a: round(((row.get(a) or {}).get("v") or 0.0) - sum(stock_value(t[3], a) for t in top), 1)
+                    for a in CONCENTRATION_ACTORS}
+            top_tv = sum(-t[0] for t in top)
+            picked.append({"sector": s, "tv": tv, "market_share_pct": round(tv / total * 100.0, 1),
+                           "top": [{"code": t[1], "name": t[2], "tv": -t[0]} for t in top],
+                           "top_share_pct": round(top_tv / tv * 100.0, 1), "rest": rest})
+        picked.sort(key=lambda r: (-r["tv"], r["sector"]))
+        out["markets"][mkey] = picked
     return out
 
 

@@ -42,6 +42,8 @@ def _thick(Q: dict) -> dict:
             Q["n_by_sector"][m][s] = 12
     Q["n_by_sector"]["거래소"]["보험"] = 4
     Q["today"]["streaks"] = sf.streak_block(Q)
+    Q["today"]["day_change"] = sf.day_change_block(Q)
+    Q["today"]["concentration"] = sf.concentration_block(Q)
     return Q
 
 

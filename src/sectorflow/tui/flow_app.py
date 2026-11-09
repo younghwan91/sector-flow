@@ -274,7 +274,7 @@ def layout(h: int, drill: bool = False) -> Layout:
     foot_y = max(h - 1, 0)
     hint_y = h - 2 if h >= 5 else -1
     limit = hint_y if hint_y >= 0 else foot_y      # 표가 쓸 수 있는 y 의 끝(배타)
-    nhead = 2 if drill else 1                      # 표 자체의 머리 줄(제목·열이름)
+    nhead = 3 if drill else 1                      # 표 자체의 머리 줄(제목·고정 문구·열이름)
     # 상세는 우선순위 순서로 그린다(제목 → 반대편 → 순매수상위 → 순매도상위).
     # 한 줄이 더 필요해진 것은 **4주체 줄** 때문이다 — "기관이 팔았다" 다음에
     # 오는 질문이 "그럼 누가 받았지" 라, 그 답이 화면을 바꾸지 않고 여기 있다.
@@ -459,12 +459,12 @@ def _draw(scr, st: State) -> None:
             sel = i >= nhead and (first + i - nhead) == st.drow
             if i == 0:
                 base = curses.color_pair(C_AMBER) | curses.A_BOLD if col else curses.A_BOLD
-            elif i == 1:
+            elif i == nhead - 1:
                 base = curses.color_pair(C_HEAD) if col else curses.A_REVERSE
             else:
                 base = _row_attr(col, sel)
-            _put(scr, top + i, line, base, col and i > 1, sel)
-            if i == 1:
+            _put(scr, top + i, line, base, col and i >= nhead, sel)
+            if i == nhead - 1:
                 _hl_sort(scr, top + i, nspan, col)
         shown = min(rows_avail, max(len(body) - first, 0))
         # 종목 패널 — `layout` 이 자리를 잡아 두고 `_stock_detail_lines` 가 내용을 내는데, 이 갈래가
@@ -866,12 +866,21 @@ BANNER_SCROLL = {curses.KEY_DOWN: 1, ord("j"): 1, curses.KEY_UP: -1, ord("k"): -
                  curses.KEY_NPAGE: 10, ord(" "): 10, curses.KEY_PPAGE: -10}
 
 
+#: 첫 화면을 닫으면서 **표에서도 그대로 듣는** 키.
+BANNER_FORWARD = {ord(c) for c in "?1wWmMaAsSre"} | {curses.KEY_F1}
+
+
 def banner_key(st: State, k: int, width: int, height: int) -> bool:
     """첫 화면의 키 하나 — 계속 돌면 True. 넘치는 동안 스크롤 키는 훑고, 그 밖의 키는 닫는다."""
     if k in (curses.KEY_RESIZE,):            # 리사이즈는 "아무 키" 가 아니다 — 다시 그린다
         return True
     step = BANNER_SCROLL.get(k)
     if step and len(banner_lines(st, width)) > height:
+        # Space 는 끝에 닿았으면 표로 나간다 — 제목이 "아무 키나 눌러 표로" 라고 적는데 끝에서 멈추면 거짓이다(more 와 같은 관례).
+        at_end = st.brow >= len(banner_lines(st, width)) - 2 - max(height - 2, 0)
+        if k == ord(" ") and at_end:
+            st.banner = False
+            return True
         st.brow = max(0, st.brow + (step if abs(step) == 1 else (height - 2) * (1 if step > 0 else -1)))
         banner_view(st, width, height)            # 아래 끝에서 멈추게 한 번 맞춘다
         return True
@@ -882,12 +891,13 @@ def banner_key(st: State, k: int, width: int, height: int) -> bool:
 def leave_banner(st: State, k: int) -> bool:
     """배너를 닫는 키 처리 — 계속 돌면 True. 터미널이 사라졌거나(-1) `q` 면 False.
 
-    "아무 키" 라도 `q` 와 `?` 는 제 일을 한다. 닫기만 하면 `q` 를 두 번 눌러야 끝나고,
-    `?` 를 누른 사람은 도움말 대신 표를 본다.
+    "아무 키" 라도 표의 조작 키는 제 일을 한다. 닫기만 하면 `q` 를 두 번 눌러야 끝나고, `?` 를 누른 사람은 도움말 대신
+    표를 보고, `1` 을 누른 사람은(제목이 `1 키로 1일 창` 이라 적는다) 20일 표를 본다. Enter·방향키 같은 나머지는 닫기만 한다 —
+    표로 넘어가려던 Enter 가 맨 윗줄 섹터의 드릴다운이 되면 안 된다.
     """
     if k in (-1, ord("q")):
         return False
-    if k in (ord("?"), curses.KEY_F1):
+    if k in BANNER_FORWARD:
         handle_key(st, k)
     return True
 

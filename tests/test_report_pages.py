@@ -100,7 +100,7 @@ def test_viewer_renders_stock_lists_from_the_payload_shape(tmp_path):
 @node
 def test_viewer_says_why_the_stock_list_is_empty_outside_presets(tmp_path):
     texts = _page("sector_flow.html", _viewer_payload(), tmp_path)
-    assert any("5·20·60·120일 기간에만" in t for t in texts), "1일·전체 단추를 눌렀는데 설명이 없다"
+    assert any("5·20·60·120일 구간에만" in t for t in texts), "1일·전체 단추를 눌렀는데 설명이 없다"
 
 
 @node
@@ -193,7 +193,7 @@ def test_numbers_drops_a_sector_with_no_stocks_in_the_market(tmp_path):
                             "inst": 0.0, "accel": 0.0}]
     d["combined"]["전체"]["rows"].append({"sector": "없는섹터", "n_all": 0, "G": None, "per": {}, "pass_n": 0})
     texts = _page("sector_numbers.html", d, tmp_path)
-    assert "있는섹터" in texts, "픽스처가 행을 하나도 안 그린다 — 이 검사가 헛돈다"
+    assert "있는섹터~" in texts, "픽스처가 행을 하나도 안 그린다 — 이 검사가 헛돈다"
     assert "없는섹터" not in texts
 
 

@@ -1497,8 +1497,8 @@ SELF_SCENARIOS = """일부러 깨진 워크트리를 만들어 하네스가 정�
 #: 사라져, 눈먼 검사 시나리오가 "가드가 초록" 이 아니라 "앵커 없음" 으로 걸렸다).
 #: ``tests/test_mutation_spec.py`` 가 이 앵커도 본다.
 SELF_TEST_FILE = "src/sectorflow/tui/flow_view.py"
-SELF_TEST_FIND = '    Col("가속[%p]", 9, True, _num("accel")),'
-SELF_TEST_REPLACE = '    Col("가속[%p]", 9, True, _num("ret")),'
+SELF_TEST_FIND = '    Col("가속[%p]", 12, True, _num("accel")),'
+SELF_TEST_REPLACE = '    Col("가속[%p]", 12, True, _num("ret")),'
 SELF_TEST_GUARD = "tests/test_tui_flow_view.py::test_data_cells_sit_under_their_headers"
 
 

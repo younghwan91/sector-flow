@@ -97,14 +97,15 @@ def fixture_payload(*, final: bool = False, finalized: bool = True) -> dict:
 
 EXPECTED = """\
 오늘의 수급 · 2026-11-06(금) · 마감·잠정
+자료 범위: KRX 단독·NXT 제외
 잠정치다 — 다음 거래일 새벽 확정치로 바뀔 수 있다.
 최근 7일 잠정→확정: 섹터 칸 중앙 4%, 부호 뒤집힘 14회, 상위3 유지 89%
 
 시장 순매수[억] · 전체(거래소+코스닥) · 괄호는 1년 일별 %ile
-- 기관 +2,500(88) · 외국인 -4,200(6) · 개인 +1,500(70) · 기타법인 +200(51)
+- 기관 +2,500(88) · 외국인 -4,201(6) · 개인 +1,500(70) · 기타법인 +200(51)
 - 종가·VWAP 환산 차 큼(코스닥 6.2%)
 
-1일 수익률 — KRX 지수(정규장 15:30) | 자체 바구니(~20시 통합 종가)
+1일 수익률 — KRX 지수(정규장 15:30) | 자체 바구니(~수집시각 잠정)
 - 거래소: 코스피 -6.02% | 바구니 -4.37%
 - 코스닥: 코스닥 -5.03% | 바구니 -3.81%
 
@@ -115,11 +116,11 @@ EXPECTED = """\
 - 투신+연기금
   상위: 화학 +500(100) · 반도체 +300(80) · 건설 +60(65)
   하위: 통신 -400(2) · 금융 -120(20) · 유통 +0(—)
-- 외국인 — 오늘 금액이 가장 큰 주체
+- 외국인 — 최대 순매매 주체
   상위: 보험 +900(96) · 금융 +400(70) · 건설 +120(62)
   하위: 반도체 -5,000(3) · 화학 -300(30) · 통신 -10(45)
 
-1년 분위 상단(≥95)·하단(≤5) — 오늘 값이 1년 일별 분포의 어디인가
+1년%ile 상단(≥95)·하단(≤5) — 신규·N일째 = 그 극단에 며칠째
 - 기관 상단: 유통 99 · 반도체 97 / 하단: 화학 4 · 건설 5
 - 투신+연기금 상단: 화학 100 / 하단: 통신 2
 - 외국인 상단: 보험 96 / 하단: 반도체 3
@@ -131,7 +132,7 @@ EXPECTED = """\
 - 투신+연기금: 변동 없음
 
 ---
-이 글은 수급 사실 요약이며 투자 판단·추천이 아니다. 섹터 수급 지표와 앞날 수익률의 관계는 검정했고 증거가 없다.
+이 글은 수급 사실 요약이며 투자 판단·추천이 아니다. 섹터 20·60일 수급 지표는 앞날 수익률과의 관계를 검정했고 증거가 없다. 1일 값·1년 %ile·연속 일수는 앞날 검정 안 함.
 자료: 한국거래소 투자자별 매매동향·지수(키움증권 API로 수집). 금액은 순매수 수량×종가 근사, 섹터 구분·수익률은 자체 계산.
 """
 
@@ -192,10 +193,10 @@ def test_text_fits_char_limit_and_trims_extremes_first():
     assert "상위: 가가가가가가00 +1,000(99)" in text
     assert "곳" in text or " 외 " in text
     # 극단을 줄여서 들어가는 날은 연속 줄이 산다 — 연속을 먼저 떨어뜨리면 여기서 잡힌다(TRIM_LADDER 순서).
-    _F, mid, _ = dg.build(_long_payload(name_len=2, n=20))
+    _F, mid, _ = dg.build(_long_payload(name_len=20, n=30))
     assert len(mid) <= dg.MAX_CHARS and "곳" in mid and "연속 순매매" in mid
     with pytest.raises(dg.DigestError, match="상한"):
-        dg.build(_long_payload(name_len=40))
+        dg.build(_long_payload(name_len=120))
     _F, text, _ = dg.build(fixture_payload(final=True))
     assert len(text) <= dg.MAX_CHARS
 
@@ -203,7 +204,8 @@ def test_text_fits_char_limit_and_trims_extremes_first():
 def test_disclaimer_is_fixed_tail():
     """면책·자료 출처가 정해진 글자 그대로 글 끝과 카드에 있다."""
     assert dg.DISCLAIMER == ("이 글은 수급 사실 요약이며 투자 판단·추천이 아니다. "
-                             "섹터 수급 지표와 앞날 수익률의 관계는 검정했고 증거가 없다.")
+                             "섹터 20·60일 수급 지표는 앞날 수익률과의 관계를 검정했고 증거가 없다. "
+                             "1일 값·1년 %ile·연속 일수는 앞날 검정 안 함.")
     assert dg.SOURCE == ("자료: 한국거래소 투자자별 매매동향·지수(키움증권 API로 수집). "
                          "금액은 순매수 수량×종가 근사, 섹터 구분·수익률은 자체 계산.")
     assert "공개" not in dg.SOURCE        # 재배포 허락이 확인되지 않았다
@@ -306,14 +308,15 @@ def test_card_html_is_card_sized_and_carries_facts():
     assert (dg.CARD_W, dg.CARD_H) == (1080, 1350)
     assert "width: 1080px; height: 1350px" in page
     assert "<script" not in page and "http://" not in page and "https://" not in page
-    for s in ("+2,500", "-4,200", "-6.02%", "-3.81%", "오늘 금액 최대", "상위5에 새로 든 섹터: 유통",
+    # 외국인 −4,200.5 는 화면과 같은 반올림(0 에서 먼 쪽)으로 −4,201 이다 — 예전엔 글만 은행가 반올림으로 −4,200 이었다.
+    for s in ("+2,500", "-4,201", "-6.02%", "-3.81%", "최대 순매매 주체", "상위5에 새로 든 섹터: 유통",
               "종가·VWAP 환산 차 큼 코스닥 6.2%", "빨강 = 순매수", "파랑 = 순매도", "상단(≥95)·하단(≤5)"):
         assert s in page, s
     # 외국인 막대(순매도)는 sell, 기관(순매수)은 buy — 0 기준선 왼쪽으로 뻗는다
     rows = page.split('<div class="net-row">')[1:]
     assert 'class="bar buy" style="left:50%' in rows[0]
     assert 'class="bar sell" style="left:0.00%;width:50.00%"' in rows[1]
-    # 줄인 판은 극단 목록·연속 줄만 다르다
+    # 줄인 판은 극단 목록·연속 줄·상하위 개수·변동 줄만 다르다
     assert len(pages) == len(dg.CARD_LADDER)
     assert "연속 순매매" in pages[0] and "연속 순매매" not in pages[-1]
 
@@ -351,7 +354,7 @@ def test_card_text_guard_catches_what_only_the_card_says(monkeypatch):
     """카드에만 있는 글(제목·범례 등)에 금칙어가 들면 만들지 않는다 — 글 검사만으로는 못 잡는다."""
     real = dg.card_html
     monkeypatch.setattr(dg, "card_html",
-                        lambda F, cap=3, streak="full": real(F, cap, streak).replace("오늘의 수급</h1>", "유망 섹터</h1>"))
+                        lambda F, *rung: real(F, *rung).replace("오늘의 수급</h1>", "유망 섹터</h1>"))
     with pytest.raises(dg.DigestError, match="digest_card.html"):
         dg.build(fixture_payload())
 
@@ -367,9 +370,10 @@ def test_displayed_percentile_decides_the_band():
     secs["유통"]["inst"]["pct"] = 99.6
     F = dg.collect(P)
     inst = F["sectors"][0]
-    assert ["금융", 95] in inst["hi"] and ["유통", 100] in inst["hi"]
-    assert ["통신", 5] in inst["lo"]
-    assert all(n != "보험" for n, _ in inst["hi"])
+    hi, lo = [t[:2] for t in inst["hi"]], [t[:2] for t in inst["lo"]]
+    assert ["금융", 95] in hi and ["유통", 100] in hi
+    assert ["통신", 5] in lo
+    assert all(n != "보험" for n, _ in hi)
     text = dg.compose(F)[1]
     assert "금융 +800(95)" in text and "금융 95" in text
     assert dg.pct_int(94.5) == 95 and dg.pct_int(5.5) == 6 and dg.pct_int(None) is None
