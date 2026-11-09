@@ -12,6 +12,7 @@ import unicodedata
 
 import pytest
 
+from sectorflow.tui.flow_view import HELP_BODY
 from sectorflow.tui.flow_view import (
     NAME_SORTS,
     ACTORS, SORTS, WINDOWS, State, banner_lines, detail_lines, fmt_amt, fmt_pct,
@@ -2687,7 +2688,7 @@ def test_what_changed_is_on_the_first_page_at_80x24(data):
 
 def test_final_diff_line_and_help_list(data):
     """확정 리포트면 첫 화면에 '잠정→확정 변경: N칸', 도움말 끝에 그 목록."""
-    from sectorflow.tui.flow_view import HELP, final_diff_line, help_entries
+    from sectorflow.tui.flow_view import final_diff_line, help_entries
 
     fd = {"base_final": False, "base_built": "2026-08-28 18:10", "windows": [1, 5], "tol": 0.05,
           "n_cells": 300, "n_changed": 2,
@@ -2701,7 +2702,7 @@ def test_final_diff_line_and_help_list(data):
     d = dict(data, final=True, final_diff=fd)
     assert final_diff_line(d).startswith(" 잠정→확정 변경: 2칸 / 300칸")
     assert "잠정→확정 변경: 2칸" in "\n".join(banner_lines(State(d), 160))
-    extra = [desc for _n, desc in help_entries(State(d))[len(HELP):]]
+    extra = [desc for _n, desc in help_entries(State(d))[len(HELP_BODY):]]
     text = "\n".join(extra)
     assert "거래소/건설 기관 1일 +10.00 → +12.50 (+2.50)" in text, text
     assert "코스닥/제약 투신 5일" in text and "시장 합계 1칸 중 0칸 바뀜" in text, text
@@ -2715,7 +2716,7 @@ def test_final_diff_line_and_help_list(data):
     assert "첫 확정 11-10 08:21 기록" in final_diff_line(d)
     assert "415칸 / 564칸" in "\n".join(banner_lines(State(d), 80))
     assert "첫 확정 11-10 08:21 기록" in "\n".join(banner_lines(State(d), 80))
-    extra = [desc for _n, desc in help_entries(State(d))[len(HELP):]]
+    extra = [desc for _n, desc in help_entries(State(d))[len(HELP_BODY):]]
     assert "첫 확정(2026-11-10 08:21 KST)의 기록을 이어받았다" in extra
     assert not [t for t in extra if _w(t) + 3 > 80]
     # 값이 또 바뀐 재시도 — 잠정 열만 이었고 1일 칸뿐이라고 말한다(1·5일이라고 적지 않는다).
@@ -2723,7 +2724,7 @@ def test_final_diff_line_and_help_list(data):
                                                inherited_from="2026-11-10 08:21"))
     line = final_diff_line(d)
     assert "첫 확정 11-10 08:21 잠정 열" in line and "1일 순매수" in line and "1·5일" not in line
-    extra = [desc for _n, desc in help_entries(State(d))[len(HELP):]]
+    extra = [desc for _n, desc in help_entries(State(d))[len(HELP_BODY):]]
     assert "그 기록의 잠정 열로 1일 칸만 다시 셌다(5일 잠정 합은 없다)" in extra and "순매수[억] 1일 · 반올림 ±0.05억 초과만" in extra
     assert not [t for t in extra if _w(t) + 3 > 80]
 

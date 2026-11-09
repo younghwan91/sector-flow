@@ -383,6 +383,7 @@ class State:
         self.drow = 0           # 종목 목록에서 선택된 행
         self.nsi = 0            # 종목 정렬
         self.help = False       # 도움말 화면인가
+        self.help_back = False  # 도움말을 첫 화면에서 열었나 — 닫으면 그리로 돌아간다
         self.hrow = 0           # 도움말 스크롤
         # 정렬 역순. 없을 때 "순매도 상위" 로 가는 유일한 길이 G(맨 끝으로) 였는데
         # 그 키가 화면 어디에도 안 적혀 있었다 — 발견 불가능한 유일 경로.
@@ -909,6 +910,8 @@ class State:
 
         5일 열(:meth:`trusted_recent`)과 나란히 둔다 — "지금도 들어오나" 와 "이 창 전체로는" 을 같이 본다.
         종합 화면은 대표 창(:attr:`COMBINED_WIN`)이다.
+
+        1일 창은 ``today.sectors`` 다 — 종목 값은 0.1억으로 반올림돼 있어 그 합이 첫 화면과 −140·−141 로 갈린다.
         """
         win = self.window if self.window != "종합" else self.COMBINED_WIN
         ck = (self.mi, win)
@@ -916,6 +919,9 @@ class State:
             return self._trustw_v
         mkts = [self.market] if self.market != "전체" else self.markets[1:]
         out = _sector_trusted(self.d, mkts, win)
+        if win == ONE_DAY:
+            secs = ((self.d.get("today") or {}).get("sectors") or {}).get(self.market) or {}
+            out.update({s: x["invpen"]["v"] for s, x in secs.items() if (x.get("invpen") or {}).get("v") is not None})
         self._trustw_ck, self._trustw_v = ck, out
         return out
 
@@ -1427,7 +1433,7 @@ def final_diff_line(d: dict) -> str | None:
     first = f"첫 확정 {fd['inherited_from'][5:]} {kind}, " if fd.get("inherited_from") else ""
     wins = "·".join(map(str, fd.get("windows") or (1, 5)))
     return (f" 잠정→확정 변경: {fd.get('n_changed', 0)}칸 / {fd.get('n_cells', 0)}칸"
-            f" ({first}±{fd.get('tol', 0)}억 초과, {wins}일 순매수) — 목록은 ? 도움말 끝")
+            f" ({first}±{fd.get('tol', 0)}억 초과, {wins}일 순매수) — 목록은 ? 뒤 G(도움말 끝 쪽)")
 
 
 def final_diff_help(d: dict) -> list[tuple[str, str]]:
@@ -1495,7 +1501,8 @@ def krx_truth_help(d: dict) -> list[tuple[str, str]]:
 
 def help_entries(st: "State") -> list[tuple[str, str]]:
     """도움말 = 고정 :data:`HELP` + 이 리포트에만 있는 것(잠정 → 확정 변경 목록·KRX 네이버 대조)."""
-    return HELP + _wrap_help(final_diff_help(st.d) + krx_truth_help(st.d))
+    # 자료 범위가 **맨 끝**이다 — 첫 화면이 '? 뒤 G' 로 보내는 자리라, 이 리포트 절이 그 뒤에 붙으면 G 가 엉뚱한 데로 간다.
+    return HELP_BODY + _wrap_help(final_diff_help(st.d) + krx_truth_help(st.d)) + BASIS_HELP
 
 
 #: 리포트마다 다른 도움말 줄의 폭(칸). 앞 들여쓰기 3칸을 빼고 80칸에 든다. 줄 수가 터미널 폭과 무관해야 스크롤 하한이 맞는다.
@@ -1573,13 +1580,13 @@ def day_stocks(d: dict, markets, actor: str) -> dict:
     return out
 
 
-def _stock_tag(stocks: list, side: str, k: int) -> str:
+def _stock_tag(stocks: list, side: str, k: int, name_w: int = 10) -> str:
     """`[기업은행 +300·KB금융 +200]` — 사는 줄은 순매수 상위, 파는 줄은 순매도 상위(부호가 맞는 것만)."""
     if k <= 0 or not stocks:
         return ""
     pick = [t for t in stocks if t[1] > 0][:k] if side == "buy" else \
         [t for t in stocks[::-1] if t[1] < 0][:k]
-    return "[" + "·".join(f"{clip(n, 10)} {fmt_amt(v)}" for n, v in pick) + "]" if pick else ""
+    return "[" + "·".join(f"{clip(n, name_w)} {fmt_amt(v)}" for n, v in pick) + "]" if pick else ""
 
 
 def sector_day_ret(d: dict, market: str) -> dict:
@@ -1589,14 +1596,17 @@ def sector_day_ret(d: dict, market: str) -> dict:
 
 
 def _ranked_line(prefix: str, ranked: list, stocks: dict, side: str, width: int, rets: "dict | None" = None) -> str:
-    """섹터 3개(금액·%ile·그날 수익률) + 그 주체의 종목 — 폭이 모자라면 종목 수를 2 → 1 → 0 으로 줄인다.
+    """섹터 3개(금액·%ile·그날 수익률) + 그 주체의 종목 — 폭이 모자라면 이름을 줄이고(16→10칸) 종목 수를 2 → 1 → 0 으로 줄인다.
+
+    넓은 화면에서 이름이 10칸에 잘리면 같은 머리글자 종목이 `가상전자…` 로 똑같아진다.
 
     수익률은 섹터 이름 옆 금액이 "얼마나 움직인 날"의 것인지 같이 읽으라고 단다(리뷰 3차 D3-m1) —
     웹 '오늘' 패널과 같은 반올림(:func:`fmt_pct`, 소수 2자리, 0.5 는 0 에서 먼 쪽)이다.
     """
     rets = rets or {}
-    for k in range(BANNER_STOCKS, -1, -1):
-        items = [f"{s} {fmt_amt(v)}{_pct_tag(p)} {_fmt_ret(rets.get(s))}{_stock_tag(stocks.get(s) or [], side, k)}"
+    tiers = [(k, 16) for k in range(BANNER_STOCKS, 0, -1)] + [(k, 10) for k in range(BANNER_STOCKS, -1, -1)]
+    for k, name_w in tiers:
+        items = [f"{s} {fmt_amt(v)}{_pct_tag(p)} {_fmt_ret(rets.get(s))}{_stock_tag(stocks.get(s) or [], side, k, name_w)}"
                  for s, v, p in ranked]
         line = prefix + " · ".join(items)
         if cell_len(line) <= width or k == 0:
@@ -1944,7 +1954,7 @@ def elapsed_note(asof: str, today: "date | None" = None) -> str:
 def basis_line(width: int, elapsed: str = "") -> str:
     """첫 화면 둘째 줄 — 자료 범위(KRX 단독·NXT 제외)와 기준일 경과. 도움말 끝 절까지 안 내려가도 보이게(리뷰 3차 D1-m5)."""
     age = f" · {elapsed}" if elapsed else ""
-    return pad(_first_fitting(width, [f" {DATA_BASIS_SHORT}{age} — 근거는 ? 도움말 끝", f" {DATA_BASIS_SHORT}{age}",
+    return pad(_first_fitting(width, [f" {DATA_BASIS_SHORT}{age} — 근거는 ? 뒤 G(도움말 끝)", f" {DATA_BASIS_SHORT}{age}",
                                       f" {DATA_BASIS_SHORT}"]), width)
 
 
@@ -3099,7 +3109,7 @@ HELP = [
     ("네이버 대조", "기본 꺼짐. 켠 리포트만 네이버 시장값(KRX 원표 미대조)에 시장 합"),
     ("", "        계를 대 차이를 잰다. 합계 5% 초과면 '네이버 시장값과 차이 큼' 칩."),
     ("", "        네이버 수치는 화면에 없다(약관 미확인, 내부 대조 전용). 측정값은"),
-    ("", "        이 도움말 맨 끝 절. 못 받으면 '네이버 대조 건너뜀'. 꺼지면 다 없다."),
+    ("", "        도움말 끝 쪽 절. 못 받으면 '네이버 대조 건너뜀'. 꺼지면 다 없다."),
     ("분봉 밖", "거래량의 50% 이상이 분봉 밖이고 최대 주체 금액이 시장 Σ|주체|"),
     ("", "        의 1% 이상인 종목. 시간외 대량매매라는 것은 추정이다. 시장값과의"),
     ("", "        차이는 정의 차이일 수 있으나 09-14 전 후보는 아니었다(위 금액 오차)."),
@@ -3121,7 +3131,7 @@ HELP = [
     ("", "        남은 종목 수는 첫 화면이 적는다."),
     ("잠정→확정", "확정 리포트에서 바꿔 끼운 잠정 리포트 대비 1·5일 순매수가 반올림"),
     ("", "        (±0.05억)을 넘게 바뀐 칸 수 — 첫 화면에 큰 칸 셋과 %ile 극단 목록의"),
-    ("", "        들고 남, 전체 목록은 이 도움말 맨 끝."),
+    ("", "        들고 남, 전체 목록은 이 도움말 끝 쪽(자료 범위 앞)."),
     ("", ""),
     ("", "── 섹터 표 ──"),
     ("섹터", "벤더 분류(stocks.sector) 27개 — KRX 업종 분류와 다르다."),
@@ -3279,7 +3289,8 @@ HELP = [
     ("", "     KR_QUANT_FORCE=1 scripts/daily_report.sh      (약 6분)"),
     ("", "  옆에 지어 마지막에 바꿔 끼우므로, 실패하면 옛 리포트가 그대로 남는다."),
 ]
-HELP = _with_evidence(HELP) + BASIS_HELP
+HELP_BODY = _with_evidence(HELP)
+HELP = HELP_BODY + BASIS_HELP
 
 
 #: 도움말 제목 — 넓은 것부터. 폭에 안 들어가면 다음 단계로 내려간다.

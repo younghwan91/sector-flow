@@ -8519,6 +8519,78 @@ find = "    return lines + _wrap_words(cur, width, indent)"
 replace = "    return lines + [pad(cur, width)]"
 
 [[mutation]]
+id = "serve-ignores-single-report-root"
+why = "데모 폴더를 --root 로 주면 '리포트가 아직 없다' 와 /latest 404 로 돌아간다"
+guards = ["tests/test_serve_reports.py::test_single_report_folder_as_root_is_served"]
+file = "scripts/serve_reports.py"
+find = "    if not os.path.exists(os.path.join(path, \"numbers.html\")):\n        return path\n"
+replace = "    if True:\n        return path\n"
+
+[[mutation]]
+id = "one-day-trust-sums-rounded-stocks-tui"
+why = "1일 표가 반올림된 종목 합이면 첫 화면과 −140·−141 로 갈린다"
+guards = ["tests/test_demo.py::test_one_day_trust_column_matches_the_first_screen"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "        if win == ONE_DAY:\n            secs = ((self.d.get(\"today\")"
+replace = "        if False:\n            secs = ((self.d.get(\"today\")"
+
+[[mutation]]
+id = "one-day-trust-sums-rounded-stocks-web"
+why = "웹 1일 표가 반올림된 종목 합이면 첫 화면과 갈린다"
+guards = ["tests/test_demo.py::test_demo_report_passes_the_same_verifier_as_a_real_report"]
+file = "scripts/templates/sector_numbers.html"
+find = "  if(win===1) Object.entries((T&&T.sectors||{})[mkt]||{})"
+replace = "  if(false) Object.entries((T&&T.sectors||{})[mkt]||{})"
+
+[[mutation]]
+id = "help-close-forgets-first-screen"
+why = "첫 화면에서 연 도움말을 닫으면 표로 떨어져 읽던 자리를 잃는다"
+guards = ["tests/test_tui_user_facing.py::test_help_opened_from_the_first_screen_returns_there"]
+file = "src/sectorflow/tui/flow_app.py"
+find = "    if k in (ord(\"?\"), curses.KEY_F1):\n        st.help_back = True\n"
+replace = ""
+
+[[mutation]]
+id = "help-basis-not-last"
+why = "'도움말 끝' 이 자료 범위가 아니면 G 가 엉뚱한 데로 간다"
+guards = ["tests/test_tui_user_facing.py::test_help_ends_with_the_data_basis_on_a_final_report"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "    return HELP_BODY + _wrap_help(final_diff_help(st.d) + krx_truth_help(st.d)) + BASIS_HELP"
+replace = "    return HELP + _wrap_help(final_diff_help(st.d) + krx_truth_help(st.d))"
+
+[[mutation]]
+id = "first-screen-names-clip-at-10"
+why = "넓은 화면에서도 이름이 10칸에 잘리면 같은 머리글자 종목이 똑같아진다"
+guards = ["tests/test_demo.py::test_first_screen_stock_names_are_whole_at_the_readme_width"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "    tiers = [(k, 16) for k in range(BANNER_STOCKS, 0, -1)] + "
+replace = "    tiers = "
+
+[[mutation]]
+id = "demo-band-covers-jump-title"
+why = "데모 고정 띠가 페이지 안 이동의 제목을 가린다"
+guards = ["tests/test_demo.py::test_demo_band_leaves_room_above_jump_targets"]
+file = "src/sectorflow/demo.py"
+find = "BANNER = ('<style>[id]{scroll-margin-top:96px!important}</style>'\n          '<div"
+replace = "BANNER = ('<div"
+
+[[mutation]]
+id = "viewer-list-inner-scroll"
+why = "13행 목록의 마지막 줄이 안쪽 스크롤 뒤로 말없이 숨는다"
+guards = ["tests/test_report_pages.py::test_viewer_ranking_list_is_not_capped_by_an_inner_scroll"]
+file = "scripts/templates/sector_flow.html"
+find = ".rows{padding:7px 6px 11px}"
+replace = ".rows{padding:7px 6px 11px; max-height:520px; overflow-y:auto}"
+
+[[mutation]]
+id = "touch-targets-small"
+why = "폰에서 구간·시장 단추가 26px 로 돌아간다"
+guards = ["tests/test_report_pages.py::test_touch_targets_are_44px_on_touch_screens"]
+file = "scripts/templates/sector_numbers.html"
+find = "@media (pointer:coarse),(max-width:900px){.seg button,select,nav.jump a,"
+replace = "@media (pointer:coarse),(max-width:900px){nav.jump a,"
+
+[[mutation]]
 id = "truth-off-still-warns-on-screen"
 why = "꺼진 리포트에 '건너뜀' 칩이 뜨면 기본 상태가 날마다 거짓 경고다"
 guards = ["tests/test_krx_truth.py::test_switched_off_report_is_quiet_on_every_surface"]

@@ -102,6 +102,34 @@ def test_detail_panel_drops_whole_items_with_a_count_at_80_cols(built):
     assert not re.search(r"[+\-−][\d,]*\s*$", lines, re.M), "줄 끝이 단위 없는 숫자다"
 
 
+def test_demo_band_leaves_room_above_jump_targets():
+    """데모 고정 띠가 점프한 제목을 가리면 안 된다 — 띠가 두세 줄이 되는 폰 폭까지(값은 Playwright 로 재 정했다)."""
+    assert re.search(r"\[id\]\{scroll-margin-top:(\d+)px!important\}", demo.BANNER)
+    assert int(re.search(r"scroll-margin-top:(\d+)", demo.BANNER).group(1)) >= 90
+    css = (REPO / "scripts/templates/sector_numbers.html").read_text("utf-8")
+    assert "#main-table{overflow:clip}" in css, "overflow:hidden 인 칸은 크롬이 scroll-margin 을 무시한다(390·1440폭 실측)"
+
+
+def test_first_screen_stock_names_are_whole_at_the_readme_width(built):
+    """README 첫 그림(160칸)의 `[ ]` 이름이 10칸에 잘려 `가상전자…` 로 다 같았다 — 폭이 되면 다 적는다."""
+    text = "\n".join(banner_lines(State(flow_app.load(str(built["dir"]))), 159))
+    tags = re.findall(r"\[(가상[^\]]*)\]", text)
+    assert tags and not [t for t in tags if "…" in t], tags[:5]
+
+
+def test_one_day_trust_column_matches_the_first_screen(built):
+    """1일 표의 투신+연기금 = 첫 화면 값(``today.sectors``). 종목 합이면 데모에서 −140·−141 로 갈린다."""
+    d = flow_app.load(str(built["dir"]))
+    st = State(d)
+    st.goto_window("1")
+    secs = d["today"]["sectors"][st.market]
+    assert any(flow_view.fmt_amt(v) != flow_view.fmt_amt(secs[s]["invpen"]["v"])
+               for s, v in flow_view._sector_trusted(d, st.markets[1:], "1").items() if s in secs), "데모에 갈리는 칸이 없다"
+    for s, v in st.trusted_window().items():
+        if s in secs:
+            assert flow_view.fmt_amt(v) == flow_view.fmt_amt(secs[s]["invpen"]["v"]), s
+
+
 def test_demo_has_no_real_name_or_code(built):
     """실데이터·실종목명을 레포에도 산출물에도 넣지 않는다 — 이름은 '가상', 코드는 KRX 에 없는 'Z' 로 시작한다."""
     P = json.loads((built["dir"] / "payload.json").read_text("utf-8"))

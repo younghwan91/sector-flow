@@ -3793,6 +3793,8 @@ def layer_w(D: dict, P: dict, folder: str) -> None:
                 for a in ("inst", "forgn", "indiv", "etc"):
                     r[a] = (x.get(a) or {}).get("v")
                 rows.append(r)
+                if (x.get("invpen") or {}).get("v") is not None:   # 1일 창은 첫 화면과 같은 값 — 종목 합(0.1억 반올림)이 아니다
+                    tw[s] = x["invpen"]["v"]
         else:
             rows = [dict(r, pct=(r.get("pct1y") or {}).get("inst")) for r in D["blocks"][f"{w}|{m}"]["rows"]]
         rows = [r for r in rows if not (r.get("n_all") == 0 and not r.get("cap"))]

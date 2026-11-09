@@ -51,7 +51,9 @@ TRUTH_NOISE = {"거래소": (0.14, 0.09, 0.21), "코스닥": (0.01, 0.015, 0.02)
 TRUTH_LABEL = "합성 값 — 실제 네이버 값이 아니다"
 #: 합성 네이버 행(원) — 실제 파일과 같은 모양이고 값만 난수다. 주체 → 행 이름.
 TRUTH_ROWS = {"indiv": "개인", "forgn": "외국인", "inst": "기관합계"}
-BANNER = ('<div data-demo-banner style="position:sticky;top:0;z-index:9999;background:#b45309;color:#fff;'
+#: 띠가 sticky 라 페이지 안 이동의 제목을 가린다 — 390폭에서 띠가 두세 줄이고(~80px) 본문의 scroll-margin 은 44px 다.
+BANNER = ('<style>[id]{scroll-margin-top:96px!important}</style>'
+          '<div data-demo-banner style="position:sticky;top:0;z-index:9999;background:#b45309;color:#fff;'
           'padding:6px 12px;font-weight:700;text-align:center">' + DEMO_NOTICE + "</div>")
 
 
@@ -341,4 +343,7 @@ def main() -> None:
     ap.add_argument("--out", help=f"만들 폴더(기본: {default_dir()})")
     ap.add_argument("--force", action="store_true", help="이미 있어도 다시 만든다")
     a = ap.parse_args()
-    print(ensure(a.out, force=a.force))
+    path = ensure(a.out, force=a.force)
+    print(path)                        # stdout 은 경로 한 줄 — 안내는 stderr 로
+    print(f"화면: uv run sw-flow --dir {path}\n웹(저장소 체크아웃에서): uv run python scripts/serve_reports.py --root {path}"
+          " — http://127.0.0.1:8765/", file=sys.stderr)

@@ -457,6 +457,20 @@ def test_numbers_today_panel_names_the_krx_truth_skip_reason(tmp_path):
     assert "⚠ 네이버 대조 건너뜀" in joined
 
 
+@pytest.mark.parametrize("tpl", ["sector_numbers.html", "sector_flow.html"])
+def test_touch_targets_are_44px_on_touch_screens(tpl):
+    """폰에서 구간·시장 단추가 26px 이었다. 터치 화면에서만 44px — 마우스 화면의 밀도는 그대로."""
+    css = (REPO / "scripts/templates" / tpl).read_text("utf-8")
+    block = re.search(r"@media \(pointer:coarse\),\(max-width:900px\)\{([^{]*)\{min-height:44px", css)
+    assert block and ".seg button" in block.group(1) and "select" in block.group(1)
+
+
+def test_viewer_ranking_list_is_not_capped_by_an_inner_scroll():
+    """13행 목록의 마지막 줄(얇은 섹터)이 안쪽 스크롤 뒤로 말없이 숨었다 — 표시 없는 잘림이다."""
+    css = (REPO / "scripts/templates/sector_flow.html").read_text("utf-8")
+    assert not re.search(r"\.rows\{[^}]*max-height", css)
+
+
 @node
 def test_numbers_is_quiet_about_naver_when_the_switch_is_off(tmp_path):
     """기본 꺼짐 — 오늘 패널에 네이버 칩·건너뜀·차이 줄이 없다. 도움말의 48일 실측 설명은 측정 기록이라 남는다."""

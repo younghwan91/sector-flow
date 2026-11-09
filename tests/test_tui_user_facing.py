@@ -213,6 +213,31 @@ def test_banner_keys(data, key, alive, helping):
     assert st.help is helping
 
 
+def test_help_opened_from_the_first_screen_returns_there(data):
+    """첫 화면에서 ? → 닫기 = 첫 화면. 표에서 연 도움말은 표로 돌아간다."""
+    st = State(json.loads(json.dumps(data)))
+    leave_banner(st, ord("?"))
+    assert st.help and not st.banner
+    handle_key(st, ord("q"))
+    assert st.banner and not st.help and not st.help_back
+    st.banner = False
+    handle_key(st, ord("?"))
+    handle_key(st, ord("q"))
+    assert not st.banner and not st.help
+
+
+def test_help_ends_with_the_data_basis_on_a_final_report(data):
+    """첫 화면이 '근거는 ? 뒤 G(도움말 끝)' 라고 적는다 — 확정 리포트의 목록·네이버 절이 그 뒤에 붙으면 거짓이다."""
+    from sectorflow.basis import BASIS_HELP
+    from sectorflow.tui.flow_view import help_entries
+
+    d = json.loads(json.dumps(data))
+    d.setdefault("today", {})["krx_truth"] = {"status": "skip", "reason": "망"}
+    entries = help_entries(State(d))
+    assert entries[-len(BASIS_HELP):] == BASIS_HELP
+    assert any("네이버 시장값 대조" in e[1] for e in entries)
+
+
 # --- 환경 --------------------------------------------------------------------
 
 @pytest.mark.parametrize("term,inp,out,enc,want", [

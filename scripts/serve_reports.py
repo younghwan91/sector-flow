@@ -20,13 +20,17 @@
 from __future__ import annotations
 
 import argparse
+import atexit
 import errno
 import gzip
 import html
+import json
 import os
 import re
+import shutil
 import signal
 import sys
+import tempfile
 import threading
 import time
 from datetime import date
@@ -423,9 +427,33 @@ def _exit_when_redeployed(server: ThreadingHTTPServer, interval: float = 60.0) -
             return
 
 
+def single_report_root(path: str) -> str:
+    """``--root`` 에 부모가 아니라 리포트 한 벌(``sector-flow-demo --out`` 결과 등)을 주면 그 한 벌을 보여 준다.
+
+    목록은 기준일 이름의 하위 폴더만 본다 — 안 받으면 멀쩡한 폴더에 '리포트가 아직 없다' 와 ``/latest`` 404 가 뜬다.
+    옆 임시 폴더에 ``<기준일>``·``latest`` 링크를 만들어 다른 경로와 같은 길로 낸다(원본 폴더엔 안 쓴다).
+    """
+    if not os.path.exists(os.path.join(path, "numbers.html")):
+        return path
+    try:
+        with open(os.path.join(path, "payload.json"), encoding="utf-8") as f:
+            day = json.load(f)["dates"][-1]
+    except (OSError, ValueError, KeyError, IndexError, TypeError):
+        day = None
+    if not (isinstance(day, str) and DATE_RE.match(day)):
+        raise SystemExit(f"{path} 는 리포트 한 벌인데 payload.json 에서 기준일을 못 읽었다 — --root 에는 기준일 폴더들의 부모를 주어라")
+    view = tempfile.mkdtemp(prefix="sector-flow-serve.")
+    atexit.register(shutil.rmtree, view, True)
+    os.symlink(path, os.path.join(view, day))
+    os.symlink(day, os.path.join(view, "latest"))
+    print(f"리포트 한 벌을 연다: {path} ({day})", flush=True)
+    return view
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--root", default=os.path.join(REPO, "reports"), help="리포트 폴더")
+    ap.add_argument("--root", default=os.path.join(REPO, "reports"),
+                    help="기준일 폴더들의 부모(reports) 또는 리포트 한 벌(sector-flow-demo --out 의 폴더)")
     ap.add_argument("--host", default="127.0.0.1", help="묶을 주소 (기본 127.0.0.1 — 밖에서 보려면 Tailscale 주소)")
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--soft-fail", metavar="이유", help="띄우지 않고 기동 실패만 센다(serve.sh 가 쓴다)")
@@ -433,6 +461,7 @@ def main(argv=None) -> int:
     Handler.root = os.path.abspath(a.root)
     if a.soft_fail:
         return soft_fail(Handler.root, a.soft_fail)
+    Handler.root = single_report_root(Handler.root)
     try:
         srv = ThreadingHTTPServer((a.host, a.port), Handler)
     except OSError as e:
