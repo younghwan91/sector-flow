@@ -42,12 +42,12 @@ def test_every_script_is_in_the_readme_tree():
 @pytest.mark.parametrize("term", [
     "투신", "연기금", "금투", "기타법인", "VWAP", "%p", "잠정", "확정", "ρ", "IC", "OLS", "K1", "K2", "K3", "S1", "Q3c",
     "β제거", "gross", "임펄스", "가속", "재구성", "연속 순매매", "합성 데모",
-    "네이버 시장값", "대량 체결 의심", "권리락", "거래대금 집중", "금투÷기관", "신규·N일째"])
+    "네이버 시장값", "분봉 밖 거래 큼", "권리락", "거래대금 집중", "금투÷기관", "신규·N일째"])
 def test_glossary_defines_the_term(term):
     assert re.search(rf"^\| [^|]*{re.escape(term)}[^|]*\|", GLOSSARY, re.M), f"용어집 표에 '{term}' 이 없다"
 
 
-@pytest.mark.parametrize("mark", ["네이버 시장값", "대량 체결 의심", "금투÷기관", "거래대금 집중", "신규"])
+@pytest.mark.parametrize("mark", ["네이버 시장값", "분봉 밖 거래 큼", "금투÷기관", "거래대금 집중", "신규"])
 def test_first_screen_marks_are_explained_in_the_guide_and_readme(mark):
     """화면에 뜨는 표지는 가이드와 README §5.1 에서 찾을 수 있다 — 없어진 칩 `금액 근사 오차 ⚠` 만 적혀 있었다."""
     assert mark in GUIDE and mark in _section(README, "### 5.1 키", "### 5.2"), mark
@@ -154,7 +154,7 @@ def test_inquiries_state_what_the_screen_really_shows():
 def test_inquiries_state_what_the_first_screen_names_and_where_the_data_comes_from():
     """첫 화면 종목명은 섹터 옆만이 아니다. 네이버 대조도 원천이다. '열마다 표지' 는 부풀린 말이었다. 면책 인용은 지금 글자다."""
     facts = _section(FSC, "## 1. 사실관계", "## 2. 질의 사항")
-    for must in ("대량 체결 의심", "거래대금 집중", "네이버", "기관 세부", "부호가 바뀐"):
+    for must in ("분봉 밖 거래 큼", "거래대금 집중", "네이버", "기관 세부", "부호가 바뀐"):
         assert must in facts, must
     assert "열마다 근거 수준 표지" not in FSC
     assert BANNER_DISCLAIMER[0].strip() in facts, "질의서의 면책 인용이 지금 화면과 다르다"
@@ -177,6 +177,51 @@ def test_krx_inquiry_states_the_real_sources():
     for must in ("상장폐지", "OpenDART", "KRX 체결만"):
         assert must in sources, must
     assert "400 LOGOUT" in KRX
+
+
+#: 근거를 넘는 단정 — 검증 문서 결론은 수량만 말하고 까닭은 미확인이다. '일 수 있다' 로만 쓴다(6회차 D2).
+OVERCLAIMS = ("값이 틀린 것이 아니라", "값이 틀린 표지가 아니라", "정의가 갈린", "대량 체결 의심", "드물게 뜨는", "정의 차이(")
+OVERCLAIM_SURFACES = ("README.md", "docs/glossary.md", "docs/reading-guide.md", "docs/runbook.md",
+                      "docs/strategy/inquiries/fsc_advisory_scope.md", "docs/strategy/inquiries/krx_market_data.md",
+                      "docs/strategy/inquiries/kiwoom_api_terms.md", "scripts/digest.py", "scripts/templates/trust.html",
+                      "scripts/templates/sector_numbers.html", "src/sectorflow/demo.py", "src/sectorflow/tui/flow_view.py")
+
+
+@pytest.mark.parametrize("rel", OVERCLAIM_SURFACES)
+def test_no_surface_overclaims_the_off_book_explanation(rel):
+    text = (REPO / rel).read_text("utf-8")
+    assert not [w for w in OVERCLAIMS if w in text], rel
+
+
+def test_validation_doc_states_the_stock_check_scope():
+    """종목값 대조는 10-12 까지·수량만이다. 건수를 못 쟀으면 못 쟀다고 적어야 '일치' 가 전수로 읽히지 않는다."""
+    v = (REPO / "docs/validation/2026-11-09-market-total-vs-published.md").read_text("utf-8")
+    scope = v.split("**종목값 대조의 범위.**")[1].splitlines()[0]
+    for must in ("10-12", "수량", "미확인", "10-29"):
+        assert must in scope, must
+
+
+def test_inquiries_state_minute_bars_and_the_unverified_api():
+    """'실시간·장중 데이터는 쓰지 않습니다'·'일별 조회만' 은 틀렸다 — 분봉을 읽는다. 수집 API 는 미확인으로 적는다."""
+    for doc in (KRX, KIWOOM):
+        assert "minute_bars" in doc and "확인하지 못했습니다" in doc and "거래대금 집중" in doc
+    assert "실시간·장중 데이터는 쓰지 않습니다" not in KRX and "일별 조회만" not in KIWOOM
+
+
+def test_inquiries_put_numbers_on_the_flag_and_disclose_reconstruction():
+    """표지 빈도는 숫자로. 차이 % 로 네이버 값을 되짚을 수 있다는 것·기본 꺼짐·다이제스트 용도를 밝힌다."""
+    assert "36거래일 중 16일(44%" in FSC and "다이제스트" in FSC
+    for doc in (FSC, KRX):
+        assert "되짚을 수 있습니다" in doc and "기본 꺼짐" in doc
+
+
+@pytest.mark.parametrize("rel", [
+    "docs/strategy/inquiries/krx_market_data.md", "docs/strategy/inquiries/kiwoom_api_terms.md",
+    "docs/strategy/inquiries/attachments/B_metric_definitions.md", "docs/strategy/inquiries/attachments/D_sales_copy_draft.md",
+    "docs/strategy/legal/terms_of_service_draft.md"])
+def test_legal_drafts_do_not_lump_percentile_with_the_tested_metrics(rel):
+    """1년 백분위는 앞날 검정을 안 했다 — '검정 증거 없음' 옆에 안 적으면 백분위도 검정한 것처럼 읽힌다."""
+    assert "1년 백분위·연속 일수는 앞날 검정을 하지 않" in (REPO / rel).read_text("utf-8")
 
 
 def test_fsc_inquiry_does_not_claim_a_notice_the_screen_lacks():

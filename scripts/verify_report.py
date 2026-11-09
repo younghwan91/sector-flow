@@ -2059,14 +2059,14 @@ def _f_cap_index_ratio(P: dict, cur, ph: str, mcap: dict) -> None:
             print(f"       {VF_CAP_INDEX_MARK}: {detail}")
 
 
-#: 대량 체결 의심의 문턱 — producer(sector_flow.BLOCK_*)를 읽지 않고 따로 적는다.
+#: 분봉 밖 거래 큼의 문턱 — producer(sector_flow.BLOCK_*)를 읽지 않고 따로 적는다.
 VF_BLOCK_OFF_MIN = 0.5
 VF_BLOCK_SHARE_MIN = 0.01
 VF_BLOCK_MIN_COVER = 0.95
 
 
 def _f_block_suspects(P: dict, cur, ph: str, meta: dict, d1: str, bars: dict) -> None:
-    """대량 체결 의심 = DB 재계산 — 분봉 합·수량·종가에서 목록과 skip 을 다시 만든다. 옛 리포트(블록 없음)는 침묵."""
+    """분봉 밖 거래 큼 = DB 재계산 — 분봉 합·수량·종가에서 목록과 skip 을 다시 만든다. 옛 리포트(블록 없음)는 침묵."""
     got = (P.get("today") or {}).get("block_suspects")
     if got is None:
         return
@@ -2082,7 +2082,7 @@ def _f_block_suspects(P: dict, cur, ph: str, meta: dict, d1: str, bars: dict) ->
     n = len(ratios)
     cover = (ratios[n // 2] if n % 2 else (ratios[n // 2 - 1] + ratios[n // 2]) / 2) if n else 0.0
     if not vm or cover < VF_BLOCK_MIN_COVER:
-        chk("F", "대량 체결 의심 = DB 재계산(분봉 없음·미완이면 skip)", got.get("status") == "skip",
+        chk("F", "분봉 밖 거래 큼 = DB 재계산(분봉 없음·미완이면 skip)", got.get("status") == "skip",
             f"분봉 합÷거래량 중앙 {cover:.3f} 인데 status={got.get('status')}")
         return
     cur.execute("SELECT s.code, abs(s.close), coalesce(s.individual,0), coalesce(s.foreign_,0), coalesce(s.institution,0) "
@@ -2109,7 +2109,7 @@ def _f_block_suspects(P: dict, cur, ph: str, meta: dict, d1: str, bars: dict) ->
             bad.append(f"{m} 빠짐 {sorted(exp - have)[:3]} 더함 {sorted(have - exp)[:3]}")
     if got.get("unjudged") != unjudged:
         bad.append(f"판정 못 한 종목 {got.get('unjudged')} vs {unjudged}")
-    chk("F", "대량 체결 의심 = DB 재계산(분봉 없음·미완이면 skip)", got.get("status") == "ok" and not bad, "; ".join(bad[:2]))
+    chk("F", "분봉 밖 거래 큼 = DB 재계산(분봉 없음·미완이면 skip)", got.get("status") == "ok" and not bad, "; ".join(bad[:2]))
 
 
 def _f_today_context(P: dict, cur, ph: str, meta: dict, px: dict, cap_at) -> None:
@@ -3793,6 +3793,8 @@ def layer_w(D: dict, P: dict, folder: str) -> None:
                 for a in ("inst", "forgn", "indiv", "etc"):
                     r[a] = (x.get(a) or {}).get("v")
                 rows.append(r)
+                if (x.get("invpen") or {}).get("v") is not None:   # 1일 창은 첫 화면과 같은 값 — 종목 합(0.1억 반올림)이 아니다
+                    tw[s] = x["invpen"]["v"]
         else:
             rows = [dict(r, pct=(r.get("pct1y") or {}).get("inst")) for r in D["blocks"][f"{w}|{m}"]["rows"]]
         rows = [r for r in rows if not (r.get("n_all") == 0 and not r.get("cap"))]

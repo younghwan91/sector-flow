@@ -190,7 +190,7 @@ EXPECTED_ROWS = {
 K1_CAVEATS = ("역효과", "확인 구간 IC 는 증거 없음", "왕복 비용을 빼면 발견 구간에서 진다", "공매도 없는 계좌에서 실현할 수 없다",
               "단기 반전", "생존편향")
 LIMITS = {"approx", "session", "survivorship", "labels", "inst-detail", "provisional", "weak-defs", "universe",
-          "untested", "declared-checks"}
+          "untested", "declared-checks", "naver", "off-book"}
 
 
 def test_every_unfavorable_result_row_is_on_the_page_with_its_verdict(page):

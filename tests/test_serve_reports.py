@@ -106,6 +106,39 @@ def test_healthz_without_a_latest_link_depends_on_whether_reports_exist(get, roo
     assert get("/healthz")[0] == 200
 
 
+def test_single_report_folder_as_root_is_served(tmp_path):
+    """데모 폴더를 ``--root`` 로 주면 '리포트가 아직 없다' 와 ``/latest`` 404 가 아니라 그 한 벌을 연다. 원본엔 안 쓴다."""
+    one = tmp_path / "sf-demo"
+    one.mkdir()
+    (one / "numbers.html").write_text("<p>합성</p>", "utf-8")
+    (one / "viewer.html").write_text("<p>합성</p>", "utf-8")
+    (one / "payload.json").write_text('{"dates": ["2026-10-29", "2026-10-30"]}', "utf-8")
+    before = sorted(os.listdir(one))
+    view = srv.single_report_root(str(one))
+    assert srv.latest_date(view) == "2026-10-30"
+    assert "리포트가 아직 없다" not in srv.index_html(view)
+    assert srv.latest_problem(view) is None
+    assert Path(view, "latest", "numbers.html").read_text("utf-8") == "<p>합성</p>"
+    assert sorted(os.listdir(one)) == before
+
+
+def test_parent_root_is_left_alone_and_a_folder_without_a_date_is_refused(tmp_path, root):
+    """기준일 폴더의 부모는 그대로. 한 벌인데 기준일을 못 읽으면 조용히 빈 목록을 내지 않고 안내한다."""
+    assert srv.single_report_root(str(root)) == str(root)
+    (tmp_path / "x").mkdir()
+    (tmp_path / "x" / "numbers.html").write_text("x", "utf-8")
+    with pytest.raises(SystemExit, match="부모"):
+        srv.single_report_root(str(tmp_path / "x"))
+
+
+def test_quick_start_and_demo_cli_show_the_web_command():
+    """데모를 웹으로 여는 명령이 첫 화면에 있어야 한다 — 없어서 첫 독자가 404 를 만났다."""
+    readme = (REPO / "README.md").read_text("utf-8")
+    quick = readme.split("## Quick start")[1].split("실제 리포트로 보는 길")[0]
+    assert "sector-flow-demo --out" in quick and "serve_reports.py --root" in quick
+    assert "serve_reports.py --root" in (REPO / "src/sectorflow/demo.py").read_text("utf-8")
+
+
 def test_latest_redirects_to_the_dated_page(get):
     status, h, _ = get("/latest/viewer.html")
     assert status == 302 and h["Location"] == "/2026-11-06/viewer.html"

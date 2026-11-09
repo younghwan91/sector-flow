@@ -206,7 +206,7 @@ def collect(P: dict) -> dict:
         if g and g.get("pct") is not None and g["pct"] > warn:
             gaps.append({"market": m, "pct": g["pct"], "label": "종가·VWAP 환산 차 큼"})
 
-    # 드문 표지라 이름을 다 적는다 — 화면 첫 줄과 같은 글자(flow_view.block_items).
+    # 이름을 다 적는다 — 화면 첫 줄과 같은 글자(flow_view.block_items).
     bs = T.get("block_suspects") or {}
     blocks = []
     if bs.get("status") == "ok":
@@ -404,9 +404,12 @@ def body_text(F: dict, extreme_cap: int = EXTREME_CAPS[0], streak: str = "full",
     if dl:
         L.append("- " + dl)
     for b in F["blocks"]:
-        L.append(f"- 대량 체결 의심 — 정의 차이({b['market']}): {' · '.join(b['names'])}")
+        L.append(f"- 분봉 밖 거래 큼({b['market']}): {' · '.join(b['names'])}")
     for g in F["approx_gap"]:
         L.append(f"- {g['label']}({g['market']} {rhu(g['pct'], 1):.1f}%)")
+    gn = gap_note(F)
+    if gn:
+        L.append(f"  ※ {gn}")
     L += [f"- {ln}" for ln in conc_lines(F)]
     L += ["", f"1일 수익률 — KRX 지수(정규장 15:30) | 자체 바구니({F['ret_label_short']})"]
     for r in F["returns"]:
@@ -485,6 +488,18 @@ def _sign(v) -> str:
     return "flat" if not v else ("buy" if v > 0 else "sell")
 
 
+def gap_note(F: dict) -> "str | None":
+    """금액 경고의 뜻 — 글·카드 공통. 표지만 있으면 '분봉 밖' 이 무엇이고 네이버 값이 무엇인지 글 안에서 알 수 없다."""
+    naver = any(g["label"].startswith("네이버") for g in F["approx_gap"])
+    parts = []
+    if F["blocks"]:
+        parts.append("분봉 밖 거래 = 거래량 50% 이상이 분봉 밖·금액이 시장의 1% 이상(시간외 대량매매는 추정). "
+                     "시장 합계와 네이버 시장값의 차이가 정의 차이일 수 있다는 표지이고 까닭은 미확인이다.")
+    if naver or F["blocks"]:
+        parts.append("네이버 시장값은 KRX 원표와 대조하지 못했다.")
+    return " ".join(parts) or None
+
+
 def card_html(F: dict, extreme_cap: int = CARD_LADDER[0][0], streak: str = CARD_LADDER[0][1],
               rank_n: int = TOP_N, with_change: bool = True) -> str:
     """카드 HTML — 값은 여기서 박아 넣는다(스크립트 없음). 템플릿의 ``__KEY__`` 를 다 채워야 한다."""
@@ -546,7 +561,10 @@ def card_html(F: dict, extreme_cap: int = CARD_LADDER[0][0], streak: str = CARD_
     if fd is not None:
         notes.append(f"잠정→확정 비교 없음: {fd['reason']}" if fd["reason"] else
                      f"잠정→확정 변경: {fd['n_changed']:,}칸 / {fd['n_cells']:,}칸(±{fd['tol']}억 초과)")
-    gaps = "".join(f'<span class="chip warn">⚠ 대량 체결 의심 — 정의 차이({_e(b["market"])}): {_e(" · ".join(b["names"]))}</span>'
+    gn = gap_note(F)
+    if gn:
+        notes.append(gn)
+    gaps = "".join(f'<span class="chip warn">⚠ 분봉 밖 거래 큼({_e(b["market"])}): {_e(" · ".join(b["names"]))}</span>'
                    for b in F["blocks"])
     gaps += "".join(f'<span class="chip warn">⚠ {_e(g["label"])} {_e(g["market"])} {rhu(g["pct"], 1):.1f}%</span>'
                     for g in F["approx_gap"])

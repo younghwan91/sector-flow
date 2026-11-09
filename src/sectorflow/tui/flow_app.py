@@ -707,6 +707,8 @@ def handle_key(st: State, k: int, page: int = 10, help_page: int = 10) -> bool:
             # 대신 도움말 첫 줄과 푸터가 "종료는 닫은 뒤 q 를 한 번 더" 라고
             # 밝힌다 — 관례를 어기는 쪽은 화면에 적어야 한다.
             st.help = False
+            if st.help_back:            # 첫 화면에서 연 도움말은 첫 화면으로 — 표로 떨어지면 읽던 자리를 잃는다
+                st.banner, st.help_back = True, False
         return True
 
     # h 는 vim 에서 '왼쪽' 이다. l·→ 이 드릴다운 진입이므로 h 는 **나가기** 여야
@@ -897,6 +899,8 @@ def leave_banner(st: State, k: int) -> bool:
     """
     if k in (-1, ord("q")):
         return False
+    if k in (ord("?"), curses.KEY_F1):
+        st.help_back = True
     if k in BANNER_FORWARD:
         handle_key(st, k)
     return True

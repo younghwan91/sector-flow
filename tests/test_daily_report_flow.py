@@ -342,12 +342,12 @@ def _cron_lines() -> list[str]:
     return [x for x in text.splitlines() if x.strip() and not x.startswith("#")]
 
 
-def test_every_daily_report_cron_line_turns_on_the_published_truth_check():
-    """크론 줄에서 켜지 않으면 대조가 조용히 안 돈다 — 칩이 공표치로 판정하지 못하고 SKIP 조차 안 남는다."""
-    lines = [ln for ln in _cron_lines() if "scripts/daily_report.sh" in ln]
-    assert len(lines) >= 3
+def test_no_cron_line_calls_naver_before_approval():
+    """네이버 약관을 확인하지 못했다 — 크론이 켜면 main 푸시만으로 다음날부터 외부 호출이 돈다. 켜는 건 사용자 승인 뒤다."""
+    lines = _cron_lines()
+    assert len([ln for ln in lines if "scripts/daily_report.sh" in ln]) >= 3
     for ln in lines:
-        assert "KR_QUANT_KRX_TRUTH=1 " in ln, ln
+        assert "KR_QUANT_KRX_TRUTH" not in ln, ln
 
 
 def test_every_report_cron_line_makes_the_log_dir_and_wraps():

@@ -168,6 +168,9 @@ def test_fold_items_breaks_at_item_boundaries():
     # 머리말 옆에 첫 항목이 안 들어가면 머리말이 혼자 선다.
     alone = FV._fold_items("머" * 20 + ": ", ["가" * 20], 44)
     assert alone[0].strip().endswith(":") and "가" * 20 in alone[1], alone
+    # 공백 있는 항목도 — 머리말 옆에 앞 토막만 붙고 뒤가 다음 줄로 가면 한 항목이 두 줄로 갈린다.
+    split = FV._fold_items("머" * 20 + ": ", ["가" * 5 + " " + "나" * 5], 58)
+    assert split[0].strip().endswith(":") and "가" * 5 + " " + "나" * 5 in split[1], split
 
 
 def test_concentration_shows_top_stocks_and_values_without_them():

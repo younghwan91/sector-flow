@@ -109,8 +109,12 @@ svg{display:block; width:100%; height:auto; overflow:visible}
 .tk{font-size:10px; fill:var(--ink-3)}
 .endlab{font-size:11.5px; font-weight:600}
 
+/* 터치 영역 — 손가락으로 누르는 조작은 44px(WCAG 2.5.5). 마우스 화면은 그대로 촘촘하다. */
+@media (pointer:coarse),(max-width:900px){.seg button,select,.row,nav.links a,a.totop{min-height:44px; box-sizing:border-box}
+  .seg button,nav.links a{display:inline-flex; align-items:center}}
+
 /* ranking rows */
-.rows{padding:7px 6px 11px; max-height:520px; overflow-y:auto}
+.rows{padding:7px 6px 11px}
 .row{display:grid; grid-template-columns:158px 1fr 150px; align-items:center; gap:9px;
   padding:3px 11px; border:0; background:none; width:100%; text-align:left; font:inherit; color:inherit;
   cursor:pointer; border-radius:6px}

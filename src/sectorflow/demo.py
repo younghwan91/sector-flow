@@ -7,7 +7,7 @@
 표지는 데이터 안에 있다(``numbers.html``·``payload.json`` 의 ``"demo": true``, 웹 맨 위 띠). 폴더 이름을 바꾸거나
 통째로 넘겨도 화면이 ``[합성 데모]`` 를 뗄 수 없다.
 
-**실 리포트의 표지를 다 보인다.** 대량 체결 의심(그중 판정 못 한 종목)·권리락·거래대금 집중·확정·잠정→확정 변경·직전 대비 들고 남·네이버 대조 칩.
+**실 리포트의 표지를 다 보인다.** 분봉 밖 거래 큼(그중 판정 못 한 종목)·권리락·거래대금 집중·확정·잠정→확정 변경·직전 대비 들고 남·네이버 대조 칩.
 이 값들도 전부 난수이고, 네이버 대조는 실제 네이버 값을 받지 않고 합성 값을 댄다(:func:`attach_synthetic_truth`).
 검증·품질 링크는 데모 폴더 안의 안내 페이지(:data:`TRUST_PAGE`)로 간다 — 고객에겐 이 데모가 면책 문구의 근거로 가는 유일한 길이다.
 """
@@ -51,7 +51,9 @@ TRUTH_NOISE = {"거래소": (0.14, 0.09, 0.21), "코스닥": (0.01, 0.015, 0.02)
 TRUTH_LABEL = "합성 값 — 실제 네이버 값이 아니다"
 #: 합성 네이버 행(원) — 실제 파일과 같은 모양이고 값만 난수다. 주체 → 행 이름.
 TRUTH_ROWS = {"indiv": "개인", "forgn": "외국인", "inst": "기관합계"}
-BANNER = ('<div data-demo-banner style="position:sticky;top:0;z-index:9999;background:#b45309;color:#fff;'
+#: 띠가 sticky 라 페이지 안 이동의 제목을 가린다 — 390폭에서 띠가 두세 줄이고(~80px) 본문의 scroll-margin 은 44px 다.
+BANNER = ('<style>[id]{scroll-margin-top:96px!important}</style>'
+          '<div data-demo-banner style="position:sticky;top:0;z-index:9999;background:#b45309;color:#fff;'
           'padding:6px 12px;font-weight:700;text-align:center">' + DEMO_NOTICE + "</div>")
 
 
@@ -182,7 +184,7 @@ TRUST_RESULTS = (
 TRUST_LIMITS = (
     "순매수 금액은 수량 × 종가 근사다. DB 는 주체별 수량만 준다.",
     "시장 합계는 시장 전체가 아니다. 우선주·리츠 등이 수급 자료에 없고, 네이버 시장값과 대조만 했다. KRX 원표와는 대조하지 못했다.",
-    "시장 합계와 네이버 시장값이 크게 갈리는 날의 원인은 분봉 밖 대량 체결로 읽힌다. 값이 틀린 것이 아니라 정의가 갈린 것이다.",
+    "시장 합계와 네이버 시장값이 크게 갈리는 날의 원인은 분봉 밖 거래로 읽힌다(2026-09-14 무렵부터, 그 경계는 사후다). 수량은 대조한 범위(10-12 까지)에서 네이버 종목값과 같았지만 금액은 따로 틀릴 수 있다. 값의 오류가 아니라 정의 차이일 수 있고 까닭은 미확인이다.",
     "1일 값·1년 %ile·연속 일수는 앞날을 검정한 적이 없다. 관측 숫자이고 추천이 아니다.",
 )
 
@@ -341,4 +343,7 @@ def main() -> None:
     ap.add_argument("--out", help=f"만들 폴더(기본: {default_dir()})")
     ap.add_argument("--force", action="store_true", help="이미 있어도 다시 만든다")
     a = ap.parse_args()
-    print(ensure(a.out, force=a.force))
+    path = ensure(a.out, force=a.force)
+    print(path)                        # stdout 은 경로 한 줄 — 안내는 stderr 로
+    print(f"화면: uv run sw-flow --dir {path}\n웹(저장소 체크아웃에서): uv run python scripts/serve_reports.py --root {path}"
+          " (주소는 서버가 찍는다)", file=sys.stderr)

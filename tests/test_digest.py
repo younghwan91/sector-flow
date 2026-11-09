@@ -157,7 +157,7 @@ def test_published_error_chip_follows_krx_truth_hot():
 
 
 def test_block_suspects_reach_the_digest_with_every_name_first():
-    """대량 체결 의심 — 글·카드 모두 종목명을 다 적고 잦은 차이 줄보다 앞이다. skip·빈 목록이면 없다."""
+    """분봉 밖 거래 큼 — 글·카드 모두 종목명을 다 적고 잦은 차이 줄보다 앞이다. skip·빈 목록이면 없다."""
     P = fixture_payload()
     P["today"]["krx_truth"] = {"status": "ok", "markets": {"거래소": {"total_pct": 7.14, "hot": True}}}
     P["today"]["block_suspects"] = {"status": "ok", "markets": {"거래소": [
@@ -165,9 +165,11 @@ def test_block_suspects_reach_the_digest_with_every_name_first():
         {"name": "가상D", "off_pct": 52.0}], "코스닥": []}}
     F = dg.collect(P)
     body = dg.body_text(F)
-    assert "대량 체결 의심 — 정의 차이(거래소): 가상A 분봉 밖 92% · 가상B 분봉 밖 60% · 가상C 분봉 밖 55% · 가상D 분봉 밖 52%" in body
-    assert body.index("대량 체결 의심") < body.index("네이버 시장값과 차이 큼")
-    assert "대량 체결 의심 — 정의 차이(거래소)" in dg.card_html(F)
+    assert "분봉 밖 거래 큼(거래소): 가상A 분봉 밖 92% · 가상B 분봉 밖 60% · 가상C 분봉 밖 55% · 가상D 분봉 밖 52%" in body
+    assert body.index("분봉 밖 거래 큼") < body.index("네이버 시장값과 차이 큼")
+    assert "분봉 밖 거래 큼(거래소)" in dg.card_html(F)
+    for text in (body, dg.card_html(F)):
+        assert "정의 차이일 수 있다" in text and "KRX 원표와 대조하지 못했다" in text, "표지의 뜻이 글 안에 없다"
     P["today"]["block_suspects"] = {"status": "skip", "reason": "그날 분봉이 없다"}
     assert "대량 체결" not in dg.body_text(dg.collect(P))
 
