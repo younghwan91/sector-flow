@@ -73,8 +73,10 @@ def test_pytest_session_caps_itself(tmp_path):
 
 
 def test_hit_cap_tells_exhaustion_from_a_plain_failure():
+    # 역슬래시를 떼어 둔다 — 이 소스 줄이 실패 출력에 그대로 찍히면 하네스가 그 글자를 메모리 고갈로 읽어 변이를 판정 불가로 낸다.
+    in_repr = "stderr='Traceback" + chr(92) + "n" + "MemoryError'"
     for rc, out in ((-9, ""), (137, ""), (1, "FAILED tests/t.py::x - MemoryError"), (1, "E   MemoryError"),
-                    (1, "MemoryError\n"), (1, "E   builtins.MemoryError: x"), (1, r"stderr='Traceback\nMemoryError\n'"),
+                    (1, "MemoryError\n"), (1, "E   builtins.MemoryError: x"), (1, in_repr),
                     (1, "OSError: [Errno 12] Cannot allocate memory"), (1, "terminate: std::bad_alloc"),
                     (134, "FATAL ERROR: Reached heap limit Allocation failed - JavaScript heap out of memory")):
         assert memcap.hit_cap(rc, out), (rc, out)

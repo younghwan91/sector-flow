@@ -10480,6 +10480,7 @@ file = "scripts/memcap.py"
 find = """    resource.setrlimit(resource.RLIMIT_DATA, (n, n))"""
 replace = """    resource.setrlimit(resource.RLIMIT_AS, (n, n))"""
 
+# 바깥 ulimit -d 가 6GiB 보다 낮으면 conftest 가 이 변이로 먼저 죽어 종료코드 3 이다 — 그럴 땐 SECTOR_FLOW_MEM_LIMIT_MB 를 바깥보다 낮춰 돌린다.
 [[mutation]]
 id = "memcap-raises-a-tighter-outer-limit"
 why = "바깥 ulimit 보다 높이려다 ValueError 로 자식이 뜨지도 못한다"
@@ -10490,11 +10491,11 @@ replace = """        pass"""
 
 [[mutation]]
 id = "memcap-env-can-turn-it-off"
-why = "환경변수 0 이 상한을 0 바이트나 무제한으로 만든다"
+why = "환경변수의 음수가 그대로 상한이 되어 자식이 뜨지 못한다"
 guards = ["tests/test_memcap.py::test_limit_env_changes_the_value_but_cannot_turn_it_off"]
 file = "scripts/memcap.py"
-find = """    return mb * 1024 ** 2 if mb > 0 else MEM_LIMIT"""
-replace = """    return mb * 1024 ** 2"""
+find = """if mb > 0 else MEM_LIMIT"""
+replace = """if mb != 0 else MEM_LIMIT"""
 
 [[mutation]]
 id = "memcap-misses-a-kernel-kill"

@@ -148,11 +148,12 @@ scripts/
 ├── verify_merge.py         # 병합 전 검증 — 실데이터 렌더·pty·변이 (§10)
 ├── rehearse_merge.py       # 대기 브랜치를 임시 클론에 차례로 합쳐 전체 관문 (docs/merge-rehearsal.md)
 ├── mutation_sample.py      # 변이 표본으로 검사 강도를 잰다 (docs/validation)
+├── memcap.py               # pytest·변이 프로세스의 메모리 상한 (§10)
 ├── ci_plan.py              # CI 가 이번 커밋에 돌릴 변이 범위를 정한다
 ├── diff_coverage.py        # 변경 줄 커버리지 관문 (CI)
 └── docs_refs.py            # docs/formulas.md 의 `파일:줄` 인용 검사·--fix (§10)
 deploy/crontab.simnode      # 크론 정본
-tests/conftest.py           # 겹친 pytest --cov 를 실패로 끝낸다 — 서로의 측정을 지운다
+tests/conftest.py           # 세션 시간·메모리 상한, 겹친 pytest --cov 를 실패로 끝낸다 — 서로의 측정을 지운다
 docs/                       # §11 표 참고
 research/validation/        # docs/validation 결과의 재현 스크립트 (CI 밖)
 ```
