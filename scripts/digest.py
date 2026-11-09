@@ -342,7 +342,7 @@ def conc_lines(F: dict) -> list[str]:
         n = len(r["top"])
         rest = " · ".join(f"{x['ko']} {amt(x['v'])}" for x in r["rest"])
         out.append(f"{r['sector']} 거래대금 시장의 {rhu(r['market_share_pct']):.0f}% · 상위{n} {'·'.join(r['top'])} "
-                   f"{rhu(r['top_share_pct']):.0f}% · {n}종목 제외 {rest}")
+                   f"{rhu(r['top_share_pct']):.0f}% · {n}종목 제외[억] {rest}")
     return out
 
 

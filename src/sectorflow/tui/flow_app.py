@@ -876,9 +876,9 @@ def banner_key(st: State, k: int, width: int, height: int) -> bool:
         return True
     step = BANNER_SCROLL.get(k)
     if step and len(banner_lines(st, width)) > height:
-        # Space 는 끝에 닿았으면 표로 나간다 — 제목이 "아무 키나 눌러 표로" 라고 적는데 끝에서 멈추면 거짓이다(more 와 같은 관례).
+        # Space·PgDn 은 끝에 닿았으면 표로 나간다 — 제목이 "아무 키나 눌러 표로" 라고 적는데 끝에서 멈추면 거짓이다(more 와 같은 관례).
         at_end = st.brow >= len(banner_lines(st, width)) - 2 - max(height - 2, 0)
-        if k == ord(" ") and at_end:
+        if k in (ord(" "), curses.KEY_NPAGE) and at_end:
             st.banner = False
             return True
         st.brow = max(0, st.brow + (step if abs(step) == 1 else (height - 2) * (1 if step > 0 else -1)))

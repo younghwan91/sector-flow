@@ -5728,8 +5728,8 @@ id = "krx-truth-help-tail-dropped"
 why = "도움말 조립에서 네이버 대조 절이 빠지면 TUI 에서 측정값을 볼 길이 없다 — 첫 화면엔 안 싣기로 한 값이다"
 guards = ["tests/test_krx_truth.py::test_help_entries_append_the_krx_truth_tail"]
 file = "src/sectorflow/tui/flow_view.py"
-find = "    return HELP + final_diff_help(st.d) + krx_truth_help(st.d)"
-replace = "    return HELP + final_diff_help(st.d)"
+find = "    return HELP + _wrap_help(final_diff_help(st.d) + krx_truth_help(st.d))"
+replace = "    return HELP + _wrap_help(final_diff_help(st.d))"
 
 [[mutation]]
 id = "krx-truth-build-hook-dropped"
@@ -8575,6 +8575,39 @@ find = """    g.append(c4b);"""
 replace = """    queueMicrotask(()=>g.append(c4b));"""
 
 [[mutation]]
+id = "first-screen-pgdn-stuck-at-end"
+why = "끝에서 PgDn 이 무반응이면 제목의 '아무 키나' 가 거짓이다"
+guards = ["tests/test_tui_flow_view.py::test_pgdn_at_the_end_of_the_first_screen_leaves_to_the_table"]
+file = "src/sectorflow/tui/flow_app.py"
+find = """        if k in (ord(" "), curses.KEY_NPAGE) and at_end:"""
+replace = """        if k == ord(" ") and at_end:"""
+
+[[mutation]]
+id = "first-screen-title-loses-table-hint"
+why = "넘치는 폭의 제목에서 표로 가는 법이 사라진다(80칸)"
+guards = ["tests/test_tui_flow_view.py::test_overflowing_first_screen_title_says_how_to_reach_the_table"]
+file = "src/sectorflow/tui/flow_view.py"
+find = """                                      f"{demo_mark(d)} 오늘의 수급 · {d.get('asof', '')} {chip} · 아무 키: 표{more}{mark}",
+                                      f"{demo_mark(d)} 수급 {str(d.get('asof', ''))[5:]} {chip} · 아무 키: 표{more}{mark}","""
+replace = ""
+
+[[mutation]]
+id = "help-report-lines-cut-at-80"
+why = "길이를 모르는 도움말 끝줄을 안 접으면 80칸에서 단어 중간에 잘린다"
+guards = ["tests/test_tui_flow_view.py::test_report_help_lines_fold_instead_of_cutting_at_80"]
+file = "src/sectorflow/tui/flow_view.py"
+find = """    return HELP + _wrap_help(final_diff_help(st.d) + krx_truth_help(st.d))"""
+replace = """    return HELP + final_diff_help(st.d) + krx_truth_help(st.d)"""
+
+[[mutation]]
+id = "all-stocks-header-without-badges"
+why = "`t` 화면 머리글에서 표지가 빠지면 판정 불가·쓸 수 없는 점수로 줄을 세운 표가 표지 없이 읽힌다"
+guards = ["tests/test_tui_flow_view.py::test_all_stocks_screen_header_carries_the_evidence_badges"]
+file = "src/sectorflow/tui/flow_view.py"
+find = """    out = [pad(title, width), note, head]"""
+replace = """    out = [pad(title, width), pad("", width), head]"""
+
+[[mutation]]
 id = "digest-published-chip-always"
 why = "다이제스트 공표치 오차 줄이 hot 과 무관하게 나온다"
 guards = ["tests/test_digest.py::test_published_error_chip_follows_krx_truth_hot"]
@@ -9540,7 +9573,7 @@ id = "first-screen-space-stops-at-the-end"
 why = "제목은 '아무 키나 눌러 표로' 인데 Space 가 끝에서 멈춘다"
 guards = ["tests/test_day_facts.py::test_space_at_the_end_of_the_first_screen_goes_to_the_table"]
 file = "src/sectorflow/tui/flow_app.py"
-find = "        if k == ord(\" \") and at_end:"
+find = "        if k in (ord(\" \"), curses.KEY_NPAGE) and at_end:"
 replace = "        if False:"
 
 [[mutation]]
@@ -9652,7 +9685,7 @@ id = "first-screen-arrow-leaves-at-the-end"
 why = "↓ 로 훑다 끝에서 표로 튕겨 나간다 — 나머지를 읽던 사람이 화면을 잃는다"
 guards = ["tests/test_day_facts.py::test_arrow_at_the_end_of_the_first_screen_stays"]
 file = "src/sectorflow/tui/flow_app.py"
-find = "        if k == ord(\" \") and at_end:"
+find = "        if k in (ord(\" \"), curses.KEY_NPAGE) and at_end:"
 replace = "        if at_end:"
 
 [[mutation]]

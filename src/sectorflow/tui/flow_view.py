@@ -1483,7 +1483,30 @@ def krx_truth_help(d: dict) -> list[tuple[str, str]]:
 
 def help_entries(st: "State") -> list[tuple[str, str]]:
     """도움말 = 고정 :data:`HELP` + 이 리포트에만 있는 것(잠정 → 확정 변경 목록·KRX 네이버 대조)."""
-    return HELP + final_diff_help(st.d) + krx_truth_help(st.d)
+    return HELP + _wrap_help(final_diff_help(st.d) + krx_truth_help(st.d))
+
+
+#: 리포트마다 다른 도움말 줄의 폭(칸). 앞 들여쓰기 3칸을 빼고 80칸에 든다. 줄 수가 터미널 폭과 무관해야 스크롤 하한이 맞는다.
+HELP_WRAP_W = 76
+
+
+def _wrap_help(entries: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    """이유·라벨처럼 길이를 모르는 줄을 공백에서 접는다 — 80칸에서 `(네이`·`만들어` 로 잘렸다(5회차 리뷰)."""
+    out = []
+    for name, desc in entries:
+        if cell_len(desc) <= HELP_WRAP_W:
+            out.append((name, desc))
+            continue
+        lead = desc[:len(desc) - len(desc.lstrip())]
+        cur = ""
+        for word in desc.split():
+            cand = f"{cur} {word}" if cur else word
+            if cur and cell_len(lead + cand) > HELP_WRAP_W:
+                out.append((name, lead + cur))
+                name, lead, cand = "", lead + "  " if not out[-1][1].startswith(lead + "  ") else lead, word
+            cur = cand
+        out.append((name, lead + cur))
+    return out
 
 
 #: 그날 시장 순매수 |금액| 이 가장 큰 주체를 찾는 후보 — 4주체(합 ≈ 0).
@@ -1814,7 +1837,7 @@ def _banner_today(st: State, width: int) -> list[str]:
     lines += _streak_lines(d, mk, width)
     conc = concentration_items(d, mk)
     if conc:
-        lines += _fold_items(f" 거래대금 집중[그 시장 거래대금의 {_conc_min(d)}% 이상인 섹터]: ", conc, width)
+        lines += _fold_items(f" 거래대금 집중[그 시장 거래대금의 {_conc_min(d)}% 이상인 섹터, 순매수 억]: ", conc, width)
     lines.append(pad("", width))
     actors = banner_actors(d, mk)
     ranked_lines = []
@@ -1883,7 +1906,10 @@ def _banner_title(d: dict, width: int, mark: str = "") -> str:
     chip = status_chip(d)
     more = " · ↓↑ 더 보기" if mark else ""
     title = f"{demo_mark(d)} 오늘의 수급 · {d.get('asof', '')} {chip} — 아무 키나 눌러 표로{more}"
+    # 넘치는 폭에도 표로 가는 법을 남긴다 — 80칸 제목에 `↓↑ 더 보기` 만 있었다(5회차 리뷰).
     return pad(_first_fitting(width, [title + " · o:다시 열기 · q:종료" + mark, title + mark,
+                                      f"{demo_mark(d)} 오늘의 수급 · {d.get('asof', '')} {chip} · 아무 키: 표{more}{mark}",
+                                      f"{demo_mark(d)} 수급 {str(d.get('asof', ''))[5:]} {chip} · 아무 키: 표{more}{mark}",
                                       f"{demo_mark(d)} 오늘의 수급 · {d.get('asof', '')} {chip}{more}{mark}",
                                       f"{demo_mark(d)} 오늘의 수급 {chip}{mark}"]), width)
 
@@ -2608,12 +2634,16 @@ def all_lines(st: State, width: int) -> tuple[list[str], int]:
                                bases[2]))
     title = tier_for(tiers, width)
     head = pad(" ".join(pad(c.header, c.width, c.right) for c in cols), width)
-    out = [pad(title, width), head]
+    # 점수 열의 증거 표지는 도움말에만 있었다 — 이 화면은 그 점수로 줄을 세우니 머리글에서 바로 말한다(README §8).
+    note = pad(_first_fitting(width, [f" 증거: 곱·섹터G {B_G} · 종목선정 {B_NEG} — 추천 아님",
+                                      f" 곱·섹터G {B_G} · 종목선정 {B_NEG}",
+                                      f" 곱·섹터G {B_G} · 선정 [쓸 수 없음]"]), width)
+    out = [pad(title, width), note, head]
     for t in rows:
         out.append(_render(cols, t, st, width))
     if not rows:
         out.append(pad("  (양쪽 관문을 다 통과한 종목이 없다)", width))
-    return out, 2
+    return out, 3
 
 
 #: 종목 목록의 고정 문구 — 첫 화면 면책은 '섹터' 만 말한다. 종목 층의 앞날 검정 범위는 다르다(docs/validation/ K1~K3).

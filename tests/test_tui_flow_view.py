@@ -3465,6 +3465,56 @@ def test_banner_scroll_keys_scroll_only_when_it_overflows(data):
     assert banner_key(st, curses.KEY_DOWN, 79, 500) and not st.banner, "넘치지 않으면 ↓ 도 닫는다"
 
 
+def test_pgdn_at_the_end_of_the_first_screen_leaves_to_the_table(data):
+    """제목이 '아무 키나' 라고 적는데 끝에서 PgDn 이 무반응이었다."""
+    import curses
+    from sectorflow.tui.flow_app import banner_key
+    st = State(_with_net(data, forgn=-28336.0))
+    st.banner, st.brow = True, 10 ** 6
+    banner_key(st, curses.KEY_DOWN, 79, 10)
+    assert st.banner
+    assert banner_key(st, curses.KEY_NPAGE, 79, 10) and not st.banner
+
+
+@pytest.mark.parametrize("width", [79, 100, 160])
+def test_overflowing_first_screen_title_says_how_to_reach_the_table(data, width):
+    from sectorflow.tui.flow_view import banner_view
+    st = State(_with_net(data, forgn=-28336.0))
+    title = banner_view(st, width, 10)[0]
+    assert "표" in title and "더 보기" in title, title
+
+
+def test_report_help_lines_fold_instead_of_cutting_at_80(data):
+    """이 리포트의 도움말 끝줄 — 라벨(네이버…)·비교 없음 이유가 80칸에서 잘렸다. 단어를 잃지 않고 접는다."""
+    from sectorflow.tui.flow_view import cell_len, help_entries, help_lines, view_width
+    d = json.loads(json.dumps(data))
+    why = "재구성 리포트다 — 같은 기준일의 옛 리포트는 옛 코드·정의로 만들어 비교하지 않는다"
+    label = "네이버 시장값, KRX 원표 미대조, 내부 대조용"
+    d.update(final=True, final_diff=None, final_diff_reason=why)
+    d["today"]["krx_truth"] = {"status": "ok", "label": label, "markets": {"거래소": {
+        "total_pct": 16.8, "hot": True, "inst": {"gap_pct": 23.7, "flip": True}, "forgn": {"gap_pct": 8.2, "flip": False},
+        "indiv": {"gap_pct": 12.3, "flip": False}, "etc": None}}}
+    w = view_width(80)
+    lines, total = help_lines(w, 0, 10 ** 6, help_entries(State(d)))
+    tail = lines[total - 12:]
+    joined = " ".join(" ".join(ln.split()) for ln in tail)
+    assert why in joined and f"({label})" in joined, joined
+    assert total == help_lines(view_width(160), 0, 10 ** 6, help_entries(State(d)))[1], "줄 수가 폭에 따라 달라지면 스크롤 하한이 틀린다"
+    assert all(cell_len(ln) <= w for ln in tail)
+
+
+def test_all_stocks_screen_header_carries_the_evidence_badges(data):
+    """`t` 화면은 곱으로 줄을 세운다 — 곱·섹터G·종목선정의 표지를 머리글에서 말한다(README §8 과 같은 글자)."""
+    from sectorflow.tui.flow_view import B_G, B_NEG, State as S, all_lines, view_width
+    st = S(data)
+    lines, nh = all_lines(st, 160)
+    assert nh == 3 and B_G in lines[1] and B_NEG in lines[1], lines[:3]
+    from pathlib import Path
+    readme = (Path(__file__).resolve().parent.parent / "README.md").read_text("utf-8")
+    assert f"`{B_G}`" in readme and f"`{B_NEG}`" in readme
+    assert B_G in all_lines(st, view_width(80))[0][1]
+
+
 def test_half_rounds_up_like_the_web():
     """96.5 — 파이썬 f"{:.0f}" 는 96(은행가), JS Math.round 는 97 이었다(리뷰 M6). 한 규칙으로."""
     from sectorflow.tui.flow_view import _pct_tag, fmt_pct, pct_int, rhu

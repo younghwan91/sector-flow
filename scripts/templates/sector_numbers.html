@@ -483,7 +483,7 @@ function renderToday(){
   // 4c. 거래대금 집중 — TUI `concentration_items` 와 같은 글자
   const CC=(T.concentration&&T.concentration.markets||{})[mkt];
   if(CC&&CC.length){
-    const c4c=card("거래대금 집중 — 그 시장 거래대금의 "+RHU((T.concentration.min_share||0)*100)+"% 이상인 섹터");
+    const c4c=card("거래대금 집중 — 그 시장 거래대금의 "+RHU((T.concentration.min_share||0)*100)+"% 이상인 섹터 [순매수 억]");
     c4c.id="t-conc";
     const items=[];
     CC.forEach(r=>{ const n=r.top.length;
