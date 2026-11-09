@@ -384,7 +384,7 @@ function capOf(sec){
 /** 상쇄돼 0 인 합의 이진 잔차를 지운다 — 더하는 순서에 따라 ±2.7e-17 로 남으면 부호를 원값에서 읽는 표시가
  *  '+0'·'−0' 으로 갈린다(2026-09-02·09-28 재구성, 종이/목재 20일). 격자 스냅(RHU 6자리)이 아니라 0 근방만
  *  죽인다 — 스냅은 971.4999999999999 같은 진짜 값을 971.5 로 바꿔 표시 반올림 검사를 무디게 한다. 데이터
- *  최소 단위가 0.1억이라 참값 0 이외의 합은 1e-6 안에 못 온다. 블록 `sector_numbers.zsum`·검증기
+ *  최소 단위가 0.01억이라 참값 0 이외의 합은 1e-6 안에 못 온다. 블록 `sector_numbers.zsum`·검증기
  *  `_w_viewer_expect` 와 같은 자리, 같은 문턱. */
 const Z=v=>Math.abs(v)<1e-6?0:v;
 function sum(arr,a,b){ let s=0; for(let i=a;i<=b;i++) s+=arr[i]; return Z(s); }
@@ -533,7 +533,7 @@ function renderLine(order){
   const focus=picked||order[0];
   const series=order.map(s=>{
     const f=flow(s,actor), c=capOf(s); let acc=0; const pts=[];
-    for(let i=i0;i<=i1;i++){acc+=f[i]; pts.push(M()==="amt"?acc:(c?acc/c*100:0));}
+    for(let i=i0;i<=i1;i++){acc+=f[i]; const z=Z(acc); pts.push(M()==="amt"?z:(c?z/c*100:0));}
     return {s,pts};
   });
   // 세로 범위도 얇은 섹터를 빼고 잰다(강조한 섹터는 늘 넣는다) — 회색으로 죽인 선이 축을 정하면 안 된다.
@@ -642,7 +642,7 @@ function render(){
 function renderTiles(){
   const box=document.getElementById("tiles"); box.replaceChildren();
   let tv=0; D.sectors.forEach(s=>tv+=sum(flow(s,"tv"),i0,i1));
-  box.append(tile("구간 거래대금",amt(Z(tv)).replace("+",""),"억원",null));
+  box.append(tile("구간 거래대금",amt(tv).replace("+",""),"억원",null));
   // 섹터 27개를 다시 누적하므로 sum() 이 지운 잔차가 되살아난다 — 시장 합도 Z 로 지운다.
   ACTORS.forEach(([k,ko])=>{let t=0; D.sectors.forEach(s=>t+=sum(flow(s,k),i0,i1)); t=Z(t);
     box.append(tile(ko,amt(t),"억원 누적 순매수",t));});

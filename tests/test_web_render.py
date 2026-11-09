@@ -488,7 +488,7 @@ def test_viewer_rounds_like_the_tui(tmp_path):
 
 # ── #32 의 ±0 부류, 뷰어 창 합 경로(2026-09-02·09-28 재구성) — 상쇄된 창 합의 잔차 부호 ──────────────
 
-#: 네 값의 십진 합은 0 — 왼쪽부터 더하면(뷰어 JS) −2.8e-17, 보정 합(파이썬 3.12+ sum)은 0.0.
+#: 네 값의 십진 합은 0 — 왼쪽부터 더하면(뷰어 JS·파이썬 3.11 sum) −2.8e-17, 보정 합(파이썬 3.12+ sum)은 0.0.
 _CANCEL_JS_NEG = [0.1, -0.5, 0.3, 0.1]
 #: 세 값 — 어느 쪽으로 더해도 음의 잔차(double 자체의 십진 오차). 블록(zsum 전)·검증기(rhu 전)가 '−0' 이 되는 쪽.
 _CANCEL_BOTH_NEG = [-0.1, -0.2, 0.3]
@@ -516,7 +516,7 @@ def test_viewer_window_sum_that_cancels_is_plus_zero_everywhere(PD, tmp_path):
     P, _ = PD
     P2 = _flows_patch(P, "코스닥", {("금융", "etc"): _CANCEL_JS_NEG, ("반도체", "etc"): _CANCEL_BOTH_NEG})
     a = P2["flows"]["코스닥"]["금융"]["etc"]
-    assert functools.reduce(operator.add, a, 0.0) < 0 and sum(a) == 0.0, "픽스처가 JS 쪽 잔차를 안 만든다"
+    assert functools.reduce(operator.add, a, 0.0) < 0, "픽스처가 JS 쪽 잔차를 안 만든다"
     b = P2["flows"]["코스닥"]["반도체"]["etc"]
     assert functools.reduce(operator.add, b, 0.0) < 0 and sum(b) < 0, "픽스처가 양쪽 음의 잔차를 안 만든다"
     D2 = SN.build(P2)
@@ -548,3 +548,37 @@ def test_viewer_market_total_that_cancels_is_plus_zero(PD, tmp_path):
     D2 = SN.build(P2)
     fails = [f for f in _w_fails(P2, D2, _write(tmp_path, P2, D2)) if "뷰어" in f]
     assert fails == [], fails
+
+
+def _viewer_probe(P: dict, tmp_path, probe: str) -> dict:
+    return VR._w_run(shutil.which("node"), str(_write(tmp_path, P, SN.build(P)) / "viewer.html"), probe)
+
+
+@node
+def test_viewer_detail_bars_kill_the_residual_of_two_markets(PD, tmp_path):
+    """기관 세부 막대 — 두 시장의 창 합을 더하면 각 합은 0 이 아니어서 `sum()` 의 문턱을 지나고, 그 누적에서 잔차가 난다.
+
+    비교 상대가 없는 글자라 W 층이 못 본다 — 직접 찍어 본다. 코스닥 −0.1·−0.2, 거래소 +0.3 → 왼쪽부터 −5.6e-17.
+    """
+    P2 = json.loads(json.dumps(PD[0]))
+    nd = len(P2["dates"])
+    for mkt, pat in ((P2["markets"][0], [-0.1, -0.2]), (P2["markets"][1], [0.3])):
+        arr = [0.0] * nd
+        arr[nd - 20:nd - 20 + len(pat)] = pat
+        P2["detail"][mkt]["금융"]["invtrt"] = arr
+    assert functools.reduce(operator.add, [-0.1, -0.2, 0.3], 0.0) < 0
+    got = _viewer_probe(P2, tmp_path, 'i1=NDATE-1; i0=NDATE-20; market="전체"; actor="inst"; picked="금융"; render();\n'
+                                      'const i=Object.keys(D.detail_labels).indexOf("invtrt");\n'
+                                      '__out({t:document.getElementById("detbars").children[i].children[2].textContent});')
+    assert got["t"] == "+0", got
+
+
+@node
+def test_viewer_chart_end_label_agrees_with_the_bars_when_the_window_cancels(PD, tmp_path):
+    """누적 선 끝 라벨은 `sum()` 을 안 지나고 제 손으로 누적한다 — 같은 화면의 막대 '+0' 옆에 '−0' 을 적었다."""
+    P2 = _flows_patch(PD[0], "코스닥", {("금융", "etc"): _CANCEL_JS_NEG})
+    probe = ('i1=NDATE-1; i0=NDATE-20; market="코스닥"; actor="etc"; metric="amt"; picked="금융"; render();\n'
+             'const svg=document.getElementById("line").children[0];\n'
+             '__out({labels:svg.children.filter(e=>e.getAttribute("class")==="endlab").map(e=>e.textContent)});')
+    got = _viewer_probe(P2, tmp_path, probe)
+    assert got["labels"] == ["금융~ +0억"], got

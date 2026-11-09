@@ -6138,6 +6138,7 @@ file = "scripts/verify_report.py"
 find = '        chk("T", "잠정 → 확정 — 종목(주도주) 층은 1일 칸이 없는 옛 형식 게시본 대비에서 비어 있는가", S is None,'
 replace = '        chk("T", "잠정 → 확정 — 종목(주도주) 층은 1일 칸이 없는 옛 형식 게시본 대비에서 비어 있는가", True,'
 
+
 # ── #32 ±0 부류의 남은 창 합 경로(2026-09-02·09-28 재구성, 종이/목재 20일) ──────────────────
 
 [[mutation]]
@@ -7331,3 +7332,19 @@ guards = ["tests/test_collect_dart.py::test_rights_issue_the_seed_cannot_see_rea
 file = "src/sectorflow/collect/dart.py"
 find = "                (code, OK)).fetchall():"
 replace = "                (code, \"none\")).fetchall():"
+
+[[mutation]]
+id = "viewer-detail-bars-keep-binary-residue"
+why = "기관 세부 막대가 두 시장의 창 합을 더한 잔차를 남겨 상쇄된 합을 '−0' 으로 그린다"
+guards = ["tests/test_web_render.py::test_viewer_detail_bars_kill_the_residual_of_two_markets"]
+file = "scripts/templates/sector_flow.html"
+find = "if(a) t+=sum(a,i0,i1);}); return Z(t);});"
+replace = "if(a) t+=sum(a,i0,i1);}); return t;});"
+
+[[mutation]]
+id = "viewer-chart-end-label-keeps-binary-residue"
+why = "누적 선 끝 라벨이 제 누적의 잔차를 남겨, 같은 화면의 막대 '+0' 옆에 '−0' 을 적는다"
+guards = ["tests/test_web_render.py::test_viewer_chart_end_label_agrees_with_the_bars_when_the_window_cancels"]
+file = "scripts/templates/sector_flow.html"
+find = "const z=Z(acc); pts.push("
+replace = "const z=acc; pts.push("
