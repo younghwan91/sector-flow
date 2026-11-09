@@ -9,6 +9,7 @@ uv run python scripts/rehearse_merge.py 브랜치1 브랜치2 브랜치3 --base 
 
 관문은 CI 와 같은 것(ruff·연구 컴파일·`pytest --cov`·변경 줄 커버리지·변이 주입 전체)에 `TZ=UTC` pytest 를 더한다.
 변이 주입은 수십 분이 걸린다. 빠른 점검은 `--skip verify-merge`, 다른 명령은 `--gate 이름=명령`.
+검사·변이 프로세스는 하나당 `RLIMIT_DATA` 6GiB 안에서 돈다(`scripts/memcap.py`) — 변이의 폭주가 2026-11-09 호스트를 OOM 으로 몰아 운영 DB 를 죽였다. 상한에 닿은 변이는 잡힘이 아니라 판정 불가다.
 클론 안에서만 돌아 원래 레포·운영 체크아웃·다른 워크트리에 쓰지 않고, `KR_QUANT_DB`·`KR_QUANT_REPORTS` 를 넘기지 않는다.
 충돌이나 실패면 임시 폴더를 남기고 그 경로를 적는다.
 

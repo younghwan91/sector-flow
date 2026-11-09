@@ -498,6 +498,8 @@ uv run python scripts/verify_merge.py <워크트리> --scope changed     # 바�
 uv run python scripts/verify_merge.py <워크트리>                     # 변이 전부 (23~47분, 부하에 따라)
 ```
 
+pytest 와 변이 실행은 프로세스 하나당 `RLIMIT_DATA` 6GiB 안에서 돈다 — 변이의 메모리 폭주가 호스트의 운영 DB 까지 죽이지 않게 하는 상한이다(`scripts/memcap.py`).
+
 렌더는 순수함수(`flow_view.py`·`ledger_view.py`)라 curses 없이 단위테스트한다. 웹 두 장은 진짜 브라우저로도 연다 —
 `uv run --with playwright python scripts/web_smoke.py --dir <리포트 폴더>` 가 폭 1440·390 에서 콘솔 오류·가로 넘침·'오늘' 패널을
 본다(주간 `harness-selftest` 워크플로가 돌고, 실패해도 배포를 막지 않는다). 새 검사를 넣으면 `tests/mutations.toml` 에
