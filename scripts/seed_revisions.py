@@ -78,8 +78,8 @@ def candidates(archives: list[str]) -> list[tuple[str, str]]:
             out.append((None, a))
             continue
         if not os.path.isdir(a):
-            # 디스크 소실 뒤에는 아카이브가 없다 — README §3.2. 시드 없이도 화면은 돈다(수정 폭 칸이 비어 있을 뿐).
-            print(f"  건너뜀 {a}: 아카이브 폴더가 없다 — 그날 저녁 게시본은 다시 만들 수 없다(README §3.2)")
+            # 디스크 소실 뒤에는 아카이브가 없다 — docs/runbook.md. 시드 없이도 화면은 돈다(수정 폭 칸이 비어 있을 뿐).
+            print(f"  건너뜀 {a}: 아카이브 폴더가 없다 — 그날 저녁 게시본은 다시 만들 수 없다(docs/runbook.md)")
             continue
         for name in sorted(os.listdir(a)):
             d = os.path.join(a, name)

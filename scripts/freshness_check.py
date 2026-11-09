@@ -277,7 +277,7 @@ def check_deploy(repo: Path, now: datetime) -> tuple[int, list[str]]:
         rc = WARN
         held = (sync - datetime.fromtimestamp(min(missed), KST)).total_seconds() / 3600
         out.append(f"⚠️ [배포] 운영 체크아웃이 origin/main 보다 커밋 {len(stamps)}개 뒤처졌다 — {len(missed)}개는 07:50 동기화가 받았어야 했다"
-                   f"(가장 오래된 것 {held:.0f}시간 전). CI 가 초록이 아니면 pull-all --ci-gate 가 멈춘다. README §3.1 의 배포 지연 줄을 보라.")
+                   f"(가장 오래된 것 {held:.0f}시간 전). CI 가 초록이 아니면 pull-all --ci-gate 가 멈춘다. docs/runbook.md 의 배포 지연 줄을 보라.")
     else:
         out.append(f"[배포] origin/main 보다 커밋 {len(stamps)}개 뒤 — 다음 07:50 동기화 대상이다")
     return rc, out
@@ -527,7 +527,7 @@ def main(argv: list[str] | None = None) -> int:
     if not ops_ledger.append_event(root, {"ts": ops_ledger.utc_now_iso(), "event": "freshness",
                                           "today": today, "rc": rc}):
         rc, data_rc = worse(rc, WARN), worse(data_rc, WARN)
-        lines.append("⚠️ [원장] 이 점검의 판정을 원장에 못 썼다 — 운영 사건이 비고 있다. df -h, ls -l reports/events.jsonl* 을 보라(README §3.1).")
+        lines.append("⚠️ [원장] 이 점검의 판정을 원장에 못 썼다 — 운영 사건이 비고 있다. df -h, ls -l reports/events.jsonl* 을 보라(docs/runbook.md).")
     lines += heartbeat(alert_value("HEARTBEAT_URL", os.environ, alert_sh), data_rc == 0 and not dead_hook,
                        why="알림 웹훅이 죽어 있다" if data_rc == 0 else "점검이 깨끗하지 않다")
     # 배포 지연은 데이터 점검이 아니다 — 하트비트를 막지 않고 종료코드만 올린다(운영 reports/ 를 볼 때만).
