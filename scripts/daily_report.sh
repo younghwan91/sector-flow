@@ -53,6 +53,17 @@ _dr_event() {
   sf_event_append "$OUT_ROOT" "{\"ts\":\"$(date -u +%FT%TZ)\",\"event\":\"report\",\"asof\":$(sf_q "$EV_ASOF"),\"mode\":\"$EV_MODE\",\"rc\":$rc,\"outcome\":\"$EV_OUTCOME\",\"gate\":$(sf_q "$EV_GATE"),\"verify\":$(sf_q "$EV_VERIFY"),\"verify_checks\":${EV_CHECKS:-null},\"verify_fails\":${EV_FAILS:-null},\"final\":${EV_FINAL:-false},\"diff\":${EV_DIFF:-null},\"payload_sha\":$(sf_q "$EV_SHA"),\"commit\":$(sf_q "$commit"),\"started\":\"$EV_STARTED\"}"
 }
 
+# 부속 단계의 상한 — 안쪽 ``timeout`` 은 자기 프로세스 그룹을 만들어(상한에 걸리면 손자까지 끊으려고) 크론 줄의 바깥 ``timeout`` 이 보낸 TERM 이 안 간다.
+# 전경으로 돌리면 셸은 그 자식을 기다리느라 TERM 트랩을 못 돌리고 KILL 로 죽는다: rc 137, 원장에 report 줄 없음, .building.N 잔류, 자식은 고아로
+# 계속 돈다(2026-11-09 재현). 배경으로 띄워 ``wait`` 하면 트랩이 바로 돌고, 트랩이 안쪽 timeout 에 TERM 을 넘긴다(그가 자기 그룹에 전한다).
+BOUNDED_PID=""
+_bounded() {
+  timeout -k 10s "$@" &
+  BOUNDED_PID=$!
+  wait "$BOUNDED_PID"
+}
+_bounded_stop() { [ -z "${BOUNDED_PID:-}" ] || kill -TERM "$BOUNDED_PID" 2>/dev/null || true; }
+
 # **겹쳐 돌지 않는다.** 크론(18:10·19:10·08:20)끼리는 timeout 40m 이라 안 겹치지만, 손으로 돌린
 # KR_QUANT_FORCE 와 크론이 겹치면 같은 기준일을 둘이 옆에 지어 바꿔 끼우다 서로의 폴더를 지운다.
 # 잠금을 못 잡으면 75(경고)로 끝난다 — 0 으로 조용히 끝내면, 08:20 확정 모드가 손으로 돌린 잠정 실행에
@@ -62,9 +73,10 @@ mkdir -p "$OUT_ROOT"
 trap '_dr_event $?' EXIT
 # 시그널로 끝나면 bash 는 EXIT 트랩을 돌리되 $? 가 직전 명령의 것(대개 0)이다 — 크론 timeout 이 끊은 실행이 원장에 rc:0, outcome:error
 # 로 남았다. 관례대로 128+시그널 번호로 끝내 그 값이 트랩에 가게 한다.
-trap 'exit 129' HUP
-trap 'exit 130' INT
-trap 'exit 143' TERM
+# 부속 단계(_bounded)가 돌고 있으면 끊어 주고 끝난다.
+trap '_bounded_stop; exit 129' HUP
+trap '_bounded_stop; exit 130' INT
+trap '_bounded_stop; exit 143' TERM
 LOCK="$OUT_ROOT/.report.lock"
 exec 9>>"$LOCK"
 if ! flock -n 9; then
@@ -339,7 +351,7 @@ fi
 # 실패·멈춤에도 리포트는 게시한다. 다만 조용히 빠지면 안 된다 — VERIFY.txt 끝에 적고 맨 끝에서 75(경고)로 알린다.
 SIDE_FAIL=""
 # 오늘의 수급 다이제스트(scripts/digest.py, 끄려면 KR_QUANT_DIGEST=0) — 폴더에만 쓴다(밖으로 보내지 않는다). 상한 5분·오프라인·판 고정.
-if [ "${KR_QUANT_DIGEST:-1}" != "0" ]; then UV_OFFLINE=1 timeout -k 10s "${KR_QUANT_DIGEST_TIMEOUT:-5m}" "${UVR[@]}" --with 'playwright==1.48.0' python scripts/digest.py --dir "$BUILD" || { echo "[$(date '+%F %T')] ⚠️ 다이제스트를 못 만들었다(실패 또는 시간 초과) — 리포트는 그대로 게시한다" >&2; SIDE_FAIL+="digest "; }; fi
+if [ "${KR_QUANT_DIGEST:-1}" != "0" ]; then UV_OFFLINE=1 _bounded "${KR_QUANT_DIGEST_TIMEOUT:-5m}" "${UVR[@]}" --with 'playwright==1.48.0' python scripts/digest.py --dir "$BUILD" || { echo "[$(date '+%F %T')] ⚠️ 다이제스트를 못 만들었다(실패 또는 시간 초과) — 리포트는 그대로 게시한다" >&2; SIDE_FAIL+="digest "; }; fi
 # 글은 됐는데 카드만 못 찍은 날 — 웹의 /latest/digest.png 가 404 다.
 if [ "${KR_QUANT_DIGEST:-1}" != "0" ] && [ -f "$BUILD/digest.md" ] && [ ! -f "$BUILD/digest.png" ]; then
   echo "[$(date '+%F %T')] ⚠️ 다이제스트 카드(digest.png)를 못 찍었다 — 글은 만들었다" >&2
@@ -384,7 +396,7 @@ if [ -n "$REBUILD" ]; then
 fi
 # 검증·품질 페이지(scripts/trust_page.py) — 이 판의 표시 파일(VERIFY·FINAL·REBUILT)을 다 쓴 뒤라야 그날 줄이 맞는다.
 # 다른 기준일·원장·.archive 는 읽기만 한다. 재구성을 옆 루트에 지으면 KR_QUANT_TRUST_ROOT 가 운영 루트를 가리킨다(rebuild_history.py).
-if ! timeout -k 10s "${KR_QUANT_TRUST_TIMEOUT:-5m}" "${UVR[@]}" python scripts/trust_page.py \
+if ! _bounded "${KR_QUANT_TRUST_TIMEOUT:-5m}" "${UVR[@]}" python scripts/trust_page.py \
      --root "${KR_QUANT_TRUST_ROOT:-$OUT_ROOT}" --build "$BUILD" --asof "$ASOF"; then
   echo "[$(date '+%F %T')] ⚠️ 검증·품질 페이지를 못 만들었다 — 리포트는 그대로 게시한다" >&2
   SIDE_FAIL+="trust.html "

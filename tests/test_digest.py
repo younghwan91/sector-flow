@@ -437,7 +437,9 @@ def _run_hook(tmp_path: Path, fake_body: str, env_extra: dict) -> "subprocess.Co
     fake.write_text("#!/usr/bin/env bash\n" + fake_body, encoding="utf-8")
     fake.chmod(0o755)
     script = tmp_path / "hook.sh"
-    script.write_text(f"set -euo pipefail\nUVR=({fake})\nBUILD={tmp_path}\n{_hook_line()}\necho PUBLISHED\n",
+    import re
+    bounded = re.search(r"^_bounded\(\) \{.*?^\}\n", (REPO / "scripts" / "daily_report.sh").read_text("utf-8"), re.M | re.S).group(0)
+    script.write_text(f"set -euo pipefail\nUVR=({fake})\nBUILD={tmp_path}\n{bounded}{_hook_line()}\necho PUBLISHED\n",
                       encoding="utf-8")
     env = {k: v for k, v in {**os.environ, "KR_QUANT_DIGEST": "1", **env_extra}.items() if v is not None}
     return subprocess.run(["bash", str(script)], capture_output=True, text=True, timeout=40, env=env)
