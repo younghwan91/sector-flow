@@ -1,6 +1,6 @@
-"""운영 런북(README §3.1)과 크론 래퍼 — 알림이 오면 할 일이 적혀 있는가, 래퍼가 제 알림을 망치지 않는가.
+"""운영 런북(docs/runbook.md)과 크론 래퍼 — 알림이 오면 할 일이 적혀 있는가, 래퍼가 제 알림을 망치지 않는가.
 
-* 운영자에게 가는 문구(크론 꼬리 → alert.sh)마다 §3.1 에 줄이 있다. 목록은 손으로 고른다(:data:`MESSAGES`) —
+* 운영자에게 가는 문구(크론 꼬리 → alert.sh)마다 런북에 줄이 있다. 목록은 손으로 고른다(:data:`MESSAGES`) —
   같은 뜻의 문구 여럿을 한 줄이 받기도 하고, 표에는 원문 그대로가 아니라 열쇠말만 적기도 해서다. 대신 원천에서
   ⚠️·stderr·알림 제목 꼴의 줄을 정규식으로 긁어, 목록에 없는 **새 문구**가 생기면 빨개진다.
 * ``cron_run.sh`` 는 임시 파일·로그·KILL 알림을 진짜 셸로 돌려 본다(가짜 alert.sh, 임시 레포).
@@ -23,13 +23,10 @@ REPO = Path(__file__).resolve().parent.parent
 
 
 def _runbook() -> str:
-    text = (REPO / "README.md").read_text("utf-8")
-    m = re.search(r"^### 3\.1 .*?(?=^## )", text, re.S | re.M)
-    assert m, "README 에 §3.1 이 없다"
-    return m.group(0)
+    return (REPO / "docs/runbook.md").read_text("utf-8")
 
 
-# (원천 파일, 원천에 있는 문구, §3.1 에 있어야 할 문구). 원천 문구가 사라지면(말을 바꿨으면) 여기도 고친다.
+# (원천 파일, 원천에 있는 문구, 런북에 있어야 할 문구). 원천 문구가 사라지면(말을 바꿨으면) 여기도 고친다.
 MESSAGES: list[tuple[str, str, str]] = [
     # cron_run.sh — 알림 제목과 본문
     ("scripts/cron_run.sh", "실패 (rc=", "실패 (rc="),
@@ -199,9 +196,9 @@ def _src(rel: str) -> str:
 
 @pytest.mark.parametrize(("src", "phrase", "row"), MESSAGES, ids=[f"{s.split('/')[-1]}:{p}" for s, p, _ in MESSAGES])
 def test_every_operator_message_has_a_runbook_row(src, phrase, row):
-    """알림이 왔는데 README §3.1 에 그 문구가 없으면 새벽에 코드를 읽어야 한다."""
-    assert phrase in _src(src), f"{src} 에 '{phrase}' 가 없다 — 문구를 바꿨으면 MESSAGES 와 §3.1 을 같이 고쳐라"
-    assert row in _runbook(), f"README §3.1 에 '{row}' 가 없다({src} 의 '{phrase}' 알림에 할 일이 없다)"
+    """알림이 왔는데 런북에 그 문구가 없으면 새벽에 코드를 읽어야 한다."""
+    assert phrase in _src(src), f"{src} 에 '{phrase}' 가 없다 — 문구를 바꿨으면 MESSAGES 와 런북을 같이 고쳐라"
+    assert row in _runbook(), f"docs/runbook.md 에 '{row}' 가 없다({src} 의 '{phrase}' 알림에 할 일이 없다)"
 
 
 def _scraped() -> list[tuple[str, str]]:
@@ -222,7 +219,7 @@ def test_scraper_still_finds_messages_in_every_source():
 
 
 def test_new_operator_messages_need_a_runbook_entry():
-    """⚠️·stderr·알림 제목 꼴의 새 문구는 MESSAGES(→ §3.1 줄) 나 EXEMPT(이유) 에 들어가야 한다."""
+    """⚠️·stderr·알림 제목 꼴의 새 문구는 MESSAGES(→ 런북 줄) 나 EXEMPT(이유) 에 들어가야 한다."""
     known = [(s, p) for s, p, _ in MESSAGES] + [(s, p) for s, p, _ in EXEMPT]
     orphans = [(rel, msg) for rel, msg in _scraped()
                if not any(s == rel and p in msg for s, p in known)]
@@ -451,3 +448,16 @@ def test_every_script_reading_sql_through_pandas_silences_the_dbapi_warning():
             if 'filterwarnings("ignore", message="pandas only supports SQLAlchemy"' not in text:
                 missing.append(path.name)
     assert not missing, f"read_sql 을 타는데 pandas DBAPI 경고를 안 끈 스크립트: {missing}"
+
+
+def test_runbook_stays_out_of_the_readme_and_pointers_follow_it():
+    """런북이 README 앞머리를 막아 설치(§4)가 51% 지점에 있었다. 다시 자라지 않고, 알림 문구가 옛 자리를 안 가리킨다."""
+    readme = (REPO / "README.md").read_text("utf-8")
+    assert "### 3.1" not in readme and "docs/runbook.md" in readme
+    old = "README §" + "3.1"
+    stale = [str(p.relative_to(REPO)) for root in ("scripts", "src", "docs")
+             for p in (REPO / root).rglob("*")
+             if p.suffix in {".py", ".sh", ".md", ".toml"} and "strategy" not in p.parts and old in p.read_text("utf-8")]
+    if old in (REPO / "CLAUDE.md").read_text("utf-8"):
+        stale.append("CLAUDE.md")
+    assert not stale, f"옛 자리({old})를 가리킨다: {stale}"

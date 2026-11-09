@@ -1,7 +1,7 @@
 # BYO Phase 1 — 자기 키 sqlite 와 kr_quant 의 리포트 숫자 대조
 
-실측 2026-11-08(일) 17:05~17:20 KST. 설계는 BYO 타당성 문서 §2·§6 P1 이다. 그 문서는 아직 main 에 없고
-브랜치 `younghwan91/strategy-a-plus` 의 `docs/strategy/byo-feasibility.md`(커밋 1b02f66)에 있다. 아래 "설계 §N"은 그 문서의 절이다.
+실측 2026-11-08(일) 17:05~17:20 KST. 설계는 BYO 타당성 문서(`docs/strategy/byo-feasibility.md`) §2·§6 P1 이다.
+아래 "설계 §N"은 그 문서의 절이다.
 
 **완료 조건(타당성 문서 (a)·(b), 이 조각에 한정).** 같은 기준일에 BYO sqlite 로 만든 `payload.json` 이 kr_quant 판과
 - 섹터×주체 순매수 금액의 상대오차가 0.5% 이내이고,

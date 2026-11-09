@@ -116,7 +116,7 @@ def append_event(root: Path, obj: dict) -> bool:
         return True
     except Exception as e:  # noqa: BLE001 — 원장이 리포트·점검을 죽이면 안 된다
         print(f"⚠️ [원장] 운영 사건을 기록하지 못했다({type(e).__name__}) — 리포트·점검은 계속한다. "
-              "reports/events.jsonl 의 디스크·권한을 보라(README §3.1).", file=sys.stderr)
+              "reports/events.jsonl 의 디스크·권한을 보라(docs/runbook.md).", file=sys.stderr)
         return False
 
 

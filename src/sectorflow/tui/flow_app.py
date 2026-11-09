@@ -12,6 +12,7 @@ pty 검사만으로는 "통과했는데 아무것도 안 한" 검사가 반복�
 
 Run:  sw-flow                       # <repo>/reports/latest
       sw-flow --dir <리포트 폴더>
+      sw-flow --demo                # 합성 데이터(실데이터 아님) — DB·폴더 없이
 """
 
 from __future__ import annotations
@@ -31,7 +32,7 @@ from sectorflow.tui.flow_view import (
     ONE_DAY, State, banner_lines, ret_label, banner_view, cell_len as view_cell_len, color_spans,
     detail_lines, detail_title_span, footer_line, header_lines, help_entries, help_lines,
     hint_desc, hint_line,
-    is_section, missing_report_hint, name_sort_span, names_lines, report_warnings,
+    is_section, missing_report_hint, name_sort_span, names_lines, no_report_help, report_warnings,
     B_SHORT, scroll_mark, sort_evidence, sort_span, staleness_warning, table_lines, tier_for,
     view_width)
 
@@ -47,7 +48,7 @@ def load(report_dir: str) -> dict:
     path = os.path.join(os.path.expanduser(report_dir), "numbers.html")
     if not os.path.exists(path):
         raise SystemExit(f"리포트를 찾을 수 없다: {path}\n"
-                         f"  먼저 scripts/daily_report.sh 를 돌리거나 --dir 로 지정하라."
+                         f"{no_report_help('sw-flow')}"
                          f"{missing_report_hint(report_dir)}")
     try:
         with open(path, encoding="utf-8") as f:
@@ -69,7 +70,8 @@ def load(report_dir: str) -> dict:
     if missing:
         raise SystemExit(f"{path} 의 데이터에 없는 키: {', '.join(missing)} — "
                          f"리포트 형식이 바뀌었나?\n  있는 키: {sorted(d)}")
-    d["report_warnings"] = staleness_warning(d["asof"]) + report_warnings(report_dir, d["asof"])
+    # 합성 데모의 기준일은 고정이라 '며칠 지난 리포트' 가 뜻이 없다 — 표지는 제목 맨 앞에 따로 있다.
+    d["report_warnings"] = ([] if d.get("demo") else staleness_warning(d["asof"])) + report_warnings(report_dir, d["asof"])
     return d
 
 
@@ -971,7 +973,11 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="섹터 자금흐름 TUI")
     ap.add_argument("--dir", default=DEFAULT_DIR,
                     help="리포트 폴더 (기본: %(default)s)")
+    ap.add_argument("--demo", action="store_true", help="합성 데이터로 띄운다 — 실데이터 아님, DB 불요")
     a = ap.parse_args()
+    if a.demo:
+        from sectorflow.demo import ensure  # noqa: PLC0415 — 화면만 볼 때 pandas 등을 안 부르게
+        a.dir = ensure()
     data = load(a.dir)
     run_curses(_loop, data)
 

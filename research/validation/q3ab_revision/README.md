@@ -24,9 +24,10 @@ $V $D/fresh_build.py 2026-10-13 fresh_2026-10-13.json   # 충실성: sector_flow
 
 ## 입력 — 지금 reports/ 그대로는 안 된다
 
-48개 기준일 폴더의 `payload.json`(그날 18:10 게시)·`numbers.html`. 11-06 은 11-08 확정 모드로 다시 만들어졌으므로 옛 18:10 판
-(그날 세션 스크래치 `prod-2026-11-06-backup/`)으로 바꿔 넣은 폴더를 `KR_QUANT_REPORTS` 로 준다. 나머지 47개는 지금 `reports/` 그대로다
-(numbers.html 은 11-08 01:37 에 고치기 전 코드로 다시 그린 판 — `html` 쌍이 비교한 것이 이 판이다).
+48개 기준일 폴더의 `payload.json`(그날 18:10 게시)·`numbers.html`. 지금 `reports/` 는 2026-11-09 에 48개 전부 다시 만들어 이 판이 아니다.
+운영 머신의 `reports/.archive/pre-rebuild-2026-11-08/` 47개(numbers.html 은 11-08 01:37 에 고치기 전 코드로 다시 그린 판 — `html` 쌍이
+비교한 것이 이 판이다)와, 11-06 은 옛 18:10 판 `reports/.archive/2026-11-06-provisional/` 을 한 폴더에 심볼릭 링크로 모아
+`KR_QUANT_REPORTS` 로 준다. 이 입력으로는 다시 돌려 보지 않았다(2026-11-09 에 Q2 만 확인).
 
 ## 기대값
 

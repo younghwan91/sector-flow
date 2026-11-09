@@ -4425,7 +4425,7 @@ replace = """    dead_hook = False"""
 id = "runbook-row-missing"
 why = "알림 문구에 할 일 줄이 없으면 새벽에 코드를 읽어야 한다"
 guards = ["tests/test_runbook.py::test_every_operator_message_has_a_runbook_row"]
-file = "README.md"
+file = "docs/runbook.md"
 find = "| `report 실패 (rc=1)`, 본문 `기준일이 없다` |"
 replace = "| `report 실패 (rc=1)`, 본문 `기준일 없음` |"
 
@@ -4469,8 +4469,8 @@ id = "doc-link-points-nowhere"
 why = "상대 링크가 없는 파일을 가리킨다"
 guards = ["tests/test_doc_paths.py::test_every_repo_path_in_the_docs_exists"]
 file = "README.md"
-find = "가이드](docs/trading-guide.md) 를 보라"
-replace = "가이드](docs/trading-guid.md) 를 보라"
+find = "가이드](docs/reading-guide.md) 를 보라"
+replace = "가이드](docs/reading-guid.md) 를 보라"
 
 [[mutation]]
 id = "doc-path-allowance-outlives-its-mention"
@@ -5784,7 +5784,7 @@ why = "원장 기록 실패(디스크·권한)가 예외로 올라가면 freshne
 guards = ["tests/test_ops_ledger.py::test_append_failure_is_a_stderr_note_not_a_crash"]
 file = "scripts/ops_ledger.py"
 find = """        print(f"⚠️ [원장] 운영 사건을 기록하지 못했다({type(e).__name__}) — 리포트·점검은 계속한다. "
-              "reports/events.jsonl 의 디스크·권한을 보라(README §3.1).", file=sys.stderr)
+              "reports/events.jsonl 의 디스크·권한을 보라(docs/runbook.md).", file=sys.stderr)
         return False"""
 replace = """        raise"""
 
@@ -5958,7 +5958,7 @@ why = "기록 실패가 종료코드로 새 나가면 원장이 리포트·크�
 guards = ["tests/test_ops_ledger.py::test_ledger_sh_rotation_matches_python_and_failure_is_quiet"]
 file = "scripts/_ledger.sh"
 find = '''  if ! { printf '%s\n' "$line" >> "$f"; } 2>/dev/null; then
-    echo "[$(date '+%F %T')] [원장] 운영 사건을 기록하지 못했다($f) — 리포트·점검은 계속한다. 디스크·권한을 보라(README §3.1)." >&2
+    echo "[$(date '+%F %T')] [원장] 운영 사건을 기록하지 못했다($f) — 리포트·점검은 계속한다. 디스크·권한을 보라(docs/runbook.md)." >&2
   fi
   return 0'''
 replace = '''  printf '%s\n' "$line" >> "$f"'''
@@ -8971,3 +8971,363 @@ guards = ["tests/test_trust_page.py::test_stale_claims_about_the_screen_are_gone
 file = "scripts/trust_page.py"
 find = '''"q": "1년%ile · 추이 · 풀림 ẍ · dW/dt, 종목 선정 · 곱"'''
 replace = '''"q": "포텐셜 U · 1년%ile · 추이 · 풀림 ẍ · dW/dt, 종목 선정 · 곱"'''
+
+[[mutation]]
+id = "demo-mark-disappears"
+why = "합성 데모의 제목 표지가 사라진다 — 가짜 숫자가 진짜 리포트처럼 보인다"
+guards = ["tests/test_demo.py::test_demo_mark_survives_at_every_width_on_every_title"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "    return f\" {DEMO_MARK}\" if d.get(\"demo\") else \"\""
+replace = "    return \"\""
+
+[[mutation]]
+id = "demo-mark-after-the-title"
+why = "표지를 제목 뒤로 옮긴다 — 좁은 창에서 잘린다"
+guards = ["tests/test_demo.py::test_demo_mark_survives_at_every_width_on_every_title"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "    l1 = demo_mark(d) + l1"
+replace = "    l1 = l1 + demo_mark(d)"
+
+[[mutation]]
+id = "demo-mark-on-every-report"
+why = "표지가 실 리포트에도 붙는다 — 진짜 숫자를 가짜라고 말한다"
+guards = ["tests/test_demo.py::test_real_report_carries_no_demo_mark"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "    return f\" {DEMO_MARK}\" if d.get(\"demo\") else \"\""
+replace = "    return f\" {DEMO_MARK}\""
+
+[[mutation]]
+id = "demo-not-stamped-in-data"
+why = "표지가 데이터가 아니라 폴더 표식에만 있다 — 복사·이름 변경으로 떨어진다"
+guards = ["tests/test_demo.py::test_demo_survives_a_copy_because_the_mark_is_in_the_data"]
+file = "src/sectorflow/demo.py"
+find = "    payload[\"demo\"] = True"
+replace = "    pass"
+
+[[mutation]]
+id = "demo-web-banner-gone"
+why = "웹 두 장에 합성 데모 띠가 없다 — 브라우저로 연 사람은 가짜인 줄 모른다"
+guards = ["tests/test_demo.py::test_web_pages_carry_the_banner_and_title"]
+file = "src/sectorflow/demo.py"
+find = "lambda m: m.group(0) + BANNER"
+replace = "lambda m: m.group(0)"
+
+[[mutation]]
+id = "demo-uses-real-looking-names"
+why = "데모 종목 이름이 '가상' 으로 시작하지 않는다 — 실종목으로 읽힌다"
+guards = ["tests/test_demo.py::test_demo_has_no_real_name_or_code"]
+file = "src/sectorflow/demo.py"
+find = "f\"Z{j:02d}{mk_i}{i:02d}\", f\"{sec}{mk[0]}{i:02d}\""
+replace = "f\"9{j:02d}{mk_i}{i:02d}\", f\"{mk[0]}{i:02d}\""
+
+[[mutation]]
+id = "demo-warns-about-age"
+why = "고정 기준일의 데모에 'N일 지난 리포트' 가 뜬다 — 고장처럼 보인다"
+guards = ["tests/test_demo.py::test_fixed_date_demo_does_not_warn_about_age"]
+file = "src/sectorflow/tui/flow_app.py"
+find = "([] if d.get(\"demo\") else staleness_warning(d[\"asof\"]))"
+replace = "staleness_warning(d[\"asof\"])"
+
+[[mutation]]
+id = "demo-overwrites-a-real-folder"
+why = "--out 이 실 리포트 폴더여도 덮는다"
+guards = ["tests/test_demo.py::test_ensure_never_overwrites_a_folder_that_is_not_a_demo"]
+file = "src/sectorflow/demo.py"
+find = "    if target.exists() and any(target.iterdir()) and not (target / MARKER).exists():"
+replace = "    if False:"
+
+[[mutation]]
+id = "demo-never-rebuilds"
+why = "생성기가 바뀌어도 옛 데모를 연다 — 새 열이 비어 고장처럼 보인다"
+guards = ["tests/test_demo.py::test_ensure_rebuilds_when_the_generator_changed"]
+file = "src/sectorflow/demo.py"
+find = "    return f\"fingerprint: {_fingerprint()}\" in said and all("
+replace = "    return all("
+
+[[mutation]]
+id = "first-run-error-forgets-the-demo"
+why = "리포트가 없을 때 daily_report.sh 만 가리킨다 — DB 없는 사람은 순환한다"
+guards = ["tests/test_demo.py::test_empty_clone_error_points_to_demo_and_received_folder"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "    return (f\"  DB 없이 화면부터 보려면: {prog} --demo   (합성 데이터 — 실데이터 아님)\\n\"\n"
+replace = "    return (f\"\"\n"
+
+[[mutation]]
+id = "batch-error-forgets-the-demo"
+why = "배치의 'DB 접속정보가 없다' 가 화면으로 가는 길을 안 적는다 — 순환의 다른 쪽"
+guards = ["tests/test_demo.py::test_batch_without_db_points_back_to_the_demo"]
+file = "scripts/_env.sh"
+find = "합성 데이터는 uv run sw-flow --demo, 받은 폴더는 --dir <폴더>(README §4.3)."
+replace = "받은 폴더를 쓴다."
+
+[[mutation]]
+id = "alert-points-at-the-old-runbook-place"
+why = "운영 알림 문구가 런북의 옛 자리(README §3.1)를 가리킨다 — 장애 중에 없는 절을 찾는다"
+guards = ["tests/test_runbook.py::test_runbook_stays_out_of_the_readme_and_pointers_follow_it"]
+file = "scripts/_ledger.sh"
+find = "디스크·권한을 보라(docs/runbook.md)."
+replace = "디스크·권한을 보라(README §3.1)."
+
+[[mutation]]
+id = "readme-tree-misses-a-script"
+why = "§2 트리에서 스크립트가 빠진다 — 있는 도구를 독자가 모른다"
+guards = ["tests/test_first_reader.py::test_every_script_is_in_the_readme_tree"]
+file = "README.md"
+find = "├── digest.py               # (선택) 다이제스트 글·카드 — 폴더에만 쓴다\n"
+replace = ""
+
+[[mutation]]
+id = "glossary-misses-a-term"
+why = "용어집에서 K1 이 빠진다 — 도움말 표지의 말을 찾을 곳이 없다"
+guards = ["tests/test_first_reader.py::test_glossary_defines_the_term"]
+file = "docs/glossary.md"
+find = "| K1 | 종목 투신+연기금"
+replace = "| 케이원 | 종목 투신+연기금"
+
+[[mutation]]
+id = "glossary-misses-short-mark"
+why = "좁은 헤더 표지의 뜻이 어디에도 없다"
+guards = ["tests/test_first_reader.py::test_glossary_defines_every_short_evidence_mark"]
+file = "docs/glossary.md"
+find = "| `[무]` |"
+replace = "| 무 |"
+
+[[mutation]]
+id = "readers-cant-find-glossary"
+why = "용어집을 가리키는 링크가 가이드에서 사라진다"
+guards = ["tests/test_first_reader.py::test_readers_can_find_the_glossary"]
+file = "docs/reading-guide.md"
+find = "[용어집](glossary.md)"
+replace = "용어집"
+
+[[mutation]]
+id = "comparison-drops-moneyrecipe"
+why = "더 빠른 경쟁자를 비교표에서 뺀다 — 고유 항목이 부풀려진다"
+guards = ["tests/test_first_reader.py::test_comparison_table_names_what_competitors_do"]
+file = "README.md"
+find = "| 머니레시피 업종별 투자자 수급 분석 | KRX·WICS 중분류 × 외국인·기관·개인·금융투자·투신·연기금·사모, 12M~1M 누적, 평일 16:10 잠정·21:30 확정 | 잠정 게시가 여기(18:10)보다 빠르고, WICS 분류를 쓴다. 오늘의 강세·약세 Top3 는 있지만 1년 %ile 은 못 찾았다 |\n"
+replace = ""
+
+[[mutation]]
+id = "comparison-says-nothing-else-exists"
+why = "'못 찾았다' 를 '없다' 로 쓴다 — 조사 범위를 넘는 주장"
+guards = ["tests/test_first_reader.py::test_comparison_table_names_what_competitors_do"]
+file = "README.md"
+find = "못 찾았다는 말이지 없다는 말은 아니다."
+replace = "다른 곳에는 없다."
+
+[[mutation]]
+id = "folder-sharing-warning-gone"
+why = "§4.3 에서 회신 전 제3자 전달 금지가 빠진다 — 실데이터를 넘기라는 안내가 된다"
+guards = ["tests/test_first_reader.py::test_received_folder_warning_is_at_both_entrances"]
+file = "README.md"
+find = "> ⚠️ **회신 전 제3자 전달 금지.** 폴더에는 실제 종목별 수급이 들어 있다. KRX·키움 이용 범위 질의\n"
+replace = "> 폴더에는 실제 종목별 수급이 들어 있다.\n"
+
+[[mutation]]
+id = "quick-start-needs-a-folder"
+why = "Quick start 첫 블록이 다시 리포트 폴더를 요구한다 — 첫 실행이 막힌다"
+guards = ["tests/test_first_reader.py::test_quick_start_starts_with_something_that_runs"]
+file = "README.md"
+find = "uv run sw-flow --demo      # 섹터 자금 흐름 — DB·데이터 없이 바로 뜬다"
+replace = "uv run sw-flow --dir <리포트 폴더>"
+
+[[mutation]]
+id = "readme-regrows-ci-badge"
+why = "비공개 저장소 배지는 익명에게 404 로 깨진다"
+guards = ["tests/test_first_reader.py::test_readme_has_no_badge_that_private_repo_breaks"]
+file = "README.md"
+find = "[![Python 3.11+]"
+replace = "[![CI](https://github.com/younghwan91/sector-flow/actions/workflows/ci.yml/badge.svg)]()\n[![Python 3.11+]"
+
+[[mutation]]
+id = "guide-names-a-gone-column"
+why = "가이드가 없어진 열을 가리킨다"
+guards = ["tests/test_first_reader.py::test_docs_do_not_name_columns_that_are_gone"]
+file = "docs/reading-guide.md"
+find = "`투신+연기금5일[억]`"
+replace = "`투신+연금5일[억]`"
+
+[[mutation]]
+id = "guide-uses-a-real-stock-name"
+why = "가이드 예시에 실종목명이 돌아온다 — 이용 범위 회신 전이다"
+guards = ["tests/test_first_reader.py::test_docs_use_no_real_stock_name"]
+file = "docs/reading-guide.md"
+find = "가상유통거09   +4,743"
+replace = "SK하이닉스   +4,743"
+
+[[mutation]]
+id = "readme-explore-label-misquoted"
+why = "README 의 탐색 표지 인용이 화면 글자와 다르다"
+guards = ["tests/test_first_reader.py::test_exploration_label_quote_matches_the_screen"]
+file = "README.md"
+find = "`[탐색 — 검정 결과 앞날 증거 없음(G 판정 불가) · 종목 투신+연기금 축은 검정 부호와 반대]`"
+replace = "`[탐색 — 검정 결과 앞날 증거 없음(G 판정 불가)]`"
+
+[[mutation]]
+id = "readme-counts-unclassified-as-vendor"
+why = "27 칸을 벤더 분류 27개로 적는다 — (미분류) 가 들어 있다"
+guards = ["tests/test_first_reader.py::test_readme_sector_count_says_what_27_is"]
+file = "README.md"
+find = "벤더 분류(`stocks.sector`) 26개와 `(미분류)` 를 합친 27칸"
+replace = "벤더 분류(`stocks.sector`) 27개"
+
+[[mutation]]
+id = "readme-denies-the-byo-collector"
+why = "BYO 수집기를 빼고 말한다 — 수집 문구가 코드와 어긋난다"
+guards = ["tests/test_first_reader.py::test_collection_wording_admits_the_byo_collector"]
+file = "CLAUDE.md"
+find = "`src/sectorflow/collect/` 는 자기 키움 키로 sqlite 를 채우는 BYO 수집기로 일일 배치와 별개다(`docs/byo/`).\n"
+replace = ""
+
+[[mutation]]
+id = "env-example-promises-sqlite"
+why = ".env.example 이 비워 두면 된다고 안내한다 — 실제로는 '기준일이 없다' 로 끝난다"
+guards = ["tests/test_first_reader.py::test_env_example_does_not_promise_a_sqlite_fallback"]
+file = ".env.example"
+find = "# 비워 두면 리포트를 못 만듭니다(빈 로컬 sqlite 를 보고 \"기준일이 없다\" 로 끝납니다). 화면만 볼 때는 uv run sw-flow --demo.\n"
+replace = "# 비워두면 로컬 SQLite(data/sector_flow.db)를 씁니다.\n"
+
+[[mutation]]
+id = "allowed-outlives-the-missing-path"
+why = "이제 있는 경로의 허용 항목이 남아 오타를 덮는다"
+guards = ["tests/test_doc_paths.py::test_allowed_entries_really_point_nowhere"]
+file = "tests/test_doc_paths.py"
+find = "    (\"CLAUDE.md\", \"docs/schema.md\"): \"quant-airflow 의 문서다\",\n"
+replace = "    (\"CLAUDE.md\", \"docs/schema.md\"): \"quant-airflow 의 문서다\",\n    (\"README.md\", \"docs/slo.md\"): \"가짜\",\n"
+
+[[mutation]]
+id = "fsc-inquiry-hides-stock-names"
+why = "금융위 질의서가 종목 표시를 숨긴다 — 사실이 틀린 질의의 회신은 쓸 수 없다"
+guards = ["tests/test_first_reader.py::test_inquiries_state_what_the_screen_really_shows"]
+file = "docs/strategy/inquiries/fsc_advisory_scope.md"
+find = "- **종목이 나옵니다.** 첫 화면에 섹터마다 그날 순매수 상위 종목 1~2개의 **종목명과 금액**이 있고, 섹터 표에 순매수·순매도 상위 종목이, 섹터를 열면(드릴다운) 그 섹터 **전 종목**의 주체별 순매수와 비중이 있습니다.\n"
+replace = ""
+
+[[mutation]]
+id = "krx-inquiry-window-back-to-250"
+why = "1년 창을 약 250거래일로 적는다 — 코드는 260 이다"
+guards = ["tests/test_first_reader.py::test_inquiries_state_the_publication_schedule_and_window"]
+file = "docs/strategy/inquiries/krx_market_data.md"
+find = "지난 1년(260거래일) 분포"
+replace = "지난 1년(약 250거래일) 분포"
+
+[[mutation]]
+id = "krx-inquiry-denies-data-krx"
+why = "정보데이터시스템에서 받는 것을 빼고 적는다"
+guards = ["tests/test_first_reader.py::test_krx_inquiry_states_the_real_sources"]
+file = "docs/strategy/inquiries/krx_market_data.md"
+find = "(a) 상장폐지 종목 목록 — 수집 파이프라인이 주 1회 받아 수집 대상을 정합니다."
+replace = "(a) 없음."
+
+[[mutation]]
+id = "fsc-inquiry-claims-missing-notice"
+why = "화면에 없는 '권유 아님' 문구를 있다고 적는다"
+guards = ["tests/test_first_reader.py::test_fsc_inquiry_does_not_claim_a_notice_the_screen_lacks"]
+file = "docs/strategy/inquiries/fsc_advisory_scope.md"
+find = "\"매매 권유가 아님\"이라는 문구는 지금 화면에 없고 판매판에 넣을 계획입니다(질문 6)."
+replace = "화면에 \"관측이며 예측·권유가 아님\"과 검증 결과를 표시합니다"
+
+[[mutation]]
+id = "draft-loses-its-mark"
+why = "약관 초안의 '법률 검토 전 초안' 표지가 사라진다 — 효력 있는 문서로 읽힌다"
+guards = ["tests/test_first_reader.py::test_drafts_say_they_are_drafts"]
+file = "docs/strategy/legal/terms_of_service_draft.md"
+find = "> **법률 검토 전 초안.** 효력이 없고 게시하지 않았다."
+replace = "> 효력이 있다."
+
+[[mutation]]
+id = "attachment-gets-a-real-name"
+why = "첨부 A 에 실종목명이 들어온다 — 질의서 첨부에 실제 데이터 금지"
+guards = ["tests/test_first_reader.py::test_screen_example_attachment_has_no_real_name"]
+file = "docs/strategy/inquiries/attachments/A_screen_example.md"
+find = "## 1. 첫 화면 — 오늘의 수급"
+replace = "## 1. 첫 화면 — 오늘의 수급 삼성전자"
+
+[[mutation]]
+id = "strategy-doc-absolute-link"
+why = "로컬 절대경로 링크는 다른 기기에서 열리지 않는다"
+guards = ["tests/test_first_reader.py::test_strategy_docs_have_no_local_absolute_link"]
+file = "docs/strategy/2026-11-08-scorecard.md"
+find = "이 파일이 원장이다."
+replace = "이 파일이 원장이다(/home/young/x)."
+
+[[mutation]]
+id = "strategy-report-legal-shield-returns"
+why = "확인 없는 단정이 보고서에 돌아온다"
+guards = ["tests/test_first_reader.py::test_strategy_report_marks_interpretation_as_interpretation"]
+file = "docs/strategy/reports/섹터 수급 리포트 수익화 전략.md"
+find = "첫째, **광고 금지 조항과 부딪힐 문장을 줄인다(해석·미확인)**."
+replace = "첫째, **법적 방패**다."
+
+[[mutation]]
+id = "competitor-note-own-basket-returns"
+why = "벤더 라벨을 자체 바스켓이라 부른다"
+guards = ["tests/test_first_reader.py::test_competitor_note_does_not_call_vendor_labels_its_own_basket"]
+file = "docs/strategy/research_notes/섹터 수급 리포트 수익화 전략/competitors.md"
+find = "(벤더 업종별 자체 집계)"
+replace = "(자체 바스켓 집계)"
+
+[[mutation]]
+id = "scorecard-claims-faster"
+why = "무료 소스보다 빠르다고 적는다 — 머니레시피가 더 빠르다"
+guards = ["tests/test_first_reader.py::test_scorecard_does_not_claim_being_faster"]
+file = "docs/strategy/2026-11-08-scorecard.md"
+find = "\"오늘 누가 어디서 평소 대비 얼마나\" 를 정확하게,"
+replace = "\"오늘 누가 어디서 평소 대비 얼마나\" 를 무료 소스보다 빠르고,"
+
+[[mutation]]
+id = "research-readme-claims-current-reports"
+why = "재현 입력이 지금 reports/ 라고 적는다 — 11-09 교체로 거짓이다"
+guards = ["tests/test_first_reader.py::test_research_inputs_point_at_the_archive"]
+file = "research/validation/q2_calc/README.md"
+find = "지금 `reports/` 는 2026-11-09 에 48개 전부 다시 만들어 이 판이 아니다."
+replace = "지금 `reports/` 그대로다."
+
+[[mutation]]
+id = "ledger-demo-flag-ignored"
+why = "sw-ledger --demo 가 데모를 안 열고 없는 reports/latest 로 간다 — 첫 실행이 다시 막힌다"
+guards = ["tests/test_demo.py::test_cli_demo_flag_runs_end_to_end"]
+file = "src/sectorflow/tui/ledger_app.py"
+find = "    if a.demo:\n"
+replace = "    if False:\n"
+
+[[mutation]]
+id = "flow-demo-flag-ignored"
+why = "sw-flow --demo 가 데모를 안 연다 — Quick start 첫 명령이 실패한다"
+guards = ["tests/test_demo.py::test_flow_demo_flag_opens_the_demo_folder"]
+file = "src/sectorflow/tui/flow_app.py"
+find = "    if a.demo:\n"
+replace = "    if False:\n"
+
+[[mutation]]
+id = "demo-seed-not-fixed"
+why = "씨앗을 안 쓰면 만들 때마다 숫자가 달라 문서의 예시를 다시 만들 수 없다"
+guards = ["tests/test_demo.py::test_db_is_deterministic"]
+file = "src/sectorflow/demo.py"
+find = "    rnd = random.Random(seed)\n"
+replace = "    rnd = random.Random()\n"
+
+[[mutation]]
+id = "demo-reads-the-real-db-env"
+why = "생성기에 KR_QUANT_DB 를 넘기면 데모가 실 DB 를 볼 수 있다"
+guards = ["tests/test_demo.py::test_demo_module_never_reads_a_real_db_env"]
+file = "src/sectorflow/demo.py"
+find = "if k != \"KR_QUANT_DB\"}"
+replace = "if k}"
+
+[[mutation]]
+id = "demo-breaks-the-four-actor-identity"
+why = "4주체 합이 0 이 아닌 합성 데이터 — 데모가 검증기를 못 넘는다"
+guards = ["tests/test_demo.py::test_demo_report_passes_the_same_verifier_as_a_real_report"]
+file = "src/sectorflow/demo.py"
+find = "                    indiv = -(inst + forgn + etc)\n"
+replace = "                    indiv = qty\n"
+
+[[mutation]]
+id = "demo-has-no-thin-sector"
+why = "얇은 섹터가 없으면 ~ 표시를 데모에서 볼 수 없다"
+guards = ["tests/test_demo.py::test_demo_shows_what_a_real_report_shows"]
+file = "src/sectorflow/demo.py"
+find = "    roster = [(s, N_PER_MARKET) for s in SECTORS] + [(THIN_SECTOR, N_THIN)]\n"
+replace = "    roster = [(s, N_PER_MARKET) for s in SECTORS]\n"

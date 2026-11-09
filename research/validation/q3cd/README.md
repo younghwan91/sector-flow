@@ -18,7 +18,7 @@ $V $D/analyze.py                         # Q3c 표 + Q3d 사전등록 판정 →
 $V $D/analyze.py --mkt 거래소            # 보조: 시장별 → out/거래소/  (코스닥도 같게)
 $V $D/extra.py                           # 기술 민감도(합산 NW, 관문 없는 G, 2018-23 vs 2024+)
 $V $D/hac.py                             # 리뷰 재계산: 합산 IC 의 HAC t·부트스트랩·−ret20·연도별
-KR_QUANT_REPORTS=~/git/sector-flow/reports $V $D/panel_check.py   # 리뷰 재계산: 11-06 패널 = 확정 게시본
+KR_QUANT_REPORTS=~/git/sector-flow/reports/.archive/pre-rebuild-2026-11-08 $V $D/panel_check.py   # 리뷰 재계산: 11-06 패널 = 확정 게시본
 ```
 
 `--code-rev` 를 빼면 이 작업 트리의 `scripts/sector_numbers.py` 를 쓴다(복사본 없음). 문서 숫자는 e8d8d12(PR #5) 판으로 냈다.
@@ -43,7 +43,8 @@ Q3d 재검, offset 0(사전등록 1차), `out/q3d_ic_summary.csv`:
   (Q3c 행의 k |t|<2 몫 42%·47% 는 첫 실행 숫자다 — 아래 v1.)
 - `hac.py`: x20 h20 합산 IC 0.036, HAC t 1.8~2.2, −ret20 합산 0.034, x·−ret20 IC 시계열 상관 0.88.
 - `panel_check.py`: 11-06 `20|전체` 27섹터 a·x·inst·ret·G 최대차 ~4e-12, k 14.927·t 3.86.
-  이 검사는 지금 `reports/2026-11-06` 이 확정 모드 판(11-08 11:37)일 때의 숫자다.
+  이 검사는 `reports/2026-11-06` 이 확정 모드 판(11-08 11:37)일 때의 숫자다. 그 판은 지금 `reports/.archive/pre-rebuild-2026-11-08/2026-11-06` 에 있다
+  (`reports/` 는 2026-11-09 에 다시 만들었다).
 
 데이터가 쌓이면(뒤 날짜 추가·주식수 정정) 숫자가 바뀐다. 비트 단위 재현은 2026-11-08 DB 상태에서만 확인했다.
 

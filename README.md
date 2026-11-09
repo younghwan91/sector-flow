@@ -4,30 +4,40 @@
 수급 DB 에서 리포트 폴더를 만들고 저장 직후 스스로 검사한다. 화면은 그 폴더만 읽으므로 SSH 에서
 바로 뜬다. 숫자는 동시기(同時期) 측정값이고, 돈이 들어온 섹터가 앞으로 오른다는 주장이 아니다([§8](#8-주의--이-숫자들은-예측이-아니다)).
 
-[![CI](https://github.com/younghwan91/sector-flow/actions/workflows/ci.yml/badge.svg)](https://github.com/younghwan91/sector-flow/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/)
 
 ## Quick start
 
 ```bash
 uv sync
-uv run sw-flow   --dir <리포트 폴더>          # 섹터 자금 흐름
-uv run sw-ledger --dir <리포트 폴더>          # 자금 원장
+uv run sw-flow --demo      # 섹터 자금 흐름 — DB·데이터 없이 바로 뜬다
+uv run sw-ledger --demo    # 자금 원장 — 같은 데모
 ```
 
-**리포트 폴더가 있어야 뜬다.** 만들어 둔 폴더를 받거나(DB 불요, [§4.3](#43-리포트-폴더를-그대로-주고받는다)), 수급 DB 에
-접속할 수 있으면 직접 만든다([§4.1](#41-리포트-만들기-db-필요)). 이 저장소에 샘플 데이터는 없다.
+**`--demo` 의 숫자와 이름은 전부 난수다.** 실제 시장·종목과 무관하고, 제목 줄 맨 앞과 웹 맨 위에 `[합성 데모]` 가 늘 붙는다.
+처음 한 번 수십 초 걸려 `~/.cache/sector-flow/demo` 에 만들고, 그 뒤로는 바로 뜬다.
 
-> **데이터 수집은 이 저장소에 없다.** 수급·시세 적재는
-> [quant-airflow](https://github.com/younghwan91/quant-airflow) 의 몫이고, 여기서는 그 DB 를 읽기만 한다.
+실제 리포트로 보는 길은 둘이다.
+
+```bash
+uv run sw-flow --dir <리포트 폴더>   # 받은 폴더(DB 불요, §4.3)
+scripts/daily_report.sh              # 수급 DB 에 접속할 수 있으면 직접 만든다(§4.1) → uv run sw-flow
+```
+
+> **리포트 폴더는 제3자에게 넘기지 않는다.** 실제 종목별 수급이 들어 있고, KRX·키움 이용 범위 질의
+> ([`docs/strategy/inquiries/`](docs/strategy/inquiries/), 아직 보내지 않은 초안)의 서면 회신을 받기 전이다. 본인 기기 사이에서만 옮긴다(§4.3).
+
+> **데이터는 어디서 오나.** 일일 배치는 [quant-airflow](https://github.com/younghwan91/quant-airflow) 가 적재한 DB 를 읽기만
+> 한다. `src/sectorflow/collect/`(`sector-flow-collect`)는 자기 키움 키로 sqlite 를 채우는 BYO 수집기로, 아직 섹터 몇 개 크기의
+> 조각만 받고 일일 배치에 쓰지 않는다([`docs/byo/`](docs/byo/)).
 
 ## 목차
 
-- §1 [무엇을 하나](#1-무엇을-하나) · [무료 자료와 무엇이 다른가](#11-무료-자료와-무엇이-다른가)
+- §1 [무엇을 하나](#1-무엇을-하나) · [다른 자료와 무엇이 다른가](#11-다른-자료와-무엇이-다른가)
 - §2 [구조](#2-구조)
-- §3 [일일 배치 — 언제 무엇이 도나](#3-일일-배치--언제-무엇이-도나) · [장애 대응](#31-장애-대응)
+- §3 [일일 배치 — 언제 무엇이 도나](#3-일일-배치--언제-무엇이-도나) · [장애 대응(운영 런북)](docs/runbook.md)
 - §4 [설치와 실행](#4-설치와-실행) · [리포트 폴더를 그대로 주고받는다](#43-리포트-폴더를-그대로-주고받는다) · [웹으로 보기](#44-웹으로-보기)
-- §5 [화면 읽는 법](#5-화면-읽는-법) · [수급 관측 읽기 가이드](docs/trading-guide.md)
+- §5 [화면 읽는 법](#5-화면-읽는-법) · [수급 관측 읽기 가이드](docs/reading-guide.md) · [용어집](docs/glossary.md)
 - §6 [자금 원장 — `sw-ledger`](#6-자금-원장--sw-ledger)
 - §7 [숫자의 정의](#7-숫자의-정의)
 - §8 [주의 — 이 숫자들은 예측이 아니다](#8-주의--이-숫자들은-예측이-아니다)
@@ -42,7 +52,7 @@ uv run sw-ledger --dir <리포트 폴더>          # 자금 원장
 
 | 명령 | 하는 일 | DB |
 |---|---|---|
-| `sw-flow` | 첫 화면은 **오늘의 수급** — 기준일 하루 누가 어디서 얼마나 드물게 사고팔았나. 아무 키나 누르면 27개 섹터 × 5개 구간(1·5·20·60·120거래일) × 3개 시장 × 4개 주체의 표로 간다. 기본 정렬은 금액이 아니라 **가속**(누적 순매수 ÷ 섹터 시총)이라 삼성전자가 있는 섹터가 자동으로 1등이 되지 않는다. `Enter` 로 섹터를 열면 그 흐름을 만든 종목이 보인다 | 불요 |
+| `sw-flow` | 첫 화면은 **오늘의 수급** — 기준일 하루 누가 어디서 얼마나 드물게 사고팔았나. 아무 키나 누르면 27개 섹터 칸(벤더 분류 26개 + 미분류) × 5개 구간(1·5·20·60·120거래일) × 3개 시장 × 4개 주체의 표로 간다. 기본 정렬은 금액이 아니라 **가속**(누적 순매수 ÷ 섹터 시총)이라 시총 큰 종목이 있는 섹터가 자동으로 1등이 되지 않는다. `Enter` 로 섹터를 열면 그 흐름을 만든 종목이 보인다 | 불요 |
 | `sw-ledger` | 같은 리포트의 회계. 누가 얼마를 넘겼고 얼마가 미분류로 남았나를 원 금액과 잔여만으로 | 불요 |
 | 웹 | 같은 리포트의 수치표(`numbers.html`, 맨 위 **오늘** 패널)와 흐름 뷰어(`viewer.html`)를 Tailscale 로 연다 | 불요 |
 | `scripts/daily_report.sh` | DB 에서 리포트 폴더를 만들고 저장 직후 자기 검증 | 읽기 전용 |
@@ -57,20 +67,29 @@ uv run sw-ledger --dir <리포트 폴더>          # 자금 원장
 
 *섹터 표(20거래일·전체 시장·기관, 160×45). 한 행이 한 섹터다.*
 
-### 1.1 무료 자료와 무엇이 다른가
+### 1.1 다른 자료와 무엇이 다른가
 
-**원자료는 무료로 볼 수 있고, 이 저장소가 더 좋은 데이터를 갖고 있지도 않다.** KRX 정보데이터시스템은 지수·종목 단위
-투자자별 거래실적을 투신·연기금까지 나눠 날짜별로 주고, 네이버 증권은 시장 단위 투자자별 매매동향을 준다(2026-11 확인).
-여기서 더하는 것은 데이터가 아니라 **가공과 확인**이다.
+**원자료는 여기서만 보는 것이 아니고, 이 저장소가 더 좋은 데이터를 갖고 있지도 않다.** 무료로 볼 수 있는 곳이 이미 많다.
+아래는 2026-11-08~09 에 공개 페이지로 확인한 범위다. 출처는 [`competitors.md`](docs/strategy/research_notes/섹터%20수급%20리포트%20수익화%20전략/competitors.md).
 
-| 여기서 하는 것 | 무료 자료로 같은 걸 하려면 |
-|---|---|
-| 오늘 순매수를 그 섹터의 **1년(260거래일) 분포 안 %ile** 로 적는다 | 날짜 구간을 내려받아 직접 계산한다 |
-| 기관과 별도로 **투신+연기금**을 섹터마다 합쳐 적는다(수급 신뢰 순서상 기관 안에서 먼저 본다) | 지수 표의 두 열을 더한다 — 지수 구성은 이 섹터와 다르다 |
-| 섹터 숫자에서 **그 숫자를 만든 종목**으로 바로 내려간다(`Enter`, 첫 화면 `[ ]`) | 지수 표와 종목 표를 따로 조회해 맞춘다 |
-| 순매수·시총·수익률을 **같은 종목 바구니**에서 잰다 — 가속(순매수 ÷ 시총)의 분자와 분모가 어긋나지 않는다 | 업종지수 구성과 수급 집계 범위가 같은지 따로 확인해야 한다 |
-| 리포트마다 **스스로 검증한다** — DB 에서 다시 집계한 값과 맞추고, 확정 리포트는 자체 바구니(정규장 종가)를 KRX 지수 수익률과 대조한다([§9](#9-리포트를-스스로-검증한다)) | 해당 없음 |
-| 터미널 화면이라 **SSH 로 바로** 뜨고, 리포트 폴더째 주고받는다 | 브라우저·HTS 가 있어야 한다 |
+| 자료 | 확인한 것 | 이 저장소와 다른 점 |
+|---|---|---|
+| 키움 HTS [0789] 투자자별누적순매수 | 업종 하나를 골라 투신·연기금 등 세부 주체의 기간 누적 추이 | 추이는 같은 종류다. 세부 주체를 업종 간에 나란히 놓으려면 업종을 바꿔 가며 본다 |
+| 키움 HTS [0797] 업종별투자자별순매수 | 시장을 고르면 업종별 주체 순매수가 한 화면에 나온다 | 업종을 나란히 보는 것 자체는 여기만의 것이 아니다 |
+| 키움 HTS [1051] 종목별 투자자별매매추이(잠정) | 장중 5차까지의 잠정치, 종목 단위 | 여기는 장중이 없다 |
+| 머니레시피 업종별 투자자 수급 분석 | KRX·WICS 중분류 × 외국인·기관·개인·금융투자·투신·연기금·사모, 12M~1M 누적, 평일 16:10 잠정·21:30 확정 | 잠정 게시가 여기(18:10)보다 빠르고, WICS 분류를 쓴다. 오늘의 강세·약세 Top3 는 있지만 1년 %ile 은 못 찾았다 |
+| 코스캐너 `/flow` | KRX+NXT 통합 기준 종목 수급 1·3·7일, 20:00 뒤 확정 | 섹터 집계를 못 찾았다. 여기는 KRX 단독이라 숫자가 다르다 |
+| KRX 정보데이터시스템 | 시장·종목 단위 투자자별 거래실적. 업종(지수) 단위 화면이 있는지는 **미검증** | 같은 통계의 익명 프로그램 조회는 `400 LOGOUT` 으로 거부됐다(2026-11-09, `scripts/krx_truth.py`). 로그인 조회는 시험하지 않았다 |
+| 네이버 증권 | 조회 도구가 막혀 **직접 확인하지 못했다** | 시장 단위로 알고 있지만 미검증이다 |
+
+**조사 범위에서 다른 곳에서 못 찾은 것은 셋이다.** 못 찾았다는 말이지 없다는 말은 아니다.
+
+1. 오늘 순매수를 그 섹터의 **1년(260거래일) 분포 안 %ile** 로 적는다.
+2. **연속일수와 그 길이의 1년 %ile** — 며칠째 같은 방향인가, 그 길이가 1년 안에서 얼마나 드문가. 연속일수만이면 StockHub·다람티커스에도 있다.
+3. **섹터에서 그날 주체별 종목으로** 바로 내려간다 — 첫 화면 `[ ]` 에 그 주체의 그날 상위 종목이 있고 `Enter` 로 전 종목을 연다.
+
+그 밖에 여기서 하는 일은 고유하지 않지만 숫자를 믿는 근거다. 순매수·시총·수익률을 **같은 종목 바구니**에서 재서 가속의
+분자와 분모가 어긋나지 않고, 리포트마다 스스로 검증한다([§9](#9-리포트를-스스로-검증한다)). 검증 기록은 아직 밖에 공개하지 않는다.
 
 **못하는 것도 있다.**
 
@@ -82,8 +101,6 @@ uv run sw-ledger --dir <리포트 폴더>          # 자금 원장
 - **섹터는 KRX 공식 업종지수 분류가 아니다.** 벤더 마스터의 섹터 이름을 쓰고 은행 넷은 금융으로 덮었다
   (`sectorflow/sector_override.py`). 같은 이름의 KRX 업종지수 투자자 표와 숫자가 다를 수 있다.
 - **앞날 증거가 없다.** 섹터 수급 지표와 섹터 앞날 수익률의 관계를 검정했고 증거가 없었다([§8](#8-주의--이-숫자들은-예측이-아니다)).
-
-키움 HTS 화면과 머니레시피 sector-flow 도 비교하려 했지만, 공개 문서로 기능을 확인하지 못해 위 표에 넣지 않았다(2026-11).
 
 ## 2. 구조
 
@@ -105,22 +122,33 @@ flowchart TD
 ```
 src/sectorflow/
 ├── storage.py              # 읽기 전용 DB 접근 — 리포트가 쓰는 만큼만
+├── demo.py                 # 합성 데모 리포트(실데이터 아님) — sw-flow --demo · sector-flow-demo
+├── collect/                # BYO 수집기 sector-flow-collect — 자기 키움 키 → sqlite (일일 배치는 안 쓴다)
 └── tui/                    # sw-flow · sw-ledger — 렌더(*_view.py)는 순수함수, curses 는 *_app.py 만
 scripts/
 ├── daily_report.sh         # 배치 입구 — 관문 → 생성 → 검증 → latest 교체
-├── cron_run.sh · _env.sh   # 크론 감싸개(이상 종료 알림) · uv·.env 불러오기 공용 머리말
+├── cron_run.sh             # 크론 감싸개 — 이상 종료 알림
+├── _env.sh · _ledger.sh    # uv·.env 불러오기 · 운영 사건 기록 — 공용 머리말
 ├── completeness_gate.py    # 수집 완전성 관문
 ├── finalize_done.py        # 08:20 확정 모드 — daily_finalize 성공 확인
 ├── sector_flow.py          # DB → payload.json (+ viewer.html)
 ├── sector_numbers.py       # payload → numbers.html (templates/)
 ├── verify_report.py        # 리포트 자기 검증 (§9)
+├── krx_truth.py            # (선택) KRX 공표 거래대금과 대조
+├── digest.py               # (선택) 다이제스트 글·카드 — 폴더에만 쓴다
+├── trust_page.py           # 검증·품질 페이지 trust.html
+├── rebuild_history.py      # 지난 기준일 여러 날 재구성
+├── seed_revisions.py       # 잠정→확정 수정 폭의 시드
+├── ops_ledger.py           # 운영 사건 원장 통계 (docs/slo.md)
 ├── freshness_check.{sh,py} # 20:30 신선도 점검
 ├── serve.sh · serve_reports.py  # 웹 (§4.4)
+├── web_smoke.py            # 웹 두 장을 진짜 브라우저로 여는 검사 (§10)
 ├── ledger_numbers.py       # sw-ledger 한계 화면의 실측 재현
 ├── verify_merge.py         # 병합 전 검증 — 실데이터 렌더·pty·변이 (§10)
+├── diff_coverage.py        # 변경 줄 커버리지 관문 (CI)
 └── docs_refs.py            # docs/formulas.md 의 `파일:줄` 인용 검사·--fix (§10)
 deploy/crontab.simnode      # 크론 정본
-docs/                       # formulas.md(수식 정본) · trading-guide.md · validation/(사전등록·결과)
+docs/                       # §11 표 참고
 research/validation/        # docs/validation 결과의 재현 스크립트 (CI 밖)
 ```
 
@@ -154,124 +182,17 @@ research/validation/        # docs/validation 결과의 재현 스크립트 (CI 
 제목의 `마감·잠정` 은 그날 잠정값으로 만든 리포트다. 잠정 리포트의 G 는 확정치에서 자주 바뀐다(게시본과 확정치의
 G 순위 ρ≥0.95·통과 변화≤1 기준을 못 넘은 날 37.5%, [`docs/validation/`](docs/validation/)).
 
-크론 리포트(`KR_QUANT_KRX_TRUTH=1`)는 네이버 시장값(개인·외국인·기관, KRX 원표와 같은지 미확인)과 시장 1일 순매수 금액을 대조해 오차 %만
-`today.krx_truth` 에 적고, 공표 수치는 `krx_truth.json` 에만 둔다([`scripts/krx_truth.py`](scripts/krx_truth.py)) — 약관을 확인하지 못해
-**내부 대조 전용**이다. 화면에 공표 수치를 싣지 않고 비공개 리포트 밖으로 재배포하지 않는다. 시장별 GET 한 번(타임아웃 10초, 망 오류 재시도 1회),
-기준일당 최대 2회다. KRX 표는 익명 조회가 막혀 있다(`KR_QUANT_KRX_TRUTH_SOURCE=krx` 는 풀렸을 때를 위해 남겼다).
-실패(망·공표 전·형식 변화)는 SKIP 이다 — 리포트는 그대로 만들고, 3회 이어지면 다음날 신선도 점검이 경고한다.
-
 종료코드 75 는 경고, 그 밖 비정상은 오류로 [`scripts/cron_run.sh`](scripts/cron_run.sh) 가 알린다(124 는 시간 초과).
 기준일이 오늘이 아닌데 아직 미완이면 75 가 아니라 1 로 끝난다.
 
-**운영 사건 원장(`reports/events.jsonl`)** — 폴더 바꿔 끼우기가 INCOMPLETE·검증 실패 흔적과 mtime 을 지우고
-크론 로그는 5MB 에서 돌아, "언제 게시됐나·몇 번 막혔나·게시 뒤 숫자가 바뀐 날" 을 나중에 셀 수 없었다. 그래서
-실행·잡·웹 프로브·신선도 판정마다 JSON 한 줄을 **덧붙이기만** 한다(자르지 않는다 — 50MB 를 넘으면 `events.jsonl.2` 로
-이어 쓴다). 형식·통계는 [`scripts/ops_ledger.py`](scripts/ops_ledger.py)(`uv run python scripts/ops_ledger.py`,
-`--days 90`·`--json`·`--errata`), 기한(잠정 18:30 · 확정 다음날 10:40 · 웹 5분 프로브 200)은 [`docs/slo.md`](docs/slo.md) 가
-정의하고 20:30 신선도 점검이 전 거래일을 그 기한에 대 본다. 원장 기록 실패는 리포트를 멈추지 않고, 원장은 웹
-허용 목록에 없어 밖에 보이지 않는다.
+**알림이 오면** [`docs/runbook.md`](docs/runbook.md) 에 알림 문구별 원인과 할 일이 있다. 운영 사건 원장과 공표치 대조도 거기 적는다.
 
-### 3.1 장애 대응
-
-알림 제목은 `<작업> 실패 (rc=N)`·`<작업> 경고 (rc=75)`·`<작업> 시간 초과 (rc=124)` 이고 본문은 로그 꼬리 30줄이다.
-작업은 `sector-flow-report`·`sector-flow-fresh`·`sector-flow-web` 이고 아래 표에서는 앞의 `sector-flow-` 를 뗐다. 명령은 저장소 루트
-(`~/git/sector-flow`)에서 친다. 기록은 `reports/cron.log`, 웹은 `reports/serve.log`.
-
-| 알림·증상 | 원인 | 할 일 |
-|---|---|---|
-| `report 경고 (rc=75)`, 본문 `수집 미완` · `[FAIL]` 줄 | 오늘 수집이 아직 안 끝났다. 폴더에 `INCOMPLETE.txt`, `latest` 는 전날. `[FAIL]` 줄이 모자란 것을 말한다(`조정 종가` 면 quant-airflow `daily_price_adjust` 가 아직 안 돌았다, `시장 목록이 비었다` 면 `stocks` 표가 비었다) | 기다린다 — 19:10·다음날 08:20 이 다시 만든다. 수집이 끝났으면 `scripts/daily_report.sh` |
-| `report 실패 (rc=1)`, 본문 `오늘이 아닌데 수집 미완` | 지난 기준일이 아직 미완이다. 다음 거래일 수집이 시작되면 기준일이 넘어가 그 날은 영영 안 만들어진다 | quant-airflow 에서 수집을 메운 뒤 바로 `scripts/daily_report.sh` |
-| `report 실패 (rc=1)`, 본문 `검증 실패` · `게시했지만 검증에 걸렸다` · 폴더에 `VERIFY_FAILED.txt` | 게시는 됐지만 자기 검증(§9)에 걸렸다. 화면·HTML 에 ⚠ | `grep FAIL reports/latest/VERIFY_FAILED.txt` 로 걸린 검사를 본다. 원인을 고친 뒤 `scripts/daily_report.sh`(검증 실패 폴더는 다시 만든다. 확정 리포트는 확정으로 남는다) |
-| `report 실패 (rc=1)`, 본문 `DB 에서 기준일을 못 읽었다` · `fresh 실패 (rc=1)`, 본문 `DB 에서 오늘 수급을 못 셌다` · `report 시간 초과 (rc=124)` · 본문 `statement timeout` | DB 서버가 죽었거나 접속정보가 틀렸거나 락에 걸렸다 | quant-airflow 의 TimescaleDB 를 살핀다. 접속 확인: `set -a; . ~/git/quant-airflow/.env; set +a; uv run --extra pg python -c "import os; from sectorflow.storage import connect; connect(os.environ['KR_QUANT_DB']).close(); print('ok')"`. 복구 뒤 `scripts/daily_report.sh` |
-| `report 실패 (rc=1)`, 본문 `기준일이 없다` | 접속은 됐는데 `supply_demand` 가 비었다 — `KR_QUANT_DB` 가 빈 사본이나 다른 DB 를 가리킨다 | `~/git/quant-airflow/.env`(이 레포에 `.env` 가 있으면 그쪽이 먼저다)의 `KR_QUANT_DB` 를 본다 |
-| `report 실패 (rc=1)`, 본문 `DB 접속정보가 없다` | `.env` 도 `~/git/quant-airflow/.env` 도 `KR_QUANT_DB` 도 없다 — quant-airflow 체크아웃이 옮겨졌거나 지워졌다 | `ls ~/git/quant-airflow/.env`. 이 레포에 사본을 두지 않는다 — 정본을 되살린다 |
-| `report 실패 (rc=127)`·`fresh 실패 (rc=127)`, 본문 `uv 를 찾지 못했다` | 크론 PATH 에 `uv` 가 없고 `~/.local/bin/uv` 도 없다 — uv 를 지웠거나 다른 곳에 깔았다 | `ls ~/.local/bin/uv`. 다시 깔거나 크론 줄에 `KR_QUANT_UV=<경로>` 를 준다 |
-| `report 실패 (rc=N)`, 본문 `완전성 관문 오류(rc=N)` | 관문(`scripts/completeness_gate.py`)이 판정 전에 죽었다 — DB 가 끊겼거나 문장 시간 초과거나 코드 오류. 위 꼬리의 `Traceback` 마지막 줄이 원인이다 | `set -a; . ~/git/quant-airflow/.env; set +a; uv run --extra pg python scripts/completeness_gate.py --asof <기준일>` 로 재현한다. 고친 뒤 `scripts/daily_report.sh` |
-| `실패 (rc=1)`, 본문에 `Traceback` | 파이썬 스크립트가 예외로 죽었다. 마지막 줄이 예외, 그 위 `File "…/scripts/…", line N` 이 자리다 | 같은 명령을 손으로 돌려 재현한다(DB 가 필요하면 위의 `.env` 불러오기부터). 고친 뒤 `scripts/daily_report.sh` |
-| `<작업> 실패 (rc=N)`, 본문 `임시 파일을 못 만들었다` | 알림 꼬리나 DB 오류를 담을 임시 파일을 `reports/` 에도 `/tmp` 에도 못 만들었다 — 디스크가 찼거나(`/tmp` 는 사용자 할당량 tmpfs) 권한이 바뀌었다. 본문이 빠진 알림이라 출력은 크론 로그에 있다 | `df -h ~/git/sector-flow/reports /tmp`, `du -sh /tmp/* 2>/dev/null \| sort -h \| tail`, `ls -ld reports`. 비운 뒤 그 작업을 다시 |
-| `report 경고 (rc=75)` 08:20·10:20, 본문 `확정치를 확인하지 못했다` · `[확정치] … 아직 안 돌았거나 도는 중` · `성공으로 끝나지 않았다` | `daily_finalize` 가 늦거나 실패했다. 잠정 리포트는 그대로 둔다. 08:20 이 놓친 날은 10:20 이 한 번 더 본다 | quant-airflow `daily_finalize` 를 본다. 끝났으면 `KR_QUANT_FINAL=1 scripts/daily_report.sh`(10:20 이 이미 돌았거나 기다릴 수 없을 때) |
-| `report 경고 (rc=75)` 08:20·10:20, 본문 `[확정치] … 수집 실패가 문턱을 넘었거나 완료 줄이 없다` | `daily_finalize` 의 종목 실패가 1% 를 넘었거나(평소 최대 0.49%, 수집기 종료코드는 20% 까지 0 이다) 기록의 완료 줄 모양이 바뀌었다. 잠정 리포트는 그대로 둔다 | 줄 끝 경로의 기록을 본다. 수집 장애면 quant-airflow 에서 다시 받은 뒤 `KR_QUANT_FINAL=1 scripts/daily_report.sh`. 모양이 바뀌었으면 `finalize_done._DONE_LINE` 을 맞춘다 |
-| `report 경고 (rc=75)` 08:20·10:20, 본문 `확정치를 확인하지 못해 잠정치로 만들었다` | 그 기준일 리포트가 아직 없었다(전날 저녁 수집 미완) — 마지막 기회라 잠정치로라도 만들어 걸었다. 확정은 위와 같은 이유로 못 했다 | 위와 같다. 확정이 끝나면 `KR_QUANT_FINAL=1 scripts/daily_report.sh` 가 확정치로 다시 만든다 |
-| `freshness 경고 (rc=75)` 20:30, 본문 `[외부 참값] 전 거래일(…) 확정 검증: …` | 확정 리포트의 정규장 종가 대조(자체 바구니 vs KRX 지수)가 3번 연속 건너뛰어졌다 — `regular_close` 가 아직 안 채워졌거나(다음 거래일 수급이 들어와야 채워진다) 그 날 비교 종목에 상장폐지 종목이 끼었다 | 그 날 `VERIFY.txt` 의 `SKIP 정규장 종가 대조` 줄에서 이유를 본다. 데이터 지연이면 다음 확정 실행에서 풀린다. 며칠 이어지면 quant-airflow 의 `regular_close` 뷰를 본다 |
-| `report 경고 (rc=75)`, 본문 `[확정치] … 기록이 없다` · `로그 경로 형식이 바뀌었을 수 있다` · `태스크 이름이 바뀐 것이다` | 이쪽이 Airflow 로그를 못 읽는다 — 로그 경로나 `daily_finalize` 태스크 이름이 바뀌었다 | `uv run python scripts/finalize_done.py --asof <기준일>` 로 이유를 본다. `finalize_done.py` 의 경로 규칙·`TASKS` 를 quant-airflow `dags/daily_finalize.py` 에 맞춘다 |
-| `report 경고 (rc=75)`, 본문 `[확정치] … 덮지 않는다` | 기준일 뒤의 `daily_finalize` 실행 창이 그날을 덮지 않는다 — 확정 실행을 놓친 지난 날이다 | 그날 확정치는 재수집 없이는 없다. 잠정으로 두거나 quant-airflow 에서 그 날짜를 재수집한 뒤 지난 기준일 재구성 |
-| (재구성, 손 실행) `KR_QUANT_ASOF=<날> scripts/daily_report.sh` 가 3 으로 끝남, `거래일이 아니다 … 휴장일이다` | 그날 수급도 업종지수·일봉도 없다 — 휴장일이다. `scripts/rebuild_history.py` 요약에는 `휴장` 으로 남는다 | 할 일 없음 |
-| (재구성) rc=1, `수급 수집 공백` | 그날 수급만 비고 업종지수·일봉은 있다 — 휴장이 아니라 수급 수집이 빠졌다. 요약에 `수집 공백` | quant-airflow 에서 그 날짜 수급을 재수집한 뒤 다시 재구성 |
-| (재구성) rc=1, `지금 DB 에서도 수집 미완` | 그날 수급이 지금도 완전성 관문 기준에 못 미친다. 원본 폴더는 그대로 두고 요약에 `수집 미완` | 수집을 메운 뒤 `KR_QUANT_ASOF=<날> scripts/daily_report.sh` |
-| (재구성) rc=75, `확정치를 확인하지 못해 잠정으로 재구성했다` | daily_finalize 창(3일) 안의 날인데 확정 실행이 아직 그날을 덮지 않았다 — 잠정으로 만들었다(`REBUILT.txt` 의 `finalize: pending`, FINAL.txt 없음) | 확정이 끝난 뒤 같은 명령을 다시 — 확정으로 바뀐다 |
-| 웹 목록·칩에 `확정 기록 없음` · `REBUILT.txt` 에 `finalize: unverified` | 창 밖의 지난 날을 재구성했다 — 마감 값으로 만들었지만 그날을 덮은 확정 실행 기록이 없다. 경고가 아니라 사실 표시다(종료코드 0) | 할 일 없음. 확정치가 꼭 필요하면 quant-airflow 에서 그 날짜를 재수집한 뒤 다시 재구성 |
-| `report 경고 (rc=75)`, 본문 `부속 산출물을 못 만들었다` · `검증·품질 페이지를 못 만들었다` · `다이제스트 카드(digest.png)를 못 찍었다` | 리포트는 게시됐고 숫자와 무관하다. 웹의 `/latest/trust.html` 또는 `/latest/digest.*` 만 그 판에 없다. 같은 폴더 `VERIFY.txt` 끝줄에 무엇이 빠졌는지 적힌다 | 페이지는 `uv run python scripts/trust_page.py --root reports --out /tmp/trust-재현/trust.html` 로 재현한다(금칙어면 2 로 끝나며 그 말을 적는다). 고친 뒤 `KR_QUANT_FORCE=1 scripts/daily_report.sh` — 게시된 폴더의 파일 하나만 고쳐 쓰는 길은 없다 |
-| (다이제스트, 끄려면 `KR_QUANT_DIGEST=0`) 본문 `다이제스트를 못 만들었다` | `scripts/digest.py` 가 실패했거나 5분 상한(`KR_QUANT_DIGEST_TIMEOUT`)을 넘겼다 — 금칙어·길이 초과·카드 렌더 실패가 흔한 이유다. 리포트 게시는 그대로 됐다 | `UV_OFFLINE=1 uv run --with 'playwright==1.48.0' python scripts/digest.py --dir reports/latest --out /tmp/digest-재현` 으로 재현한다. stderr 의 `[digest] 만들지 않았다 — <이유>` 가 원인이다 |
-| (재구성, 손 실행) `KR_QUANT_ASOF 가 날짜 꼴(YYYY-MM-DD)이 아니다` | 날짜를 잘못 줬다 | `KR_QUANT_ASOF=2026-10-06` 꼴로 다시 |
-| `scripts/rebuild_history.py` 가 멈춤, `git 체크아웃이 아니다` · `origin/main 에 없다` · `커밋 안 한 변경` | 재구성은 origin/main 의 깨끗한 체크아웃에서만 돈다 — `REBUILT.txt` 의 `commit:` 을 나중에 다시 볼 수 있어야 한다 | `git -C ~/git/sector-flow pull --ff-only` 뒤 거기서 돌린다. 리허설은 `--allow-unmerged`(sha 뒤에 `-dirty`·`-unmerged` 가 붙는다) |
-| `report 경고 (rc=75)`, 본문 `다른 리포트 실행이 돌고 있다` | 손으로 돌린 실행과 크론이 겹쳤다 | 앞 실행이 끝난 뒤 필요하면 같은 명령을 다시 |
-| `fresh 실패 (rc=1)`, 본문 `오늘 리포트가 안 걸렸다` | 수급은 들어왔는데 리포트가 없다. 크론 줄이 빠졌거나 배포가 깨졌거나 관문이 막았다 | `grep "$(date +%F)" reports/cron.log`, `crontab -l \| grep sector-flow`. 고친 뒤 `scripts/daily_report.sh` |
-| `fresh 실패 (rc=1)`, 본문 `달력상 거래일인데 supply_demand 가 비었다` | KRX 달력(`scripts/krx_calendar.py`)에 없는 평일에 수급이 없다 — 수집 실패다. 틱 유무는 본문에 사실로만 적는다(수집과 scalp-it 이 같이 죽으면 틱도 없다) | quant-airflow `daily_collection` 을 본다. 정말 임시 휴장이었으면 `scripts/krx_calendar.py` 에 그날을 넣는다 |
-| `fresh 경고 (rc=75)`, 본문 `supply_demand 가 비었다 … 휴장일이면 무시` · `[달력] <해>년이 scripts/krx_calendar.py 에 없다` | 달력이 그 해를 다루지 않아 휴장과 수집 실패를 못 가른다. 12월이면 다음 해가 없을 때 미리 알린다 | KRX 휴장일 공지(보통 전해 12월)로 표를 넣고 `PROVISIONAL` 에서 뺀다 |
-| `fresh 경고 (rc=75)`, 본문 `[달력] 오늘(…)은 달력에 휴장` | 달력이 휴장이라는데 수급이 들어왔다 — 달력이 틀렸다. SLO 분모에서 이 날이 빠진다 | KRX 공지와 대조해 `scripts/krx_calendar.py` 를 고친다 |
-| `fresh 경고 (rc=75)`, 본문 `자기 검증에 걸린 채 latest` · `확정 리포트가 자기 검증에 걸렸다` | 검증에 걸린 리포트가 게시돼 있다(`VERIFY_FAILED.txt`). 게시는 됐지만 그날 하트비트는 안 나간다 | 그 파일을 본다. 원인을 고친 뒤 `KR_QUANT_FORCE=1 scripts/daily_report.sh`(전 거래일은 `KR_QUANT_ASOF=<그날> scripts/daily_report.sh`) |
-| `fresh 경고 (rc=75)`, 본문 `전 거래일(…)이 확정되지 않았다` | 그날 08:20·10:20 확정 모드가 안 돌았거나 `daily_finalize` 를 확인하지 못했다. 다음 거래일 수집이 들어와 확정 모드는 그 날을 다시 안 본다 | `uv run python scripts/finalize_done.py --asof <그날>` 로 이유를 본다. 확정이 끝났으면 지난 기준일 재구성으로 그 날을 다시 만든다(`KR_QUANT_ASOF=<그날> scripts/daily_report.sh`, 여러 날은 `scripts/rebuild_history.py`) |
-| `fresh 경고 (rc=75)`, 본문 `ALERT_WEBHOOK_URL 이 비었다`(평일마다) · `alert.sh 가 없다` · 크론 로그에 `알림 통로 없음` | 알림 웹훅이 없거나 `~/git/quant-airflow/scripts/alert.sh` 가 없어 위의 모든 알림이 로그에만 남는다 | 웹훅을 만들어 `~/git/quant-airflow/.env` 의 `ALERT_WEBHOOK_URL=` 에 넣는다. `ls -l ~/git/quant-airflow/scripts/alert.sh` |
-| 알림이 안 온다 · `alerts.log` 에 `[alert.py] failed` · `fresh 경고`, 본문 `웹훅이 폐기됐거나 틀렸다` · `웹훅이 HTTP N 로 답했다` · `200 으로 답했지만 JSON 이 아니다` · `초 안에 닿지 못했다` | 웹훅 전달 실패 — 채널에서 웹훅이 지워졌거나 주소가 틀렸거나(Discord 웹훅 주소가 아니다) 네트워크가 끊겼다. 알림 본문은 `~/logs/quant-airflow/alerts.log` 에 다 남아 있다 | `grep -A30 'failed' ~/logs/quant-airflow/alerts.log \| tail -n 60` 으로 놓친 알림을 읽는다. 웹훅을 새로 만들어 `ALERT_WEBHOOK_URL=` 을 바꾼다. `닿지 못했다` 가 하루뿐이면 네트워크가 잠깐 끊긴 것이다 |
-| `fresh 경고 (rc=75)`, 본문 `[SLO] 전 거래일(…)이 미게시다` | 그 거래일 리포트가 끝내 게시되지 않았다. 괄호가 원장의 사건이다(`incomplete×2` 관문 차단, `기준일 못 읽음×2` DB 끊김) | 그날 `reports/cron.log` 를 본다. 수집을 메운 뒤 `KR_QUANT_ASOF=<그날> scripts/daily_report.sh` |
-| `fresh 경고 (rc=75)`, 본문 `[SLO] 전 거래일(…) 잠정 리포트가 기한` | 그날 첫 게시(모드 무관)가 18:30(KST)을 넘겼다 — 18:10 실행이 늦었거나 수집이 늦게 끝나 19:10 재시도가 만들었거나, 관문에 막혀 다음날 08:20 이 처음 게시했다. 기한은 `docs/slo.md` | 한 번이면 할 일 없음(이미 게시는 됐다). 이어지면 `grep '생성 시작' reports/cron.log \| tail` 로 시작 시각을, quant-airflow `daily_collection` 의 끝나는 시각을 본다 |
-| `fresh 경고 (rc=75)`, 본문 `[SLO] 전 거래일(…) 확정이 기한` | 확정 재생성이 다음날 10:40(KST)을 넘겼다 — 08:20·10:20 둘 다 제때 못 끝냈다(그 뒤 손 실행·재구성으로 확정됐다) | 그날 `reports/cron.log` 의 08:20·10:20 줄과 quant-airflow `daily_finalize` 의 끝나는 시각을 본다. 이어지면 daily_finalize 가 늦어지는 원인을 그쪽에서 고친다 |
-| 크론 로그·알림 꼬리에 `[원장] 운영 사건을 기록하지 못했다` · `⚠️ [원장] … 기록하지 못했다` · `fresh 경고 (rc=75)`, 본문 `실행 기록이 원장에 없다` · `18:10 뒤 실행 기록이 원장에 없다` · `이 점검의 판정을 원장에 못 썼다` | 운영 사건 원장(`reports/events.jsonl`)에 못 썼거나 크론이 안 돌았다 — 디스크가 찼거나 권한이 바뀌었다. 리포트·점검은 그대로 계속됐다(원장은 리포트를 못 멈춘다). 원장 공백이 있는 날은 하트비트도 안 나간다 | `df -h ~/git/sector-flow/reports`, `ls -l reports/events.jsonl*`, `grep "$(date +%F)" reports/cron.log`, `crontab -l \| grep sector-flow`. 그 사이 사건은 비었고 복원하지 않는다 — 통계(`scripts/ops_ledger.py`)에 미게시·공백으로 남는다 |
-| `fresh 경고 (rc=75)`, 본문 `[웹] /healthz 프로브가 N분째 없다` | 5분 프로브가 한 시간 넘게 끊겼다 — 서버가 못 뜨거나 웹 크론이 안 돈다. 내려가 있던 주기는 줄 자체가 없어 응답률에 안 보인다 | `tail reports/serve.log`, `crontab -l \| grep serve.sh`, `tailscale ip -4`. `scripts/ops_ledger.py` 의 `공백` 칸이 그동안의 빈 칸 수다 |
-| (외부 감시) 하트비트가 안 왔다는 알림 | 20:30 점검에서 리포트·수급·확정 중 하나가 깨끗하지 않았거나, 정해 둔 알림 웹훅이 죽었거나(그날 경고는 아무에게도 안 갔다), 점검이 아예 안 돌았다 — 머신·크론이 통째로 죽은 날도 여기서 잡힌다 | `tail -n 40 reports/cron.log` 의 `[하트비트]` 줄이 안 보낸 이유다. 켜는 법: 외부 감시(healthchecks.io 등, 평일 20:30 + 유예)를 만들어 `~/git/quant-airflow/.env` 에 `HEARTBEAT_URL=<주소>` 한 줄 — 주소만 넣으면 동작한다. 웹훅 없이 하트비트만 써도 된다 |
-| `sector-flow-web 재시작 — /healthz 실패(pid N, 연속 n회)` | 떠 있는 서버가 5초 안에 대답하지 않거나 `/healthz` 가 503(리포트 폴더를 못 읽거나 목록이 안 그려지거나 `latest` 가 끊겼거나 그 안에 `numbers.html`·`viewer.html` 이 없다)이라 `serve.sh` 가 끄고 다시 띄웠다. 본문이 이유다. 같은 일이 이어지면 5분마다 다시 띄우되 알림은 연속 첫 회와 12회(1시간)마다 | 본문의 이유를 본다. `curl -sS http://$(tailscale ip -4):8765/healthz`, `ls -ld reports`, `tail reports/serve.log` |
-| `web 실패 (rc=137)` | `serve.sh` 가 TERM 을 5초 버틴 서버를 KILL 했다 — 그 서버를 띄웠던 래퍼의 알림이다. 위 재시작 알림과 같은 박자(연속 첫 회·12회마다)로만 온다 | 위 재시작 알림의 이유를 본다. 매번 KILL 까지 가면 서버가 TERM 에 끝나지 않는 것이다 — `tail reports/serve.log` |
-| `web 실패 (rc=1)`, 본문 `누구인지(.serve.pid) 몰라 못 끈다` | 잠금(`reports/.serve.lock`)을 쥔 프로세스가 `/healthz` 에 대답하지 않는데, `.serve.pid` 가 없거나 그 pid 가 이 서버가 아니라 안전하게 못 끈다. 한 시간 이어질 때 알린다 | `cat reports/.serve.pid`, `fuser -v reports/.serve.lock` 로 잠금 주인을 찾아 끈다. 다음 5분 크론이 다시 띄운다 |
-| `web 실패 (rc=1)`, 본문 `Tailscale 주소가 없다` · `에 못 묶었다` · 웹이 안 열린다 | Tailscale 이 없거나 포트가 막힌 채 한 시간이 지났다(`reports/.serve.misses` 가 센다). 서버가 죽었다(rc 가 서버 종료코드) | `tail reports/serve.log`, `tailscale ip -4`, `ss -ltnp \| grep 8765`. 손으로 띄우려면 `scripts/serve.sh`. 대답 없는 서버는 크론이 5분 안에 끄고 다시 띄운다 |
-| `report` 로그·본문에 `[공표치 대조] SKIP` | 공표 시장값을 못 받았다 — 망·공표 전·휴장·형식 변화·캐시 기준일 불일치. 리포트는 그대로 만들어졌다(실패 아님) | 꼬리의 이유를 본다. 받아지면 `KR_QUANT_KRX_TRUTH=1 KR_QUANT_FORCE=1 scripts/daily_report.sh` 로 그 기준일을 다시 만든다 |
-| `freshness 경고 (rc=75)` 20:30, 본문 `[공표치] 전 거래일(…) 검증: …` | 공표치 대조가 3번 연속 건너뛰어졌다 — 그동안 화면 칩이 공표치 기준으로 판정하지 못했다 | 그 날 `VERIFY.txt` 의 `SKIP 공표치 대조` 줄에서 이유를 본다. 네이버 응답 형식이 바뀌었으면 `scripts/krx_truth.py` 의 `_parse_naver` 를 고친다 |
-| `report` 로그·본문에 `[공표치 대조] 오차 큼` | 시장 합계가 공표치와 문턱(5%)을 넘게 다르다 — 값의 버그가 아니라 정의 차이(우선주 등 미수집·분봉 밖 대량 체결)와 환산 근사의 측정이다. 거래소는 평소에도 절반 넘는 날 뜬다(48일 중 28일) | 그날 금액 해석에 반영한다. 큰 날은 `today.block_suspects` 로 어느 종목인지 본다. 공표 수치는 `reports/<기준일>/krx_truth.json` 에만 있다 |
-| `report` 로그에 `[공표치 대조] 내부 오류` | krx_truth 모듈 버그 — 대조만 빠지고 리포트는 그대로 만들어졌다 | `uv run python scripts/krx_truth.py --payload reports/latest/payload.json --fetch --out "$(mktemp -d -p ~/.cache)"` 로 재현해 Traceback 을 본다 |
-| `report` 로그에 `krx_truth.json 을 못 재웠다` | 공식값은 받아 대조했는데 캐시 파일을 못 썼다 — 디스크·권한 | `df -h ~/git/sector-flow/reports`, `ls -ld reports/<기준일>*`. 다음 빌드가 다시 받는다 |
-| 고친 코드가 다음날에도 안 돈다 · `morning-sync` 알림에 `hold sector-flow` · `fresh 경고 (rc=75)`, 본문 `[배포] 운영 체크아웃이 origin/main 보다 커밋 N개 뒤처졌다` | 07:50 `pull-all --ci-gate` 가 CI 가 초록이 아닌 커밋을 받지 않았다. 마지막 07:50 전에 올라온 커밋만 경고한다(오늘 낮의 머지는 내일 내려온다) | GitHub Actions 를 초록으로 고친다. 확인했고 당장 필요하면 `git -C ~/git/sector-flow pull --ff-only` |
-| GitHub Actions 잡이 시작도 안 하고 실패, 로그에 `The job was not started because recent account payments have failed or your spending limit needs to be increased` · 위 `[배포]` 경고가 며칠 이어짐 | GitHub 결제 정지 — CI 가 안 돌아 어떤 커밋도 초록이 안 되고, `pull-all --ci-gate` 가 전부 멈춘다. 코드 탓이 아니다 | Settings → Billing 에서 결제·spending limit 을 푼다. **복구 뒤**: 멈춘 커밋의 CI 는 저절로 안 돈다 — `gh run list -R younghwan91/sector-flow -L 5` 로 찾아 `gh run rerun <id> --failed` 또는 빈 커밋을 올린다. 다음 07:50 이 받는다(당장은 로컬 `verify_merge.py` 를 통과한 것을 확인하고 `git -C ~/git/sector-flow pull --ff-only`) |
-| `fresh 경고 (rc=75)`, 본문 `[배포] origin/main 을 N시간째 안 받았다` | 07:50 동기화가 안 돌아 받아 둔 origin/main 이 오래됐다 — 뒤처짐 경고도 믿을 수 없다 | `crontab -l \| grep pull-all`, 그 로그. `pull-all --check` 로 손으로 본다 |
-
-크론 로그(`reports/cron.log`·`serve.log`)는 5MB 를 넘으면 `scripts/cron_run.sh` 가 `.1` 로 하나만 남기고 비운다.
-
-### 3.2 디스크 소실·새 머신 복구
-
-`reports/` 는 gitignore 이고 **지금 백업 대상이 아니다.** 코드는 GitHub 에, 원천 데이터는 DB(복구는 quant-airflow 소관)에 있으니 리포트는 DB 에서
-다시 만들 수 있지만, 다음은 디스크와 함께 사라진다.
-
-| 잃는 것 | 왜 다시 못 만드나 | 그 뒤의 모습 |
-|---|---|---|
-| `reports/events.jsonl` | 운영 사건 기록이다 | 과거 SLO·정오표가 비고 새 원장은 복구 시점부터 쌓인다. 통계는 그 앞을 `원장 도입 전`·`기록 없음(복원뿐)` 으로 적는다 |
-| `reports/.archive/` | 그날 저녁 18:10 게시본이다(재구성은 확정 데이터로 만든다) | 잠정 대비를 영영 못 잰다 |
-| `reports/.revision_seed/` | 위 아카이브에서 나온다 | `scripts/seed_revisions.py` 는 `아카이브 폴더가 없다` 며 시드 0일·rc 1 로 끝난다. payload 의 `revision_stats` 가 비어 수정 폭 칸이 줄어든다 |
-
-**복구 순서**
-
-1. 새 머신이면 먼저 기반: Tailscale 로그인, `~/git/quant-airflow` 체크아웃과 그 `.env`(접속정보·웹훅의 정본), DB 복구(그 레포 런북), dotfiles 의 `cron-install`·`pull-all`.
-2. 코드: `git clone git@github.com:younghwan91/sector-flow.git ~/git/sector-flow && cd ~/git/sector-flow && uv sync --extra pg`.
-3. 크론: `cron-install` 뒤 `crontab -l | grep sector-flow`. 크론은 이 레포의 `deploy/crontab.simnode` 를 읽는다(호스트 이름이 다르면 그 이름의 파일을 만든다). 웹 크론은 빈 `reports/` 에서도 뜨고 `/healthz` 는 200 이다. 리포트 크론이 겹치면 재구성이 75 로 물러나니 평일 18:10·08:20 근처는 피한다.
-4. 리포트 — 백업이 있으면 받는다: `rclone copy "gdrive:2.4. 트레이딩/3. stocks 주식/simnode-files/sector-flow-reports" reports/` 뒤 `ln -sfn "$PWD/reports/<가장 늦은 기준일>" reports/latest`(링크는 rclone 이 안 옮긴다. 없으면 `/healthz` 가 503 `latest 링크가 없다`).
-   없으면 DB 에서: `uv run --extra pg python scripts/rebuild_history.py --root reports --from <첫 기준일> --to <전 거래일>` — origin/main 의 깨끗한 체크아웃에서만 돈다. 폴더마다 `REBUILT.txt` 가 남아 화면이 `재구성` 이라고 말한다.
-5. 확인: `curl -sS http://$(tailscale ip -4):8765/healthz` 가 `ok`, `uv run sw-flow` 가 열린다, `uv run python scripts/ops_ledger.py`. 다음 평일 20:30 점검이 원장 공백을 75 로 말하면 복구 전 날짜인지 본다.
-
-**백업에 넣는 줄**(`~/git/quant-airflow/scripts/backup_to_gdrive.sh` 의 `sync_host_files` specs — 그 레포 소관이다):
-`"sector-flow-reports|$REPO/../sector-flow/reports|/latest /*.log /*.log.1 /.*.lock /.serve.* /.cron_run.* /.asof_err.* /.rebuild/** /*.building.*/** /*.replaced.*/**"`
-
-**리허설 실측**(2026-11-09, 임시 폴더, DB 읽기만):
-
-| 단계 | 걸린 시간 | 비고 |
-|---|---|---|
-| clone·`uv sync` | 0초·1초 | 로컬 clone, uv 캐시 적중 — 새 머신은 내려받는 만큼 더 걸린다 |
-| `rebuild_history.py` 3일(11-04~06, `--jobs 1`) | 339초(하루 98~140초) | 3일 다 재구성·검증 실패 0. 11-06 payload 는 운영본과 `revision_stats` 만 다르다(시드가 없어서) |
-| 서버 기동~`/healthz` 200 | 1초 | `latest` 를 재구성이 걸었다 |
-| 백업 사본 복원(`cp -a` 46MB, 5일치 + 원장 + 시드) | 1초 미만 | 링크 전 503, `ln -sfn` 뒤 200 · 통계가 원장을 그대로 읽었다. rclone 내려받기는 못 쟀다(백업이 아직 없다) |
-
-폴더 50개를 `--jobs 1` 로 다시 만들면 약 95분이다(위 하루치로 잰 추정). 2026-11-08 운영 재구성 48일은 `--jobs` 병렬로 약 19분 걸렸다(`REBUILT.txt` 시각).
+**디스크가 죽었거나 새 머신이면** 런북의 [복구 절차](docs/runbook.md#디스크-소실새-머신-복구)를 따른다.
 
 ## 4. 설치와 실행
 
 **요구사항:** Python 3.11 이상, [uv](https://docs.astral.sh/uv/), 리눅스·macOS 터미널(`curses`). 설치는 `uv sync` 한 줄이다.
-리포트를 직접 만들려면 PostgreSQL/TimescaleDB 접속정보가 필요하다. `cp .env.example .env` 뒤 `KR_QUANT_DB` 를 채운다
+화면을 보는 데는 DB 가 필요 없다(`--demo`, §4.2). 리포트를 직접 만들려면 PostgreSQL/TimescaleDB 접속정보가 필요하다. `cp .env.example .env` 뒤 `KR_QUANT_DB` 를 채운다
 (옆자리에 quant-airflow 체크아웃이 있으면 그 `.env` 를 불러 쓰므로 필요 없다).
 
 ### 4.1 리포트 만들기 (DB 필요)
@@ -298,10 +219,12 @@ uv run --extra pg python scripts/verify_report.py --dir <리포트폴더> --db-c
 ### 4.2 화면 띄우기 (DB 불요)
 
 ```bash
+uv run sw-flow --demo                   # 합성 데이터(실데이터 아님) — 폴더가 없어도 뜬다
 uv run sw-flow                          # <저장소>/reports/latest 를 연다
 uv run sw-flow --dir <리포트 폴더>       # 특정 날짜의 리포트
 uv run sw-ledger                        # 자금 원장 (§6)
 uv run sw-ledger --dump --width 100     # 색 없는 평문 — 파이프·리다이렉트용
+uv run sector-flow-demo --out <폴더>     # 합성 데모 폴더만 만든다 — 웹으로 열어 보거나 --dir 로 띄운다
 ```
 
 40×10 창에서도 뜬다. 폭이 모자라면 열이 경계에서 통째로 빠진다(숫자가 자릿수 중간에서 잘려 다른 값처럼 보이지 않게).
@@ -310,7 +233,10 @@ uv run sw-ledger --dump --width 100     # 색 없는 평문 — 파이프·리�
 
 ### 4.3 리포트 폴더를 그대로 주고받는다
 
-**받는 쪽에는 DB 도 수집 파이프라인도 필요 없다.** 만드는 쪽이 폴더를 압축해 보낸다.
+**받는 쪽에는 DB 도 수집 파이프라인도 필요 없다.** 만드는 쪽이 폴더를 압축해 옮긴다.
+
+> ⚠️ **회신 전 제3자 전달 금지.** 폴더에는 실제 종목별 수급이 들어 있다. KRX·키움 이용 범위 질의
+> ([`docs/strategy/inquiries/`](docs/strategy/inquiries/))의 서면 회신을 받기 전에는 본인 기기 사이에서만 옮긴다. 남에게 보여 줄 때는 합성 데모를 쓴다.
 
 ```bash
 tar czf sector-flow-2026-11-06.tar.gz -C <저장소>/reports 2026-11-06            # 보내는 쪽
@@ -353,7 +279,7 @@ http://<서버의 Tailscale 주소>:8765/latest/viewer.html   #            — �
 
 ## 5. 화면 읽는 법
 
-> 누가 어디서 사고팔았나를 어떤 순서로 읽는지는 [수급 관측 읽기 가이드](docs/trading-guide.md) 를 보라.
+> 누가 어디서 사고팔았나를 어떤 순서로 읽는지는 [수급 관측 읽기 가이드](docs/reading-guide.md) 를 보라. 낯선 말은 [용어집](docs/glossary.md) 에 있다.
 > 고르는 법은 말하지 않는다 — 검정 결과 그럴 근거가 화면에 없다([§8](#8-주의--이-숫자들은-예측이-아니다)).
 > 모든 열의 정의와 한계는 화면 안 도움말(`?`)이 원본이고, 아래는 그 축약이다.
 
@@ -371,7 +297,7 @@ http://<서버의 Tailscale 주소>:8765/latest/viewer.html   #            — �
 | `a` `A` | 주체 기관 · 외국인 · 개인 · 기타법인 |
 | `s` `S` | 정렬 열 바꾸기. 드릴다운에서는 종목 정렬 |
 | `r` | 정렬 역순. 순매도 상위(가장 많이 판 쪽)를 보려면 이걸 켠다 |
-| `e` | 탐색 모드 켜기/끄기 — 미실현·풀림가속·dW/dt·G·종목 선정·종합·전 종목(곱)을 보인다. 기본은 꺼짐이고, 켜 있는 동안 제목 줄 맨 앞에 `[탐색 — 검정 결과 앞날 증거 없음(G 판정 불가)]` 가 붙는다 |
+| `e` | 탐색 모드 켜기/끄기 — 미실현·풀림가속·dW/dt·G·종목 선정·종합·전 종목(곱)을 보인다. 기본은 꺼짐이고, 켜 있는 동안 제목 줄 맨 앞에 탐색 표지가 붙는다(넓은 화면: `[탐색 — 검정 결과 앞날 증거 없음(G 판정 불가) · 종목 투신+연기금 축은 검정 부호와 반대]`, 좁을수록 줄어 끝내 `[탐색]`) |
 | `t` | 탐색 모드에서만 — 전 종목 화면(곱 = 섹터G × 종목선정 순). `t`·`h`·`←`·`Esc` 로 돌아온다 |
 | `?` `F1` | 도움말 — 모든 열의 뜻·계산식·증거 표지 |
 | `q` | 종료. 도움말 안에서는 닫기만 한다 |
@@ -386,6 +312,7 @@ http://<서버의 Tailscale 주소>:8765/latest/viewer.html   #            — �
 - 시장 수익률 1·20일 — 자체 바구니와 KRX 종합지수(정규장)를 나란히([§8](#8-주의--이-숫자들은-예측이-아니다)). 잠정 리포트의 마지막 날은 전일 20:00 → 당일 **수집 시각**(애프터마켓 진행 중)이라 라벨이 다르다.
 - 시장 4주체 순매수와 그 1년%ile. 공표 시장값 대비 오차가 5% 를 넘는 시장이면 칩, 대량 체결 의심 종목이 있으면 칩, 종가·VWAP 환산 차가 5% 를 넘는 칸이면 칩. `(미분류)` 종목이 남아 있으면 그 수.
 - 잠정 리포트면 최근 확정일들의 잠정→확정 수정 폭(1일 섹터 칸 중앙 %, 부호 뒤집힘 수)과 %ile 극단 목록의 `(잠정)` 표지.
+- 연속 순매매 — `기관 9일 연속 순매수 누적 +2.2조(69)` 꼴. 그날까지 순매수 부호가 같은 날이 며칠째인가, 그 기간의 누적 금액, 괄호는 그 연속 길이가 최근 1년의 연속 길이 중 몇 %ile 인가. 시장 합계 4주체(기관·투신+연기금·외국인·개인)를 먼저 적고, 이어서 기관·투신+연기금·그날 최대 순매매 주체의 연속이 가장 긴 섹터를 적는다. |금액| 이 그날 목록 총량의 1% 미만인 날은 연속을 끊는다. 센 값이고 앞날 관계는 검정하지 않았다.
 - 기관·투신+연기금(그리고 그날 시장 \|순매수\| 가 가장 큰 주체가 그 밖이면 그 주체 — `최대 순매매 주체`) 순매수 상·하위 3개 섹터(금액 순, 각자의 1년%ile 과 그 섹터의 그날 수익률 — 웹과 같은 반올림)와 섹터마다 그 주체의 그날 상위 종목 1~2개, 1년%ile 이 ≥95·≤5 인 섹터.
 - 직전 거래일 리포트 대비 20일 누적 순매수 상위 5 섹터의 들고 남(직전이 잠정·검증 실패였으면 제목에 적는다).
 - 최근 5일 부호가 직전 15일과 반대인 섹터(판정 불가 라벨, 5일 \|금액\| 이 목록의 2% 이상만).
@@ -401,7 +328,7 @@ http://<서버의 Tailscale 주소>:8765/latest/viewer.html   #            — �
 
 | 열 | 뜻 |
 |---|---|
-| 섹터 | 벤더 분류(`stocks.sector`) 27개. KRX 업종 분류와 다르다. 마스터가 섹터를 비운 은행 넷만 KRX 업종(금융)으로 보정한다(`src/sectorflow/sector_override.py`). 유니버스는 보통주 마스터(`stocks`, kind A)라 우선주·리츠 등은 어느 화면에도 없다 — 2026-11-06 기준 139종목, 시총 약 160조, 거래대금 약 1.04조(거래소 거래대금의 3.6%) |
+| 섹터 | 벤더 분류(`stocks.sector`) 26개와 `(미분류)` 를 합친 27칸. KRX 업종 분류와 다르다. 마스터가 섹터를 비운 은행 넷만 KRX 업종(금융)으로 보정한다(`src/sectorflow/sector_override.py`) |
 | (마커) | `~` 는 그 구간에 거래된 종목 10개 미만 — 회색, 정렬과 무관하게 맨 아래(분모가 작아 가속이 쉽게 튄다). 탐색 모드에서는 `*` 가 G 관문 통과 |
 | 가속[%p] | 임펄스 ÷ 구간말 섹터 시총 × 100. 기본 정렬 열 |
 | 임펄스[억] | 구간 누적 순매수 = Σ(순매매 수량 × 그날 종가) |
@@ -416,8 +343,6 @@ http://<서버의 Tailscale 주소>:8765/latest/viewer.html   #            — �
 | dW/dt[%p/일] | **탐색 모드에서만.** 구간을 반으로 갈라 본 W = 가속 × 수익률 의 전·후반 차를 거래일로 나눈 값 |
 | G | **탐색 모드에서만.** 관문(얇지 않고·가속>0·미실현>0·풀림가속>0)을 다 통과한 섹터들 사이의 순위 평균. 어기면 `—`, 통과가 하나뿐이면 0.5. 판정 불가(검정력 없음) |
 | 순매수/순매도상위[억] | **선택한 주체**가 그 섹터에서 가장 많이 산/판 종목과 금액. 표는 1개씩, 하단 패널은 3개씩 |
-
-포텐셜(½kx²)은 \|미실현\| 의 단조 변환이라 지웠다.
 
 표 아래 패널은 선택한 섹터의 4주체 순매수(`개인 -116 · 외국인 -80 · 기관 +214 · 기타법인 -21 [억]`)와 순매수·순매도 상위
 3개씩을 적는다. 4주체 합이 0 에 닫히므로 고른 주체가 판 돈을 누가 받았는지가 이 줄에 있다. 그 아래 힌트바는 지금 정렬한 열의
@@ -436,7 +361,7 @@ http://<서버의 Tailscale 주소>:8765/latest/viewer.html   #            — �
 | 선정 | **탐색 모드에서만**(코드 오른쪽). 섹터 안 순위 평균. 관문(누적 80% 안·순매수>0·투신≥0·연기금≥0·거래대금≥100억·최근집중·상대수익·참여율이 다 있을 것)을 어기면 `—`, 후보가 하나뿐이면 점수가 없다(5일 창에는 하나도 없다). rank(투신+연기금) 축은 검정 부호와 **반대**다(§8) |
 | 순매수[억] | 그 구간 선택된 주체의 순매수. 기본 정렬은 절댓값 순이라 많이 산 종목과 많이 판 종목이 같이 위로 온다 |
 | 누적[%] | \|순매수\| 큰 순으로 훑을 때의 누적 기여율. 옆 1칸의 `-` 마커가 80% 지점이다. 순매수 정렬에서만 채운다 |
-| 투신[억] · 연기금[억] | 그 구간 투신·연기금의 순매수. 선택 주체와 무관하게 늘 기관 세부다 — 기관 총액이 같아도 이 둘이 채운 것과 금투(헤지·차익이 섞인다)가 채운 것은 다른 이야기다([가이드](docs/trading-guide.md)) |
+| 투신[억] · 연기금[억] | 그 구간 투신·연기금의 순매수. 선택 주체와 무관하게 늘 기관 세부다 — 기관 총액이 같아도 이 둘이 채운 것과 금투(헤지·차익이 섞인다)가 채운 것은 다른 이야기다([가이드](docs/reading-guide.md)) |
 | 상대수익[%p] | 종목 구간수익률 − 섹터 구간수익률(섹터 표의 `수익률[%]` 과 같은 기준선) |
 | 최근집중[%] | 5일 순매수 ÷ 이 창의 순매수 × 100. 20일 화면에서 ≈25 면 고르게, ≈100 이면 최근 5일에 몰림, >100 이면 앞에서 팔다 방향을 튼 것. 분모 1억 미만·1일과 5일 창·목록 Σ\|순매수\| 의 0.5% 미만인 줄에서는 비운다. ±999 를 넘으면 `>999`·`<-999` |
 | 참여율[%] · 거래대금[억] | 순매수 ÷ 그 종목 거래대금 × 100 과 그 분모. 둘은 **같이 남거나 같이 빠진다** — 참여율만 남으면 거래대금 3억짜리 스팩과 4조짜리 대형주가 같은 숫자로 보인다 |
@@ -465,7 +390,8 @@ http://<서버의 Tailscale 주소>:8765/latest/viewer.html   #            — �
 | 잔차를 4주체에 안분 | 측정되지 않은 주체가 측정된 주체의 옷을 입는다. `잔여 = −Σ4주체` 를 별도 열로 남긴다 |
 
 첫 번째는 실측도 전제를 부정한다. 개인·기관·외국인의 섹터쌍 순매수 상관에서 음수 쌍의 비율은 순환이동 널(≈50%)보다
-낮다 — 섹터가 서로 반대가 아니라 같이 움직인다(공통요인). 로테이션을 전제한 산키 다이어그램은 없는 현상을 그리는 셈이다.
+낮다 — 섹터가 서로 반대로 움직이지 않고 같이 움직이는 쪽이다. 왜 그런지는 재지 않았고, 이것이 로테이션이 없다는 증명도 아니다.
+다만 이 데이터로는 섹터 간 이동을 보일 수 없으므로 그 흐름을 전제한 산키 다이어그램은 그리지 않는다.
 `동시성` 화면은 이 비율을 연 리포트에서 다시 재고(β제거를 `d` 로 켜면 널과 구분되지 않는 조합이 생긴다), 재현 스크립트는
 [`scripts/ledger_numbers.py`](scripts/ledger_numbers.py) 다.
 
@@ -498,7 +424,7 @@ http://<서버의 Tailscale 주소>:8765/latest/viewer.html   #            — �
 | k (강성) | 그 블록 횡단면에서 a → Δv 로 적합한 절편 포함 OLS 기울기. 10종목 미만 섹터는 적합에서 뺀다 | %/%p |
 | x (미실현) | (k·a + b) − Δv | %p |
 | dW/dt (일률) | 구간을 반으로 갈라 W = a·Δv 의 변화 | %p/일 |
-| ẋ, ẍ (풀림) | 구간을 같은 길이의 세 조각으로 갈라 x 를 중앙차분(부호 반전) | %p/일, %p/일² |
+| ẋ, ẍ (풀림) | 구간을 같은 길이의 세 조각으로 갈라 x 를 중앙차분(부호 반전). 3 의 배수가 아니면 가장 오래된 나머지 날을 버린다(20일 → 6·6·6) | %p/일, %p/일² |
 | G (탐색 모드) | a·x·ẍ 가 모두 양수인(10종목 이상) 섹터끼리 매긴 세 순위의 평균. 하나뿐이면 0.5. `종합 G` = 통과한 창만의 평균, 종합 `*` = 판정된 모든 창 통과 | 0~1 |
 
 ## 8. 주의 — 이 숫자들은 예측이 아니다
@@ -518,8 +444,7 @@ http://<서버의 Tailscale 주소>:8765/latest/viewer.html   #            — �
 - **검정은 기술 통계다**(비용·집행 없음). 알파 심사는 swing-it 의 일이다. 그 전 판정인
   [기관 수급 가속 VERDICT](https://github.com/younghwan91/swing-it/blob/main/research/logs/inst_flow_accel/VERDICT.md)
   는 "20일 가속 변화 상위 10% 월 리밸 롱온리" 한 형태의 NO-GO 다.
-- **k 는 추정치다.** 창마다·날마다 바뀐다. 그날 블록의 k 와 t 는 탐색 모드(`e`) 헤더 줄과 수치표 탐색 영역에 `[측정]` 으로 적힌다(동시기 적합, \|t\|<2 인 날이 42~70% — Q3c). 코스닥 단독은 적합이 약하다.
-- **U 는 x 의 제곱이라 부호가 없다.** 이걸로 정렬하면 많이 눌린 것과 이미 많이 간 것이 같이 올라온다.
+- **k 는 추정치다.** 창마다·날마다 바뀐다. 그날 블록의 k 와 t 는 탐색 모드(`e`) 헤더 줄과 수치표 탐색 영역에 `[측정]` 으로 적힌다(동시기 적합. \|t\|<2 인 날이 20일·전체 42~47%, 코스닥 60~70% — Q3c 첫 실행 정의). 코스닥 단독은 적합이 약하다.
 - **금액은 종가 환산 근사고 시장 합계엔 우선주·리츠가 없다.** DB 는 수량만 준다(참값은 주체별 체결가 합). 코스닥은 섹터 단위로 불안정하다(48일 중 71% 만
   상대차 중앙 5% 이내). 첫 화면·웹 오늘 패널이 공표 시장값 대비 오차와 대량 체결 의심을 표시한다.
 - **수익률은 정규장 수익률이 아니다.** 2026-09-14 부터 일별 종가가 KRX 애프터마켓(16:00~20:00)까지 포함한 통합값이라
@@ -537,7 +462,7 @@ http://<서버의 Tailscale 주소>:8765/latest/viewer.html   #            — �
 
 | 계층 | 묻는 것 |
 |---|---|
-| **A. 수식** | 표의 값이 정의된 항등식을 만족하는가(x = 예상Δv − Δv, U = ½kx², G 범위·관문). 전정밀도로 다시 적합해 비교한다 — 소수 3자리 k 로 검산하면 멀쩡한 식이 실패로 뜬다 |
+| **A. 수식** | 표의 값이 정의된 항등식을 만족하는가(x = 예상Δv − Δv, G 범위·관문). 전정밀도로 다시 적합해 비교한다 — 소수 3자리 k 로 검산하면 멀쩡한 식이 실패로 뜬다 |
 | **A3. 파생** | 구간 수익률·ẋ·ẍ·1년%ile·dW/dt 를 `sector_numbers` 를 부르지 않고 페이로드 일별 배열에서 다시 세면 같은가 |
 | **B. 데이터** | 기준일 = DB 최신일, 배열 길이, 4주체 합 ≈ 0, (code, date) 중복, 단위 |
 | **C. 계산** | 열 정의 수 = 셀 수, 섹터 중복, Inf/NaN, 템플릿 자리표시자 잔존 |
@@ -547,6 +472,7 @@ http://<서버의 Tailscale 주소>:8765/latest/viewer.html   #            — �
 | **G. 원장** | `sw-ledger` 화면의 값·그림이 맞고 `sw-flow` 와 같은 수를 말하는가 |
 | **H. 화면·키** | 듣는 키(`handle_key` 를 실제로 태운다)와 푸터·도움말에 적힌 키가 같은가 |
 | **T. 오늘** | `today`·`change`·`final_diff` 의 1일 값·1년%ile·시장 합계·직전 대비를 일별 배열에서 다시 세면 같은가 |
+| **W. 웹** | 웹 두 장에 **그려지는 값**(본표·'오늘' 패널·뷰어 표·KPI·랭킹·증거 표지)이 페이로드·TUI 와 같은 글자인가 |
 
 값이 틀린 것만 실패다. 도움말·한계 화면이 인용하는 **실측 주장**이 오늘 데이터에서 어긋난 것은 숫자 결함이 아니라 글이
 낡은 것이라 같은 폴더의 `CLAIMS.txt` 에만 적는다. 확정 리포트의 KRX 지수 대조는 정규장 종가가 아직 안 채워진 날 건너뛰는데(SKIP),
@@ -577,9 +503,14 @@ uv run python scripts/verify_merge.py <워크트리>                     # 변�
 
 | 문서 | 내용 |
 |---|---|
-| [`docs/trading-guide.md`](docs/trading-guide.md) | 수급 관측 읽기 가이드 — 누가 어디서 사고팔았나를 읽는 순서와 예. 고르는 법은 말하지 않는다 |
+| [`docs/reading-guide.md`](docs/reading-guide.md) | 수급 관측 읽기 가이드 — 누가 어디서 사고팔았나를 읽는 순서와 예. 고르는 법은 말하지 않는다 |
+| [`docs/glossary.md`](docs/glossary.md) | 용어집 — 주체 이름·기호·검정 이름·화면 표지 |
 | [`docs/formulas.md`](docs/formulas.md) | **수식 정본.** 두 화면의 모든 열·표시의 식과 코드 위치, 지표별 근거 수준 |
 | [`docs/validation/`](docs/validation/) | 지표 검증과 수급 쓸모 검정 — 사전등록과 결과. 재현 스크립트는 [`research/validation/`](research/validation/) |
+| [`docs/runbook.md`](docs/runbook.md) | 운영 런북 — 알림 문구별 원인과 할 일, 운영 사건 원장 |
+| [`docs/slo.md`](docs/slo.md) | 게시 기한의 정의와 재는 법 |
+| [`docs/byo/`](docs/byo/) | 자기 키움 키로 수집하는 BYO 조각의 동등성 실측 |
+| [`docs/strategy/`](docs/strategy/) | 수익화 조사·성적표·당국 질의서 초안 — 외부에 낸 것이 아니고 법률 자문도 아니다 |
 
 ## 12. 관련 프로젝트 — 오픈소스 퀀트 스택
 
@@ -611,5 +542,5 @@ MIT
 
 ## 기여 및 이슈 제보
 
-- 🐛 버그 제보, 질문, 기능 제안: [GitHub Issues](https://github.com/younghwan91/sector-flow/issues)
+- 🐛 버그 제보, 질문, 기능 제안: [GitHub Issues](https://github.com/younghwan91/sector-flow/issues) (비공개 저장소라 접근 권한이 있어야 열린다)
 - 📈 업데이트 소식: [팔로우 @younghwan91](https://github.com/younghwan91)

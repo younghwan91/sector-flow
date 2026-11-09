@@ -1,7 +1,8 @@
 # sector-flow — Claude 작업 지침
 
 코스피·코스닥 섹터 자금흐름 일일 리포트(`scripts/daily_report.sh`)와 터미널 화면(`sw-flow`·`sw-ledger`). 2026-11-02 swing-it 에서
-히스토리째 분리했다. 수집은 quant-airflow, 알파 심사·전략은 swing-it 소관이다. 여기는 관측만 한다.
+히스토리째 분리했다. 일일 배치의 수집은 quant-airflow, 알파 심사·전략은 swing-it 소관이다. 여기는 관측만 한다.
+`src/sectorflow/collect/` 는 자기 키움 키로 sqlite 를 채우는 BYO 수집기로 일일 배치와 별개다(`docs/byo/`).
 
 ## 명령
 - 테스트: `uv run --extra dev pytest -q` — DB·네트워크 불요.
@@ -13,7 +14,7 @@
   `scripts/rebuild_history.py --root <폴더> --from … --to …`(오래된 날부터 — `change` 가 직전 폴더를 읽는다). 폴더에 `REBUILT.txt`(`commit:` 전체 sha·`finalize:`).
   origin/main 의 깨끗한 체크아웃에서만 돈다(`--allow-unmerged` 는 리허설). daily_finalize 창(3일) 밖의 날은 `finalize: unverified`
   — FINAL.txt 없이 '확정 기록 없음' 으로 표시한다.
-- 화면: `uv run sw-flow`, `uv run sw-ledger` (`reports/latest` 를 연다).
+- 화면: `uv run sw-flow`, `uv run sw-ledger` (`reports/latest` 를 연다). 데이터 없이는 `--demo`(합성, `src/sectorflow/demo.py`). 문서·그림의 예는 실데이터 대신 데모로 만든다.
 - 검증·품질 페이지·다이제스트: 배치가 짓는 폴더 안에서 만들어 함께 바꿔 낀다(웹 `/latest/trust.html`·`/latest/digest.md`·`.png`, 문서 사본 `/latest/validation/`). 다이제스트는 기본 켜짐(`KR_QUANT_DIGEST=0` 으로 끈다), 밖으로 보내는 길은 없다. 미리 보기는 `uv run python scripts/trust_page.py --root reports --out <밖의 경로>`.
 - 금칙어 표는 `src/sectorflow/wording.py` 하나다 — 수치표·뷰어·검증 페이지·다이제스트·README 가 같이 쓴다(`tests/test_wording.py`).
 - DB(TimescaleDB `kr_quant`, **읽기 전용**): `set -a; . ~/git/quant-airflow/.env; set +a` 뒤 `$KR_QUANT_DB`, psycopg2 는 `--extra pg`.
@@ -28,8 +29,8 @@
   Airflow 로그로 확인하고(`scripts/finalize_done.py`) 전날을 확정치로 다시 만든다(`FINAL.txt`). 확인 못 하면 75, 이미 확정이면 0 으로 건너뛴다. 완전성 관문(`scripts/completeness_gate.py`)이 막으면
   폴더에 `INCOMPLETE.txt` 만 남기고 75 로 끝나며(`latest` 유지) 다음 실행이 그 기준일을 다시 만든다. `KR_QUANT_FORCE` 도 관문은 못 끈다.
   이상 종료는 `scripts/cron_run.sh` 가 quant-airflow `alert.sh` 로 알리고, 크론 로그가 5MB 를 넘으면 `.1` 로 돌린다. 평일 20:30 `scripts/freshness_check.sh` 가 결과(`latest`·SLO·원장·배포 지연·알림 웹훅)를 본다.
-  휴장 달력 정본은 `scripts/krx_calendar.py` — 매년 12월 KRX 공지로 다음 해를 대조한다(2027 은 잠정). 디스크 소실·새 머신 복구는 README §3.2.
-  상한: 크론 `timeout 40m`, `reports/.report.lock`(겹치면 75), DB 접속 10초·문장 10분(`storage.connect`). 알림별 대응은 README §3.1.
+  휴장 달력 정본은 `scripts/krx_calendar.py` — 매년 12월 KRX 공지로 다음 해를 대조한다(2027 은 잠정). 디스크 소실·새 머신 복구는 `docs/runbook.md`.
+  상한: 크론 `timeout 40m`, `reports/.report.lock`(겹치면 75), DB 접속 10초·문장 10분(`storage.connect`). 알림별 대응은 `docs/runbook.md`.
 - 이 레포는 PRIVATE 다. 공개 전환은 사용자가 정한다.
 
 ## 데이터 함정 (kr_quant)

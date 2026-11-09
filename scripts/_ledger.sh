@@ -35,7 +35,7 @@ sf_event_append() {
   local root="$1" line="$2" f
   f="$(sf_ledger_file "$root" 2>/dev/null)" || f="$root/events.jsonl"
   if ! { printf '%s\n' "$line" >> "$f"; } 2>/dev/null; then
-    echo "[$(date '+%F %T')] [원장] 운영 사건을 기록하지 못했다($f) — 리포트·점검은 계속한다. 디스크·권한을 보라(README §3.1)." >&2
+    echo "[$(date '+%F %T')] [원장] 운영 사건을 기록하지 못했다($f) — 리포트·점검은 계속한다. 디스크·권한을 보라(docs/runbook.md)." >&2
   fi
   return 0
 }

@@ -15,7 +15,7 @@ import unicodedata
 from collections import namedtuple
 from datetime import date
 
-from sectorflow.basis import BASIS_HELP, DATA_BASIS_SHORT
+from sectorflow.basis import BASIS_HELP, DATA_BASIS_SHORT, DEMO_MARK
 
 #: East Asian Width 가 'A'(Ambiguous) 인 글자를 **두 칸으로 센다**.
 #:
@@ -1715,13 +1715,18 @@ BANNER_DISCLAIMER = (
     " 사실 요약 — 추천 아님.")
 
 
+def demo_mark(d: dict) -> str:
+    """합성 데모의 제목 줄 **맨 앞** 표지 — 앞에 있어야 어느 폭에서도 안 잘린다. 실 리포트에는 빈 문자열."""
+    return f" {DEMO_MARK}" if d.get("demo") else ""
+
+
 def _banner_title(d: dict, width: int, mark: str = "") -> str:
     chip = status_chip(d)
     more = " · ↓↑ 더 보기" if mark else ""
-    title = f" 오늘의 수급 · {d.get('asof', '')} {chip} — 아무 키나 눌러 표로{more}"
+    title = f"{demo_mark(d)} 오늘의 수급 · {d.get('asof', '')} {chip} — 아무 키나 눌러 표로{more}"
     return pad(_first_fitting(width, [title + " · o:다시 열기 · q:종료" + mark, title + mark,
-                                      f" 오늘의 수급 · {d.get('asof', '')} {chip}{more}{mark}",
-                                      f" 오늘의 수급 {chip}{mark}"]), width)
+                                      f"{demo_mark(d)} 오늘의 수급 · {d.get('asof', '')} {chip}{more}{mark}",
+                                      f"{demo_mark(d)} 오늘의 수급 {chip}{mark}"]), width)
 
 
 def basis_line(width: int) -> str:
@@ -1826,6 +1831,16 @@ def report_warnings(report_dir: str, asof: str) -> list[str]:
 STALE_DAYS = 4
 
 
+def no_report_help(prog: str) -> str:
+    """리포트가 없을 때 갈 길 — 처음 받은 복제본에는 DB 도 폴더도 없으니 그 길(데모)을 먼저 적는다.
+
+    예전 문구는 ``daily_report.sh`` 만 가리켰고 그 스크립트는 'DB 접속정보가 없다' 로 되돌려 보내 순환이었다.
+    """
+    return (f"  DB 없이 화면부터 보려면: {prog} --demo   (합성 데이터 — 실데이터 아님)\n"
+            f"  받은 리포트 폴더가 있으면: {prog} --dir <폴더>   (README §4.3)\n"
+            f"  수급 DB 에 접속할 수 있으면: scripts/daily_report.sh   (README §4.1)")
+
+
 def staleness_warning(asof: str, today: date | None = None) -> list[str]:
     """리포트가 며칠 묵었나 — 받은 폴더나 멈춘 배치를 오늘 것으로 읽지 않게."""
     try:
@@ -1853,6 +1868,7 @@ def header_lines(st: State, width: int) -> list[str]:
         # 짧은 문구로 내려가고, 어느 폭에서도 `[탐색` 은 남는다.
         l1 = _first_fitting(width, [f" [{t}]{l1}" for t in EXPLORE_LABEL_TIERS]
                             + [f" [{t}]" for t in EXPLORE_LABEL_TIERS])
+    l1 = demo_mark(d) + l1
     label, note = SORTS[st.si][1], ""
     # 종합 화면은 **정렬 자체가 없다**(페이로드 순서). 예전엔 방향 화살표만 빼고
     # 열 이름은 남겼는데, `s` 를 누르면 그 이름이 바뀌어서 정렬이 된 것처럼
