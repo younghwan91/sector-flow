@@ -8197,3 +8197,74 @@ guards = ["tests/test_streaks_revisions.py::test_stock_top3_ranks_a_missing_valu
 file = "scripts/sector_flow.py"
 find = """top_n = {c for c, _w in sorted(by_new[ms], key=lambda t: (-(t[1].get(a) or 0.0), t[0]))[:n]}"""
 replace = """top_n = {c for c, _w in sorted(by_new[ms], key=lambda t: (-(t[1].get(a) or 1.0), t[0]))[:n]}"""
+
+# ── 표본 4(시드 10)의 진짜 생존 ──
+[[mutation]]
+id = "digest-ties-follow-payload-order"
+why = "동률의 순서가 페이로드에 달려 같은 수치가 다른 글이 된다"
+guards = ["tests/test_digest.py::test_ties_rank_by_sector_name_whatever_the_payload_order"]
+file = "scripts/digest.py"
+find = """    out.sort(key=lambda t: (-t[1], t[0]))
+    return out"""
+replace = """    out.sort(key=lambda t: (-t[1], t[1]))
+    return out"""
+
+[[mutation]]
+id = "prereg-gap-adds-instead-of-subtracts"
+why = "사전등록→결과 간격이 터무니없는 수로 나온다"
+guards = ["tests/test_trust_page.py::test_prereg_gap_is_result_minus_preregistration_in_minutes"]
+file = "scripts/trust_page.py"
+find = """gaps.append(round((info[res[1]][1] - info[pre[1]][1]) / 60))"""
+replace = """gaps.append(round((info[res[1]][1] + info[pre[1]][1]) / 60))"""
+
+[[mutation]]
+id = "kiwoom-paging-continues-on-one-signal"
+why = "키 없는 연속 표시나 표시 없는 키로 같은 쪽을 상한까지 다시 받는다"
+guards = ["tests/test_collect_transport.py::test_kiwoom_paging_needs_both_the_flag_and_the_key"]
+file = "src/sectorflow/collect/kiwoom.py"
+find = """            if cont_h != "Y" or not nxt_h:"""
+replace = """            if cont_h != "Y" and not nxt_h:"""
+
+[[mutation]]
+id = "dart-apply-ignores-the-code-list"
+why = "한 종목만 다시 맞추라는데 전 종목을 고친다(또는 None 에서 죽는다)"
+guards = ["tests/test_collect_dart.py::test_apply_history_touches_only_the_named_codes_unless_none_is_given"]
+file = "src/sectorflow/collect/dart.py"
+find = """    if codes is None:
+        codes = [r[0] for r in con.execute("SELECT DISTINCT code FROM dart_fetch").fetchall()]"""
+replace = """    if not (codes is None):
+        codes = [r[0] for r in con.execute("SELECT DISTINCT code FROM dart_fetch").fetchall()]"""
+
+[[mutation]]
+id = "verifier-flip-counts-from-zero"
+why = "0 → 값을 부호 뒤집힘으로 센다"
+guards = ["tests/test_verifier_depth.py::test_stock_layer_recount_matches_hand_numbers"]
+file = "scripts/verify_report.py"
+find = """                flips += vo * vn < 0
+        if dmax is not None and dmax > VT_STK_TOL:"""
+replace = """                flips += vo * vn <= 0
+        if dmax is not None and dmax > VT_STK_TOL:"""
+
+[[mutation]]
+id = "verifier-rollup-fills-empty-cells-with-one"
+why = "칸 수가 빈 날을 1 로 메운다"
+guards = ["tests/test_verifier_depth.py::test_stock_revision_rollup_counts_zero_kept_as_zero"]
+file = "scripts/verify_report.py"
+find = """        sc += S.get("n_cells") or 0"""
+replace = """        sc += S.get("n_cells") or 1"""
+
+[[mutation]]
+id = "producer-gate-excludes-the-boundary"
+why = "합의 2% 에 딱 걸린 칸을 뺀다 — 검증기(>=)와 갈린다"
+guards = ["tests/test_streaks_revisions.py::test_stock_diff_counts_a_cell_exactly_at_the_gate_and_no_flip_from_zero"]
+file = "scripts/sector_flow.py"
+find = """if vn and abs(vn) >= REV_GATE_SHARE * tot[(m, s, a)]:"""
+replace = """if vn and abs(vn) > REV_GATE_SHARE * tot[(m, s, a)]:"""
+
+[[mutation]]
+id = "producer-rollup-fills-empty-cells-with-one"
+why = "일별 요약에 칸 수가 없으면 1 로 친다"
+guards = ["tests/test_streaks_revisions.py::test_revision_rollup_counts_empty_stock_summaries_as_zero"]
+file = "scripts/sector_flow.py"
+find = """            scells += S.get("n_cells") or 0"""
+replace = """            scells += S.get("n_cells") or 1"""

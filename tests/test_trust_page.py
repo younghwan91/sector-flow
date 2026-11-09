@@ -503,3 +503,10 @@ def test_git_head_falls_back_to_main_outside_a_repo(tmp_path):
     assert tp.git_head(str(env_free)) == "main"
     head = subprocess.run(["git", "-C", str(REPO), "rev-parse", "--short=7", "HEAD"], capture_output=True, text=True)
     assert tp.git_head(str(REPO)) == head.stdout.strip()
+
+
+def test_prereg_gap_is_result_minus_preregistration_in_minutes():
+    """간격은 (결과 커밋 − 사전등록 커밋)/60 — 페이지가 '사전등록 N분 뒤 결과' 로 적는 값이다."""
+    label, pre, res = next(lk for r in tp.VALIDATION for lk in r["links"] if lk[1] and lk[2][1])
+    gaps = tp.prereg_gaps({pre[1]: ("x", 1_000_000), res[1]: ("y", 1_000_000 + 600)})
+    assert 10 in gaps and all(g == 10 for g in gaps), (label, gaps)

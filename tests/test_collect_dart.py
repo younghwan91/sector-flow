@@ -435,3 +435,17 @@ def test_later_filing_wins_whichever_row_comes_first(tmp_path):
                                       ("2025-12-31", "2025-12-31"), ("2025123", "2025123"), ("2025123x", "2025123x")])
 def test_iso_only_rewrites_eight_digits(raw, want):
     assert D._iso(raw) == want
+
+
+def test_apply_history_touches_only_the_named_codes_unless_none_is_given(tmp_path):
+    con = _db(tmp_path, snap=("2025-12-31", 7_000_000))
+    rows = [(2025, "11014", "2025-09-30", "2025-09-30", 6_000_000, "20251114000001")]
+    _ledger(con, rows)
+    con.execute("UPDATE dart_fetch SET code = '000020' WHERE rowid = (SELECT max(rowid) FROM dart_fetch)")
+    _ledger(con, rows)
+    def dart_codes():
+        return {r[0] for r in con.execute("SELECT code FROM shares_provenance WHERE source = 'dart'").fetchall()}
+    D.apply_history(con, ["012170"])
+    assert dart_codes() == {"012170"}
+    D.apply_history(con)
+    assert dart_codes() == {"012170", "000020"}

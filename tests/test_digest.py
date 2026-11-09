@@ -626,6 +626,12 @@ def test_no_comparison_still_states_the_default_window_and_top_n():
     assert "20일 순매수 상위5 변동" in pages[0] and "비교 없음 — 직전 리포트가 없다" in pages[0]
 
 
+def test_ties_rank_by_sector_name_whatever_the_payload_order():
+    """같은 금액이면 이름순 — 페이로드 순서에 달리면 같은 수치가 날마다 다른 글이 된다."""
+    secs = {"하": _row(inst=(10.0, 50.0)), "가": _row(inst=(10.0, 50.0)), "나": _row(inst=(20.0, 50.0))}
+    assert [t[0] for t in dg._rank(secs, "inst")] == ["나", "가", "하"]
+
+
 # ── PNG 경로 — 브라우저 없이 `main` 의 사다리·실패 처리를 돈다(찍는 함수만 바꿔 끼운다). 실제 찍기는 위 Playwright 검사.
 
 def _png_dir(tmp_path: Path) -> Path:

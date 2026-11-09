@@ -147,3 +147,12 @@ def test_draw_is_deterministic_per_seed_and_respects_coverage_and_diff(tmp_path)
     # 바뀐 줄만 뽑는 묶음 — 기준 뒤에 더한 줄(7)뿐.
     only, _ = MS.draw(tmp_path, cov, 3, 9, "HEAD~1", {"g": (["x.py"], ["t"], True)})
     assert only and {m["line"] for m in only} == {7}
+
+
+# mutation-exempt: 경로가 있는지 대조할 뿐이라 주입할 동작이 없다
+def test_groups_point_at_real_files():
+    for files, tests, _diff in MS.GROUPS.values():
+        for rel in [*files, *tests]:
+            assert (REPO / rel).is_file(), rel
+    for rel in MS.SHALLOW:
+        assert (REPO / rel).is_file(), rel

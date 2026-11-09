@@ -596,3 +596,21 @@ def test_stock_top3_ranks_a_missing_value_last():
     kept, lists = sf._stock_top3(new, old, set(), 3)
     # inst: {B,C,D} 대 {B,C,D} = 3. 나머지 세 주체는 전부 0 → 코드순 {A,B,C} 끼리 = 3.
     assert (kept, lists) == (3 * len(sf.STOCK_DIFF_ACTORS), len(sf.STOCK_DIFF_ACTORS))
+
+
+def test_stock_diff_counts_a_cell_exactly_at_the_gate_and_no_flip_from_zero():
+    """분모 게이트 경계와 뒤집힘의 정의를 손으로 — 합의 2% 에 **딱** 걸린 칸은 들어가고, 0 → 값은 뒤집힘이 아니다."""
+    fin = _stk_payload({"A": ("거래소", "보험", 50.0, 0.0, 0.0, 2.0), "B": ("거래소", "보험", 30.0, 0.0, 5.0, 98.0),
+                        "C": ("거래소", "보험", 15.0, 0.0, 0.0, 0.0), "D": ("거래소", "보험", 5.0, 0.0, 0.0, 0.0)})
+    prov = _stk_payload({"A": ("거래소", "보험", 50.0, 0.0, 0.0, 2.0), "B": ("거래소", "보험", 30.0, 0.0, 0.0, 98.0),
+                         "C": ("거래소", "보험", 15.0, 0.0, 0.0, 0.0), "D": ("거래소", "보험", 5.0, 0.0, 0.0, 0.0)})
+    S = sf.stock_diff(fin, prov)
+    assert S["n_stocks"] == 2 and S["flips"] == 0
+    assert S["n_cells"] == 5, "기관 2 + 연기금 B + 외국인 A(100×2% 에 딱)·B"
+
+
+def test_revision_rollup_counts_empty_stock_summaries_as_zero(tmp_path):
+    _seed_file(tmp_path, "2026-11-02", _top_cells(), stocks={"n_cells": None, "flips": None, "rel_median_pct": None,
+                                                             "top3_kept": None, "top3_lists": None})
+    R = sf.revision_stats({"dates": ["2026-11-02", "2026-11-03"]}, str(tmp_path))["stocks"]
+    assert (R["n_cells"], R["flips"], R["top3_lists"]) == (0, 0, 0) and R["top3_keep_pct"] is None

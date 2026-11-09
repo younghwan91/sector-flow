@@ -136,3 +136,12 @@ def test_dart_real_transport_reports_http_errors_without_the_key(get_server):
     assert e.value.status == "HTTP 404"
     assert "DART-KEY" not in str(e.value)
     assert len(get_server.seen) == 1, "4xx 를 재시도했다"
+
+
+@pytest.mark.parametrize("hdrs", [{"Cont-Yn": "Y"}, {"Cont-Yn": "N", "Next-Key": "k"}, {}])
+def test_kiwoom_paging_needs_both_the_flag_and_the_key(post_server, hdrs):
+    """연속 표시와 다음 키가 **둘 다** 있어야 잇는다 — 하나만 보면 같은 쪽을 상한까지 다시 받는다."""
+    post_server.script += [_json(200, TOKEN_REPLY), _json(200, {"rows": [{"d": 1}], "return_code": 0}, **hdrs)]
+    api = kiwoom.KiwoomRest("KEY", "SECRET", base_url=post_server.url, rate=0)
+    assert api.request_pages("ka10059", {}, "rows", max_pages=3) == [{"d": 1}]
+    assert len(post_server.seen) == 2
