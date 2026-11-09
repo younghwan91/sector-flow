@@ -419,33 +419,33 @@ def test_numbers_gap_chip_only_above_threshold(tmp_path):
 
 @node
 def test_numbers_today_panel_shows_the_official_gap_line(tmp_path):
-    """오늘 패널 — 공표 시장값 대비 오차 줄(합계·주체, 게이트 칸은 —, 부호 반대 표지). 기능 꺼짐이면 침묵.
+    """오늘 패널 — 네이버 시장값 대비 차이 줄(합계·주체, 게이트 칸은 —, 부호 반대 표지). 기능 꺼짐이면 침묵.
 
     주입: 줄을 안 그리게 하면 실패한다.
     """
     D = _today_numbers()
-    assert not any("공표 시장값" in t for t in _page("sector_numbers.html", D, tmp_path))
+    assert not any("네이버 시장값" in t for t in _page("sector_numbers.html", D, tmp_path))
     D["today"]["krx_truth"] = {"status": "ok", "date": "2026-08-28", "warn": 5.0, "label": "네이버 시장값, 내부 대조용", "markets": {
         "거래소": {"total_pct": 2.3, "hot": False, "inst": {"gap_pct": 3.73, "flip": False}, "forgn": {"gap_pct": 1.7, "flip": False},
                 "indiv": {"gap_pct": 2.29, "flip": False}, "etc": None},
         "코스닥": {"total_pct": 6.04, "hot": True, "inst": {"gap_pct": 4.02, "flip": False}, "forgn": {"gap_pct": 8.17, "flip": True},
                 "indiv": {"gap_pct": None, "flip": False}, "etc": None}}}
     joined = "\n".join(_page("sector_numbers.html", D, tmp_path))
-    assert "공표 시장값 대비 오차(거래소): 합계 2.3% · 기관 3.7% · 외국인 1.7% · 개인 2.3% (네이버 시장값, 내부 대조용)" in joined
-    assert "공표 시장값 대비 오차(코스닥): 합계 6.0% · 기관 4.0% · 외국인 8.2% 부호 반대 · 개인 — (네이버 시장값, 내부 대조용)" in joined
-    # 칩은 공표치 기준 hot 인 시장에만 — 내부 VWAP 차가 작아도 뜬다
-    assert "⚠ 공표 시장값과 오차 큼(코스닥 6.0%)" in joined
+    assert "네이버 시장값 대비 차이(거래소): 합계 2.3% · 기관 3.7% · 외국인 1.7% · 개인 2.3% (네이버 시장값, 내부 대조용)" in joined
+    assert "네이버 시장값 대비 차이(코스닥): 합계 6.0% · 기관 4.0% · 외국인 8.2% 부호 반대 · 개인 — (네이버 시장값, 내부 대조용)" in joined
+    # 칩은 네이버 시장값 기준 hot 인 시장에만 — 내부 VWAP 차가 작아도 뜬다
+    assert "⚠ 네이버 시장값과 차이 큼(코스닥 6.0%)" in joined
     assert "오차 큼(거래소" not in joined
 
 
 @node
 def test_numbers_today_panel_names_the_krx_truth_skip_reason(tmp_path):
-    """공표치 대조를 건너뛴 리포트는 침묵이 아니라 칩과 이유를 적는다 — 빈 자리가 고장인지 꺼짐인지 갈리게."""
+    """네이버 대조를 건너뛴 리포트는 침묵이 아니라 칩과 이유를 적는다 — 빈 자리가 고장인지 꺼짐인지 갈리게."""
     D = _today_numbers()
     D["today"]["krx_truth"] = {"status": "skip", "reason": "네이버 접속 실패"}
     joined = "\n".join(_page("sector_numbers.html", D, tmp_path))
-    assert "공표치 대조: 건너뜀 — 네이버 접속 실패" in joined
-    assert "⚠ 공표치 대조 건너뜀" in joined
+    assert "네이버 대조: 건너뜀 — 네이버 접속 실패" in joined
+    assert "⚠ 네이버 대조 건너뜀" in joined
 
 
 @node

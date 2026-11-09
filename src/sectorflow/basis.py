@@ -81,6 +81,14 @@ def status_label(d: dict) -> str:
     return base + "·재구성" if d.get("rebuilt") else base
 
 
+def truth_gap_label(kt: "dict | None") -> str:
+    """시장값 대조 칩의 글자 — 어느 값에 댔는지 출처를 적는다. 기본 소스는 네이버이고 KRX 원표와 같은지 확인하지 못했다.
+
+    ``source`` 는 ``scripts/krx_truth.py`` 가 싣는다(``naver``·``krx``). TUI·다이제스트가 같이 쓴다. 웹은 같은 분기를 JS 로 적는다.
+    """
+    return "KRX 공표치와 차이 큼" if (kt or {}).get("source") == "krx" else "네이버 시장값과 차이 큼"
+
+
 #: 첫 화면·다이제스트의 면책 — 무엇을 검정했고 무엇을 안 했는가. 하루 값·1년 %ile·연속 일수는 앞날을 검정한 적이 없다
 #: (검정 범위는 ``docs/validation/`` — 섹터 20·60일 수급 지표). 1년 %ile 을 "검정함 — 증거 없음" 에 묶어 적으면
 #: 검정하지 않은 것을 검정했다고 말하는 셈이다.

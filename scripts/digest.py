@@ -46,7 +46,7 @@ import sys
 from datetime import date
 from pathlib import Path
 
-from sectorflow.basis import DATA_BASIS_SHORT, NOT_TESTED_NOTE, ret_label, rhu, status_label
+from sectorflow.basis import DATA_BASIS_SHORT, NOT_TESTED_NOTE, ret_label, rhu, status_label, truth_gap_label
 from sectorflow.wording import BANNED, banned_hits  # noqa: F401 — 금칙어 표의 정본(모든 산출물이 같이 쓴다)
 
 HERE = Path(__file__).resolve().parent
@@ -195,12 +195,12 @@ def collect(P: dict) -> dict:
 
     warn = T.get("approx_gap_warn", 5.0)
     gaps = []
-    # 공표치 기준 오차가 판정의 기준이다. 종가↔VWAP 환산 차는 내부 자료끼리의 값이라 따로 적는다.
+    # 네이버 시장값 기준 차이가 판정의 기준이다. 종가↔VWAP 환산 차는 내부 자료끼리의 값이라 따로 적는다.
     kt = T.get("krx_truth") or {}
     if kt.get("status") == "ok":
         for m, row in (kt.get("markets") or {}).items():
             if row.get("hot"):
-                gaps.append({"market": m, "pct": row["total_pct"], "label": "공표 시장값과 오차 큼"})
+                gaps.append({"market": m, "pct": row["total_pct"], "label": truth_gap_label(kt)})
     for m in [MARKET, *(P.get("markets") or [])]:
         g = ((T.get("market") or {}).get(m) or {}).get("approx_gap")
         if g and g.get("pct") is not None and g["pct"] > warn:

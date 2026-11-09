@@ -1,4 +1,4 @@
-"""공표 시장값 대조(scripts/krx_truth.py) — 네트워크 없이, 기록해 둔 응답 모양으로만.
+"""네이버 시장값 대조(scripts/krx_truth.py) — 네트워크 없이, 기록해 둔 응답 모양으로만.
 
 KRX 픽스처는 data.krx.co.kr ``MDCSTAT02201`` 의 공표 형식(``output[].INVST_TP_NM``·
 ``NETBID_TRDVAL``, 원·쉼표 구분)을 그대로 따른 **합성값**이다 — 2026-11-09 탐사에서 익명
@@ -464,7 +464,7 @@ def test_verifier_skip_block_is_a_note_not_a_failure(tmp_path, capsys):
     P = _payload()
     P["today"]["krx_truth"] = {"status": "skip", "reason": "LOGOUT — 로그인 장벽"}
     assert _verify(P, str(tmp_path)) == []
-    assert "SKIP 공표치 대조" in capsys.readouterr().out
+    assert "SKIP 네이버 대조" in capsys.readouterr().out
 
 
 def _skip_day(root, day: str, text: str) -> None:
@@ -479,19 +479,19 @@ def test_verifier_counts_consecutive_skips_and_warns_on_the_third(tmp_path, caps
     build.mkdir()
     P = _payload()
     P["today"]["krx_truth"] = {"status": "skip", "reason": "망"}
-    _skip_day(tmp_path, "2026-11-05", "       SKIP 공표치 대조 — 망\n")
+    _skip_day(tmp_path, "2026-11-05", "       SKIP 네이버 대조 — 망\n")
     _skip_day(tmp_path, "2026-11-04", "표지 없는 날\n")
-    _skip_day(tmp_path, "2026-11-03", "       SKIP 공표치 대조 — 망\n")
-    _skip_day(tmp_path, "2026-11-02", "  [OK] T · 공표치 대조 — 오차가 공표 행에서 다시 나오는가\n")
-    _skip_day(tmp_path, "2026-10-30", "       SKIP 공표치 대조 — 망\n")
+    _skip_day(tmp_path, "2026-11-03", "       SKIP 네이버 대조 — 망\n")
+    _skip_day(tmp_path, "2026-11-02", "  [OK] T · 네이버 대조 — 오차가 받은 행에서 다시 나오는가\n")
+    _skip_day(tmp_path, "2026-10-30", "       SKIP 네이버 대조 — 망\n")
     assert _verify(P, str(build)) == []
-    assert any("공표치 대조 연속 SKIP 3회" in w for w in vr.WARNS)
+    assert any("네이버 대조 연속 SKIP 3회" in w for w in vr.WARNS)
     assert "[WARN]" in capsys.readouterr().out
-    (tmp_path / "2026-11-03" / "VERIFY.txt").write_text("  [OK] T · 공표치 대조 — 오차가 공표 행에서 다시 나오는가\n", "utf-8")
+    (tmp_path / "2026-11-03" / "VERIFY.txt").write_text("  [OK] T · 네이버 대조 — 오차가 받은 행에서 다시 나오는가\n", "utf-8")
     vr.WARNS.clear()
     assert _verify(P, str(build)) == []
     assert not vr.WARNS
-    assert "공표치 대조 연속 SKIP 2회" in capsys.readouterr().out
+    assert "네이버 대조 연속 SKIP 2회" in capsys.readouterr().out
 
 
 def test_verifier_fails_when_published_values_leak_into_the_payload(tmp_path):
@@ -655,7 +655,7 @@ def test_help_tail_lists_the_measured_gaps_per_market():
     P = _payload()
     P["today"]["krx_truth"] = kt.compare(P["today"], _official())
     text = "\n".join(t for _h, t in fv.krx_truth_help(P))
-    assert "공표 시장값 대조" in text and "내부 대조용" in text and "합계 " in text
+    assert "네이버 시장값 대조" in text and "내부 대조용" in text and "합계 " in text
     assert "기관 3.7%" in text and "외국인 1.7%" in text          # 거래소
     assert "기타법인 —" in text                                   # 코스닥 — 분모 게이트
     skipped = _payload()
@@ -665,12 +665,12 @@ def test_help_tail_lists_the_measured_gaps_per_market():
 
 
 def test_help_entries_append_the_krx_truth_tail():
-    """도움말 조립(help_entries)이 공식 대조 절을 빼먹으면 측정값을 볼 길이 TUI 에 없다."""
+    """도움말 조립(help_entries)이 네이버 대조 절을 빼먹으면 측정값을 볼 길이 TUI 에 없다."""
     fv = _fv()
     P = _payload()
     P["today"]["krx_truth"] = {"status": "skip", "reason": "이유"}
     text = "\n".join(t for _h, t in fv.help_entries(SimpleNamespace(d=P)))
-    assert "공표 시장값 대조" in text
+    assert "네이버 시장값 대조" in text
 
 
 def test_sector_flow_build_calls_attach_before_writing_outputs():

@@ -16,7 +16,7 @@ from datetime import date
 
 from sectorflow.basis import (  # noqa: F401 — RET_LABEL* 는 이 모듈 이름으로도 읽힌다(검사·앱)
     BASIS_HELP, DATA_BASIS_SHORT, DEMO_MARK, NOT_TESTED_NOTE, RET_LABEL, RET_LABEL_PROV, RET_LABEL_PROV_SHORT, RET_LABEL_SHORT,
-    ret_label, rhu, status_label,
+    ret_label, rhu, status_label, truth_gap_label,
 )
 
 #: East Asian Width 가 'A'(Ambiguous) 인 글자를 **두 칸으로 센다**.
@@ -1232,22 +1232,22 @@ def _ctx_lines(d: dict, markets: list[str], width: int) -> list[str]:
 
 
 def _gap_chips(d: dict, markets: list[str]) -> list[str]:
-    """금액 경고 칩 — 공표치 기준 오차(판정의 기준)·대량 체결 의심·종가↔VWAP 환산 차. 없으면 빈 목록.
+    """금액 경고 칩 — 네이버 시장값 기준 차이(판정의 기준)·대량 체결 의심·종가↔VWAP 환산 차. 없으면 빈 목록.
 
-    `공표 시장값과 오차 큼(거래소 7.1%)` 은 ``today.krx_truth`` 의 시장 합계 판정(``hot``)이고, 대조를 건너뛴
-    리포트는 `공표치 대조 건너뜀` 으로 드러낸다. 종가↔VWAP 는 내부 자료끼리의 차이라 실제 오차가 아니다 —
-    48일 실측 최대 3.12% 였는데 공표치 기준 거래소 오차는 28일이 5% 를 넘었다.
+    `네이버 시장값과 차이 큼(거래소 7.1%)` 은 ``today.krx_truth`` 의 시장 합계 판정(``hot``)이고, 대조를 건너뛴
+    리포트는 `네이버 대조 건너뜀` 으로 드러낸다. 종가↔VWAP 는 내부 자료끼리의 차이라 실제 오차가 아니다 —
+    48일 실측 최대 3.12% 였는데 네이버 시장값 기준 거래소 오차는 28일이 5% 를 넘었다.
     """
     T = d.get("today") or {}
     out = []
     kt = T.get("krx_truth")
     if kt and kt.get("status") != "ok":
-        out.append("공표치 대조 건너뜀")
+        out.append("네이버 대조 건너뜀")
     elif kt:
         for m in markets:
             row = (kt.get("markets") or {}).get(m) or {}
             if row.get("hot"):
-                out.append(f"공표 시장값과 오차 큼({m} {rhu(row['total_pct'], 1):.1f}%)")
+                out.append(f"{truth_gap_label(kt)}({m} {rhu(row['total_pct'], 1):.1f}%)")
     bs = T.get("block_suspects") or {}
     if bs.get("status") == "ok":
         for m in markets:
@@ -1441,20 +1441,20 @@ def final_diff_help(d: dict) -> list[tuple[str, str]]:
     return out
 
 
-#: 공식 대조 절의 주체 순서·이름 — 페이로드 ``today.krx_truth.markets.*`` 의 키.
+#: 네이버 대조 절의 주체 순서·이름 — 페이로드 ``today.krx_truth.markets.*`` 의 키.
 KRX_TRUTH_KO = (("inst", "기관"), ("forgn", "외국인"), ("indiv", "개인"), ("etc", "기타법인"))
 
 
 def krx_truth_help(d: dict) -> list[tuple[str, str]]:
-    """도움말 끝 — 공표 시장값 대비 오차(페이로드 ``today.krx_truth``). 공표 수치는 싣지 않는다.
+    """도움말 끝 — 네이버 시장값 대비 차이(페이로드 ``today.krx_truth``). 네이버 수치는 싣지 않는다.
 
-    주체 칸의 ``—`` 는 분모 게이트다 — |공표 순매수| 가 그 시장 거래대금의 문턱 몫 미만이면 상대 오차가 잡음이라
-    내지 않는다. 그런 날의 큰 오차는 맨 앞 `합계`(Σ|오차| ÷ Σ|공표|)가 잡는다.
+    주체 칸의 ``—`` 는 분모 게이트다 — |네이버 순매수| 가 그 시장 거래대금의 문턱 몫 미만이면 상대 오차가 잡음이라
+    내지 않는다. 그런 날의 큰 오차는 맨 앞 `합계`(Σ|차| ÷ Σ|네이버|)가 잡는다.
     """
     kt = (d.get("today") or {}).get("krx_truth")
     if not kt:
         return []                                # 기능을 안 켠 리포트 — 절도 없다
-    out = [("", ""), ("", "── 이 리포트: 공표 시장값 대조(내부 대조 전용) ──")]
+    out = [("", ""), ("", "── 이 리포트: 네이버 시장값 대조(내부 대조 전용) ──")]
     if kt.get("status") != "ok":
         return out + [("", f"건너뜀: {kt.get('reason') or '이유 없음'}")]
 
@@ -1471,7 +1471,7 @@ def krx_truth_help(d: dict) -> list[tuple[str, str]]:
 
 
 def help_entries(st: "State") -> list[tuple[str, str]]:
-    """도움말 = 고정 :data:`HELP` + 이 리포트에만 있는 것(잠정 → 확정 변경 목록·KRX 공식 대조)."""
+    """도움말 = 고정 :data:`HELP` + 이 리포트에만 있는 것(잠정 → 확정 변경 목록·KRX 네이버 대조)."""
     return HELP + final_diff_help(st.d) + krx_truth_help(st.d)
 
 
@@ -3015,10 +3015,10 @@ HELP = [
     ("", "        날은 분봉 밖 대량 체결 — 09-14 무렵부터 네이버 시장값엔 없고"),
     ("", "        종목값엔 있다(까닭 미확인). 이 화면 값이 틀린 것이 아니라 정의가"),
     ("", "        갈린 것이다. 종가→VWAP 는 거래소 7%·코스닥 47% 줄인다."),
-    ("공식 대조", "크론 리포트는 네이버 시장값(KRX 원표 미대조)에 시장 합계를 대"),
-    ("", "        오차를 잰다. 합계 5% 초과면 '공표 시장값과 오차 큼' 칩. 공표"),
+    ("네이버 대조", "크론 리포트는 네이버 시장값(KRX 원표 미대조)에 시장 합계를 대"),
+    ("", "        차이를 잰다. 합계 5% 초과면 '네이버 시장값과 차이 큼' 칩. 네이버"),
     ("", "        수치는 화면에 없다(약관 미확인, 내부 대조 전용). 측정값은 이"),
-    ("", "        도움말 맨 끝 절. 못 받으면 '공표치 대조 건너뜀'."),
+    ("", "        도움말 맨 끝 절. 못 받으면 '네이버 대조 건너뜀'."),
     ("대량 체결", "거래량의 50% 이상이 분봉 밖이고 최대 주체 금액이 시장 Σ|주체|"),
     ("", "        의 1% 이상인 종목. 시간외 대량매매라는 것은 추정이다. 큰 건은"),
     ("", "        잠정 리포트에 없고 확정에서 들어왔다. 분봉 없는 종목은 판정 못"),

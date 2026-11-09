@@ -146,13 +146,13 @@ def test_snapshot_from_fixture():
 
 
 def test_published_error_chip_follows_krx_truth_hot():
-    """다이제스트 경고 줄 — 공표치 기준 오차가 판정 기준이다. hot 인 시장만, 내부 VWAP 차와 이름을 가른다."""
+    """다이제스트 경고 줄 — 네이버 시장값 기준 차이가 판정 기준이다. hot 인 시장만, 내부 VWAP 차와 이름을 가른다."""
     P = fixture_payload()
     P["today"]["krx_truth"] = {"status": "ok", "markets": {"거래소": {"total_pct": 7.14, "hot": True},
                                                           "코스닥": {"total_pct": 3.0, "hot": False}}}
     gaps = dg.collect(P)["approx_gap"]
-    assert {"market": "거래소", "pct": 7.14, "label": "공표 시장값과 오차 큼"} in gaps
-    assert not any(g["label"] == "공표 시장값과 오차 큼" and g["market"] == "코스닥" for g in gaps)
+    assert {"market": "거래소", "pct": 7.14, "label": "네이버 시장값과 차이 큼"} in gaps
+    assert not any(g["label"] == "네이버 시장값과 차이 큼" and g["market"] == "코스닥" for g in gaps)
     assert any(g["label"] == "종가·VWAP 환산 차 큼" for g in gaps)
 
 
