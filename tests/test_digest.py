@@ -399,7 +399,7 @@ def test_few_sectors_never_list_one_sector_as_both_top_and_bottom():
         assert len(s["top"]) == 3 and len(s["bottom"]) == 1
 
 
-HOOK_RE = r"^if \[ -n \"\$\{KR_QUANT_DIGEST:-\}\" \]; then .*$"
+HOOK_RE = r"^if \[ \"\$\{KR_QUANT_DIGEST:-1\}\" != \"0\" \]; then UV_OFFLINE.*$"
 
 
 def _hook_line() -> str:
@@ -417,7 +417,7 @@ def _run_hook(tmp_path: Path, fake_body: str, env_extra: dict) -> "subprocess.Co
     script = tmp_path / "hook.sh"
     script.write_text(f"set -euo pipefail\nUVR=({fake})\nBUILD={tmp_path}\n{_hook_line()}\necho PUBLISHED\n",
                       encoding="utf-8")
-    env = {**os.environ, "KR_QUANT_DIGEST": "1", **env_extra}
+    env = {k: v for k, v in {**os.environ, "KR_QUANT_DIGEST": "1", **env_extra}.items() if v is not None}
     return subprocess.run(["bash", str(script)], capture_output=True, text=True, timeout=40, env=env)
 
 
@@ -437,6 +437,14 @@ def test_digest_hook_cannot_block_or_fail_publishing(tmp_path):
     r = _run_hook(tmp_path, "trap '' TERM\nexec sleep 120\n", {"KR_QUANT_DIGEST_TIMEOUT": "1s"})
     assert r.returncode == 0 and "PUBLISHED" in r.stdout
     assert time.monotonic() - t0 < 30
+
+    # 기본 켜짐 — 크론 줄에 스위치가 없어도 돈다. 0 이면 안 부른다.
+    rec.unlink()
+    r = _run_hook(tmp_path, f'echo called > {rec}\n', {"KR_QUANT_DIGEST": None})
+    assert r.returncode == 0 and rec.exists()
+    rec.unlink()
+    r = _run_hook(tmp_path, f'echo called > {rec}\n', {"KR_QUANT_DIGEST": "0"})
+    assert r.returncode == 0 and not rec.exists()
 
 
 def test_render_waits_are_bounded():
@@ -490,3 +498,19 @@ def test_overflowing_card_is_not_shot(tmp_path):
     except dg.DigestError as e:                              # pragma: no cover
         pytest.skip(f"Chromium 을 못 띄웠다: {e}")
     assert not (tmp_path / "c.png").exists()
+
+
+def test_digest_refuses_to_rewrite_a_published_folder(tmp_path):
+    """게시된 기준일 폴더(바로 또는 latest 링크로)에는 쓰지 않는다 — 배치가 통째로 바꿔 끼우는 단위다. --out 은 된다."""
+    pub = tmp_path / "2026-11-06"
+    pub.mkdir()
+    (pub / "payload.json").write_text(json.dumps(fixture_payload()), "utf-8")
+    keep = pub / "digest.md"
+    keep.write_text("어제 판", "utf-8")
+    (tmp_path / "latest").symlink_to(pub)
+    for d in (pub, tmp_path / "latest"):
+        assert dg.main(["--dir", str(d), "--png", "skip"]) == 2
+        assert keep.read_text("utf-8") == "어제 판"
+    out = tmp_path / "밖"
+    assert dg.main(["--dir", str(pub), "--out", str(out), "--png", "skip"]) == 0
+    assert (out / "digest.md").exists() and keep.read_text("utf-8") == "어제 판"

@@ -200,7 +200,8 @@ G 순위 ρ≥0.95·통과 변화≤1 기준을 못 넘은 날 37.5%, [`docs/val
 | (재구성) rc=1, `지금 DB 에서도 수집 미완` | 그날 수급이 지금도 완전성 관문 기준에 못 미친다. 원본 폴더는 그대로 두고 요약에 `수집 미완` | 수집을 메운 뒤 `KR_QUANT_ASOF=<날> scripts/daily_report.sh` |
 | (재구성) rc=75, `확정치를 확인하지 못해 잠정으로 재구성했다` | daily_finalize 창(3일) 안의 날인데 확정 실행이 아직 그날을 덮지 않았다 — 잠정으로 만들었다(`REBUILT.txt` 의 `finalize: pending`, FINAL.txt 없음) | 확정이 끝난 뒤 같은 명령을 다시 — 확정으로 바뀐다 |
 | 웹 목록·칩에 `확정 기록 없음` · `REBUILT.txt` 에 `finalize: unverified` | 창 밖의 지난 날을 재구성했다 — 마감 값으로 만들었지만 그날을 덮은 확정 실행 기록이 없다. 경고가 아니라 사실 표시다(종료코드 0) | 할 일 없음. 확정치가 꼭 필요하면 quant-airflow 에서 그 날짜를 재수집한 뒤 다시 재구성 |
-| (다이제스트, `KR_QUANT_DIGEST=1` 일 때만) 본문 `다이제스트를 못 만들었다` | `scripts/digest.py` 가 실패했거나 5분 상한(`KR_QUANT_DIGEST_TIMEOUT`)을 넘겼다 — 금칙어·길이 초과·카드 렌더 실패가 흔한 이유다. 리포트 게시는 그대로 됐다 | `UV_OFFLINE=1 uv run --with 'playwright==1.48.0' python scripts/digest.py --dir reports/latest --out /tmp/digest-재현` 으로 재현한다. stderr 의 `[digest] 만들지 않았다 — <이유>` 가 원인이다 |
+| `report 경고 (rc=75)`, 본문 `부속 산출물을 못 만들었다` · `검증·품질 페이지를 못 만들었다` · `다이제스트 카드(digest.png)를 못 찍었다` | 리포트는 게시됐고 숫자와 무관하다. 웹의 `/latest/trust.html` 또는 `/latest/digest.*` 만 그 판에 없다. 같은 폴더 `VERIFY.txt` 끝줄에 무엇이 빠졌는지 적힌다 | 페이지는 `uv run python scripts/trust_page.py --root reports --out /tmp/trust-재현/trust.html` 로 재현한다(금칙어면 2 로 끝나며 그 말을 적는다). 고친 뒤 `KR_QUANT_FORCE=1 scripts/daily_report.sh` — 게시된 폴더의 파일 하나만 고쳐 쓰는 길은 없다 |
+| (다이제스트, 끄려면 `KR_QUANT_DIGEST=0`) 본문 `다이제스트를 못 만들었다` | `scripts/digest.py` 가 실패했거나 5분 상한(`KR_QUANT_DIGEST_TIMEOUT`)을 넘겼다 — 금칙어·길이 초과·카드 렌더 실패가 흔한 이유다. 리포트 게시는 그대로 됐다 | `UV_OFFLINE=1 uv run --with 'playwright==1.48.0' python scripts/digest.py --dir reports/latest --out /tmp/digest-재현` 으로 재현한다. stderr 의 `[digest] 만들지 않았다 — <이유>` 가 원인이다 |
 | (재구성, 손 실행) `KR_QUANT_ASOF 가 날짜 꼴(YYYY-MM-DD)이 아니다` | 날짜를 잘못 줬다 | `KR_QUANT_ASOF=2026-10-06` 꼴로 다시 |
 | `scripts/rebuild_history.py` 가 멈춤, `git 체크아웃이 아니다` · `origin/main 에 없다` · `커밋 안 한 변경` | 재구성은 origin/main 의 깨끗한 체크아웃에서만 돈다 — `REBUILT.txt` 의 `commit:` 을 나중에 다시 볼 수 있어야 한다 | `git -C ~/git/sector-flow pull --ff-only` 뒤 거기서 돌린다. 리허설은 `--allow-unmerged`(sha 뒤에 `-dirty`·`-unmerged` 가 붙는다) |
 | `report 경고 (rc=75)`, 본문 `다른 리포트 실행이 돌고 있다` | 손으로 돌린 실행과 크론이 겹쳤다 | 앞 실행이 끝난 뒤 필요하면 같은 명령을 다시 |
@@ -296,7 +297,10 @@ http://<서버의 Tailscale 주소>:8765/latest/numbers.html  # 즐겨찾기용 
 http://<서버의 Tailscale 주소>:8765/latest/viewer.html   #            — 늘 최신 흐름 뷰어
 ```
 
-[`scripts/serve_reports.py`](scripts/serve_reports.py) 는 표준 라이브러리만 쓰는 읽기 전용 서버다. 두 HTML 과 검증 기록만
+`/latest/trust.html` 은 검증·품질 페이지(첫 게시 결과·정정의 크기·지표 검정 결과·알려진 한계)이고 근거 문서 사본이 `/latest/validation/` 에 같이 있다.
+`/latest/digest.md`·`/latest/digest.png` 는 그날의 수급 다이제스트다 — 이 비공개 웹에서만 읽고 밖으로 보내는 길은 없다.
+
+[`scripts/serve_reports.py`](scripts/serve_reports.py) 는 표준 라이브러리만 쓰는 읽기 전용 서버다. 화면·문서 사본과 검증 기록만
 내보낸다(`payload.json`·`cron.log` 는 안 나간다). 주소는 Tailscale 에만 묶는다. 손으로 띄우려면 `scripts/serve.sh`,
 이 컴퓨터에서만 보려면 `python3 scripts/serve_reports.py`(127.0.0.1).
 
@@ -356,7 +360,7 @@ http://<서버의 Tailscale 주소>:8765/latest/viewer.html   #            — �
 
 | 열 | 뜻 |
 |---|---|
-| 섹터 | 벤더 분류(`stocks.sector`) 27개. KRX 업종 분류와 다르다. 마스터가 섹터를 비운 은행 넷만 KRX 업종(금융)으로 보정한다(`src/sectorflow/sector_override.py`) |
+| 섹터 | 벤더 분류(`stocks.sector`) 27개. KRX 업종 분류와 다르다. 마스터가 섹터를 비운 은행 넷만 KRX 업종(금융)으로 보정한다(`src/sectorflow/sector_override.py`). 유니버스는 보통주 마스터(`stocks`, kind A)라 우선주·리츠 등은 어느 화면에도 없다 — 2026-11-06 기준 139종목, 시총 약 160조, 거래대금 약 1.04조(거래소 거래대금의 3.6%) |
 | (마커) | `~` 는 그 구간에 거래된 종목 10개 미만 — 회색, 정렬과 무관하게 맨 아래(분모가 작아 가속이 쉽게 튄다). 탐색 모드에서는 `*` 가 G 관문 통과 |
 | 가속[%p] | 임펄스 ÷ 구간말 섹터 시총 × 100. 기본 정렬 열 |
 | 임펄스[억] | 구간 누적 순매수 = Σ(순매매 수량 × 그날 종가) |

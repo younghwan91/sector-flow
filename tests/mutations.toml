@@ -1417,16 +1417,16 @@ id = "web-latest-is-not-latest"
 why = "/latest/ 즐겨찾기가 최신이 아닌 폴더를 연다"
 guards = ["tests/test_serve_reports.py::test_latest_redirects_to_the_dated_page"]
 file = "scripts/serve_reports.py"
-find = """            return self._redirect(f"/{d}/{rest[0]}")"""
-replace = """            return self._redirect(f"/{report_dates(self.root)[-1]}/{rest[0]}")"""
+find = '''return self._redirect(f"/{d}/{'/'.join(rest)}")'''
+replace = '''return self._redirect(f"/{report_dates(self.root)[-1]}/{'/'.join(rest)}")'''
 
 [[mutation]]
 id = "web-sends-3mb-raw"
 why = "3MB 페이지를 압축 없이 보내 폰·느린 망에서 한참 걸린다"
 guards = ["tests/test_serve_reports.py::test_pages_are_utf8_revalidated_and_gzipped"]
 file = "scripts/serve_reports.py"
-find = """        gz = "gzip" in (self.headers.get("Accept-Encoding") or "")"""
-replace = """        gz = False"""
+find = '''gz = ctype.startswith("text/") and "gzip" in (self.headers.get("Accept-Encoding") or "")'''
+replace = '''gz = False'''
 
 [[mutation]]
 id = "web-index-hides-failed-verify"
@@ -1690,8 +1690,10 @@ id = "index-never-says-final"
 why = "확정 모드가 다시 만든 날을 목록이 안 적으면 잠정 리포트와 구별이 안 된다"
 guards = ["tests/test_serve_reports.py::test_each_row_says_final_or_provisional_and_links_both_pages"]
 file = "scripts/serve_reports.py"
-find = "    if has[\"FINAL.txt\"]:\n        tags.append("
-replace = "    if False:\n        tags.append("
+find = '''    elif has["FINAL.txt"]:
+        tags.append('''
+replace = '''    elif False:
+        tags.append('''
 
 [[mutation]]
 id = "index-provisional-on-a-day-without-a-report"
@@ -4854,8 +4856,8 @@ id = "index-unverified-called-provisional"
 why = "웹 목록이 창 밖 재구성을 '잠정' 이라 적는다 — 값이 바뀔 것처럼 읽힌다"
 guards = ["tests/test_serve_reports.py::test_rebuilt_day_outside_the_finalize_window_is_neither_final_nor_provisional"]
 file = "scripts/serve_reports.py"
-find = "    elif has[\"REBUILT.txt\"] and rebuilt_field(os.path.join(p, \"REBUILT.txt\"), \"finalize\") == \"unverified\":"
-replace = "    elif False:"
+find = '''elif has["REBUILT.txt"] and fin == "unverified":'''
+replace = '''elif False:'''
 
 [[mutation]]
 id = "numbers-ret-label-keys-off-final-only"
@@ -6017,11 +6019,11 @@ file = "scripts/verify_merge.py"
 find = "def ci_shard_count(wt: Path, fallback: int = 4) -> int:"
 replace = "def ci_shard_count(wt: Path, fallback: int = 1) -> int:"
 
-# ── 종목(주도주) 잠정→확정 수정(stock-diff): 주도주 경계·문턱·상한·게이트·집계·검증기·화면·시드 ──────────
+# ── 종목(기관상위) 잠정→확정 수정(stock-diff): 기관상위 경계·문턱·상한·게이트·집계·검증기·화면·시드 ──────────
 
 [[mutation]]
 id = "stock-diff-threshold-too-high"
-why = "종목 행 문턱이 사실상 무한대 — 기관 12억이 바뀐 주도주 행이 기록에서 사라진다"
+why = "종목 행 문턱이 사실상 무한대 — 기관 12억이 바뀐 기관상위 행이 기록에서 사라진다"
 guards = ["tests/test_streaks_revisions.py::test_stock_diff_lists_driver_rows_beyond_the_threshold"]
 file = "scripts/sector_flow.py"
 find = "        if dmax is not None and dmax > STOCK_DIFF_TOL:"
@@ -6029,7 +6031,7 @@ replace = "        if dmax is not None and dmax > 1e9:"
 
 [[mutation]]
 id = "stock-drivers-skip-the-crossing-row"
-why = "80% 를 처음 넘긴 행(화면 가로줄이 포함하는 그 줄)이 주도주에서 빠진다 — 화면 정의와 어긋난다"
+why = "80% 를 처음 넘긴 행(화면 가로줄이 포함하는 그 줄)이 기관상위에서 빠진다 — 화면 정의와 어긋난다"
 guards = ["tests/test_streaks_revisions.py::test_stock_diff_lists_driver_rows_beyond_the_threshold"]
 file = "scripts/sector_flow.py"
 find = """        cum = 0.0
@@ -6079,40 +6081,40 @@ replace = '            scells = S.get("n_cells") or 0'
 
 [[mutation]]
 id = "verify-stock-final-diff-blind"
-why = "확정 리포트의 종목(주도주) 행·요약이 틀려도 검증이 모른다"
+why = "확정 리포트의 종목(기관상위) 행·요약이 틀려도 검증이 모른다"
 guards = ["tests/test_streaks_revisions.py::test_the_verifier_recounts_final_diff_from_the_provisional_report_before_the_swap"]
 file = "scripts/verify_report.py"
-find = '    chk("T", "잠정 → 확정 — 종목(주도주) 행·요약을 옆 잠정 리포트에서 다시 센 것과 같은가", not bad,'
-replace = '    chk("T", "잠정 → 확정 — 종목(주도주) 행·요약을 옆 잠정 리포트에서 다시 센 것과 같은가", True,'
+find = '    chk("T", "잠정 → 확정 — 종목(기관상위) 행·요약을 옆 잠정 리포트에서 다시 센 것과 같은가", not bad,'
+replace = '    chk("T", "잠정 → 확정 — 종목(기관상위) 행·요약을 옆 잠정 리포트에서 다시 센 것과 같은가", True,'
 
 [[mutation]]
 id = "verify-stock-revision-blind"
 why = "revision_stats 의 종목 집계가 일별 요약과 어긋나도 검증이 모른다"
 guards = ["tests/test_streaks_revisions.py::test_the_verifier_recounts_revision_stats_from_the_sibling_folders"]
 file = "scripts/verify_report.py"
-find = '    chk("T", "잠정→확정 수정 폭 — 종목(주도주) 일별 요약의 집계 재계산", ok,'
-replace = '    chk("T", "잠정→확정 수정 폭 — 종목(주도주) 일별 요약의 집계 재계산", True,'
+find = '    chk("T", "잠정→확정 수정 폭 — 종목(기관상위) 일별 요약의 집계 재계산", ok,'
+replace = '    chk("T", "잠정→확정 수정 폭 — 종목(기관상위) 일별 요약의 집계 재계산", True,'
 
 [[mutation]]
 id = "revision-stock-line-hidden"
-why = "잠정 화면에 종목(주도주) 수정 폭이 없다 — 행동 단위(종목)의 수정 폭을 아무도 모른다"
+why = "잠정 화면에 종목(기관상위) 수정 폭이 없다 — 행동 단위(종목)의 수정 폭을 아무도 모른다"
 guards = ["tests/test_streaks_revisions.py::test_first_screen_shows_streaks_and_the_revision_line_with_top3_and_seed"]
 file = "src/sectorflow/tui/flow_view.py"
-find = """        stk = f", 주도주 중앙 {rhu(S['rel_median_pct']):.0f}%\""""
+find = """        stk = f", 기관상위 중앙 {rhu(S['rel_median_pct']):.0f}%\""""
 replace = '        stk = ""'
 
 [[mutation]]
 id = "web-revision-stock-line-hidden"
-why = "웹 잠정 리포트의 수정 폭 줄에 종목(주도주) 층이 없다 — 터미널 첫 화면과 다른 말을 한다"
+why = "웹 잠정 리포트의 수정 폭 줄에 종목(기관상위) 층이 없다 — 터미널 첫 화면과 다른 말을 한다"
 guards = ["tests/test_streaks_revisions.py::test_web_today_panel_says_the_same_streaks_and_revision_line_as_the_terminal"]
 file = "scripts/templates/sector_numbers.html"
-find = """        +(ST.n_dates&&ST.rel_median_pct!=null?", 주도주 중앙 "+RHU(ST.rel_median_pct)+"%"
+find = """        +(ST.n_dates&&ST.rel_median_pct!=null?", 기관상위 중앙 "+RHU(ST.rel_median_pct)+"%"
           +(ST.top3_keep_pct!=null?"·종목 상위3 유지 "+RHU(ST.top3_keep_pct)+"%":""):"")"""
 replace = '        +""'
 
 [[mutation]]
 id = "seed-drops-stock-block"
-why = "시드가 종목(주도주) 층을 안 남긴다 — 확정 모드 이전 날들의 종목 수정 폭이 영영 없다"
+why = "시드가 종목(기관상위) 층을 안 남긴다 — 확정 모드 이전 날들의 종목 수정 폭이 영영 없다"
 guards = ["tests/test_streaks_revisions.py::test_seed_script_writes_final_diff_cells_from_the_evening_archive"]
 file = "scripts/seed_revisions.py"
 find = '        "stocks": fd["stocks"],'
@@ -6120,7 +6122,7 @@ replace = '        "stocks": None,'
 
 [[mutation]]
 id = "stock-diff-fakes-revisions-against-legacy-base"
-why = "옛 형식(1일 종목 칸 없음) 게시본 대비에서 모든 주도주가 '수정'으로 적힌다 — 시드가 실제로 밟았다"
+why = "옛 형식(1일 종목 칸 없음) 게시본 대비에서 모든 기관상위가 '수정'으로 적힌다 — 시드가 실제로 밟았다"
 guards = ["tests/test_streaks_revisions.py::test_stock_diff_lists_driver_rows_beyond_the_threshold"]
 file = "scripts/sector_flow.py"
 find = """    new1, old1 = _win1(P), _win1(old)
@@ -6135,8 +6137,8 @@ id = "verify-stock-legacy-blind"
 why = "옛 형식 게시본 대비인데 종목 층이 채워져 있어도 검증이 모른다"
 guards = ["tests/test_streaks_revisions.py::test_the_stock_layer_is_empty_against_a_legacy_provisional_without_one_day_cells"]
 file = "scripts/verify_report.py"
-find = '        chk("T", "잠정 → 확정 — 종목(주도주) 층은 1일 칸이 없는 옛 형식 게시본 대비에서 비어 있는가", S is None,'
-replace = '        chk("T", "잠정 → 확정 — 종목(주도주) 층은 1일 칸이 없는 옛 형식 게시본 대비에서 비어 있는가", True,'
+find = '        chk("T", "잠정 → 확정 — 종목(기관상위) 층은 1일 칸이 없는 옛 형식 게시본 대비에서 비어 있는가", S is None,'
+replace = '        chk("T", "잠정 → 확정 — 종목(기관상위) 층은 1일 칸이 없는 옛 형식 게시본 대비에서 비어 있는가", True,'
 
 
 # ── #32 ±0 부류의 남은 창 합 경로(2026-09-02·09-28 재구성, 종이/목재 20일) ──────────────────
@@ -6247,11 +6249,11 @@ replace = 'Q3D = ("Q3d 재검", (PREREG_Q3D, "bd27017"), (RESULTS, "8385ae1"))'
 [[mutation]]
 id = "trust-page-not-in-web-allow-list"
 why = "허용 목록에서 빠지면 페이지를 만들어도 웹에서 404 다 — 만드는 쪽 검사만으로는 안 보인다"
-guards = ["tests/test_trust_page.py::test_default_output_lands_in_the_latest_folder_and_the_web_serves_it"]
+guards = ["tests/test_trust_page.py::test_every_document_link_opens_on_the_private_web_and_none_goes_to_github"]
 file = "scripts/serve_reports.py"
-find = """    "trust.html": "text/html; charset=utf-8",  # 검증·품질 — scripts/trust_page.py 가 latest 폴더에 쓴다
-"""
-replace = ""
+find = '''    "trust.html": "text/html; charset=utf-8",  # 검증·품질 — 배치가 짓는 폴더 안에서 만든다(scripts/trust_page.py)
+'''
+replace = ''''''
 
 [[mutation]]
 id = "trust-k1-caveat-sentence-dropped"
@@ -6334,24 +6336,14 @@ find = "        if e:\n            cur.append("
 replace = "        if False:\n            cur.append("
 
 [[mutation]]
-id = "trust-out-falls-back-to-unserved-root"
-why = "리포트 폴더가 없을 때 루트에 trust.html 을 쓴다 — 웹은 루트 파일을 내보내지 않아 조용히 아무도 못 본다"
-guards = ["tests/test_trust_page.py::test_no_report_folder_means_no_page_rather_than_an_unserved_root_file"]
-file = "scripts/trust_page.py"
-find = "    return os.path.join(root, d, \"trust.html\") if d else None"
-replace = "    return os.path.join(root, d, \"trust.html\") if d else os.path.join(root, \"trust.html\")"
-
-# ── 운영 사건 원장(SLO·정정) ──────────────────────────────────────────────────────
-
-[[mutation]]
 id = "trust-slo-faked-from-empty-ledger"
 why = """원장에 게시 사건이 없어도 통계를 그린다 — 전부 0일이라 '늦은 날 없음' 으로 읽힌다. 지워진
 흔적으로 재면 준시성이 과장되므로, 없으면 없다고 말해야 한다."""
 guards = ["tests/test_trust_page.py::test_slo_without_ledger_says_so_instead_of_pretending",
           "tests/test_trust_page.py::test_probe_only_ledger_shows_probes_but_not_fake_timeliness"]
 file = "scripts/trust_page.py"
-find = '        "slo": slo_html(slo, bool(history)),'
-replace = '        "slo": slo_html(slo, True),'
+find = '''"slo": slo_html(slo, bool(history), first_fail, len(all_days)),'''
+replace = '''"slo": slo_html(slo, True, first_fail, len(all_days)),'''
 
 [[mutation]]
 id = "trust-slo-late-days-hidden"
@@ -6383,8 +6375,8 @@ id = "trust-method-layers-go-silent"
 why = "방법 절의 검증 층 목록이 최신 VERIFY.txt 를 안 읽으면 '층 목록을 못 읽었다' 로 비는데 아무도 모른다 — 방법이 지금 검사기를 말한다는 약속이 깨진다"
 guards = ["tests/test_trust_page.py::test_layers_come_from_the_latest_verify"]
 file = "scripts/trust_page.py"
-find = '    t = _read(os.path.join(root, d, "VERIFY.txt")) if d else None'
-replace = '    t = None'
+find = '''t = _read(os.path.join(folder, "VERIFY.txt")) if folder else None'''
+replace = '''t = None'''
 
 [[mutation]]
 id = "trust-signed-percent-sneaks-in"
@@ -6417,7 +6409,7 @@ replace = "    if False:"
 id = "digest-banned-spacing"
 why = "공백을 지우지 않고 비교하면 '수익  보장'·'목표 가' 처럼 띄어 쓴 금칙어가 빠져나간다"
 guards = ["tests/test_digest.py::test_banned_words_are_caught_across_spacing"]
-file = "scripts/digest.py"
+file = "src/sectorflow/wording.py"
 find = '    return "".join(c for c in t if unicodedata.category(c)[0] in "LN")'
 replace = '    return "".join(c for c in t if unicodedata.category(c)[0] in "LNZ")'
 
@@ -6518,7 +6510,7 @@ replace = "        pass"
 id = "digest-banned-punctuation-pass-off"
 why = "문장부호를 남긴 채 비교한다 — '추.천'·'급-등' 이 빠져나간다"
 guards = ["tests/test_digest.py::test_banned_words_survive_unicode_and_punctuation_tricks"]
-file = "scripts/digest.py"
+file = "src/sectorflow/wording.py"
 find = '    return "".join(c for c in t if unicodedata.category(c)[0] in "LN")'
 replace = '    return "".join(c for c in t if unicodedata.category(c)[0] in "LNP")'
 
@@ -6526,7 +6518,7 @@ replace = '    return "".join(c for c in t if unicodedata.category(c)[0] in "LNP
 id = "digest-banned-joins-across-items"
 why = "목록 구분자를 넘어 붙여 읽으면 '통신 · 호텔' 이 '신호' 가 되어 멀쩡한 날 다이제스트가 안 나온다"
 guards = ["tests/test_digest.py::test_banned_words_survive_unicode_and_punctuation_tricks"]
-file = "scripts/digest.py"
+file = "src/sectorflow/wording.py"
 find = '_ITEM_SEP = re.compile(r"\s+[·|]\s+|\n|:\s")'
 replace = '_ITEM_SEP = re.compile(r"\n")'
 
@@ -6575,8 +6567,8 @@ id = "digest-hook-failure-stops-publish"
 why = "다이제스트가 실패하면 set -e 로 배치가 죽어 리포트가 게시되지 않는다"
 guards = ["tests/test_digest.py::test_digest_hook_cannot_block_or_fail_publishing"]
 file = "scripts/daily_report.sh"
-find = '--dir "$BUILD" || echo'
-replace = '--dir "$BUILD"; echo'
+find = '''--dir "$BUILD" || {'''
+replace = '''--dir "$BUILD"; {'''
 
 [[mutation]]
 id = "digest-hook-unpinned"
@@ -8097,3 +8089,451 @@ file = "scripts/digest.py"
 find = "            if row.get(\"hot\"):"
 replace = "            if True:"
 
+
+# ── 4회차 수정: 신뢰 페이지 배선·첫 게시·정정 크기·문서 사본·확정 수·금칙어 표·유니버스 ──────────────────
+
+[[mutation]]
+id = "batch-does-not-call-trust-page"
+why = """배치가 검증 페이지를 안 부른다 — 강제 재생성 뒤 /latest/trust.html 이 404 인 채 아무도 모른다(리뷰 4회차)"""
+guards = ["tests/test_daily_report_flow.py::test_trust_page_is_built_inside_the_build_folder_and_swapped_with_the_report"]
+file = "scripts/daily_report.sh"
+find = '''if ! timeout -k 10s "${KR_QUANT_TRUST_TIMEOUT:-5m}" "${UVR[@]}" python scripts/trust_page.py \'''
+replace = '''if false && ! timeout -k 10s "${KR_QUANT_TRUST_TIMEOUT:-5m}" "${UVR[@]}" python scripts/trust_page.py \'''
+
+[[mutation]]
+id = "trust-page-before-its-markers"
+why = """페이지를 REBUILT.txt·FINAL.txt 를 쓰기 전에 만든다 — 그날 줄이 잠정으로 찍힌 채 함께 게시된다"""
+guards = ["tests/test_daily_report_flow.py::test_rebuild_writes_the_page_after_its_markers"]
+[[mutation.edits]]
+file = "scripts/daily_report.sh"
+find = '''if ! timeout -k 10s "${KR_QUANT_TRUST_TIMEOUT:-5m}" "${UVR[@]}" python scripts/trust_page.py \
+     --root "${KR_QUANT_TRUST_ROOT:-$OUT_ROOT}" --build "$BUILD" --asof "$ASOF"; then
+  echo "[$(date '+%F %T')] ⚠️ 검증·품질 페이지를 못 만들었다 — 리포트는 그대로 게시한다" >&2
+  SIDE_FAIL+="trust.html "
+fi
+'''
+replace = ''''''
+[[mutation.edits]]
+file = "scripts/daily_report.sh"
+find = '''if [ -n "$REBUILD" ] && [ -n "$FINAL_OK" ]; then
+  echo "[$(date '+%F %T')] 재구성 — daily_finalize'''
+replace = '''if ! timeout -k 10s "${KR_QUANT_TRUST_TIMEOUT:-5m}" "${UVR[@]}" python scripts/trust_page.py \
+     --root "${KR_QUANT_TRUST_ROOT:-$OUT_ROOT}" --build "$BUILD" --asof "$ASOF"; then
+  echo "[$(date '+%F %T')] ⚠️ 검증·품질 페이지를 못 만들었다 — 리포트는 그대로 게시한다" >&2
+  SIDE_FAIL+="trust.html "
+fi
+if [ -n "$REBUILD" ] && [ -n "$FINAL_OK" ]; then
+  echo "[$(date '+%F %T')] 재구성 — daily_finalize'''
+
+[[mutation]]
+id = "trust-page-failure-is-silent"
+why = """페이지 실패가 VERIFY·종료코드에 안 남는다 — 웹만 404 이고 알림이 없다"""
+guards = ["tests/test_daily_report_flow.py::test_trust_page_failure_publishes_warns_and_is_recorded_in_verify"]
+file = "scripts/daily_report.sh"
+find = '''  SIDE_FAIL+="trust.html "
+'''
+replace = '''  :
+'''
+
+[[mutation]]
+id = "side-output-failure-exits-zero"
+why = """부속 산출물 실패가 0 으로 끝난다 — cron_run 이 알리지 않는다"""
+guards = ["tests/test_daily_report_flow.py::test_trust_page_failure_publishes_warns_and_is_recorded_in_verify", "tests/test_daily_report_flow.py::test_digest_failure_and_missing_card_warn_without_blocking"]
+file = "scripts/daily_report.sh"
+find = '''고친 뒤 KR_QUANT_FORCE=1 $0" >&2
+  VERIFY_RC=75
+'''
+replace = '''고친 뒤 KR_QUANT_FORCE=1 $0" >&2
+'''
+
+[[mutation]]
+id = "digest-default-off-again"
+why = """다이제스트가 다시 기본 꺼짐 — 크론 줄에 스위치가 없어 웹의 /latest/digest.md 가 늘 404 다"""
+guards = ["tests/test_daily_report_flow.py::test_digest_is_on_by_default_and_lands_in_the_build", "tests/test_digest.py::test_digest_hook_cannot_block_or_fail_publishing"]
+file = "scripts/daily_report.sh"
+find = '''if [ "${KR_QUANT_DIGEST:-1}" != "0" ]; then UV_OFFLINE'''
+replace = '''if [ "${KR_QUANT_DIGEST:-0}" != "0" ]; then UV_OFFLINE'''
+
+[[mutation]]
+id = "digest-cannot-be-turned-off"
+why = """KR_QUANT_DIGEST=0 이 안 먹는다 — 끌 길이 없다"""
+guards = ["tests/test_daily_report_flow.py::test_digest_can_be_turned_off", "tests/test_digest.py::test_digest_hook_cannot_block_or_fail_publishing"]
+file = "scripts/daily_report.sh"
+find = '''if [ "${KR_QUANT_DIGEST:-1}" != "0" ]; then UV_OFFLINE'''
+replace = '''if [ "${KR_QUANT_DIGEST:-1}" != "x" ]; then UV_OFFLINE'''
+
+[[mutation]]
+id = "digest-failure-not-recorded"
+why = """다이제스트 실패가 알림·VERIFY 에 안 드러난다"""
+guards = ["tests/test_daily_report_flow.py::test_digest_failure_and_missing_card_warn_without_blocking"]
+file = "scripts/daily_report.sh"
+find = '''SIDE_FAIL+="digest "; }; fi'''
+replace = '''SIDE_FAIL+=""; }; fi'''
+
+[[mutation]]
+id = "digest-missing-card-is-silent"
+why = """글만 되고 카드를 못 찍은 날이 0 으로 끝난다 — 웹의 digest.png 만 404"""
+guards = ["tests/test_daily_report_flow.py::test_digest_failure_and_missing_card_warn_without_blocking"]
+file = "scripts/daily_report.sh"
+find = '''  SIDE_FAIL+="digest.png "
+'''
+replace = '''  :
+'''
+
+[[mutation]]
+id = "digest-not-in-web-allow-list"
+why = """다이제스트가 웹 허용 목록에 없다 — /latest/digest.md 404"""
+guards = ["tests/test_serve_reports.py::test_digest_and_validation_docs_are_served_and_nothing_else_around_them"]
+file = "scripts/serve_reports.py"
+find = '''    "digest.md": "text/plain; charset=utf-8",  # 오늘의 수급 글 — 비공개 웹에서만 읽는다
+'''
+replace = ''''''
+
+[[mutation]]
+id = "docs-folder-serves-anything"
+why = """문서 사본 폴더의 어떤 파일이든 내보낸다 — 허용 목록이 뚫린다"""
+guards = ["tests/test_serve_reports.py::test_digest_and_validation_docs_are_served_and_nothing_else_around_them"]
+file = "scripts/serve_reports.py"
+find = '''rest[0] == DOCS_DIR and DOC_RE.match(rest[1])'''
+replace = '''rest[0] == DOCS_DIR'''
+
+[[mutation]]
+id = "png-gzipped-again"
+why = """그림을 다시 압축한다 — CPU 만 쓰고 줄지 않는다"""
+guards = ["tests/test_serve_reports.py::test_digest_and_validation_docs_are_served_and_nothing_else_around_them"]
+file = "scripts/serve_reports.py"
+find = '''gz = ctype.startswith("text/") and "gzip" in'''
+replace = '''gz = "gzip" in'''
+
+[[mutation]]
+id = "index-links-missing-extras"
+why = """폴더에 없는 산출물의 단추를 그린다 — 눌러도 404"""
+guards = ["tests/test_serve_reports.py::test_index_links_extras_only_when_the_folder_has_them"]
+file = "scripts/serve_reports.py"
+find = '''for f, ko in EXTRAS if os.path.exists(os.path.join(root, latest, f))'''
+replace = '''for f, ko in EXTRAS if True'''
+
+[[mutation]]
+id = "trust-old-rebuild-counted-as-final"
+why = """finalize: 줄 없는 옛 재구성(09-02·09-28)을 확정으로 센다 — 확인 안 한 날이 확정 수에 든다"""
+guards = ["tests/test_trust_page.py::test_old_rebuild_without_finalize_line_is_not_counted_as_final"]
+file = "scripts/trust_page.py"
+find = '''day["state"] = "확정" if day["rebuilt"] is None or fin == "verified" else "확정 미확인"'''
+replace = '''day["state"] = "확정"'''
+
+[[mutation]]
+id = "web-old-rebuild-called-final"
+why = """목록이 옛 재구성을 확정이라 부른다 — 페이지와 다른 말을 한다"""
+guards = ["tests/test_serve_reports.py::test_old_rebuild_without_a_finalize_line_is_not_called_final", "tests/test_trust_page.py::test_old_rebuild_without_finalize_line_is_not_counted_as_final"]
+file = "scripts/serve_reports.py"
+find = '''if has["FINAL.txt"] and has["REBUILT.txt"] and fin != "verified":'''
+replace = '''if False:'''
+
+[[mutation]]
+id = "first-publication-may-be-a-rebuild"
+why = """재구성을 첫 게시로 센다 — 재구성 시각이 앞선 원장 줄이면 그때의 실패가 사라진다"""
+guards = ["tests/test_trust_page.py::test_a_rebuild_is_never_the_first_publication_even_if_ledger_order_says_so"]
+file = "scripts/trust_page.py"
+find = '''if not ops.is_publication(e) or e.get("mode") == "rebuild":'''
+replace = '''if not ops.is_publication(e):'''
+
+[[mutation]]
+id = "first-publication-takes-the-last-event"
+why = """가장 이른 게시가 아니라 파일 순서의 마지막 게시를 첫 게시로 본다"""
+guards = ["tests/test_trust_page.py::test_a_rebuild_is_never_the_first_publication_even_if_ledger_order_says_so"]
+file = "scripts/trust_page.py"
+find = '''if t is not None and (asof not in out or t < out[asof][0]):'''
+replace = '''if t is not None:'''
+
+[[mutation]]
+id = "first-result-ignores-the-ledger"
+why = """첫 게시 결과가 원장을 안 본다 — 원본이 없는 날의 실패·통과가 전부 기록 없음이 된다"""
+guards = ["tests/test_trust_page.py::test_first_publication_failure_is_on_the_page_even_when_every_folder_was_rebuilt"]
+file = "scripts/trust_page.py"
+find = '''e = pubs.get(d["date"])'''
+replace = '''e = None'''
+
+[[mutation]]
+id = "first-result-ignores-the-archive"
+why = """원장이 말이 없는 날 보관 원본을 안 본다"""
+guards = ["tests/test_trust_page.py::test_first_result_falls_back_to_the_archived_original_when_the_ledger_is_silent"]
+file = "scripts/trust_page.py"
+find = '''orig = _archived_verify(origin[0]) if origin else None'''
+replace = '''orig = None'''
+
+[[mutation]]
+id = "fail-reasons-only-from-current-version"
+why = """사유 표가 지금 판만 본다 — 전부 재구성하면 '실패가 없다' 고 말하는 그 자기모순"""
+guards = ["tests/test_trust_page.py::test_first_publication_failure_is_on_the_page_even_when_every_folder_was_rebuilt"]
+file = "scripts/trust_page.py"
+find = '''        if f.get("status") == "fail":
+            n_first += 1'''
+replace = '''        if False:
+            n_first += 1'''
+
+[[mutation]]
+id = "trust-table-cut-to-recent-days"
+why = """표를 최근 60일로 자른다 — 앞쪽의 실패가 페이지에서 사라진다"""
+guards = ["tests/test_trust_page.py::test_the_table_is_not_cut_to_a_recent_window"]
+file = "scripts/trust_page.py"
+find = '''days = all_days[-window:] if window else all_days'''
+replace = '''days = all_days[-(window or 60):]'''
+
+[[mutation]]
+id = "trust-claims-records-are-original"
+why = """'그때 기록 그대로' 라는 거짓 문구가 돌아온다 — 48일 전부 재구성이다"""
+guards = ["tests/test_trust_page.py::test_page_does_not_claim_the_records_are_as_they_were"]
+file = "scripts/templates/trust.html"
+find = '''첫 게시 결과 칸의 실패에는 그것이 섞여 있다.'''
+replace = '''위 기록은 그때 기록 그대로다.'''
+
+[[mutation]]
+id = "errata-size-dropped"
+why = """정정 표에 크기가 없다 — 48줄이 '원본 보관' 뿐이던 그 상태"""
+guards = ["tests/test_trust_page.py::test_errata_row_says_how_much_and_why_not_just_archived"]
+file = "scripts/trust_page.py"
+find = '''net, tv, cause = _size_cells(sizes.get(r["asof"]))'''
+replace = '''net, tv, cause = _size_cells(None)'''
+
+[[mutation]]
+id = "errata-cause-never-provisional"
+why = """원인이 잠정→확정을 못 가른다 — 다음날 판이 이미 같은 값인데 나중 코드 탓으로 적는다"""
+guards = ["tests/test_trust_page.py::test_cause_of_a_change_is_read_from_the_records"]
+file = "scripts/trust_page.py"
+find = '''if gap(after, next_view) <= (1 - EXPLAINED_SHARE) * total:'''
+replace = '''if False:'''
+
+[[mutation]]
+id = "errata-incomplete-without-denominator-gate"
+why = """분모 게이트 없이 비율로 수집 미완이라 부른다 — 작은 시장의 흔들림"""
+guards = ["tests/test_trust_page.py::test_small_market_is_not_called_incomplete_by_its_ratio"]
+file = "scripts/trust_page.py"
+find = '''if tv is not None and tv >= INCOMPLETE_MIN_EOK and (was or 0)'''
+replace = '''if tv is not None and (was or 0)'''
+
+[[mutation]]
+id = "market-totals-always-last-day"
+why = """기준일이 아니라 payload 마지막 날을 합한다 — 다음날 판과 견주는 값이 틀린다"""
+guards = ["tests/test_trust_page.py::test_market_totals_sum_the_sector_flows_of_that_day"]
+file = "scripts/trust_page.py"
+find = '''    i = dates.index(asof)
+    out: dict[str, dict[str, float]] = {}'''
+replace = '''    i = 0
+    out: dict[str, dict[str, float]] = {}'''
+
+[[mutation]]
+id = "errata-size-drops-sign-flips"
+why = """부호가 뒤집힌 칸을 뺀다 — 10-01 외국인 −6,367→+390 이 안 보인다"""
+guards = ["tests/test_trust_page.py::test_size_keeps_the_largest_cell_and_sign_flips_only"]
+file = "scripts/trust_page.py"
+find = '''keep = cells[:1] + [c for c in cells[1:] if c["flip"]]'''
+replace = '''keep = cells[:1]'''
+
+[[mutation]]
+id = "final-correction-mixes-5-day-cells"
+why = """확정 정정 칸에 5일 칸이 섞인다 — 전후 값이 그날 합계가 아니다"""
+guards = ["tests/test_trust_page.py::test_final_correction_row_carries_the_market_moves_from_final_txt"]
+file = "scripts/trust_page.py"
+find = '''FINAL_DIFF_LINE = re.compile(r"^\s+(\S+) (\S+) 1일\s+(\S+) → (\S+) \(\S+\)$", re.M)'''
+replace = '''FINAL_DIFF_LINE = re.compile(r"^\s+(\S+) (\S+) \d일\s+(\S+) → (\S+) \(\S+\)$", re.M)'''
+
+[[mutation]]
+id = "pinned-doc-is-head"
+why = """'그 커밋 시점' 칸의 사본이 지금 판이다 — 링크가 말하는 것과 다른 글"""
+guards = ["tests/test_trust_page.py::test_pinned_document_copy_is_that_commits_text_not_head"]
+file = "scripts/trust_page.py"
+find = '''            f.write(got.stdout)
+'''
+replace = '''            f.write((_read(os.path.join(repo, path)) or "").encode())
+'''
+
+[[mutation]]
+id = "trust-links-back-to-github"
+why = """문서 링크가 다시 GitHub 로 간다 — 비공개 레포라 익명 404"""
+guards = ["tests/test_trust_page.py::test_every_document_link_opens_on_the_private_web_and_none_goes_to_github"]
+file = "scripts/trust_page.py"
+find = '''return f'<a href="{E(href)}">{code}</a>' if href else code'''
+replace = '''return f'<a href="https://github.com/x/{E(href)}">{code}</a>' if href else code'''
+
+[[mutation]]
+id = "trust-docs-folder-not-the-webs"
+why = """페이지가 쓰는 사본 폴더 이름이 웹 허용 목록과 다르다 — 링크마다 404"""
+guards = ["tests/test_trust_page.py::test_every_document_link_opens_on_the_private_web_and_none_goes_to_github"]
+file = "scripts/trust_page.py"
+find = '''DOCS_DIR = "validation"'''
+replace = '''DOCS_DIR = "docs-copy"'''
+
+[[mutation]]
+id = "numbers-page-links-private-repo"
+why = """수치표 근거 링크가 비공개 레포로 간다"""
+guards = ["tests/test_trust_page.py::test_report_pages_link_the_private_copy_not_the_private_repo"]
+file = "scripts/templates/sector_numbers.html"
+find = '''<a href="../latest/trust.html#validation">검증·품질</a>'''
+replace = '''<a href="https://github.com/younghwan91/sector-flow/tree/main/docs/validation">docs/validation</a>'''
+
+[[mutation]]
+id = "viewer-has-no-trust-link"
+why = """뷰어에서 검증 페이지로 가는 길이 없다"""
+guards = ["tests/test_trust_page.py::test_report_pages_link_the_private_copy_not_the_private_repo"]
+file = "scripts/templates/sector_flow.html"
+find = '''<a href="../latest/trust.html">검증·품질 →</a>'''
+replace = ''''''
+
+[[mutation]]
+id = "trust-can-rewrite-published-folder"
+why = """게시된 폴더의 파일 하나를 고쳐 쓴다 — VERIFY·원장 기록과 어긋나는 판이 생긴다"""
+guards = ["tests/test_trust_page.py::test_a_published_folder_cannot_be_rewritten"]
+file = "scripts/trust_page.py"
+find = '''    if in_published_folder(root, out):'''
+replace = '''    if False:'''
+
+[[mutation]]
+id = "trust-guard-misses-latest-link"
+why = """latest 링크로 부르면 게시 폴더 검사가 못 본다"""
+guards = ["tests/test_trust_page.py::test_a_published_folder_cannot_be_rewritten"]
+file = "scripts/trust_page.py"
+find = '''r, o = os.path.realpath(root), os.path.dirname(os.path.realpath(out))'''
+replace = '''r, o = os.path.realpath(root), os.path.dirname(os.path.abspath(out))'''
+
+[[mutation]]
+id = "digest-can-rewrite-published-folder"
+why = """다이제스트가 게시된 폴더에 고쳐 쓴다"""
+guards = ["tests/test_digest.py::test_digest_refuses_to_rewrite_a_published_folder"]
+file = "scripts/digest.py"
+find = '''if not a.out and re.fullmatch(r"\d{4}-\d{2}-\d{2}", d.resolve().name):'''
+replace = '''if False:'''
+
+[[mutation]]
+id = "digest-guard-misses-latest-link"
+why = """latest 링크로 부르면 다이제스트 검사가 못 본다"""
+guards = ["tests/test_digest.py::test_digest_refuses_to_rewrite_a_published_folder"]
+file = "scripts/digest.py"
+find = '''re.fullmatch(r"\d{4}-\d{2}-\d{2}", d.resolve().name)'''
+replace = '''re.fullmatch(r"\d{4}-\d{2}-\d{2}", d.name)'''
+
+[[mutation]]
+id = "trust-build-day-reads-the-old-folder"
+why = """그날 줄이 짓는 폴더가 아니라 옛 폴더를 읽는다 — 함께 바꿔 낄 판의 표시를 못 본다"""
+guards = ["tests/test_trust_page.py::test_build_mode_writes_inside_the_build_folder_and_counts_that_day"]
+file = "scripts/trust_page.py"
+find = '''day = scan_day(root, d, gates, build[1] if build and build[0] == d else None)'''
+replace = '''day = scan_day(root, d, gates)'''
+
+[[mutation]]
+id = "trust-writes-page-with-no-reports"
+why = """리포트가 하나도 없어도 빈 페이지를 쓴다"""
+guards = ["tests/test_trust_page.py::test_no_report_folder_means_no_page"]
+file = "scripts/trust_page.py"
+find = '''    if not build and not report_dirs(root):'''
+replace = '''    if False:'''
+
+[[mutation]]
+id = "numbers-says-banned-word-again"
+why = """수치표에 주도주가 돌아온다 — 다이제스트에서는 금칙어인 말"""
+guards = ["tests/test_wording.py::test_no_output_source_uses_a_banned_word"]
+file = "scripts/templates/sector_numbers.html"
+find = '''", 기관상위 중앙 "'''
+replace = '''", 주도주 중앙 "'''
+
+[[mutation]]
+id = "tui-says-banned-word-again"
+why = """터미널에 주도주가 돌아온다"""
+guards = ["tests/test_wording.py::test_no_screen_string_uses_a_banned_word"]
+file = "src/sectorflow/tui/flow_view.py"
+find = '''f", 기관상위 중앙'''
+replace = '''f", 주도주 중앙'''
+
+[[mutation]]
+id = "readme-says-banned-word"
+why = """README 에 금칙어가 들어간다"""
+guards = ["tests/test_wording.py::test_no_output_source_uses_a_banned_word"]
+file = "README.md"
+find = '''## 7. 숫자의 정의
+'''
+replace = '''## 7. 숫자의 정의
+
+유망 섹터를 고른다.
+'''
+
+[[mutation]]
+id = "digest-keeps-its-own-table"
+why = """다이제스트가 표를 따로 든다 — 다시 어긋난다"""
+guards = ["tests/test_wording.py::test_there_is_one_table"]
+file = "scripts/digest.py"
+find = '''HERE = Path(__file__).resolve().parent
+'''
+replace = '''HERE = Path(__file__).resolve().parent
+BANNED = ("추천",)
+'''
+
+[[mutation]]
+id = "table-drops-a-word"
+why = """공유 표에서 말이 빠진다 — 옛 두 표가 막던 말이 풀린다"""
+guards = ["tests/test_wording.py::test_table_covers_what_either_old_table_covered"]
+file = "src/sectorflow/wording.py"
+find = '''"수혜", "주도주", "대장주"'''
+replace = '''"수혜", "대장주"'''
+
+[[mutation]]
+id = "negation-allows-anything-after"
+why = """부정문 예외가 넓어 '추천 ...' 이 다 빠진다"""
+guards = ["tests/test_wording.py::test_a_page_may_say_it_is_not_a_recommendation_but_nothing_more"]
+file = "src/sectorflow/wording.py"
+find = '''re.compile(r"추천\s*(?:없음|없이|아님|이\s*아니다)")'''
+replace = '''re.compile(r"추천\s*(?:.*)")'''
+
+[[mutation]]
+id = "rendered-check-skips-whole-page"
+why = """그날 페이지 검사가 데이터 줄 말고 전부 건너뛴다"""
+guards = ["tests/test_wording.py::test_rendered_page_check_skips_only_the_data_line"]
+file = "src/sectorflow/wording.py"
+find = '''_DATA_LINE = re.compile(r"^const D = .*$", re.M)'''
+replace = '''_DATA_LINE = re.compile(r"^.*$", re.M)'''
+
+[[mutation]]
+id = "verifier-ignores-banned-words"
+why = """자기 검증이 금칙어를 못 본다"""
+guards = ["tests/test_wording.py::test_verifier_fails_a_built_page_with_a_banned_word"]
+file = "scripts/verify_report.py"
+find = '''의 글에 권유·전망처럼 읽히는 말이 없는가", not hits,'''
+replace = '''의 글에 권유·전망처럼 읽히는 말이 없는가", True,'''
+
+[[mutation]]
+id = "universe-gap-narrow-denominator"
+why = """유니버스 밖 몫의 분모가 다시 좁다 — 빠진 종목을 뺀 안쪽 합을 분모로 쓴다"""
+guards = ["tests/test_verifier_depth.py::test_universe_gap_is_measured_against_the_krx_whole_market"]
+file = "scripts/verify_report.py"
+find = '''(whole[c] - inside.get(m, 0.0)) / whole[c] * 100'''
+replace = '''(whole[c] - inside.get(m, 0.0)) / max(inside.get(m, 0.0), 1.0) * 100'''
+
+[[mutation]]
+id = "universe-gap-claim-never-trips"
+why = """글이 낡아도 주장 어긋남이 안 난다"""
+guards = ["tests/test_verifier_depth.py::test_universe_gap_claim_trips_when_the_document_goes_stale"]
+file = "scripts/verify_report.py"
+find = '''all(g < VF_UNIVERSE_GAP_MAX for g in gaps.values()),'''
+replace = '''True,'''
+
+[[mutation]]
+id = "universe-gap-crashes-old-schema"
+why = """거래대금 열 없는 DB 에서 검증기가 죽는다"""
+guards = ["tests/test_verifier_depth.py::test_universe_gap_skips_when_the_index_has_no_trade_value"]
+file = "scripts/verify_report.py"
+find = '''    except Exception as e:  # noqa: BLE001 — 옛 스키마·시험 DB(거래대금 열 없음)는 잴 수 없다는 사실만 남긴다'''
+replace = '''    except KeyError as e:'''
+
+[[mutation]]
+id = "universe-limit-hidden"
+why = """유니버스 제외를 페이지에서 뺀다"""
+guards = ["tests/test_trust_page.py::test_every_limitation_is_on_the_page"]
+file = "scripts/templates/trust.html"
+find = '''<li data-limit="universe">'''
+replace = '''<li data-limit="universe" hidden>'''
+
+[[mutation]]
+id = "trust-stale-potential-row"
+why = """화면에서 지운 포텐셜 U 를 다시 적는다"""
+guards = ["tests/test_trust_page.py::test_stale_claims_about_the_screen_are_gone"]
+file = "scripts/trust_page.py"
+find = '''"q": "1년%ile · 추이 · 풀림 ẍ · dW/dt, 종목 선정 · 곱"'''
+replace = '''"q": "포텐셜 U · 1년%ile · 추이 · 풀림 ẍ · dW/dt, 종목 선정 · 곱"'''

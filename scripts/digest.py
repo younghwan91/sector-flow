@@ -26,8 +26,11 @@
 
 사용::
 
-    python scripts/digest.py --dir reports/2026-11-06            # md·json·카드 html, 되면 png
-    python scripts/digest.py --dir reports/latest --out /tmp/digest-out   # 읽기 전용 리포트는 밖으로
+    python scripts/digest.py --dir reports/2026-11-06.building.123   # 짓는 폴더에 md·json·카드 html, 되면 png(배치가 쓴다)
+    python scripts/digest.py --dir reports/latest --out /tmp/digest-out   # 게시된 리포트는 밖으로
+
+게시된 기준일 폴더(``<날짜>`` 이름)에는 쓰지 않는다 — ``--out`` 없이 부르면 2 로 끝난다. 그 폴더는 배치가 통째로
+바꿔 끼우는 단위라, 파일 하나를 고쳐 쓰면 VERIFY·원장 기록과 어긋난다.
 """
 
 from __future__ import annotations
@@ -40,9 +43,10 @@ import math
 import os
 import re
 import sys
-import unicodedata
 from datetime import date
 from pathlib import Path
+
+from sectorflow.wording import BANNED, banned_hits  # noqa: F401 — 금칙어 표의 정본(모든 산출물이 같이 쓴다)
 
 HERE = Path(__file__).resolve().parent
 TEMPLATE = HERE / "templates" / "digest_card.html"
@@ -68,10 +72,6 @@ EXTREME_CAPS = (4, 2, 1, 0)
 CARD_W, CARD_H = 1080, 1350
 #: 카드가 넘치면 (극단 목록 개수, 연속 줄 꼴) 순으로 줄여 다시 찍는다 — 글의 :data:`TRIM_LADDER` 와 같은 원리.
 CARD_LADDER = ((3, "full"), (1, "nosector"), (0, "none"))
-
-#: 본문에 나오면 안 되는 말 — 권유·전망·보장으로 읽히는 말. 비교 방법은 :func:`banned_hits`.
-BANNED = ("추천", "매수 신호", "매도 신호", "신호", "급등", "폭등", "급락", "세력", "목표가", "수익 보장", "보장",
-          "확실", "유망", "수혜", "주도주", "대장주", "매수하라", "담아라", "전망", "기대")
 
 #: 고정 꼬리 — 금칙어 검사에서 빠지는 유일한 글. 바꾸면 테스트가 정확한 문자열로 잡는다.
 DISCLAIMER = ("이 글은 수급 사실 요약이며 투자 판단·추천이 아니다. "
@@ -387,23 +387,6 @@ def compose(F: dict) -> tuple[str, str]:
     raise DigestError(f"글이 {len(full)}자로 상한 {MAX_CHARS}자를 넘는다(줄일 수 있는 것을 다 줄인 뒤에도)")
 
 
-#: 금칙어 비교에서 한 항목으로 보는 단위의 경계 — 목록 구분자(` · `·` | `), 줄, `: `.
-_ITEM_SEP = re.compile(r"\s+[·|]\s+|\n|:\s")
-
-
-def _letters(t: str) -> str:
-    return "".join(c for c in t if unicodedata.category(c)[0] in "LN")
-
-
-def banned_hits(text: str) -> list[str]:
-    """``text`` 에 든 금칙어. NFKC 로 정규화한 뒤 항목(:data:`_ITEM_SEP` 로 나눈 것)마다 글자·숫자만 남겨
-    비교한다 — 공백(`수익  보장`)·폭 0 문자·문장부호(`추.천`·`급-등`)를 끼워도 잡는다. 항목 경계를 넘어
-    붙이지는 않는다(`통신 · 호텔` 이 `신호` 가 되지 않게).
-    """
-    items = [_letters(it) for it in _ITEM_SEP.split(unicodedata.normalize("NFKC", text))]
-    return [w for w in BANNED if any(_letters(w) in it for it in items)]
-
-
 def check_compliance(body: str, where: str = "digest.md") -> None:
     """금칙어가 하나라도 있으면 만들지 않는다. 꼬리(:data:`FOOTER`)는 넘기지 않는다 — 면책 문구 자체가
     "추천이 아니다" 를 말해야 하므로."""
@@ -603,6 +586,10 @@ def main(argv: "list[str] | None" = None) -> int:
     a = ap.parse_args(argv)
     d = Path(a.dir)
     out = Path(a.out) if a.out else d
+    if not a.out and re.fullmatch(r"\d{4}-\d{2}-\d{2}", d.resolve().name):
+        print(f"[digest] 게시된 폴더({d.resolve().name})에는 쓰지 않는다 — --out 으로 밖에 쓰거나, "
+              "그 기준일을 다시 만들어라(배치는 짓는 폴더 안에서 만든다)", file=sys.stderr)
+        return 2
 
     def clear():
         for n in OUTPUTS:

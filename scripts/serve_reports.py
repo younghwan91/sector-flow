@@ -3,9 +3,11 @@
 
     python3 scripts/serve_reports.py --host 100.x.y.z --port 8765
 
-``reports/<기준일>/`` 의 두 화면(``numbers.html``·``viewer.html``)과 검증·확정·미완 기록만 내보낸다.
+``reports/<기준일>/`` 의 두 화면(``numbers.html``·``viewer.html``)과 검증·품질 페이지(``trust.html``)·문서 사본
+(``validation/*.md``)·다이제스트(``digest.md``·``digest.png``), 검증·확정·미완 기록만 내보낸다.
 ``payload.json``·``cron.log``·짓는 중인 ``*.building.*`` 폴더는 목록에 없으면 안 보인다 — 경로를
-정규식으로 고르므로 ``..`` 같은 것은 애초에 도달하지 못한다.
+정규식으로 고르므로 ``..`` 같은 것은 애초에 도달하지 못한다. 이 웹은 Tailscale 안의 비공개 화면이다 — 다이제스트를 여기
+내보내는 것은 밖에 게시하는 것이 아니다(그 길은 만들지 않는다, ``scripts/digest.py`` 머리말).
 
 - ``/`` 는 기준일 목록. 최신·확정/잠정·검증 실패·수집 미완을 표시한다.
 - ``/latest/…`` 는 지금의 ``latest`` 가 가리키는 기준일로 넘긴다(302). 즐겨찾기가 늘 최신을 연다.
@@ -37,14 +39,22 @@ DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 FILES = {
     "numbers.html": "text/html; charset=utf-8",
     "viewer.html": "text/html; charset=utf-8",
-    "trust.html": "text/html; charset=utf-8",  # 검증·품질 — scripts/trust_page.py 가 latest 폴더에 쓴다
+    "trust.html": "text/html; charset=utf-8",  # 검증·품질 — 배치가 짓는 폴더 안에서 만든다(scripts/trust_page.py)
+    "digest.md": "text/plain; charset=utf-8",  # 오늘의 수급 글 — 비공개 웹에서만 읽는다
+    "digest.png": "image/png",
     "VERIFY.txt": "text/plain; charset=utf-8",
     "VERIFY_FAILED.txt": "text/plain; charset=utf-8",
     "INCOMPLETE.txt": "text/plain; charset=utf-8",
     "FINAL.txt": "text/plain; charset=utf-8",
     "REBUILT.txt": "text/plain; charset=utf-8",
 }
+#: 문서 사본 폴더 — trust_page.DOCS_DIR 와 같다. 이름은 글자로 시작하는 ``.md`` 만(``/`` 는 애초에 못 든다).
+DOCS_DIR = "validation"
+DOC_RE = re.compile(r"^\w[\w.\-]*\.md$")
+DOC_TYPE = "text/plain; charset=utf-8"
 PAGES = (("numbers.html", "수치표"), ("viewer.html", "흐름"))
+#: 있을 때만 잇는 산출물 — 다이제스트를 끄거나 페이지를 못 만든 날은 단추도 없다.
+EXTRAS = (("trust.html", "검증·품질"), ("digest.md", "다이제스트 글"), ("digest.png", "다이제스트 카드"))
 #: 화면(`flow_view.STALE_DAYS`)·페이지(`staleChip`)와 같은 문턱.
 STALE_DAYS = 4
 #: 폴더를 바꿔 끼우는 순간(배치가 옆에 짓고 옮긴다)을 넘기는 짧은 재시도.
@@ -53,6 +63,15 @@ SWAP_RETRY = (0.1, 0.3, 0.6)
 SOFT_FAIL_ALERT_EVERY = 12
 _GZ: dict = {}
 _GZ_LOCK = threading.Lock()
+
+
+def _file_type(rest: list[str]) -> str | None:
+    """기준일 폴더 안 경로(조각들)의 Content-Type — 허용 목록에 없으면 ``None``(404)."""
+    if len(rest) == 1:
+        return FILES.get(rest[0])
+    if len(rest) == 2 and rest[0] == DOCS_DIR and DOC_RE.match(rest[1]):
+        return DOC_TYPE
+    return None
 
 
 def report_dates(root: str) -> list[str]:
@@ -111,9 +130,13 @@ def day_tags(root: str, d: str) -> list[str]:
         if has["INCOMPLETE.txt"]:
             tags.append(f'<a class="tag warn" href="/{d}/INCOMPLETE.txt">수집 미완</a>')
         return tags
-    if has["FINAL.txt"]:
+    fin = rebuilt_field(os.path.join(p, "REBUILT.txt"), "finalize") if has["REBUILT.txt"] else None
+    if has["FINAL.txt"] and has["REBUILT.txt"] and fin != "verified":
+        # 옛 재구성(finalize: 줄 없음) — FINAL.txt 는 있어도 그날을 덮은 확정 실행을 확인한 기록이 없다(trust_page 와 같은 말).
+        tags.append(f'<a class="tag prov" href="/{d}/REBUILT.txt">확정 미확인</a>')
+    elif has["FINAL.txt"]:
         tags.append(f'<a class="tag ok" href="/{d}/FINAL.txt">확정</a>')
-    elif has["REBUILT.txt"] and rebuilt_field(os.path.join(p, "REBUILT.txt"), "finalize") == "unverified":
+    elif has["REBUILT.txt"] and fin == "unverified":
         # daily_finalize 창 밖의 지난 날 — 마감 값이지만 확정 기록이 없다. 잠정(값이 바뀔 수 있다)도 확정도 아니다.
         tags.append(f'<a class="tag prov" href="/{d}/REBUILT.txt">확정 기록 없음</a>')
     else:
@@ -133,7 +156,7 @@ def index_html(root: str, today: date | None = None) -> str:
     rows = []
     for d in report_dates(root):
         p = os.path.join(root, d)
-        links = " ".join(f'<a class="pg" href="/{d}/{f}">{ko}</a>' for f, ko in PAGES
+        links = " ".join(f'<a class="pg" href="/{d}/{f}">{ko}</a>' for f, ko in (*PAGES, *EXTRAS)
                          if os.path.exists(os.path.join(p, f)))
         tags = day_tags(root, d)
         cls = ' class="latest"' if d == latest else ""
@@ -149,7 +172,8 @@ def index_html(root: str, today: date | None = None) -> str:
                  f'<code>reports/cron.log</code> 를 보라</span></p>') if age >= STALE_DAYS else ""
         head = (f'<div class="hero"><p class="big">최신 <b>{latest}</b> '
                 f'<span class="tags">{" ".join(day_tags(root, latest))}</span></p>{stale}'
-                + "<p>" + " ".join(f'<a class="btn" href="/latest/{f}">{ko}</a>' for f, ko in PAGES)
+                + "<p>" + " ".join(f'<a class="btn" href="/latest/{f}">{ko}</a>' for f, ko in (
+                    *PAGES, *((f, ko) for f, ko in EXTRAS if os.path.exists(os.path.join(root, latest, f)))))
                 + "</p><p class=dim>위 단추는 즐겨찾기해도 늘 최신을 연다.</p></div>")
     return f"""<!DOCTYPE html>
 <html lang="ko"><head><meta charset="utf-8">
@@ -267,18 +291,20 @@ class Handler(BaseHTTPRequestHandler):
             if not d:
                 return self._not_found("아직 리포트가 없다")
             rest = parts[1:] or ["numbers.html"]
-            if len(rest) != 1 or rest[0] not in FILES:
+            if _file_type(rest) is None:
                 return self._not_found()
-            return self._redirect(f"/{d}/{rest[0]}")
+            return self._redirect(f"/{d}/{'/'.join(rest)}")
         if len(parts) == 1 and DATE_RE.match(parts[0]):
             p = os.path.join(self.root, parts[0])
             if not os.path.exists(os.path.join(p, "numbers.html")) and \
                     os.path.exists(os.path.join(p, "INCOMPLETE.txt")):
                 return self._redirect(f"/{parts[0]}/INCOMPLETE.txt")
             return self._redirect(f"/{parts[0]}/numbers.html")
-        if len(parts) != 2 or not DATE_RE.match(parts[0]) or parts[1] not in FILES:
+        ctype = _file_type(parts[1:]) if parts and DATE_RE.match(parts[0]) else None
+        if ctype is None:
             return self._not_found()
-        full = os.path.join(self.root, parts[0], parts[1])
+        rel = "/".join(parts[1:])
+        full = os.path.join(self.root, parts[0], *parts[1:])
         st = None
         for wait in (0, *SWAP_RETRY):  # 같은 기준일을 다시 만들어 바꿔 끼우는 순간
             time.sleep(wait)
@@ -290,11 +316,12 @@ class Handler(BaseHTTPRequestHandler):
                 if os.path.isdir(os.path.join(self.root, parts[0])):
                     break
         if st is None:
-            why = f"{parts[0]} 에 {parts[1]} 가 없다"
+            why = f"{parts[0]} 에 {rel} 가 없다"
             if os.path.exists(os.path.join(self.root, parts[0], "INCOMPLETE.txt")):
                 why += f" — 수집 미완이라 안 만들었다(/{parts[0]}/INCOMPLETE.txt)"
             return self._not_found(why)
-        gz = "gzip" in (self.headers.get("Accept-Encoding") or "")
+        # 그림은 이미 압축돼 있다 — 다시 눌러 봐야 CPU 만 쓴다.
+        gz = ctype.startswith("text/") and "gzip" in (self.headers.get("Accept-Encoding") or "")
         # 압축본과 원본은 다른 바이트다 — 같은 ETag 를 주면 중간 캐시가 섞어 줄 수 있다.
         etag = f'"{st.st_mtime_ns:x}-{st.st_size:x}{"-gz" if gz else ""}"'
         cache = (("ETag", etag), ("Last-Modified", formatdate(st.st_mtime, usegmt=True)),
@@ -304,7 +331,6 @@ class Handler(BaseHTTPRequestHandler):
             for k, v in cache:
                 self.send_header(k, v)
             return self.end_headers()
-        ctype = FILES[parts[1]]
         if gz:
             body = _gzip(full, st)
             return self._send(HTTPStatus.OK, ctype, body, cache + (("Content-Encoding", "gzip"),))

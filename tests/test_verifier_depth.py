@@ -125,3 +125,47 @@ def test_a_doc_claim_mismatch_is_not_a_failure_and_lands_in_claims_txt(tmp_path)
     VR.CLAIMS.clear()
     VR.write_claims(str(tmp_path))       # 다시 만든 폴더에 옛 CLAIMS 가 남지 않는다
     assert not (tmp_path / "CLAIMS.txt").exists()
+
+
+# ── 유니버스 밖 거래대금 — 분모는 KRX 종합이다 ──────────────────────────────
+
+def _universe_db(kospi_whole=2898.0, kospi_in=2794.0):
+    import sqlite3
+    con = sqlite3.connect(":memory:")
+    con.executescript("""
+      CREATE TABLE stocks(code TEXT, market TEXT);
+      CREATE TABLE daily_bars(code TEXT, date TEXT, trade_value REAL);
+      CREATE TABLE sector_index(code TEXT, date TEXT, trade_value REAL);
+    """)
+    con.executemany("INSERT INTO stocks VALUES (?,?)", [("A", "거래소"), ("B", "코스닥")])
+    con.executemany("INSERT INTO daily_bars VALUES (?,?,?)", [("A", "2026-11-06", kospi_in), ("B", "2026-11-06", 507.0)])
+    con.executemany("INSERT INTO sector_index VALUES (?,?,?)",
+                    [("001", "2026-11-06", kospi_whole), ("101", "2026-11-06", 507.0)])
+    return con
+
+
+def test_universe_gap_is_measured_against_the_krx_whole_market(capsys):
+    """우선주·리츠는 DB 어느 표에도 없다 — 유니버스 안에서 세면(옛 0.130%) 안 보인다. 11-06 거래소 28.98조 − 27.94조 = 3.6%."""
+    con = _universe_db()
+    VR.CLAIMS.clear()
+    VR._f_universe_gap(con.cursor(), "?", "2026-11-06", "2026-11-06")
+    assert VR.CLAIMS == []
+    out = capsys.readouterr().out
+    assert "거래소 3.59%" in out and "코스닥 0.00%" in out
+
+
+def test_universe_gap_claim_trips_when_the_document_goes_stale():
+    con = _universe_db(kospi_in=2000.0)                     # 31% — "3.6%" 라 적은 글이 낡았다
+    VR.CLAIMS.clear()
+    VR._f_universe_gap(con.cursor(), "?", "2026-11-06", "2026-11-06")
+    assert len(VR.CLAIMS) == 1 and "유니버스 밖" in VR.CLAIMS[0] and "거래소 30.99%" in VR.CLAIMS[0]
+    VR.CLAIMS.clear()
+
+
+def test_universe_gap_skips_when_the_index_has_no_trade_value(capsys):
+    import sqlite3
+    con = sqlite3.connect(":memory:")
+    con.execute("CREATE TABLE sector_index(code TEXT, date TEXT, close REAL)")
+    VR.CLAIMS.clear()
+    VR._f_universe_gap(con.cursor(), "?", "2026-11-06", "2026-11-06")
+    assert VR.CLAIMS == [] and "SKIP 유니버스 밖" in capsys.readouterr().out

@@ -127,6 +127,9 @@ def main(argv: list[str] | None = None) -> int:
             env.pop("KR_QUANT_FORCE", None)
         if a.origin_root and (Path(a.origin_root).expanduser() / d).is_dir():
             env["KR_QUANT_REBUILD_ORIGIN"] = f"{label.rstrip('/')}/{d}"
+        if a.origin_root:
+            # 옆 루트에는 원장·.archive 가 없다 — 검증·품질 페이지는 운영 루트의 기록을 읽는다(읽기만).
+            env["KR_QUANT_TRUST_ROOT"] = str(Path(a.origin_root).expanduser().resolve())
         t0 = time.monotonic()
         log_path = logs / f"{d}.log"
         start = log_path.stat().st_size if log_path.exists() else 0
