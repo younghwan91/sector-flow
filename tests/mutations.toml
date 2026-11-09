@@ -1281,7 +1281,7 @@ id = "viewer-no-stale-chip"
 why = "두 달 묵은 리포트를 브라우저로 열어도 표시가 없다"
 guards = ["tests/test_report_pages.py::test_viewer_marks_a_stale_report"]
 file = "scripts/templates/sector_flow.html"
-find = "  if(age<4) return;"
+find = "  if(age<4||D.demo) return;"
 replace = "  return;"
 
 [[mutation]]
@@ -8731,6 +8731,14 @@ guards = ["tests/test_screenshots_fresh.py::test_attachment_rewrite_replaces_blo
 file = "scripts/demo_shots.py"
 find = """    if len(attachment_blocks(text)) != len(screens):"""
 replace = """    if False:"""
+
+[[mutation]]
+id = "web-demo-says-stale"
+why = "고정 기준일 데모가 웹에서 'N일 지난 리포트' 를 띄운다 — 고장처럼 보인다(README 그림에도 찍힌다)"
+guards = ["tests/test_report_pages.py::test_demo_pages_do_not_warn_about_age"]
+file = "scripts/templates/sector_numbers.html"
+find = "if(age>=4&&!D.demo) document"
+replace = "if(age>=4) document"
 
 [[mutation]]
 id = "digest-published-chip-always"

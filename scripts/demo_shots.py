@@ -4,7 +4,7 @@
     uv run --with playwright --with pillow python scripts/demo_shots.py     # docs/images/*.png 7장 + 원장 sha
     uv run python scripts/demo_shots.py --attachment                        # 질의서 첨부 A 의 화면 예시만
 
-터미널은 tmux 160×45 ``capture-pane -e`` → ANSI → HTML → Chromium, 웹은 Chromium 1440·390(DPR 2). 전부 128색으로 줄인다.
+터미널은 tmux 160×45 ``capture-pane -e`` → ANSI → HTML → Chromium(128색), 웹은 Chromium 1440·390(DPR 2, 64색).
 그림은 **HEAD 의 화면 코드**여야 뜻이 있다 — ``docs/SCREENSHOTS.md`` 의 감시 경로에 커밋 안 한 변경이 있으면 찍지 않는다.
 원장 sha 를 HEAD 로 고쳐 쓰고 ``tests/test_screenshots_fresh.py`` 가 그 뒤의 화면 변경을 잡는다.
 """
@@ -147,7 +147,7 @@ def ansi_html(raw: str, trim: bool = False) -> str:
     return f"""<!DOCTYPE html><html><head><meta charset="utf-8"><style>
 body{{margin:0;background:{BG}}} #t{{font:14px/1.3 "DejaVu Sans Mono",monospace;color:{FG};padding:2px 4px;display:inline-block}}
 .r{{white-space:pre;height:1.3em}} .g1,.g2{{display:inline-block;text-align:center;overflow:hidden;vertical-align:bottom;height:1.3em;
-font-family:"Noto Sans KR","DejaVu Sans Mono",monospace}} .g1{{width:1ch}} .g2{{width:2ch}}
+font-family:"Noto Sans KR","DejaVu Sans Mono",monospace}} .g1{{width:1ch;font-family:"DejaVu Sans Mono",monospace}} .g2{{width:2ch}}
 </style></head><body><div id="t">{rows}</div></body></html>"""
 
 
@@ -240,10 +240,10 @@ def capture(cmd: list[str], keys: tuple) -> str:
         subprocess.run(["tmux", "-L", f"sf-shots-{os.getpid()}", "kill-server"], capture_output=True, timeout=30)
 
 
-def _quantize(path: Path) -> None:
+def _quantize(path: Path, colors: int = 128) -> None:
     from PIL import Image  # noqa: PLC0415 — 그림을 찍을 때만
 
-    Image.open(path).convert("RGB").quantize(colors=128, method=Image.MEDIANCUT).save(path, optimize=True)
+    Image.open(path).convert("RGB").quantize(colors=colors, method=Image.MEDIANCUT).save(path, optimize=True)
     print(f"{path.name}: {Image.open(path).size}, {path.stat().st_size:,} bytes")
 
 
@@ -286,7 +286,7 @@ def shoot(report: Path, out: Path) -> None:
                 bottom = pg.evaluate(f"(()=>{{const r=document.querySelector('{sel}').getBoundingClientRect();"
                                      "return Math.ceil(r.bottom+scrollY);})()")
                 pg.screenshot(path=str(out / name), full_page=True, clip={"x": 0, "y": 0, "width": w, "height": bottom})
-                _quantize(out / name)
+                _quantize(out / name, 64)       # 쪽이 커서 터미널보다 색을 더 줄인다 — 그림당 100KB 안
                 ctx.close()
             browser.close()
     finally:

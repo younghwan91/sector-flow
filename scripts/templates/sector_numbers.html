@@ -259,7 +259,7 @@ document.getElementById("chipnote").textContent = (D.rebuilt?"재구성: 지난 
   : "미확정: 17시 이전이라 부분 데이터일 수 있다.");
 // 받은 폴더·멈춘 배치를 오늘 것으로 읽지 않게. 문턱은 화면(`STALE_DAYS`)과 같다.
 const age=Math.floor((Date.now()-Date.parse(D.asof+"T00:00:00+09:00"))/864e5);
-if(age>=4) document.getElementById("chip").append(el("span","chip","⚠ "+age+"일 지난 리포트"));
+if(age>=4&&!D.demo) document.getElementById("chip").append(el("span","chip","⚠ "+age+"일 지난 리포트"));
 /** 마감 값인가 — 확정, 또는 daily_finalize 창 밖이라 확정 기록은 없지만 지난 날의 값(재구성 `finalize_unverified`).
  *  수익률 라벨·(잠정) 표시가 이것 하나를 본다(TUI `ret_label`). */
 const CLOSED = Boolean(D.final || D.finalize_unverified);

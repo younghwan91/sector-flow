@@ -108,6 +108,15 @@ def test_viewer_marks_a_stale_report(tmp_path):
     assert any("일 지난 리포트" in t for t in _page("sector_flow.html", _viewer_payload("2026-01-05"), tmp_path))
 
 
+@node
+def test_demo_pages_do_not_warn_about_age(tmp_path):
+    """합성 데모의 기준일은 고정이다 — 받은 폴더를 위한 경고가 데모를 고장처럼 보이게 한다."""
+    viewer = dict(_viewer_payload("2026-01-05"), demo=True)
+    numbers = dict(_numbers_data(combined=False, asof="2026-01-05"), demo=True)
+    assert not any("일 지난 리포트" in t for t in _page("sector_flow.html", viewer, tmp_path))
+    assert not any("일 지난 리포트" in t for t in _page("sector_numbers.html", numbers, tmp_path))
+
+
 def test_viewer_does_not_claim_krx_index_returns():
     """수익률은 자체 바구니다(`retOf`). 설명만 옛 계산을 말하고 있었다."""
     html = (REPO / "scripts" / "templates" / "sector_flow.html").read_text("utf-8")
