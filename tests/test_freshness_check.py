@@ -298,6 +298,21 @@ def test_deploy_does_not_warn_about_todays_merge(clone):
     assert rc == 0 and "다음 07:50" in lines[-1], lines
 
 
+def test_deploy_does_not_count_a_merged_branchs_older_commits(clone):
+    """어젯밤 브랜치 커밋을 오늘 낮에 머지했다 — 그 커밋은 머지 전이라 07:50 이 받을 수 없었다. 머지한 날 거짓 경보를 내면 안 된다."""
+    work = clone(None)
+    up = work.parent / "up"
+    _git(up, "checkout", "-q", "-b", "side")
+    night = "2030-01-06T22:00:00+09:00"
+    _git(up, "commit", "-q", "--allow-empty", "-m", "side", GIT_COMMITTER_DATE=night, GIT_AUTHOR_DATE=night)
+    _git(up, "checkout", "-q", "main")
+    noon = "2030-01-07T15:00:00+09:00"
+    _git(up, "merge", "-q", "--no-ff", "-m", "merge", "side", GIT_COMMITTER_DATE=noon, GIT_AUTHOR_DATE=noon)
+    _git(work, "fetch", "-q", "origin")
+    rc, lines = fc.check_deploy(work, _kst(2030, 1, 7, 20, 30))
+    assert rc == 0 and "다음 07:50" in lines[-1], lines
+
+
 def test_deploy_warns_when_nothing_was_fetched_for_days(clone):
     work = clone(None)
     old = _time.time() - 100 * 3600

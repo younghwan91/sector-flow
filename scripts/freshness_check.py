@@ -264,7 +264,8 @@ def check_deploy(repo: Path, now: datetime) -> tuple[int, list[str]]:
             rc = WARN
             out.append(f"⚠️ [배포] origin/main 을 {age_h:.0f}시간째 안 받았다 — 07:50 동기화(pull-all)가 안 돈다. "
                        "crontab -l | grep pull-all 과 그 로그를 보라.")
-    pending = _git(repo, "log", "--reverse", "--format=%ct", "HEAD..origin/main")
+    # main 위의 커밋만 센다 — 곁가지 커밋의 시각은 머지 전이라 07:50 이 받을 수 없었다(어젯밤 커밋을 오늘 머지하면 거짓 경보).
+    pending = _git(repo, "log", "--first-parent", "--reverse", "--format=%ct", "HEAD..origin/main")
     stamps = [int(x) for x in (pending or "").split()]
     if not stamps:
         return rc, out

@@ -6,7 +6,7 @@ name: CI
 #              검사(pytest)        주입 검증
 #   문서만     3.13 하나           안 돈다 — 앵커 사망은 tests/test_mutation_spec.py 가 pytest 에서 잡는다
 #   PR(코드)   3.11·3.13           mutations-pr: --scope direct, 직접 건드린 변이만
-#   main(코드) 3.11·3.12·3.13      mutations: 전체, 4샤드
+#   main(코드) 3.11·3.12·3.13      mutations: 전체, 8샤드
 #
 # 배포 관문과의 관계(dotfiles `pull-all --ci-gate`): **머리 커밋**의 체크가 전부 success·skipped·neutral 이어야 받고,
 # 체크가 0개거나 하나라도 돌고 있으면 보류한다. 그래서:
@@ -112,7 +112,7 @@ jobs:
   # "테스트가 초록" 은 검사가 살아 있다는 뜻이 아니다. 이 단계가 CI 밖에 있는 동안
   # 앵커를 잃은 변이 셋이 조용히 죽었다(경고만 남았고 아무도 안 읽었다).
   #
-  # 시간: (1) 가드 기준선을 pytest 한 번에, (2) e2e 는 필요한 검증 층만, (3) 예상 비용으로 4몫에 나눠, (4) 몫마다
+  # 시간: (1) 가드 기준선을 pytest 한 번에, (2) e2e 는 필요한 검증 층만, (3) 예상 비용으로 8몫에 나눠, (4) 몫마다
   # 12분 예산을 하네스가 잰다 — 넘으면 REJECT 와 느린 변이 목록이 남는다(그때 matrix 의 shard 목록만 늘린다 — 분모는
   # strategy.job-total 이라 따라온다. tests/test_ci_workflow.py 가 1..n 연속인지 본다). 24분이면 하네스가 먼저 멈춘다.
   # 상한에 걸리면 07:50 `pull-all --ci-gate` 배포가 막힌다.
@@ -127,7 +127,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
     steps:
       - uses: actions/checkout@v7
         with:
