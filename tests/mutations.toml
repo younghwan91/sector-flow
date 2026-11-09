@@ -8236,7 +8236,7 @@ file = "scripts/verify_report.py"
 find = "VF_CAP_INDEX_JUMP = 3.0"
 replace = "VF_CAP_INDEX_JUMP = 5.0"
 
-# ── 네이버 시장값 대조 — 네이버 소스·합계 판정·누출·연속 SKIP·대량 체결 의심 (4회차 D1) ──
+# ── 네이버 시장값 대조 — 네이버 소스·합계 판정·누출·연속 SKIP·분봉 밖 거래 큼 (4회차 D1) ──
 
 [[mutation]]
 id = "naver-zero-looks-published"
@@ -8455,6 +8455,70 @@ find = "want_fetch = env.get(\"KR_QUANT_KRX_TRUTH\") == \"1\""
 replace = "want_fetch = bool(env.get(\"KR_QUANT_KRX_TRUTH\"))"
 
 [[mutation]]
+id = "overclaim-glossary-definition-split"
+why = "'값이 틀린 것이 아니라' 는 근거(수량·10-12 까지)를 넘는다 — 표면 하나라도 되돌아오면 금액까지 맞다고 읽힌다"
+guards = ["tests/test_first_reader.py::test_no_surface_overclaims_the_off_book_explanation"]
+file = "docs/glossary.md"
+find = "시장 합계와 네이버 시장값의 차이가 정의 차이일 수 있다는 표지다"
+replace = "값이 틀린 것이 아니라 시장 합계와 네이버 시장값의 정의가 갈린 표지다"
+
+[[mutation]]
+id = "validation-drops-stock-check-scope"
+why = "범위(10-12 까지·수량만)가 없으면 종목값 일치가 전수로 읽힌다"
+guards = ["tests/test_first_reader.py::test_validation_doc_states_the_stock_check_scope"]
+file = "docs/validation/2026-11-09-market-total-vs-published.md"
+find = "`naver_investor_trend`(수집분 10-12 까지,"
+replace = "`naver_investor_trend`(수집분 전체,"
+
+[[mutation]]
+id = "krx-inquiry-denies-minute-bars"
+why = "질의서가 '장중 자료를 안 쓴다' 고 하면 사실관계가 틀린다"
+guards = ["tests/test_first_reader.py::test_inquiries_state_minute_bars_and_the_unverified_api"]
+file = "docs/strategy/inquiries/krx_market_data.md"
+find = "**실시간 API로 받는지는 아직 확인하지 못했습니다**"
+replace = "실시간·장중 데이터는 쓰지 않습니다"
+
+[[mutation]]
+id = "fsc-flag-frequency-vague"
+why = "44% 뜨는 표지를 '드물게' 라고 적으면 법령해석의 사실관계가 틀린다"
+guards = ["tests/test_first_reader.py::test_inquiries_put_numbers_on_the_flag_and_disclose_reconstruction"]
+file = "docs/strategy/inquiries/fsc_advisory_scope.md"
+find = "36거래일 중 16일(44%, 22건) 떴습니다"
+replace = "드물게 떴습니다"
+
+[[mutation]]
+id = "sales-copy-lumps-percentile"
+why = "판매 문구가 백분위를 검정한 지표처럼 묶는다"
+guards = ["tests/test_first_reader.py::test_legal_drafts_do_not_lump_percentile_with_the_tested_metrics"]
+file = "docs/strategy/inquiries/attachments/D_sales_copy_draft.md"
+find = " 1일 값·1년 백분위·연속 일수는 앞날 검정을 하지 않았습니다."
+replace = ""
+
+[[mutation]]
+id = "digest-drops-gap-note"
+why = "표지의 뜻·KRX 원표 미대조가 글에서 빠지면 '분봉 밖' 이 무슨 말인지 글 안에서 모른다"
+guards = ["tests/test_digest.py::test_block_suspects_reach_the_digest_with_every_name_first"]
+file = "scripts/digest.py"
+find = "    if naver or F[\"blocks\"]:\n"
+replace = "    if False:\n"
+
+[[mutation]]
+id = "detail-panel-cuts-amount"
+why = "하단 패널을 pad 로 자르면 80칸에서 +4,552억 이 +4,5 가 된다"
+guards = ["tests/test_demo.py::test_no_screen_cuts_a_number_mid_digit"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "        return _items_line(f\" {label}: \", [f\"{t['name']} {fmt_amt(t['flow'])}억\" for t in arr[:3]], width)"
+replace = "        return f\" {label}: \" + \" · \".join(f\"{t['name']} {fmt_amt(t['flow'])}억\" for t in arr[:3])"
+
+[[mutation]]
+id = "fold-items-cuts-long-item"
+why = "한 항목이 폭을 넘을 때 공백에서 안 접으면 %ile 이 잘린다"
+guards = ["tests/test_demo.py::test_no_screen_cuts_a_number_mid_digit"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "    return lines + _wrap_words(cur, width, indent)"
+replace = "    return lines + [pad(cur, width)]"
+
+[[mutation]]
 id = "truth-off-still-warns-on-screen"
 why = "꺼진 리포트에 '건너뜀' 칩이 뜨면 기본 상태가 날마다 거짓 경고다"
 guards = ["tests/test_krx_truth.py::test_switched_off_report_is_quiet_on_every_surface"]
@@ -8499,8 +8563,8 @@ id = "block-verifier-skip-always-passes"
 why = "표·분봉이 있는데 ok 대신 skip 이어도 통과한다 / 표가 없는데 ok 여도 통과한다"
 guards = ["tests/test_krx_truth.py::test_verifier_block_list_is_quiet_on_old_reports_and_accepts_a_real_skip"]
 file = "scripts/verify_report.py"
-find = "        chk(\"F\", \"대량 체결 의심 = DB 재계산(분봉 없음·미완이면 skip)\", got.get(\"status\") == \"skip\","
-replace = "        chk(\"F\", \"대량 체결 의심 = DB 재계산(분봉 없음·미완이면 skip)\", True,"
+find = "        chk(\"F\", \"분봉 밖 거래 큼 = DB 재계산(분봉 없음·미완이면 skip)\", got.get(\"status\") == \"skip\","
+replace = "        chk(\"F\", \"분봉 밖 거래 큼 = DB 재계산(분봉 없음·미완이면 skip)\", True,"
 
 [[mutation]]
 id = "web-published-chip-always"
@@ -8512,11 +8576,11 @@ replace = "      if(true){ const w=el(\"span\",\"chip warn\",\"⚠ \"+(KT.source
 
 [[mutation]]
 id = "web-block-chip-dropped"
-why = "웹이 대량 체결 의심을 안 그린다"
+why = "웹이 분봉 밖 거래 큼을 안 그린다"
 guards = ["tests/test_report_pages.py::test_numbers_block_suspect_chip_names_the_stock_with_evidence"]
 file = "scripts/templates/sector_numbers.html"
-find = "    const w=el(\"span\",\"chip warn\",\"⚠ 대량 체결 의심 — 정의 차이(\"+m+\"): \"+blockNames(L)+\" \"+EV.block);\n"
-replace = "    return; const w=el(\"span\",\"chip warn\",\"⚠ 대량 체결 의심 — 정의 차이(\"+m+\"): \"+blockNames(L)+\" \"+EV.block);\n"
+find = "    const w=el(\"span\",\"chip warn\",\"⚠ 분봉 밖 거래 큼(\"+m+\"): \"+blockNames(L)+\" \"+EV.block);\n"
+replace = "    return; const w=el(\"span\",\"chip warn\",\"⚠ 분봉 밖 거래 큼(\"+m+\"): \"+blockNames(L)+\" \"+EV.block);\n"
 
 [[mutation]]
 id = "tui-published-chip-always"
@@ -8641,7 +8705,7 @@ replace = """    pass"""
 
 [[mutation]]
 id = "demo-no-minute-bars"
-why = "분봉이 없으면 대량 체결 판정이 건너뛰어져 데모에서 그 표지를 영영 못 본다"
+why = "분봉이 없으면 분봉 밖 판정이 건너뛰어져 데모에서 그 표지를 영영 못 본다"
 guards = ["tests/test_demo.py::test_demo_shows_every_mark_a_customer_can_meet"]
 file = "src/sectorflow/demo.py"
 find = """    con.executemany("INSERT INTO minute_bars(code,ts,volume) VALUES (?,?,?)", minute)"""
@@ -8697,7 +8761,7 @@ id = "guide-drops-block-suspect-row"
 why = "가이드에서 표지 설명이 빠지면 고객이 ⚠ 칩의 뜻을 찾을 곳이 없다"
 guards = ["tests/test_first_reader.py::test_first_screen_marks_are_explained_in_the_guide_and_readme"]
 file = "docs/reading-guide.md"
-find = "| ⚠ `대량 체결 의심` |"
+find = "| ⚠ `분봉 밖 거래 큼` |"
 replace = "| ⚠ `큰 체결` |"
 
 [[mutation]]
@@ -9474,7 +9538,7 @@ id = "fsc-inquiry-hides-stock-names"
 why = "금융위 질의서가 종목 표시를 숨긴다 — 사실이 틀린 질의의 회신은 쓸 수 없다"
 guards = ["tests/test_first_reader.py::test_inquiries_state_what_the_screen_really_shows"]
 file = "docs/strategy/inquiries/fsc_advisory_scope.md"
-find = """- **종목이 나옵니다.** 첫 화면의 종목명은 세 자리입니다. (1) 섹터마다 그날 순매수 상위 종목 1~2개의 **종목명과 금액**. (2) `대량 체결 의심` 종목 전부의 **종목명**과 그날 거래량 중 분봉 밖 몫 — 드물게 뜨는 표지입니다. (3) `거래대금 집중` — 시장 거래대금의 20% 이상인 섹터의 상위 2종목 **종목명**과 몫, 그 둘을 뺀 순매수. 섹터 표에는 순매수·순매도 상위 종목이, 섹터를 열면(드릴다운) 그 섹터 **전 종목**의 주체별 순매수와 비중이 있습니다.
+find = """- **종목이 나옵니다.** 첫 화면의 종목명은 세 자리입니다. (1) 섹터마다 그날 순매수 상위 종목 1~2개의 **종목명과 금액**. (2) `분봉 밖 거래 큼` 종목 전부의 **종목명**과 그날 거래량 중 분봉 밖 몫 — 드물게 뜨는 표지입니다. (3) `거래대금 집중` — 시장 거래대금의 20% 이상인 섹터의 상위 2종목 **종목명**과 몫, 그 둘을 뺀 순매수. 섹터 표에는 순매수·순매도 상위 종목이, 섹터를 열면(드릴다운) 그 섹터 **전 종목**의 주체별 순매수와 비중이 있습니다.
 """
 replace = ""
 

@@ -468,20 +468,20 @@ def test_numbers_is_quiet_about_naver_when_the_switch_is_off(tmp_path):
 
 @node
 def test_numbers_block_suspect_chip_names_the_stock_with_evidence(tmp_path):
-    """대량 체결 의심 칩 — 종목과 분봉 밖 몫, 증거 표지. 목록이 비었거나 skip 이면 없다."""
+    """분봉 밖 거래 큼 칩 — 종목과 분봉 밖 몫, 증거 표지. 목록이 비었거나 skip 이면 없다."""
     D = _today_numbers()
     D["today"]["block_suspects"] = {"status": "ok", "markets": {"거래소": [], "코스닥": []}}
-    assert not any("대량 체결 의심" in t for t in _page("sector_numbers.html", D, tmp_path))
+    assert not any("분봉 밖 거래 큼" in t for t in _page("sector_numbers.html", D, tmp_path))
     D["today"]["block_suspects"]["markets"]["거래소"] = [
         {"code": "034730", "name": "SK", "off_pct": 91.8, "actor": "indiv", "amt": -8841.8},
         {"code": "2", "name": "B", "off_pct": 60.0, "actor": "indiv", "amt": 5.0},
         {"code": "3", "name": "C", "off_pct": 55.4, "actor": "indiv", "amt": 4.0},
         {"code": "4", "name": "D", "off_pct": 55.0, "actor": "indiv", "amt": 3.0}]
     joined = "\n".join(_page("sector_numbers.html", D, tmp_path))
-    assert "⚠ 대량 체결 의심 — 정의 차이(거래소): SK 분봉 밖 92% · B 분봉 밖 60% · C 분봉 밖 55% · D 분봉 밖 55% [측정]" in joined
-    assert "근사 오차 큼" not in joined, "값이 틀린 게 아니라 정의가 갈린 것이다 — 검증 결론과 칩이 어긋났다"
+    assert "⚠ 분봉 밖 거래 큼(거래소): SK 분봉 밖 92% · B 분봉 밖 60% · C 분봉 밖 55% · D 분봉 밖 55% [측정]" in joined
+    assert "근사 오차 큼" not in joined, "오차라고 단정하면 검증 결론과 칩이 어긋난다"
     D["today"]["block_suspects"] = {"status": "skip", "reason": "분봉 표(minute_bars)가 없다"}
-    assert not any("대량 체결 의심 —" in t for t in _page("sector_numbers.html", D, tmp_path))
+    assert not any("분봉 밖 거래 큼 —" in t for t in _page("sector_numbers.html", D, tmp_path))
 
 
 @node

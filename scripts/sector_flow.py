@@ -1759,7 +1759,7 @@ def _sector_gap_max(cov: pd.DataFrame, market_vwap: float) -> "dict | None":
     return best
 
 
-#: 대량 체결 의심 — 그날 거래량 중 분봉에 없는 몫의 문턱.
+#: 분봉 밖 거래 큼 — 그날 거래량 중 분봉에 없는 몫의 문턱.
 BLOCK_OFF_MIN = 0.5
 #: 분모 게이트 — 그 종목 최대 주체 금액이 시장 Σ|개인·외국인·기관 순매수| 의 이 몫 이상일 때만 띄운다.
 BLOCK_SHARE_MIN = 0.01
@@ -1784,14 +1784,14 @@ def _minute_volume(con, asof: str) -> "dict[str, float] | None":
 
 
 def block_suspects(con, df: pd.DataFrame, asof: str, markets: list[str]) -> dict:
-    """시장별 **대량 체결 의심** 종목 — 시장 합계가 네이버 시장값과 크게 갈린 날의 원인 후보(측정, 2026-11-09).
+    """시장별 **분봉 밖 거래 큼** 종목 — 시장 합계가 네이버 시장값과 크게 갈린 날의 원인 후보(측정, 2026-11-09).
 
     ``off = max(0, volume − Σ분봉 volume) / volume`` 이 :data:`BLOCK_OFF_MIN` 이상이고 최대 주체 금액
     ``max_a |q_a|·P`` 가 시장 ``Σ_a |Σ q_a·P|`` 의 :data:`BLOCK_SHARE_MIN` 이상인 종목(a = 개인·외국인·기관).
     분봉 밖 거래량이 시간외 대량매매라는 것은 **추정**이다 — 체결 유형 자료가 없다. 분봉이 없는 종목은 판정하지
     않고(``unjudged`` = 금액 게이트는 넘었는데 분봉이 없어 판정 못 한 종목 수), 표가 없거나 수집이 덜 끝난 날은
-    ``status: skip`` 으로 이유를 적는다(0 건과 모름을 가른다). 같은 체결이 네이버 종목 값에는 있다 — 리포트 값이 틀렸다는
-    표지가 아니라 시장값과 정의가 갈릴 수 있다는 표지다.
+    ``status: skip`` 으로 이유를 적는다(0 건과 모름을 가른다). 대조한 범위(10-12 까지)에서 수량은 네이버 종목 값과 같았다 —
+    금액까지 맞다는 말은 아니고, 시장값과 정의 차이일 수 있다는 표지다(까닭 미확인).
     문서 ``docs/validation/2026-11-09-market-total-vs-published.md`` 의 정의와 같다.
     """
     minutes = _minute_volume(con, asof)
@@ -1834,7 +1834,7 @@ def block_suspects(con, df: pd.DataFrame, asof: str, markets: list[str]) -> dict
 
 
 def market_context(con, df: pd.DataFrame, P: dict) -> None:
-    """``today`` 에 KRX 지수(정규장)·시장별 금액 근사 오차·대량 체결 의심을 붙인다 — 제자리 수정."""
+    """``today`` 에 KRX 지수(정규장)·시장별 금액 근사 오차·분봉 밖 거래 큼을 붙인다 — 제자리 수정."""
     T = P["today"]
     T["krx_index"] = krx_index_block(con, P["dates"], P["markets"])
     T["approx_gap_warn"] = APPROX_GAP_WARN

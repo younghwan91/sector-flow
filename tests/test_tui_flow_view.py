@@ -2619,7 +2619,7 @@ def test_gap_chip_appears_only_above_the_threshold(data):
 
 
 def test_gap_chips_follow_the_published_error_and_block_suspects(data):
-    """칩의 판정은 네이버 시장값 기준(krx_truth.hot) — 내부 VWAP 차가 작아도 뜬다. 대조 건너뜀·대량 체결 의심도 첫 화면에 드러난다.
+    """칩의 판정은 네이버 시장값 기준(krx_truth.hot) — 내부 VWAP 차가 작아도 뜬다. 대조 건너뜀·분봉 밖 거래 큼도 첫 화면에 드러난다.
 
     웹 칩과 같은 글자다(tests/test_report_pages.py).
     """
@@ -2633,7 +2633,7 @@ def test_gap_chips_follow_the_published_error_and_block_suspects(data):
     chips = _gap_chips(d, ["전체", "거래소", "코스닥"])
     assert "네이버 시장값과 차이 큼(거래소 7.1%)" in chips
     assert not any("차이 큼(코스닥" in c for c in chips)
-    assert chips[:4] == ["대량 체결 의심 — 정의 차이(거래소): SK 분봉 밖 92%", "B 분봉 밖 60%", "C 분봉 밖 55%", "D 분봉 밖 55%"], \
+    assert chips[:4] == ["분봉 밖 거래 큼(거래소): SK 분봉 밖 92%", "B 분봉 밖 60%", "C 분봉 밖 55%", "D 분봉 밖 55%"], \
         "드문 대량 체결이 맨 앞이고 종목명을 다 적는다"
     assert block_items([{"name": "SK", "off_pct": 91.8}]) == ["SK 분봉 밖 92%"]
     T["krx_truth"] = {"status": "ok", "source": "krx", "markets": {"거래소": {"total_pct": 7.14, "hot": True}}}
@@ -2656,16 +2656,16 @@ def test_banner_shows_every_block_suspect_name_at_every_width(data, width):
     text = "\n".join(banner_lines(State(d), width))
     for name in [f"가상종목{i}" for i in range(5)] + ["가상코닥"]:
         assert name in text, f"폭 {width} 에서 {name} 이 안 보인다"
-    assert text.index("대량 체결 의심") < text.index("네이버 시장값과 차이 큼"), "드문 표지가 잦은 칩에 밀렸다"
-    assert " ⚠ " in text and "외 " not in next(ln for ln in banner_lines(State(d), width) if "대량 체결 의심" in ln)
-    assert "대량 체결 판정 못 한 종목 7개(분봉 없음)" in text
+    assert text.index("분봉 밖 거래 큼") < text.index("네이버 시장값과 차이 큼"), "덜 잦은 표지가 잦은 칩에 밀렸다"
+    assert " ⚠ " in text and "외 " not in next(ln for ln in banner_lines(State(d), width) if "분봉 밖 거래 큼" in ln)
+    assert "분봉 밖 판정 못 한 종목 7개(분봉 없음)" in text
 
 
 def test_banner_says_when_block_judging_was_skipped(data):
     """판정 건너뜀은 0 건과 다르다 — 웹에만 적고 터미널이 침묵하면 '없음' 으로 읽힌다."""
     d = json.loads(json.dumps(data))
     d["today"]["block_suspects"] = {"status": "skip", "reason": "그날 분봉이 없다"}
-    assert "대량 체결 판정: 건너뜀 — 그날 분봉이 없다" in "\n".join(banner_lines(State(d), 80))
+    assert "분봉 밖 판정: 건너뜀 — 그날 분봉이 없다" in "\n".join(banner_lines(State(d), 80))
 
 
 def test_what_changed_is_on_the_first_page_at_80x24(data):

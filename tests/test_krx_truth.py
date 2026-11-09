@@ -568,7 +568,7 @@ def test_verifier_flags_an_ok_block_whose_truth_file_vanished(tmp_path):
     assert _verify(P, str(tmp_path)), "근거 파일이 없는데 검증기가 초록이다"
 
 
-# ── 대량 체결 의심 — producer·검증기 ─────────────────────────────────────────
+# ── 분봉 밖 거래 큼 — producer·검증기 ─────────────────────────────────────────
 
 def _block_con(minutes=True):
     """대량 체결 픽스처 — BLK 는 거래량 90% 가 분봉 밖이고 금액이 크다, NET 은 순매수만 크고 분봉에 다 있다,

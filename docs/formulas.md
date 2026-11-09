@@ -137,8 +137,8 @@ DB(`supply_demand`)는 주체별 순매매 **수량**만 준다. 금액은 그�
 그 시장 거래대금의 0.2% 미만이면 결측. $h_M>5$ 면 `네이버 시장값과 차이 큼` 칩. 기본 소스가 네이버 시장값이고 KRX 원표와 같은지 확인하지 못했다. 네이버 수치는 사이드카에만 있고 페이로드에 없다.
 48일 실측은 `docs/validation/2026-11-09-market-total-vs-published.md`.
 
-**대량 체결 의심.** 종목 $c$ 의 $\text{off}_c=\max(0,\text{volume}_c-\sum\text{분봉 volume}_c)/\text{volume}_c\ge0.5$ 이고 $\max_A|f^A_c|\ge0.01\sum_A|\sum_c f^A_c|$ (`block_suspects` `scripts/sector_flow.py`,
-`today.block_suspects`). 분봉 밖 거래량이 시간외 대량매매라는 것은 추정이다. 분봉 합÷거래량 중앙이 95% 미만인 날은 판정하지 않는다.
+**분봉 밖 거래 큼.** 종목 $c$ 의 $\text{off}_c=\max(0,\text{volume}_c-\sum\text{분봉 volume}_c)/\text{volume}_c\ge0.5$ 이고 $\max_A|f^A_c|\ge0.01\sum_A|\sum_c f^A_c|$ (`block_suspects` `scripts/sector_flow.py`,
+`today.block_suspects`). 분봉 밖 거래량이 시간외 대량매매라는 것은 추정이다. 분봉 합÷거래량 중앙이 95% 미만인 날은 판정하지 않는다. 시장값과 정의 차이일 수 있으나 까닭은 미확인이다(검증 문서의 '종목값 대조의 범위').
 
 **종가·VWAP 환산 차.** 내부 자료끼리의 값이라 실제 오차가 아니다(48일 최대 3.12%). 종목 $c$ 의 4주체 $|$순매수 수량$|$ 합 $n_c=\sum_A |q^A_{c,N-1}|$,
 VWAP $V_c = \text{trade\_value}_c\times10^6/\text{volume}_c$(`daily_bars`, 둘 다 양수인 종목만 — 양쪽 합에서 같은 집합)으로
@@ -516,7 +516,7 @@ $k$ 는 (18)에서 기관 유입에 회귀한 것이라 다른 주체로 재계�
   $P^{idx}_{N-1}/P^{idx}_{N-1-w}-1$(`sector_index` 코드 001 코스피·101 코스닥, `today.krx_index`, `krx_index_block`
   `scripts/sector_flow.py`). 지수의 날짜는 이 페이로드의 거래일에 맞추고 없는 날은 메우지 않는다(결측). 둘은 세션이 다르다(§1.3).
 - **오늘 시장 순매수** — `today.market[시장].net[A]` 의 값과 1년%ile(§2.19). 4주체는 합 ≈ 0 이라 하나도 자르지 않는다(좁으면 두 줄).
-- **네이버 시장값과 차이 큼 칩** — §1.1 (2a) 의 $h_M$ 가 5 를 넘는 시장에만. **대량 체결 의심 칩** — 같은 절 정의의 종목이 있을 때. **종가·VWAP 환산 차 칩** — (2b) 가 `APPROX_GAP_WARN = 5` 를 넘는 시장·섹터에.
+- **네이버 시장값과 차이 큼 칩** — 대조를 켠 리포트(기본 꺼짐)에서 §1.1 (2a) 의 $h_M$ 가 5 를 넘는 시장에만. **분봉 밖 거래 큼 칩** — 같은 절 정의의 종목이 있을 때. **종가·VWAP 환산 차 칩** — (2b) 가 `APPROX_GAP_WARN = 5` 를 넘는 시장·섹터에.
 - **상위·하위 3** — 오늘 섹터 순매수 $f^A_{s,N-1}$ 금액 순, 각자의 1년%ile.
 - **1년%ile 극단** — 오늘 값의 백분위 $p\ge95$ 또는 $\le5$(문턱 포함). 직전 리포트와 견주지 않는다 — 오늘 값이 1년 중 어디인지다.
 - **직전 리포트 대비** — `change.top[시장][A]` 의 `entered`·`exited`: 직전 거래일 리포트가 게시한 20일 순매수 순위의 상위 5 와
