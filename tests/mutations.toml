@@ -3522,21 +3522,7 @@ file = "scripts/verify_merge.py"
 find = "        if m and len(m.group(1)) >= EXEMPT_MIN_REASON and not EXEMPT_PLACEHOLDER.match(m.group(1)):"
 replace = "        if m and len(m.group(1)) >= EXEMPT_MIN_REASON:"
 
-[[mutation]]
-id = "ci-shard-denominator-hardcoded"
-why = "샤드 분모를 matrix 와 따로 적는다 — matrix 를 줄이면 몫 하나가 조용히 안 돈다"
-guards = ["tests/test_ci_workflow.py::test_mutation_shards_cover_1_to_n_and_the_denominator_follows_the_matrix"]
-file = ".github/workflows/ci.yml"
-find = "          SHARD: ${{ matrix.shard }}/${{ strategy.job-total }}"
-replace = "          SHARD: ${{ matrix.shard }}/4"
 
-[[mutation]]
-id = "ci-shard-list-has-a-hole"
-why = "샤드 목록에 구멍이 있다(1,2,4) — 3번 몫이 아무 말 없이 안 돈다"
-guards = ["tests/test_ci_workflow.py::test_mutation_shards_cover_1_to_n_and_the_denominator_follows_the_matrix"]
-file = ".github/workflows/ci.yml"
-find = "        shard: [1, 2, 3, 4, 5, 6, 7, 8]"
-replace = "        shard: [1, 2, 3, 4, 5, 6, 8]"
 
 [[mutation]]
 id = "selftest-issue-step-can-turn-red"
@@ -5973,24 +5959,7 @@ replace = """    return e.get("event") == "report" and (e.get("outcome") == "fin
 
 # ── 비샤드 실행의 시간 예산 (2026-11-09): 변이 692개 × 예산 12분이 로컬 pre-push 전부를 막았다 ──
 
-[[mutation]]
-id = "harness-unsharded-budget-not-scaled"
-why = "샤드 없는 실행(ci-local 전체 범위)에 샤드 한 몫의 예산을 그대로 건다 — 변이가 늘 때마다 core 파일을 건드린 푸시가 전부 REJECT 로 막힌다(692개 12.3분 > 12분)"
-guards = ["tests/test_verify_merge.py::test_unsharded_budget_scales_by_the_ci_shard_count",
-          "tests/test_verify_merge.py::test_budget_overrun_stops_and_rejects"]
-file = "scripts/verify_merge.py"
-find = """    n = ci_shard_count(wt)
-    return budget_min * n, (f"예산 {budget_min * n:g}분 = --budget-min {budget_min:g}분 × 샤드 {n} — \""""
-replace = """    n = 1
-    return budget_min * n, (f"예산 {budget_min * n:g}분 = --budget-min {budget_min:g}분 × 샤드 {n} — \""""
 
-[[mutation]]
-id = "harness-shard-count-misread-as-one"
-why = "ci.yml 의 matrix 를 못 읽으면 1 로 본다 — 조용히 예전(한 몫 예산)으로 돌아간다. 못 읽으면 4 다"
-guards = ["tests/test_verify_merge.py::test_unsharded_budget_scales_by_the_ci_shard_count"]
-file = "scripts/verify_merge.py"
-find = "def ci_shard_count(wt: Path, fallback: int = 4) -> int:"
-replace = "def ci_shard_count(wt: Path, fallback: int = 1) -> int:"
 
 # ── 종목(기관상위) 잠정→확정 수정(stock-diff): 기관상위 경계·문턱·상한·게이트·집계·검증기·화면·시드 ──────────
 
@@ -6719,7 +6688,7 @@ id = "report-term-records-rc-0"
 why = "TERM 트랩이 없으면 시간 초과로 끊긴 실행이 원장에 rc:0, outcome:error 로 남는다"
 guards = ["tests/test_ops_ledger.py::test_timeout_term_is_recorded_as_a_signal_not_as_success"]
 file = "scripts/daily_report.sh"
-find = "trap 'exit 143' TERM\n"
+find = "trap '_bounded_stop; exit 143' TERM\n"
 replace = ""
 
 [[mutation]]
@@ -6988,7 +6957,7 @@ id = "digest-hook-no-timeout"
 why = "다이제스트 훅에 시간 상한이 없으면 멈춘 렌더가 배치를 40분 상한까지 잡고, 그 뒤 EXIT 트랩이 짓던 리포트를 지운다"
 guards = ["tests/test_digest.py::test_digest_hook_cannot_block_or_fail_publishing"]
 file = "scripts/daily_report.sh"
-find = 'timeout -k 10s "${KR_QUANT_DIGEST_TIMEOUT:-5m}" '
+find = '_bounded "${KR_QUANT_DIGEST_TIMEOUT:-5m}" '
 replace = ""
 
 [[mutation]]
@@ -7880,13 +7849,6 @@ file = "scripts/ci_plan.py"
 find = "        return _changed(out.strip()) if out else None"
 replace = "        return _changed(base_ref) if out else None"
 
-[[mutation]]
-id = "ci-plan-pr-drops-the-floor-python"
-why = "PR 이 하한 3.11 을 안 돈다 — 3.11 전용 실패가 머지 뒤 main 에서야 보여 배포를 막는다(2026-11-09 sum() 전제)"
-guards = ["tests/test_ci_plan.py::test_python_lists_match_the_workflow_matrix_axis"]
-file = "scripts/ci_plan.py"
-find = "PY_PR = [\"3.11\", \"3.13\"]"
-replace = "PY_PR = [\"3.13\"]"
 
 [[mutation]]
 id = "ci-plan-output-not-github-format"
@@ -7920,20 +7882,13 @@ file = ".github/workflows/ci.yml"
 find = "    if: ${{ github.event_name != 'pull_request' && needs.plan.outputs.kind != 'docs' }}"
 replace = "    if: ${{ github.event_name != 'pull_request' && needs.plan.outputs.kind == 'code' }}"
 
-[[mutation]]
-id = "ci-main-mutations-only-changed"
-why = "main 도 바뀐 범위만 돌면 머리가 초록이어도 전체 변이를 지난 적이 없다 — 관문의 보호가 줄어든다"
-guards = ["tests/test_ci_workflow.py::test_skipping_fails_closed_and_main_runs_every_mutation"]
-file = ".github/workflows/ci.yml"
-find = "--only mutations --shard \"$SHARD\" --budget-min 12"
-replace = "--only mutations --scope changed --shard \"$SHARD\" --budget-min 12"
 
 [[mutation]]
 id = "ci-pr-budget-outlives-the-job"
 why = "PR 예산의 두 배가 잡 상한을 넘어 하네스가 멈추기 전에 잡이 이유 없이 죽는다"
 guards = ["tests/test_ci_workflow.py::test_skipping_fails_closed_and_main_runs_every_mutation"]
 file = ".github/workflows/ci.yml"
-find = "--scope direct --budget-min 10"
+find = "--scope direct --budget-min 3"
 replace = "--scope direct --budget-min 20"
 
 [[mutation]]
@@ -7981,8 +7936,8 @@ id = "ci-test-job-has-no-time-limit"
 why = "잡 상한이 없으면 기본 6시간 — 멈춘 검사 하나가 분을 다 태운다"
 guards = ["tests/test_ci_workflow.py::test_every_job_in_our_workflows_has_a_time_limit"]
 file = ".github/workflows/ci.yml"
-find = "  test:\n    needs: plan\n    runs-on: ubuntu-latest\n    timeout-minutes: 20\n"
-replace = "  test:\n    needs: plan\n    runs-on: ubuntu-latest\n"
+find = "needs.plan.outputs.kind == 'docs' }}\n    runs-on: ubuntu-latest\n    timeout-minutes: 20\n"
+replace = "needs.plan.outputs.kind == 'docs' }}\n    runs-on: ubuntu-latest\n"
 
 [[mutation]]
 id = "harness-direct-scope-widens"
@@ -8005,16 +7960,9 @@ id = "harness-direct-scope-budget-blocks-the-pr"
 why = "PR 범위가 시간 초과로 REJECT — 큰 PR 이 코드가 아니라 시계 때문에 막힌다. 전체는 main push 가 돈다"
 guards = ["tests/test_verify_merge.py::test_direct_scope_runs_the_touched_mutation_and_only_warns_on_budget"]
 file = "scripts/verify_merge.py"
-find = "    if scope == \"direct\" and verdict == REJECT:"
-replace = "    if False:"
+find = "    if scope in (\"direct\", \"changed\") and verdict == REJECT:"
+replace = "    if scope == \"changed\" and verdict == REJECT:"
 
-[[mutation]]
-id = "harness-direct-budget-scales-by-shards"
-why = "PR 범위 예산에 샤드 수를 곱하면 잡 상한보다 커져 하네스가 멈추기 전에 잡이 죽는다"
-guards = ["tests/test_verify_merge.py::test_direct_scope_runs_the_touched_mutation_and_only_warns_on_budget"]
-file = "scripts/verify_merge.py"
-find = "    if not budget_min or shard is not None or scope == \"direct\":"
-replace = "    if not budget_min or shard is not None:"
 
 [[mutation]]
 id = "harness-direct-scope-falls-back-to-changed"
@@ -8788,8 +8736,8 @@ id = "batch-does-not-call-trust-page"
 why = """배치가 검증 페이지를 안 부른다 — 강제 재생성 뒤 /latest/trust.html 이 404 인 채 아무도 모른다(리뷰 4회차)"""
 guards = ["tests/test_daily_report_flow.py::test_trust_page_is_built_inside_the_build_folder_and_swapped_with_the_report"]
 file = "scripts/daily_report.sh"
-find = '''if ! timeout -k 10s "${KR_QUANT_TRUST_TIMEOUT:-5m}" "${UVR[@]}" python scripts/trust_page.py \'''
-replace = '''if false && ! timeout -k 10s "${KR_QUANT_TRUST_TIMEOUT:-5m}" "${UVR[@]}" python scripts/trust_page.py \'''
+find = '''if ! _bounded "${KR_QUANT_TRUST_TIMEOUT:-5m}" "${UVR[@]}" python scripts/trust_page.py \'''
+replace = '''if false && ! _bounded "${KR_QUANT_TRUST_TIMEOUT:-5m}" "${UVR[@]}" python scripts/trust_page.py \'''
 
 [[mutation]]
 id = "trust-page-before-its-markers"
@@ -8797,7 +8745,7 @@ why = """페이지를 REBUILT.txt·FINAL.txt 를 쓰기 전에 만든다 — 그
 guards = ["tests/test_daily_report_flow.py::test_rebuild_writes_the_page_after_its_markers"]
 [[mutation.edits]]
 file = "scripts/daily_report.sh"
-find = '''if ! timeout -k 10s "${KR_QUANT_TRUST_TIMEOUT:-5m}" "${UVR[@]}" python scripts/trust_page.py \
+find = '''if ! _bounded "${KR_QUANT_TRUST_TIMEOUT:-5m}" "${UVR[@]}" python scripts/trust_page.py \
      --root "${KR_QUANT_TRUST_ROOT:-$OUT_ROOT}" --build "$BUILD" --asof "$ASOF"; then
   echo "[$(date '+%F %T')] ⚠️ 검증·품질 페이지를 못 만들었다 — 리포트는 그대로 게시한다" >&2
   SIDE_FAIL+="trust.html "
@@ -8808,7 +8756,7 @@ replace = ''''''
 file = "scripts/daily_report.sh"
 find = '''if [ -n "$REBUILD" ] && [ -n "$FINAL_OK" ]; then
   echo "[$(date '+%F %T')] 재구성 — daily_finalize'''
-replace = '''if ! timeout -k 10s "${KR_QUANT_TRUST_TIMEOUT:-5m}" "${UVR[@]}" python scripts/trust_page.py \
+replace = '''if ! _bounded "${KR_QUANT_TRUST_TIMEOUT:-5m}" "${UVR[@]}" python scripts/trust_page.py \
      --root "${KR_QUANT_TRUST_ROOT:-$OUT_ROOT}" --build "$BUILD" --asof "$ASOF"; then
   echo "[$(date '+%F %T')] ⚠️ 검증·품질 페이지를 못 만들었다 — 리포트는 그대로 게시한다" >&2
   SIDE_FAIL+="trust.html "
@@ -11705,3 +11653,501 @@ guards = ["tests/test_freshness_check.py::test_deploy_does_not_count_a_merged_br
 file = "scripts/freshness_check.py"
 find = """"log", "--first-parent", "--reverse", "--format=%ct","""
 replace = """"log", "--reverse", "--format=%ct","""
+
+# ── 머지당 청구 분 상한: 잡 하나·기준선 공유·동시 실행·바이트코드·메모리 트리 상한·화면 층 관문, 그리고 수작업 변이 생존 ──────────
+
+[[mutation]]
+id = "harness-render-forgets-cap-mark"
+why = "시총대비 칸의 `!` 를 기대값이 모른다 — 합성 데모에서 거짓 위반 736건, 화면이 표지를 빠뜨려도 못 잡는다"
+guards = ["tests/test_verify_merge.py::test_render_smoke_expects_the_rights_mark_on_the_cap_share_column"]
+file = "scripts/verify_merge.py"
+find = "mark = getattr(V, \"CAP_PENDING_MARK\", \"\") if r.get(\"cap_pending\") else \"\""
+replace = "mark = \"\""
+
+[[mutation]]
+id = "harness-requested-skip-passes"
+why = "요청한 층이 전부 건너뛰어졌는데 판정 PASS·rc 0 이다 — 폴더 오타가 초록으로 지나간다"
+guards = ["tests/test_verify_merge.py::test_a_layer_that_was_asked_for_and_could_not_run_is_rejected_not_passed"]
+file = "scripts/verify_merge.py"
+find = "if sec.status == SKIP and name in required:"
+replace = "if False:"
+
+[[mutation]]
+id = "harness-report-dir-typo-not-required"
+why = "--report-dir 를 주고 --only 를 안 주면 폴더 오타가 SKIP 으로 지나간다"
+guards = ["tests/test_verify_merge.py::test_cli_uses_the_demo_only_when_no_folder_was_given_and_the_default_is_missing"]
+file = "scripts/verify_merge.py"
+find = " | ({\"render\", \"pty\"} & only if a.report_dir else set())"
+replace = ""
+
+[[mutation]]
+id = "harness-no-demo-fallback"
+why = "실 리포트가 없는 러너에서 화면 층이 데모로 안 돈다 — 새 표지를 아무도 안 본다"
+guards = ["tests/test_verify_merge.py::test_cli_uses_the_demo_only_when_no_folder_was_given_and_the_default_is_missing"]
+file = "scripts/verify_merge.py"
+find = "demo = a.demo or (not a.report_dir and not (Path(report) / \"numbers.html\").exists())"
+replace = "demo = a.demo"
+
+[[mutation]]
+id = "harness-demo-failure-ignored"
+why = "합성 데모를 못 지었는데 화면 층이 SKIP 으로 넘어간다"
+guards = ["tests/test_verify_merge.py::test_demo_that_cannot_be_built_is_rejected"]
+file = "scripts/verify_merge.py"
+find = "            if why:\n                s0.fail(why)\n                return REJECT, secs\n"
+replace = ""
+
+[[mutation]]
+id = "harness-full-baseline-ignores-red"
+why = "전체 pytest 기준선이 가드 아닌 검사의 실패를 안 막는다 — main 의 검사 한 벌이 사라진다"
+guards = ["tests/test_verify_merge.py::test_full_baseline_doubles_as_the_test_run_and_rejects_a_red_test_no_mutation_guards"]
+file = "scripts/verify_merge.py"
+find = "    if red or broken:\n"
+replace = "    if False:\n"
+
+[[mutation]]
+id = "harness-full-baseline-is-only-guards"
+why = "--full-baseline 이 가드만 돈다 — 나머지 검사를 아무도 안 돈다"
+guards = ["tests/test_verify_merge.py::test_full_baseline_doubles_as_the_test_run_and_rejects_a_red_test_no_mutation_guards"]
+file = "scripts/verify_merge.py"
+find = "results, missing, base_out = run_baseline(wt, py, guards_all, scratch, full=full_baseline)"
+replace = "results, missing, base_out = run_baseline(wt, py, guards_all, scratch, full=False)"
+
+[[mutation]]
+id = "harness-baseline-leaves-no-bytecode"
+why = "기준선이 .pyc 를 안 남겨 변이마다 전부 다시 컴파일한다 — 러너에서 주입이 두 배로 든다"
+guards = ["tests/test_verify_merge.py::test_baseline_leaves_bytecode_that_injection_keeps_valid"]
+file = "scripts/verify_merge.py"
+find = "    env.pop(\"PYTHONDONTWRITEBYTECODE\", None)\n"
+replace = ""
+
+[[mutation]]
+id = "harness-injection-writes-bytecode"
+why = "주입 실행이 .pyc 를 써 다음 실행이 변이의 바이트코드를 읽을 수 있다"
+guards = ["tests/test_verify_merge.py::test_baseline_leaves_bytecode_that_injection_keeps_valid"]
+file = "scripts/verify_merge.py"
+find = "    env[\"PYTHONDONTWRITEBYTECODE\"] = \"1\"\n"
+replace = "    env.pop(\"PYTHONDONTWRITEBYTECODE\", None)\n"
+
+[[mutation]]
+id = "harness-restore-loses-mtime"
+why = "복구가 mtime 을 잃어 그 모듈의 .pyc 가 안 맞는다 — 뒤 변이마다 다시 컴파일한다"
+guards = ["tests/test_verify_merge.py::test_baseline_leaves_bytecode_that_injection_keeps_valid"]
+file = "scripts/verify_merge.py"
+find = "                os.utime(target, ns=(stat_ns[target], stat_ns[target]))\n"
+replace = ""
+
+[[mutation]]
+id = "harness-mutant-keeps-original-mtime"
+why = "같은 크기의 변이가 원본 mtime 이면 원본 .pyc 를 읽어 변이가 안 들어간 채 판정한다"
+guards = ["tests/test_verify_merge.py::test_caught_blind_and_restored_with_one_baseline_run"]
+file = "scripts/verify_merge.py"
+find = "                _stamp_mutant(target, stat_ns[target])\n"
+replace = "                os.utime(target, ns=(stat_ns[target], stat_ns[target]))\n"
+
+[[mutation]]
+id = "harness-stamps-collide"
+why = "변이 mtime 이 겹치면 앞 변이의 .pyc 를 읽을 수 있다"
+guards = ["tests/test_verify_merge.py::test_each_mutant_gets_an_mtime_no_bytecode_can_match"]
+file = "scripts/verify_merge.py"
+find = "os.utime(target, ns=(original_ns, original_ns + 2_000_000_000 * next(_stamps)))"
+replace = "os.utime(target, ns=(original_ns, original_ns + 2_000_000_000))"
+
+[[mutation]]
+id = "harness-parallel-all-run-first-shard"
+why = "자식이 다 1번 몫을 돈다 — 나머지 몫의 변이가 조용히 안 돈다"
+guards = ["tests/test_verify_merge.py::test_parallel_injects_every_mutation_once_in_copies_and_baselines_once"]
+file = "scripts/verify_merge.py"
+find = "\"--scope\", \"all\", \"--shard\", f\"{i}/{workers}\", \"--baseline-json\""
+replace = "\"--scope\", \"all\", \"--shard\", f\"1/{workers}\", \"--baseline-json\""
+
+[[mutation]]
+id = "harness-parallel-baselines-in-each-child"
+why = "자식마다 기준선을 또 돌면 동시 실행의 이득이 사라진다"
+guards = ["tests/test_verify_merge.py::test_parallel_injects_every_mutation_once_in_copies_and_baselines_once"]
+file = "scripts/verify_merge.py"
+find = "\"--baseline-json\", str(shared),\n                   "
+replace = "\n                   "
+
+[[mutation]]
+id = "harness-parallel-drops-child-reject"
+why = "자식의 REJECT 를 부모가 안 올린다 — 못 잡는 가드가 초록이다"
+guards = ["tests/test_verify_merge.py::test_parallel_passes_a_red_mutation_verdict_up"]
+file = "scripts/verify_merge.py"
+find = "                if sec[\"status\"] == REJECT:\n                    s.fail(f\"몫"
+replace = "                if False:\n                    s.fail(f\"몫"
+
+[[mutation]]
+id = "harness-parallel-dead-child-warns"
+why = "죽은 자식의 몫은 돌지 않았는데 경고로 넘어간다"
+guards = ["tests/test_verify_merge.py::test_parallel_child_that_leaves_no_result_is_rejected"]
+file = "scripts/verify_merge.py"
+find = "s.fail(f\"몫 {i}/{workers} 가 결과를 못 남겼다"
+replace = "s.warn(f\"몫 {i}/{workers} 가 결과를 못 남겼다"
+
+[[mutation]]
+id = "harness-parallel-full-baseline-ignores-red"
+why = "동시 실행의 전체 pytest 기준선이 실패를 안 막는다"
+guards = ["tests/test_verify_merge.py::test_parallel_full_baseline_failure_is_rejected"]
+file = "scripts/verify_merge.py"
+find = "_say_baseline(s, results, guards, full_baseline, time.monotonic() - t_start)"
+replace = "_say_baseline(s, results, guards, False, time.monotonic() - t_start)"
+
+[[mutation]]
+id = "harness-parallel-on-linked-worktree"
+why = "링크드 워크트리도 사본을 만든다 — 사본들이 인덱스 하나를 나눠 쓴다"
+guards = ["tests/test_verify_merge.py::test_parallel_is_only_for_a_tree_with_its_own_git_dir"]
+file = "scripts/verify_merge.py"
+find = "return (wt / \".git\").is_dir()"
+replace = "return True"
+
+[[mutation]]
+id = "harness-workers-on-scoped-run"
+why = "changed 범위도 사본 동시 실행으로 간다 — 범위가 사라져 pre-push 가 전체를 돈다"
+guards = ["tests/test_verify_merge.py::test_scoped_runs_ignore_workers_and_the_full_baseline"]
+file = "scripts/verify_merge.py"
+find = "if workers > 1 and scope == \"all\" and shard is None and can_parallel(wt):"
+replace = "if workers > 1:"
+
+[[mutation]]
+id = "harness-full-baseline-on-scoped-run"
+why = "ci-local 의 changed 범위가 전체 pytest 를 또 돈다"
+guards = ["tests/test_verify_merge.py::test_scoped_runs_ignore_workers_and_the_full_baseline"]
+file = "scripts/verify_merge.py"
+find = "full = full_baseline and scope == \"all\" and shard is None"
+replace = "full = full_baseline"
+
+[[mutation]]
+id = "harness-tree-kill-counts-as-caught"
+why = "감시자가 죽인 자식 때문에 검사가 실패한 것을 '잡힘' 으로 센다"
+guards = ["tests/test_verify_merge.py::test_a_tree_kill_during_a_mutant_is_not_a_catch"]
+file = "scripts/verify_merge.py"
+find = "elif hit is not None and hit.returncode != 0 and memcap.tree_kills() > kills:"
+replace = "elif False:"
+
+[[mutation]]
+id = "harness-changed-scope-blocks-on-time"
+why = "로컬 changed 가 시간으로 푸시를 막는다 — 코어 파일을 건드린 푸시가 전부 막힌다"
+guards = ["tests/test_verify_merge.py::test_local_changed_scope_warns_on_time_instead_of_blocking_the_push"]
+file = "scripts/verify_merge.py"
+find = "if scope in (\"direct\", \"changed\") and verdict == REJECT:"
+replace = "if scope == \"direct\" and verdict == REJECT:"
+
+[[mutation]]
+id = "memcap-oom-score-not-raised"
+why = "−900 을 물려받은 검사가 운영 DB 보다 늦게 죽는다(11-09 사고)"
+guards = ["tests/test_memcap.py::test_children_raise_their_oom_score_so_the_kernel_kills_them_before_the_database"]
+file = "scripts/memcap.py"
+find = "if int(f.read()) < OOM_SCORE_ADJ:"
+replace = "if False:"
+
+[[mutation]]
+id = "memcap-oom-score-lowers-a-higher-one"
+why = "이미 높은 값을 낮춰 더 늦게 죽는다"
+guards = ["tests/test_memcap.py::test_children_raise_their_oom_score_so_the_kernel_kills_them_before_the_database"]
+file = "scripts/memcap.py"
+find = "if int(f.read()) < OOM_SCORE_ADJ:"
+replace = "if True:"
+
+[[mutation]]
+id = "memcap-tree-default-too-high"
+why = "트리 기본 상한이 4배면 8GB 러너를 넘는다"
+guards = ["tests/test_memcap.py::test_tree_limit_defaults_to_twice_the_process_limit"]
+file = "scripts/memcap.py"
+find = "return mb * 1024 ** 2 if mb > 0 else 2 * limit_bytes()"
+replace = "return mb * 1024 ** 2 if mb > 0 else 4 * limit_bytes()"
+
+[[mutation]]
+id = "memcap-victim-at-the-limit"
+why = "상한 이하에서 죽인다"
+guards = ["tests/test_memcap.py::test_victim_is_the_largest_descendant_and_only_over_the_limit"]
+file = "scripts/memcap.py"
+find = "if total <= limit:"
+replace = "if total < limit:"
+
+[[mutation]]
+id = "memcap-victim-is-the-root"
+why = "하네스 자신을 죽인다 — 판정이 통째로 사라진다"
+guards = ["tests/test_memcap.py::test_victim_is_the_largest_descendant_and_only_over_the_limit"]
+file = "scripts/memcap.py"
+find = "rest = tree - {root} or tree"
+replace = "rest = tree"
+
+[[mutation]]
+id = "memcap-watcher-says-nothing"
+why = "죽이고 이유를 안 남긴다 — 잡 로그에서 원인을 못 찾는다"
+guards = ["tests/test_memcap.py::test_watcher_kills_a_runaway_tree_and_leaves_the_reason_in_the_job_log"]
+file = "scripts/memcap.py"
+find = "print(line, file=sys.stderr, flush=True)"
+replace = "pass"
+
+[[mutation]]
+id = "memcap-watcher-does-not-kill"
+why = "재기만 하고 안 죽인다 — 러너가 통째로 죽는다"
+guards = ["tests/test_memcap.py::test_watcher_kills_a_runaway_tree_and_leaves_the_reason_in_the_job_log"]
+file = "scripts/memcap.py"
+find = "os.kill(pid, signal.SIGKILL)"
+replace = "pass"
+
+[[mutation]]
+id = "memcap-watcher-waits-for-zombie"
+why = "좀비를 산 것으로 보면 감시자가 부모의 파이프를 쥔 채 서로 기다린다"
+guards = ["tests/test_memcap.py::test_watcher_kills_a_runaway_tree_and_leaves_the_reason_in_the_job_log"]
+file = "scripts/memcap.py"
+find = "return f.read().rsplit(\")\", 1)[1].split()[0] != \"Z\""
+replace = "return True"
+
+[[mutation]]
+id = "memcap-kills-not-recorded"
+why = "죽인 기록이 없으면 하네스가 자식 죽음을 '잡힘' 으로 읽는다"
+guards = ["tests/test_memcap.py::test_watcher_kills_a_runaway_tree_and_leaves_the_reason_in_the_job_log"]
+file = "scripts/memcap.py"
+find = "                f.write(line + \"\\n\")"
+replace = "                pass"
+
+[[mutation]]
+id = "memcap-nested-watchers"
+why = "자식 하네스마다 감시자가 떠 한 폭주에 여럿을 죽인다"
+guards = ["tests/test_memcap.py::test_watcher_stands_down_when_an_ancestor_already_runs_one"]
+file = "scripts/memcap.py"
+find = "if os.environ.get(TREE_LOG_ENV) or not os.path.isdir(\"/proc\"):"
+replace = "if not os.path.isdir(\"/proc\"):"
+
+[[mutation]]
+id = "ci-main-mutations-only-changed"
+why = "main 이 바뀐 변이만 돈다 — 머리 커밋이 전체 변이를 안 지나는데 초록이다"
+guards = ["tests/test_ci_workflow.py::test_skipping_fails_closed_and_main_runs_every_mutation", "tests/test_ci_workflow.py::test_full_gate_is_one_job_and_its_budget_adds_up"]
+file = ".github/workflows/ci.yml"
+find = "--only mutations --full-baseline --workers 2 --budget-min 35"
+replace = "--only mutations --scope changed --full-baseline --workers 2 --budget-min 35"
+
+[[mutation]]
+id = "ci-gate-no-full-baseline"
+why = "gate 가 전체 pytest 를 안 겸한다 — main 의 합친 트리에 검사 한 벌이 없다"
+guards = ["tests/test_ci_workflow.py::test_full_gate_is_one_job_and_its_budget_adds_up"]
+file = ".github/workflows/ci.yml"
+find = "--only mutations --full-baseline --workers"
+replace = "--only mutations --workers"
+
+[[mutation]]
+id = "ci-gate-split-into-shards"
+why = "gate 를 matrix 로 나누면 설치·기준선이 몫마다 돌아 머지당 분이 표를 넘는다"
+guards = ["tests/test_ci_workflow.py::test_full_gate_is_one_job_and_its_budget_adds_up"]
+file = ".github/workflows/ci.yml"
+find = "    timeout-minutes: 75\n    steps:"
+replace = "    timeout-minutes: 75\n    strategy:\n      matrix:\n        shard: [1, 2]\n    steps:"
+
+[[mutation]]
+id = "ci-gate-budget-over-the-table"
+why = "하네스 예산이 표보다 크면 머지당 상한을 넘어도 안 빨개진다"
+guards = ["tests/test_ci_workflow.py::test_full_gate_is_one_job_and_its_budget_adds_up"]
+file = ".github/workflows/ci.yml"
+find = "--workers 2 --budget-min 35"
+replace = "--workers 2 --budget-min 45"
+
+[[mutation]]
+id = "ci-gate-job-dies-before-the-harness-stops"
+why = "잡 상한이 예산의 두 배보다 짧으면 이유 없이 시간 초과로 죽는다"
+guards = ["tests/test_ci_workflow.py::test_full_gate_is_one_job_and_its_budget_adds_up"]
+file = ".github/workflows/ci.yml"
+find = "    timeout-minutes: 75\n"
+replace = "    timeout-minutes: 60\n"
+
+[[mutation]]
+id = "ci-merge-minutes-over-ceiling"
+why = "머지당 분이 상한을 넘었다 — 포함량을 16~24건에 다 쓰던 그 소모로 돌아간다"
+guards = ["tests/test_ci_workflow.py::test_code_merge_stays_under_the_minutes_ceiling"]
+file = "scripts/ci_plan.py"
+find = "\"gate\": 37}"
+replace = "\"gate\": 50}"
+
+[[mutation]]
+id = "ci-header-disagrees-with-the-table"
+why = "머리말의 머지당 분이 표와 다르다 — 낡은 37.3분처럼 남는다"
+guards = ["tests/test_ci_workflow.py::test_code_merge_stays_under_the_minutes_ceiling"]
+file = ".github/workflows/ci.yml"
+find = "코드 머지당 **58분 이하**"
+replace = "코드 머지당 **48분 이하**"
+
+[[mutation]]
+id = "ci-new-job-off-the-table"
+why = "표에 없는 잡을 더한다 — 머지당 분이 몰래 는다"
+guards = ["tests/test_ci_workflow.py::test_every_job_is_on_the_minutes_table"]
+file = ".github/workflows/ci.yml"
+find = "  mutations-pr:\n    needs: plan\n"
+replace = "  extra:\n    needs: plan\n    runs-on: ubuntu-latest\n    timeout-minutes: 5\n    steps: []\n  mutations-pr:\n    needs: plan\n"
+
+[[mutation]]
+id = "ci-docs-commit-runs-neither-job"
+why = "문서 커밋에 test 도 gate 도 안 돈다 — 체크는 초록인데 검증이 없다"
+guards = ["tests/test_ci_workflow.py::test_gate_and_test_conditions_are_exact_complements"]
+file = ".github/workflows/ci.yml"
+find = "    if: ${{ github.event_name == 'pull_request' || needs.plan.outputs.kind == 'docs' }}"
+replace = "    if: ${{ github.event_name == 'pull_request' }}"
+
+[[mutation]]
+id = "ci-gate-loses-screen-layers"
+why = "gate 가 화면 층을 안 돈다 — 새 표지를 러너에서 아무도 안 본다"
+guards = ["tests/test_ci_workflow.py::test_screen_layers_run_on_a_demo_built_from_this_code"]
+file = ".github/workflows/ci.yml"
+find = "      - name: Screen layers (demo)\n        run: uv run --no-sync python scripts/verify_merge.py . --base origin/main --only render,pty --demo\n"
+replace = ""
+
+[[mutation]]
+id = "ci-screen-layers-run-twice-locally"
+why = "test 잡의 화면 층에 식이 없으면 ci-local 이 두 번 돈다"
+guards = ["tests/test_ci_workflow.py::test_screen_layers_run_on_a_demo_built_from_this_code"]
+file = ".github/workflows/ci.yml"
+find = "--base \"origin/${{ github.base_ref || 'main' }}\" --only render,pty --demo"
+replace = "--base origin/main --only render,pty --demo"
+
+[[mutation]]
+id = "ci-floor-syntax-on-the-wrong-python"
+why = "머지 전 하한 판 문법 검사가 하한이 아니다"
+guards = ["tests/test_ci_workflow.py::test_floor_python_syntax_runs_before_merge"]
+file = ".github/workflows/ci.yml"
+find = "--python 3.11 python -m compileall -q src scripts tests research"
+replace = "--python 3.13 python -m compileall -q src scripts tests research"
+
+[[mutation]]
+id = "ci-memory-cap-too-high"
+why = "프로세스 상한이 6GiB 면 폭주 자식 둘에 8GB 러너가 죽어 원인이 안 남는다"
+guards = ["tests/test_ci_workflow.py::test_ci_memory_cap_fits_the_runner"]
+file = ".github/workflows/ci.yml"
+find = "SECTOR_FLOW_MEM_LIMIT_MB: \"3000\""
+replace = "SECTOR_FLOW_MEM_LIMIT_MB: \"6144\""
+
+[[mutation]]
+id = "ci-memory-diagnosis-runs-locally"
+why = "진단 스텝에 식이 없으면 ci-local 이 sudo 를 부른다"
+guards = ["tests/test_ci_workflow.py::test_ci_memory_cap_fits_the_runner"]
+file = ".github/workflows/ci.yml"
+find = "echo \"실패한 잡의 메모리 흔적 (${{ runner.os }})\""
+replace = "echo \"실패한 잡의 메모리 흔적\""
+
+[[mutation]]
+id = "ci-plan-gate-python-off-the-floor"
+why = "합친 트리가 하한 판을 안 돈다 — 3.11 전용 실패가 배포까지 간다"
+guards = ["tests/test_ci_plan.py::test_python_lists_match_the_workflow_matrix_axis"]
+file = "scripts/ci_plan.py"
+find = "PY_GATE = \"3.11\""
+replace = "PY_GATE = \"3.13\""
+
+[[mutation]]
+id = "report-side-step-in-the-foreground"
+why = "부속 단계가 전경이면 크론 TERM 에 셸이 못 끝난다 — rc 137, 원장 없음, .building 잔류"
+guards = ["tests/test_daily_report_flow.py::test_cron_timeout_during_a_side_product_still_records_and_cleans"]
+file = "scripts/daily_report.sh"
+find = "  timeout -k 10s \"$@\" &\n  BOUNDED_PID=$!\n  wait \"$BOUNDED_PID\"\n"
+replace = "  timeout -k 10s \"$@\"\n"
+
+[[mutation]]
+id = "report-term-leaves-the-side-step-running"
+why = "셸만 끝나고 부속 단계는 고아로 계속 돈다 — 잠금·메모리를 쥔다"
+guards = ["tests/test_daily_report_flow.py::test_cron_timeout_during_a_side_product_still_records_and_cleans"]
+file = "scripts/daily_report.sh"
+find = "trap '_bounded_stop; exit 143' TERM"
+replace = "trap 'exit 143' TERM"
+
+[[mutation]]
+id = "cap-zero-close-not-replaced"
+why = "수급 종가 0 을 그대로 곱해 그날 시총이 0 이다"
+guards = ["tests/test_collect_shares.py::test_zero_close_in_supply_demand_falls_back_to_the_raw_price"]
+file = "src/sectorflow/storage.py"
+find = "px = np.where(np.isnan(px) | (px <= 0), raw_px.reindex(key).to_numpy(), px)"
+replace = "px = np.where(np.isnan(px), raw_px.reindex(key).to_numpy(), px)"
+
+[[mutation]]
+id = "cap-minus-100-event-counted"
+why = "−100% 이벤트를 세어 시총이 무한대다"
+guards = ["tests/test_collect_shares.py::test_minus_100_percent_event_is_not_a_share_event"]
+file = "src/sectorflow/storage.py"
+find = "\n            & (ev[\"upd_rt\"] > -100)]"
+replace = "]"
+
+[[mutation]]
+id = "ops-probe-5xx-reads-as-unreached"
+why = "5xx 가 '닿지 못함' 에 섞여 앱 오류와 프로세스 죽음이 안 갈린다"
+guards = ["tests/test_ops_ledger.py::test_a_5xx_answer_failed_but_it_was_reached"]
+file = "scripts/ops_ledger.py"
+find = "\"unreached\": sum(1 for e in probes if e.get(\"status\") is None),"
+replace = "\"unreached\": sum(1 for e in probes if e.get(\"status\") is None or e.get(\"status\") >= 500),"
+
+[[mutation]]
+id = "calendar-loses-a-holiday-ahead"
+why = "실측 전의 2026 휴장일을 지우면 그날 수급 0 이 수집 실패 알림이 된다"
+guards = ["tests/test_krx_calendar.py::test_days_ahead_of_the_measurement_stay_on_the_calendar"]
+file = "scripts/krx_calendar.py"
+find = "        \"2026-12-25\": \"성탄절\",\n"
+replace = ""
+
+[[mutation]]
+id = "calendar-loses-a-provisional-holiday"
+why = "2027 잠정 휴장일을 지운다"
+guards = ["tests/test_krx_calendar.py::test_days_ahead_of_the_measurement_stay_on_the_calendar"]
+file = "scripts/krx_calendar.py"
+find = "        \"2027-05-13\": \"부처님오신날\",\n"
+replace = ""
+
+[[mutation]]
+id = "ledger-numbers-dies-on-a-missing-sector"
+why = "기본 섹터가 없는 리포트에서 KeyError 로 죽는다(합성 데모)"
+guards = ["tests/test_tui_ledger_view.py::test_the_evidence_script_survives_a_report_without_its_default_sector"]
+file = "scripts/ledger_numbers.py"
+find = "    if any(sector not in F[m] for m in mkts):"
+replace = "    if False:"
+
+[[mutation]]
+id = "hatch-leaves-temp-folder"
+why = "빌드마다 sf-templates-* 임시 폴더가 쌓인다"
+guards = ["tests/test_packaging.py::test_hook_ships_offline_templates"]
+file = "hatch_build.py"
+find = "shutil.rmtree(self._tmp, ignore_errors=True)"
+replace = "pass"
+
+[[mutation]]
+id = "docs-option-typo"
+why = "문서의 옵션이 argparse 에 없다 — 명령을 그대로 치면 거절당한다"
+guards = ["tests/test_docs_cli_options.py::test_documented_script_options_exist"]
+file = "CLAUDE.md"
+find = "`scripts/rebuild_history.py --root <폴더>"
+replace = "`scripts/rebuild_history.py --rootdir <폴더>"
+
+[[mutation]]
+id = "docs-option-check-ignores-values"
+why = "`--scope chgd` 처럼 값이 틀린 드리프트를 못 본다"
+guards = ["tests/test_docs_cli_options.py::test_drift_reads_a_typo_a_bad_choice_and_a_good_command"]
+file = "tests/test_docs_cli_options.py"
+find = "elif table[opt] and val and val not in table[opt]:"
+replace = "elif False:"
+
+[[mutation]]
+id = "harness-clone-drops-nested-reports"
+why = "사본이 안쪽 reports 폴더까지 뺀다 — 동시 실행에서만 문서 검사가 빨갛다"
+guards = ["tests/test_verify_merge.py::test_clone_keeps_source_folders_named_like_outputs_and_the_bytecode_timestamps"]
+file = "scripts/verify_merge.py"
+find = "_COPY_SKIP_ROOT & set(names) if d == root else set())"
+replace = "_COPY_SKIP_ROOT & set(names))"
+
+[[removed]]
+id = "ci-shard-denominator-hardcoded"
+why = "샤드를 없앴다 — 전체 검증은 잡 하나다(tests/test_ci_workflow.py 가 matrix 를 막는다)"
+
+[[removed]]
+id = "ci-shard-list-has-a-hole"
+why = "샤드를 없앴다 — 전체 검증은 잡 하나다(tests/test_ci_workflow.py 가 matrix 를 막는다)"
+
+[[removed]]
+id = "harness-unsharded-budget-not-scaled"
+why = "--budget-min 이 이제 실행 전체의 예산이라 샤드 수를 곱하지 않는다"
+
+[[removed]]
+id = "harness-shard-count-misread-as-one"
+why = "--budget-min 이 이제 실행 전체의 예산이라 ci.yml 의 샤드 수를 안 읽는다"
+
+[[removed]]
+id = "ci-plan-pr-drops-the-floor-python"
+why = "3.11 전체 pytest 를 합친 트리의 gate 로 옮겼다 — ci-plan-gate-python-off-the-floor 가 대신 본다"
+
+[[removed]]
+id = "harness-direct-budget-scales-by-shards"
+why = "예산에 샤드 수를 곱하는 코드 자체를 지웠다 — --budget-min 은 어느 범위에서든 그 실행 전체의 예산이다"
