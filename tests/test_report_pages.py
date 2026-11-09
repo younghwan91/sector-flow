@@ -444,7 +444,7 @@ def test_numbers_today_panel_shows_the_official_gap_line(tmp_path):
     assert "네이버 시장값 대비 차이(코스닥): 합계 6.0% · 기관 4.0% · 외국인 8.2% 부호 반대 · 개인 — (네이버 시장값, 내부 대조용)" in joined
     # 칩은 네이버 시장값 기준 hot 인 시장에만 — 내부 VWAP 차가 작아도 뜬다
     assert "⚠ 네이버 시장값과 차이 큼(코스닥 6.0%)" in joined
-    assert "오차 큼(거래소" not in joined
+    assert "차이 큼(거래소" not in joined
 
 
 @node

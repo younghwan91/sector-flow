@@ -2632,7 +2632,7 @@ def test_gap_chips_follow_the_published_error_and_block_suspects(data):
         "코스닥": []}}
     chips = _gap_chips(d, ["전체", "거래소", "코스닥"])
     assert "네이버 시장값과 차이 큼(거래소 7.1%)" in chips
-    assert not any("오차 큼(코스닥" in c for c in chips)
+    assert not any("차이 큼(코스닥" in c for c in chips)
     assert chips[:4] == ["대량 체결 의심 — 정의 차이(거래소): SK 분봉 밖 92%", "B 분봉 밖 60%", "C 분봉 밖 55%", "D 분봉 밖 55%"], \
         "드문 대량 체결이 맨 앞이고 종목명을 다 적는다"
     assert block_items([{"name": "SK", "off_pct": 91.8}]) == ["SK 분봉 밖 92%"]
@@ -3479,8 +3479,8 @@ def test_pgdn_at_the_end_of_the_first_screen_leaves_to_the_table(data):
 @pytest.mark.parametrize("width", [79, 100, 160])
 def test_overflowing_first_screen_title_says_how_to_reach_the_table(data, width):
     from sectorflow.tui.flow_view import banner_view
-    st = State(_with_net(data, forgn=-28336.0))
-    title = banner_view(st, width, 10)[0]
+    d = dict(_with_net(data, forgn=-28336.0), demo=True, final=True, rebuilt=True)    # 제목이 가장 긴 지위 — 80칸에서 긴 꼴이 안 들어간다
+    title = banner_view(State(d), width, 10)[0]
     assert "표" in title and "더 보기" in title, title
 
 
