@@ -23,7 +23,8 @@
 #
 # 앵커(find)가 사라지면 REJECT 다 — 예전엔 경고였고, 그 사이 변이 셋이 조용히 죽었다.
 # 리팩터로 앵커가 바뀌었으면 앵커를 지금 코드에 맞추고, 버그가 표현 불가능해졌으면
-# 변이를 지운다. 앵커 1회·가드 존재·id 중복은 tests/test_mutation_spec.py 가 CI 에서 본다.
+# 변이를 지우고 파일 끝의 [[removed]] 에 id·why 를 남긴다(없으면 REJECT). 앵커 1회·가드 존재·id 중복은
+# tests/test_mutation_spec.py 가 CI 에서 본다.
 
 [[mutation]]
 id = "accel-cell-shows-wrong-field"

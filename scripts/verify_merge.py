@@ -471,6 +471,8 @@ GUARD_COST = {
     "tests/test_verify_report.py": 3.0,
     "tests/test_serve_reports.py": 2.0,
     "tests/test_daily_report_flow.py": 2.0,
+    "tests/test_artifact_contracts.py": 15.0,
+    "tests/test_session_guards.py": 3.0,
 }
 
 
