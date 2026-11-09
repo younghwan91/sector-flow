@@ -85,3 +85,69 @@ PLAIN = ((1, "FAILED tests/t.py::x - AssertionError"), (1, "    raise MemoryErro
 def test_hit_cap_tells_exhaustion_from_a_plain_failure():
     wrong = [c for c in EXHAUSTED if not memcap.hit_cap(*c)] + [c for c in PLAIN if memcap.hit_cap(*c)]
     assert not wrong
+
+
+def test_children_raise_their_oom_score_so_the_kernel_kills_them_before_the_database(tmp_path):
+    """SSH 세션의 −900 을 물려받으면 커널은 폭주한 검사보다 운영 DB 를 먼저 죽인다(2026-11-09). 올리는 것은 권한이 필요 없다."""
+    code = "print(open('/proc/self/oom_score_adj').read())"
+
+    def child_starting_at(adj: int) -> int:
+        """이 pytest 자신이 이미 상한 아래라 500 을 물려받는다 — 낮은 값에서 시작해야 올리는 코드를 본다(낮추기는 내력 최솟값까지 허용된다)."""
+        def start():
+            with open("/proc/self/oom_score_adj", "w", encoding="ascii") as f:
+                f.write(str(adj))
+            memcap.cap_memory()
+        return int(subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, preexec_fn=start).stdout)
+
+    assert child_starting_at(100) == memcap.OOM_SCORE_ADJ > 0
+    assert child_starting_at(900) == 900                   # 더 높은 값을 내리지 않는다
+
+
+def test_tree_limit_defaults_to_twice_the_process_limit(monkeypatch):
+    monkeypatch.setenv(memcap.LIMIT_ENV, "3000")
+    monkeypatch.delenv(memcap.TREE_ENV, raising=False)
+    assert memcap.tree_limit_bytes() == 6000 * 1024 ** 2
+    monkeypatch.setenv(memcap.TREE_ENV, "5000")
+    assert memcap.tree_limit_bytes() == 5000 * 1024 ** 2
+    assert "프로세스 3000MB" in memcap.describe() and "트리 5000MB" in memcap.describe()
+
+
+def test_victim_is_the_largest_descendant_and_only_over_the_limit():
+    table = {1: (0, 90, "other"), 10: (1, 300, "harness"), 11: (10, 40, "a"), 12: (10, 50, "b"), 13: (12, 70, "c")}
+    tree = memcap.tree_of(10, table)
+    assert tree == {10, 11, 12, 13}                        # 형제 프로세스(1)는 다른 트리다
+    assert memcap.pick_victim(10, tree, table, 460) is None
+    assert memcap.pick_victim(10, tree, table, 459) == (13, 460)
+    assert memcap.pick_victim(10, {10}, table, 100) == (10, 300)  # 혼자면 뿌리다
+
+
+def test_watcher_kills_a_runaway_tree_and_leaves_the_reason_in_the_job_log(tmp_path):
+    """프로세스별 상한은 트리를 못 본다 — 8GB 러너에서 3GB 자식 셋이면 러너째 죽어 **이유가 안 남는다**. 작은 상한으로 진짜 감시자를 돌린다."""
+    code = f"""
+import subprocess, sys, time
+sys.path.insert(0, {str(REPO / "scripts")!r})
+import memcap
+memcap.watch_tree()
+hog = "b = bytearray(120 * 1024 ** 2); import time; time.sleep(30)"
+kids = [subprocess.Popen([sys.executable, "-c", hog]) for _ in range(2)]
+t0 = time.time()
+while time.time() - t0 < 15 and all(k.poll() is None for k in kids):
+    time.sleep(0.1)
+print(sorted(str(k.poll()) for k in kids), memcap.tree_kills())
+for k in kids:
+    k.kill()
+"""
+    env = {**os.environ, memcap.TREE_ENV: "150", "TMPDIR": str(tmp_path)}
+    env.pop(memcap.TREE_LOG_ENV, None)
+    p = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True, timeout=30)
+    assert "['-9', 'None'] 1" in p.stdout, p.stdout + p.stderr
+    assert "memcap: 프로세스 트리" in p.stderr and "상한 150MB" in p.stderr, p.stderr
+
+
+def test_watcher_stands_down_when_an_ancestor_already_runs_one(monkeypatch):
+    """자식 하네스마다 감시자가 뜨면 합을 여러 번 재고 한 폭주에 여럿을 죽인다."""
+    monkeypatch.setenv(memcap.TREE_LOG_ENV, "/nonexistent/log")
+    spawned = []
+    monkeypatch.setattr(memcap.subprocess, "Popen", lambda *a, **k: spawned.append(a))
+    memcap.watch_tree()
+    assert not spawned and memcap.tree_kills() == 0

@@ -284,4 +284,5 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
+    memcap.watch_tree()                       # 프로세스별 상한은 트리를 못 본다
     sys.exit(main())

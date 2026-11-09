@@ -20,10 +20,26 @@ import json
 import subprocess
 import sys
 
-#: 검사 파이썬 판 — push 는 ci.yml 의 전부, PR 은 양 끝, 문서는 하나(문서를 읽는 검사가 있어 pytest 는 돈다).
-PY_ALL = ["3.11", "3.12", "3.13"]
-PY_PR = ["3.11", "3.13"]
+#: 검사 파이썬 판. 코드 머지 한 번이 양 끝을 한 벌씩 돈다 — PR 은 위 끝(변경 줄 커버리지가 3.12+ 를 요구한다), main 의 합친 트리는
+#: 아래 끝(``requires-python`` 하한). 가운데 3.12 는 로컬 pre-push 다. 문서는 하나(문서를 읽는 검사가 있어 pytest 는 돈다).
+PY_PR = ["3.13"]
 PY_DOCS = ["3.13"]
+PY_GATE = "3.11"
+PY_ALL = sorted({*PY_PR, *PY_DOCS, PY_GATE})
+
+#: 코드 머지 한 번(PR 실행 + main 실행)의 청구 분 상한. Free 포함량 약 2000분에 월 33건, Pro 약 3000분에 월 50건.
+MERGE_MINUTES_MAX = 60
+#: 잡마다 청구될 분(GitHub 은 잡마다 분 단위로 올림한다). ``tests/test_ci_workflow.py`` 가 잡 목록·``--budget-min``·``timeout-minutes`` 와 대조한다.
+#: test 10분 = pytest+커버리지 약 8.2 + 설치·린트·화면 층. mutations-pr 7분 = 예산의 두 배(거기서 멈춘다) + 설치.
+#: gate 37분 = 하네스 예산 35 + 설치·린트·화면 층. 실측 근거는 ci.yml 머리말.
+MERGE_JOBS = {
+    "pull_request": {"plan": 1, "check-identity": 1, "test": 10 * len(PY_PR), "mutations-pr": 7},
+    "push": {"plan": 1, "check-identity": 1, "gate": 37},
+}
+
+
+def merge_minutes() -> int:
+    return sum(sum(jobs.values()) for jobs in MERGE_JOBS.values())
 
 
 def is_doc(path: str) -> bool:
@@ -53,17 +69,26 @@ def changed_since(event: str, base_ref: str, verified: str) -> set[str] | None:
 
 
 def plan(event: str, changed: set[str] | None) -> dict[str, str]:
+    """``python`` 은 test 잡의 matrix 다. main 의 코드 커밋은 test 를 안 돈다(gate 가 겸한다) — 빈 목록은 matrix 가 안 받으니 판 하나를 둔다."""
     docs = bool(changed) and all(is_doc(f) for f in changed)
-    py = PY_DOCS if docs else (PY_PR if event == "pull_request" else PY_ALL)
+    py = PY_DOCS if docs else PY_PR
     return {"kind": "docs" if docs else "code", "python": json.dumps(py)}
 
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--event", required=True, help="github.event_name")
+    ap.add_argument("--event", help="github.event_name")
+    ap.add_argument("--minutes", action="store_true", help="코드 머지 한 번의 청구 분 표를 찍고 끝낸다")
     ap.add_argument("--base", default="origin/main", help="PR 기준 브랜치")
     ap.add_argument("--verified", default="", help="마지막으로 초록이었던 main 커밋(없으면 전체)")
     a = ap.parse_args(argv)
+    if a.minutes:
+        for event, jobs in MERGE_JOBS.items():
+            print(f"{event}: {sum(jobs.values())}분 {jobs}")
+        print(f"머지당 {merge_minutes()}분 (상한 {MERGE_MINUTES_MAX}분)")
+        return 0
+    if not a.event:
+        ap.error("--event 가 필요하다")
     changed = changed_since(a.event, a.base, a.verified)
     out = plan(a.event, changed)
     print(f"ci_plan: {out} — 바뀐 파일 {'모름' if changed is None else len(changed)}개", file=sys.stderr)

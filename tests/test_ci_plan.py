@@ -112,7 +112,7 @@ def test_pull_request_compares_to_merge_base_and_picks_python(repo):
     _commit(repo, "src/c.py")
     assert _kind("pull_request") == "code"
     assert json.loads(CP.plan("pull_request", {"src/c.py"})["python"]) == CP.PY_PR
-    assert json.loads(CP.plan("push", {"src/c.py"})["python"]) == CP.PY_ALL
+    assert CP.plan("push", {"src/c.py"})["kind"] == "code"
 
 
 def test_cli_prints_github_output_lines(repo, capsys):
@@ -124,8 +124,9 @@ def test_cli_prints_github_output_lines(repo, capsys):
 
 
 def test_python_lists_match_the_workflow_matrix_axis():
-    """PR·문서의 판은 push 의 부분집합이고, 3.11(하한)은 PR 에서 빠지지 않는다 — 3.11 전용 실패가 실제로 있었다."""
+    """코드 머지 한 번이 하한 판을 빠뜨리지 않는다 — 3.11 전용 실패가 실제로 있었다. 하한은 합친 트리의 gate 가 돈다."""
     assert set(CP.PY_PR) <= set(CP.PY_ALL) and set(CP.PY_DOCS) <= set(CP.PY_ALL)
-    assert "3.11" in CP.PY_PR
+    assert CP.PY_GATE == CP.PY_ALL[0]
     requires = (REPO / "pyproject.toml").read_text("utf-8")
-    assert f'requires-python = ">={CP.PY_ALL[0]}"' in requires
+    assert f'requires-python = ">={CP.PY_GATE}"' in requires
+    assert CP.PY_PR != [CP.PY_GATE], "PR 도 하한이면 위 끝 판을 아무도 안 돈다"

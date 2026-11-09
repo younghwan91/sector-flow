@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -816,3 +817,24 @@ def test_digest_can_be_turned_off(repo, tmp_path):
     r = _run(repo, KR_QUANT_DIGEST="0")
     assert r.returncode == 0, r.stderr
     assert not (repo / "reports" / TODAY / "digest.md").exists()
+
+
+def test_cron_timeout_during_a_side_product_still_records_and_cleans(repo):
+    """부속 산출물(다이제스트·검증 페이지) 단계에서 크론 40분 상한이 걸리면 — 안쪽 ``timeout`` 은 자기 프로세스 그룹이라 바깥 TERM 이 안 간다.
+    셸은 자식을 기다리느라 트랩을 못 돌리고 KILL 로 죽어 rc 137, 원장에 report 줄 없음, ``.building.N`` 잔류였다(재현 2026-11-09)."""
+    _seed(repo.parent / "db.sqlite", today_kosdaq=50)
+    pidfile = repo.parent / "sleeper.pid"
+    (repo / "scripts" / "trust_page.py").write_text(
+        f"import os, time\nopen({str(pidfile)!r}, 'w').write(str(os.getpid()))\ntime.sleep(25)\n")
+    t0 = time.monotonic()
+    p = subprocess.run(["timeout", "-k", "4s", "3s", str(repo / "scripts" / "daily_report.sh")],
+                       capture_output=True, text=True, env=_env(repo), timeout=45)
+    assert time.monotonic() - t0 < 20, "부속 단계 프로세스가 끝까지 살아 파이프를 쥐었다"
+    assert p.returncode == 124, f"KILL 까지 갔다(137)면 트랩이 안 돌았다: {p.returncode}\n{p.stderr}"
+    events = [json.loads(ln) for ln in (repo / "reports" / "events.jsonl").read_text().splitlines()]
+    report = [e for e in events if e["event"] == "report"]
+    assert report and report[-1]["rc"] == 143 and report[-1]["outcome"] == "error", events
+    assert not list((repo / "reports").glob("*.building.*")), "짓다 만 폴더가 남았다"
+    time.sleep(0.3)
+    pid = int(pidfile.read_text())
+    assert not Path(f"/proc/{pid}").exists() or "Z" in Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0], "부속 단계 프로세스가 살아 남았다"

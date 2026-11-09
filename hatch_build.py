@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import importlib.util
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -30,6 +31,7 @@ class OfflineTemplates(BuildHookInterface):
         root = Path(self.root)
         off = _offline_module(root)
         tmp = Path(tempfile.mkdtemp(prefix="sf-templates-"))
+        self._tmp = tmp                 # finalize 가 지운다 — 빌드마다 임시 폴더가 쌓였다
         for name in off.TEMPLATES:
             src = (root / "scripts" / "templates" / name).read_text(encoding="utf-8")
             out = off.strip_remote(src)
@@ -37,3 +39,7 @@ class OfflineTemplates(BuildHookInterface):
                 raise RuntimeError(f"{name}: 원격 자원이 남았다 — offline_templates.strip_remote 를 고쳐라")
             (tmp / name).write_text(out, encoding="utf-8")
             build_data["force_include"][str(tmp / name)] = f"sectorflow/_scripts/templates/{name}"
+
+    def finalize(self, version: str, build_data: dict, artifact_path: str) -> None:
+        if getattr(self, "_tmp", None):
+            shutil.rmtree(self._tmp, ignore_errors=True)

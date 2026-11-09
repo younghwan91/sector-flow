@@ -25,6 +25,7 @@
 
     python scripts/verify_merge.py <워크트리 경로>
     python scripts/verify_merge.py <워크트리> --only mutations,render
+    python scripts/verify_merge.py <워크트리> --only render,pty --demo   # 이 코드로 지은 합성 데모로 화면 층만
     python scripts/verify_merge.py <워크트리> --mutations /경로/보고서에서_옮긴.toml
     python scripts/verify_merge.py --self-test          # 하네스가 정말 REJECT 를 내는가
     python scripts/verify_merge.py . --only mutations --shard 2/4 --budget-min 12   # CI 한 샤드
@@ -32,17 +33,19 @@
 주입 검증의 속도와 범위 (CI 시간이 PR 마다 4~10분씩 늘던 것을 잡으려고)::
 
     --shard i/n        변이를 예상 비용으로 n 몫에 나눠 i 번째만 돈다(같은 목록이면 늘 같은 몫).
-                       변이 미선언 새 검사 판정은 1번 몫에서만 한다.
-    --budget-min M     주입 검증이 M 분을 넘으면 REJECT, 75% 를 넘으면 WARN. 2M 분이면 남은 변이를
+                       변이 미선언 새 검사 판정은 1번 몫에서만 한다. CI 는 쓰지 않는다 — 잡을 나누면 설치·기준선을 몫마다 또
+                       돌아 청구 분만 는다(8샤드 합 기준선 약 20분). --workers 가 그 몫들을 한 잡 안에서 돈다.
+    --workers N        ``--scope all`` 의 주입을 트리 사본 N 개에서 동시에 돈다(기준선은 한 번, 잡 하나). GitHub 은 잡의 벽시계로
+                       청구하므로 코어를 다 쓰는 것이 분을 줄이는 길이다. .git 이 폴더가 아니면(링크드 워크트리 — 로컬) 하나씩 돈다.
+    --full-baseline    기준선을 가드만이 아니라 **전체 pytest** 로 — 같은 잡의 검사 한 벌을 겸한다. 어느 검사든 실패하면 REJECT.
+                       ``--scope all`` 에서만 쓴다(changed·direct 범위는 가드만 돈다).
+    --budget-min M     이 실행(기준선 포함)이 M 분을 넘으면 REJECT, 75% 를 넘으면 WARN. 2M 분이면 남은 변이를
                        돌리지 않고 멈춘다(잡 시간 초과로 이유 없이 죽지 않게). 느린 변이 10개를 늘 적는다.
-                       M 은 **CI 샤드 한 몫**의 예산이다 — --shard 없이(ci-local 전체 범위처럼) 돌면
-                       ci.yml matrix 의 샤드 수(못 읽으면 4)를 곱해 쓴다. 변이가 늘어 전체가 12분을
-                       넘자 로컬 pre-push 가 전부 막혔다(2026-11-09) — 전체 실행은 몫 n 개의 일이다.
+                       changed·direct 범위는 시간으로 막지 않는다 — 넘으면 멈추거나 경고만 하고 전체는 main push 가 돈다.
     --scope all|changed|direct|auto
                        direct = PR CI 용 — 편집 대상·가드 파일이 바뀌었거나 선언이 새로 생긴·바뀐 변이만. 넓히지 않는다
-                       (changed 는 머지의 절반이 FULL_TRIGGERS 로 전체가 되어 PR 비용이 그대로였다). 예산은 이 실행 자체의
-                       것이고(샤드 수를 안 곱한다) 넘으면 멈추고 WARN — 나머지는 main push 의 전체 실행이 돌고
-                       ``pull-all --ci-gate`` 가 그 결과를 본다.
+                       (changed 는 머지의 절반이 FULL_TRIGGERS 로 전체가 되어 PR 비용이 그대로였다). 예산을 넘으면
+                       멈추고 WARN — 나머지는 main push 의 전체 실행이 돌고 ``pull-all --ci-gate`` 가 그 결과를 본다.
                        changed = merge-base 이후 바뀐 파일을 대상·가드로 갖거나, 가드가 바뀐 src 모듈·
                        스크립트를 import·문자열로 참조하거나, 선언이 새로 생긴·바뀐 변이만. 의존성·하네스·
                        sector_flow.py·템플릿이 바뀌면 전체. auto(기본)는 ``CI`` 가 있고 ``GITHUB_ACTIONS`` 가 없을 때(로컬 pre-push
@@ -52,6 +55,10 @@
 가드의 주입 전 초록 확인은 **pytest 한 번**으로 모든 가드를 함께 돈다(예전엔 변이마다 한 번 —
 pytest 가 변이당 두 번이었다). 주입 후 실행은 ``-x`` 로 첫 실패에서 멈추고, **잡힘은 종료코드 1(검사
 실패) 뿐**이다 — 수집 오류·내부 오류·시간 초과는 "판정 불가" REJECT 다.
+
+바이트코드: 기준선만 ``.pyc`` 를 쓰고 주입 실행은 안 쓴다. 안 쓰고 안 읽으면 변이마다 pandas 까지 다시 컴파일한다 — 새 러너에서
+주입이 로컬의 두 배(공통 변이 681개 18.3분 대 9.4분, pytest 자체는 1.07배)였던 원인이다(같은 가드 0.47초 → 0.15초).
+그 대신 ``.pyc`` 는 (원본 mtime, 크기)로 맞춰 보므로 주입한 소스에 **겹치지 않는 mtime** 을 준다(:func:`_stamp_mutant`).
 
 새 검사(merge-base 이후 추가·수정된 ``def test_*``)는 그 검사를 가드로 둔 변이가 없으면 **REJECT** 다.
 변이로 증명할 수 없는 검사(픽스처가 헛돌지 않는지 보는 검사 등)는 함수 안이나 바로 위에
@@ -78,6 +85,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import itertools
 import json
 import os
 import re
@@ -656,24 +664,25 @@ def guard_items(results: dict, guard: str) -> dict:
 
 
 def run_baseline(wt: Path, py: str, guards: list[str], scratch: Path,
-                 timeout: int = 1800) -> tuple[dict, list[str], str]:
-    """모든 가드를 **pytest 한 번**에 — 결과, 못 찾은 nodeid, 출력 꼬리.
+                 timeout: int = 1800, full: bool = False) -> tuple[dict, list[str], str]:
+    """모든 가드를 **pytest 한 번**에 — 결과, 못 찾은 nodeid, 출력 꼬리. ``full`` 이면 nodeid 없이 전체를 돈다.
 
     없는 nodeid 가 하나라도 있으면 pytest 는 아무것도 안 돌리고 끝난다(종료코드 4). 그 이름을
-    걷어내고 다시 돈다."""
+    걷어내고 다시 돈다. 뒤의 주입 실행이 쓰도록 ``.pyc`` 를 여기서 남긴다(모듈 머리말)."""
     plug_dir = scratch / "baseline_plugin"
     plug_dir.mkdir(parents=True, exist_ok=True)
     (plug_dir / "vm_baseline.py").write_text(BASELINE_PLUGIN, "utf-8")
     env = py_env(wt)
     env["PYTHONPATH"] = str(plug_dir) + os.pathsep + env["PYTHONPATH"]
     env["VERIFY_MERGE_BASELINE"] = str(scratch / "baseline.json")
+    env.pop("PYTHONDONTWRITEBYTECODE", None)
     missing: list[str] = []
-    todo = list(dict.fromkeys(guards))
+    todo = [] if full else list(dict.fromkeys(guards))
     out = ""
     path = scratch / "baseline.json"
     broken: dict = {}                         # 수집 오류 — 다시 돌 때도 잃지 않는다
     for _ in range(5):
-        if not todo:
+        if not todo and not full:
             break
         # 수집 오류 파일 하나가 세션 전체를 멈추면(pytest 기본) 다른 가드가 전부 "못 찾음" 이 된다.
         p = run([py, "-m", "pytest", "-q", "-p", "vm_baseline", "-p", "no:cacheprovider",
@@ -720,50 +729,47 @@ def env_full(text: str) -> str | None:
             f"를 비우거나 `export TMPDIR=<디스크의 폴더>` 로 다시 돌려라")
 
 
-#: ci.yml 의 주입 검증 matrix — 샤드 수를 읽는다(:func:`effective_budget`). tests/test_ci_workflow.py 가
-#: 이 목록이 1..n 연속임을 지키므로 길이가 곧 샤드 수다.
-_CI_SHARDS_RE = re.compile(r"^\s+shard: \[([\d, ]+)\]", re.M)
-
-
-def ci_shard_count(wt: Path, fallback: int = 4) -> int:
-    try:
-        text = (wt / ".github/workflows/ci.yml").read_text("utf-8")
-    except (OSError, UnicodeDecodeError):
-        return fallback
-    m = _CI_SHARDS_RE.search(text)
-    return len(m.group(1).split(",")) if m else fallback
-
-
-def effective_budget(budget_min: float | None, shard: tuple[int, int] | None,
-                     wt: Path, scope: str = "all") -> tuple[float | None, str]:
-    """실제로 적용할 예산(분)과 그 이유 한 줄.
-
-    ``--budget-min`` 은 CI 샤드 **한 몫**의 예산이다. 샤드 없이 돌면(ci-local 이 sector_flow·템플릿을
-    건드린 푸시에서 전체 범위로 돈다) 한 실행이 몫 n 개의 일을 하므로 n 을 곱한다 — 안 곱하면 변이가
-    늘 때마다 로컬 pre-push 가 전부 REJECT 로 막힌다(2026-11-09, 692개 12.3분 > 12분). ``direct`` 는 PR 잡 하나의
-    일이라 곱하지 않는다 — 곱하면 잡 상한(30분)보다 예산이 커서 잡이 이유 없이 죽는다."""
-    if not budget_min or shard is not None or scope == "direct":
-        return budget_min, ""
-    n = ci_shard_count(wt)
-    return budget_min * n, (f"예산 {budget_min * n:g}분 = --budget-min {budget_min:g}분 × 샤드 {n} — "
-                            f"샤드 없는 실행은 CI 한 몫이 아니라 전체 몫의 일이다(ci.yml matrix)")
-
-
 def _first_failure(stdout: str) -> str:
     return next((ln for ln in stdout.splitlines()
                  if ln.startswith("FAILED") or ln.startswith("ERROR") or " failed" in ln), "").strip()
 
 
+#: 주입한 소스의 mtime — (원본 + 2초 × 번호). ``.pyc`` 는 초 단위 mtime 과 크기로 맞춰 보므로 같은 크기의 변이가 같은 초에 쓰이면 앞의
+#: 바이트코드를 그대로 읽어 **변이가 안 들어간 채** 판정한다. 번호를 겹치지 않게 주면 원본·앞 변이의 ``.pyc`` 와 안 맞는다.
+_stamps = itertools.count(1)
+
+
+def _stamp_mutant(target: Path, original_ns: int) -> None:
+    os.utime(target, ns=(original_ns, original_ns + 2_000_000_000 * next(_stamps)))
+
+
+def _failed_tests(results: dict) -> list[str]:
+    return sorted(k for k, v in results.items() if v["outcome"] == "failed" and not k.startswith("<collect>"))
+
+
+def _say_baseline(s: Section, results: dict, guards: list[str], full: bool, secs: float) -> None:
+    """기준선 한 줄. 전체를 돌았으면 검사를 겸하므로 가드가 아닌 검사의 실패도 여기서 막는다."""
+    if not full:
+        s.say(f"기준선: 가드 {len(set(guards))}개를 pytest 한 번에 ({secs:.0f}초)")
+        return
+    s.say(f"기준선: 전체 pytest {len(results)}건이 가드 {len(set(guards))}개를 겸한다 ({secs:.0f}초)")
+    red = _failed_tests(results)
+    broken = sorted(k for k in results if k.startswith("<collect>"))
+    if red or broken:
+        s.fail(f"pytest 실패 {len(red)}건·수집 오류 {len(broken)}건:\n"
+               + "\n".join("      " + k for k in (broken + red)[:20]))
+
+
 def sec_mutations(wt: Path, py: str, base_sha: str, spec_path: Path | None,
                   shard: tuple[int, int] | None = None, budget_min: float | None = None,
-                  scope: str = "all") -> Section:
-    """**핵심.** 워크트리가 선언한 변이를 실제로 주입해 선언한 검사가 빨개지는가."""
+                  scope: str = "all", full_baseline: bool = False,
+                  baseline_json: Path | None = None) -> Section:
+    """**핵심.** 워크트리가 선언한 변이를 실제로 주입해 선언한 검사가 빨개지는가.
+
+    ``baseline_json`` — 부모(:func:`sec_mutations_parallel`)가 이 트리의 사본에서 돈 기준선. 있으면 다시 안 돈다."""
     import time
     t_start = time.monotonic()
     s = Section("mutations")
-    budget_min, budget_why = effective_budget(budget_min, shard, wt, scope)
-    if budget_why:
-        s.say(budget_why)
     spec = spec_path or (wt / "tests/mutations.toml")
     new_tests = new_test_functions(wt, base_sha)
     if new_tests:
@@ -867,11 +873,15 @@ def sec_mutations(wt: Path, py: str, base_sha: str, spec_path: Path | None,
     try:
         guards_all = [g for m, _ in runnable for g in m["guards"]]
         t0 = time.monotonic()
-        results, missing, base_out = run_baseline(wt, py, guards_all, scratch) \
-            if guards_all else ({}, [], "")
-        if guards_all:
-            s.say(f"기준선: 가드 {len(set(guards_all))}개를 pytest 한 번에 "
-                  f"({time.monotonic() - t0:.0f}초)")
+        if baseline_json:
+            shared = json.loads(baseline_json.read_text("utf-8"))
+            results, missing, base_out = shared["results"], shared["missing"], ""
+        elif guards_all:
+            results, missing, base_out = run_baseline(wt, py, guards_all, scratch, full=full_baseline)
+            if results or missing:
+                _say_baseline(s, results, guards_all, full_baseline, time.monotonic() - t0)
+        else:
+            results, missing, base_out = {}, [], ""
         if guards_all and not results and not missing:
             # 세션째 죽었다 — 임시 폴더가 찼으면 그렇게 적는다(가드별 실패는 아래에서 가드마다 가린다).
             s.fail((env_full(base_out) or "기준선 pytest 가 결과를 남기지 않았다")
@@ -922,13 +932,17 @@ def sec_mutations(wt: Path, py: str, base_sha: str, spec_path: Path | None,
         # ② 주입 → 빨개져야 한다.
         t0 = time.monotonic()
         saved: dict[Path, bytes] = {}
+        stat_ns: dict[Path, int] = {}
+        kills = memcap.tree_kills()
         try:
             for e in edits:
                 target = wt / e["file"]
                 # 한 파일을 두 번 고칠 수 있다 — **첫 스냅샷만** 원본이다.
                 # 편집마다 새로 읽어 쌓으면 두 번째 스냅샷이 이미 변이본이라
                 # 복구가 변이를 되살린다(원상복구 검사가 실제로 이걸 잡았다).
-                saved.setdefault(target, target.read_bytes())
+                if target not in saved:
+                    saved[target] = target.read_bytes()
+                    stat_ns[target] = target.stat().st_mtime_ns
                 text = target.read_text("utf-8")
                 if text.count(e["find"]) != 1:
                     # 같은 파일의 앞 편집이 이 앵커를 지웠거나 하나 더 만들었다.
@@ -936,6 +950,7 @@ def sec_mutations(wt: Path, py: str, base_sha: str, spec_path: Path | None,
                     raise _DeadEdit(e["file"])
                 target.write_text(text.replace(e["find"], e["replace"], 1),
                                   encoding="utf-8")
+                _stamp_mutant(target, stat_ns[target])
             # 기준선과 같은 pytest 에 두 가지만 다르다: -x(가드 하나라도 빨개지면 잡힌 것이다 — 나머지를
             # 기다릴 이유가 없다)와 수집 오류 계속 끄기(기준선은 한 파일 오류가 다른 가드를 가리지 않게 켠다.
             # 여기서는 수집 오류 = 종료코드 2 = 판정 불가로 따로 낸다). 잡힘은 **종료코드 1 뿐**이다.
@@ -948,12 +963,17 @@ def sec_mutations(wt: Path, py: str, base_sha: str, spec_path: Path | None,
         except subprocess.TimeoutExpired:
             hit = None
         finally:
-            for target, original in saved.items():   # 무슨 일이 있어도 원상복구
+            for target, original in saved.items():   # 무슨 일이 있어도 원상복구 — mtime 까지(기준선의 .pyc 가 다시 맞는다)
                 target.write_bytes(original)
+                os.utime(target, ns=(stat_ns[target], stat_ns[target]))
         dt = time.monotonic() - t0
         timings.append((dt, mid))
         if hit is not None and hit.returncode != 0 and env_full(hit.stdout + hit.stderr):
             s.fail(f"[{mid}] {env_full(hit.stdout + hit.stderr)} — 이 변이는 판정하지 못했다")
+        elif hit is not None and hit.returncode != 0 and memcap.tree_kills() > kills:
+            # 검사가 띄운 자식이 죽어 검사가 실패한 것일 수 있다 — 종료코드 1 이어도 알아본 게 아니다.
+            s.fail(f"[{mid}] 판정 불가 — 이 변이가 도는 동안 프로세스 트리 메모리 상한이 자식을 죽였다. 잡힌 것으로 세지 않는다\n"
+                   + tail(hit.stdout + hit.stderr, 800))
         elif hit is not None and memcap.hit_cap(hit.returncode, hit.stdout + hit.stderr):
             # 빨갛지만 검사가 버그를 알아본 게 아니다 — 상한(또는 커널)이 폭주를 끊었을 뿐이다.
             s.fail(f"[{mid}] 판정 불가 — 메모리 상한에 닿았다(pytest 종료코드 {hit.returncode}). 잡힌 것으로 세지 않는다. "
@@ -1006,9 +1026,105 @@ def sec_mutations(wt: Path, py: str, base_sha: str, spec_path: Path | None,
     for dt, mid in sorted(timings, reverse=True)[:10]:
         s.say(f"    느린 변이 {dt:6.1f}초  {mid}")
     verdict, msg = budget_verdict(elapsed, budget_min, stopped)
-    if scope == "direct" and verdict == REJECT:
-        # 시간 때문에 PR 을 막지 않는다 — 안 돈 변이는 main push 의 전체 실행이 돌고, 그게 빨가면 배포가 멈춘다.
-        verdict, msg = WARN, f"{msg} — PR 범위는 피드백이다. 전체는 main push 가 돈다"
+    if scope in ("direct", "changed") and verdict == REJECT:
+        # 시간 때문에 PR·푸시를 막지 않는다 — 안 돈 변이는 main push 의 전체 실행이 돌고, 그게 빨가면 배포가 멈춘다.
+        verdict, msg = WARN, f"{msg} — 이 범위는 피드백이다. 전체는 main push 가 돈다"
+    if verdict == REJECT:
+        s.fail(msg)
+    elif verdict == WARN:
+        s.warn(msg)
+    return s
+
+
+#: 사본의 **뿌리**에 안 가져가는 것 — ``docs/strategy/reports`` 같은 안쪽 폴더는 소스다. ``__pycache__`` 는 가져간다: copytree 가 mtime 을 지켜 기준선의
+#: 바이트코드가 사본에서도 맞는다.
+_COPY_SKIP_ROOT = {".venv", "reports", ".pytest_cache", ".ruff_cache", "coverage.json"}
+
+
+def can_parallel(wt: Path) -> bool:
+    """사본이 자기 ``.git`` 을 가질 수 있는가. 링크드 워크트리의 ``.git`` 은 파일이라 사본들이 인덱스 하나를 나눠 쓰게 된다."""
+    return (wt / ".git").is_dir()
+
+
+def _clone_tree(wt: Path, dst: Path) -> None:
+    root = str(wt)
+    shutil.copytree(wt, dst, symlinks=True, ignore=lambda d, names: _COPY_SKIP_ROOT & set(names) if d == root else set())
+    if (wt / ".venv").exists():                  # 검사가 ``.venv`` 를 찾으면 같은 것을 본다(판 분리는 PYTHONPATH 가 이긴다)
+        (dst / ".venv").symlink_to(wt.resolve() / ".venv")
+        with open(dst / ".git" / "info" / "exclude", "a", encoding="utf-8") as f:
+            f.write("/.venv\n")
+
+
+def sec_mutations_parallel(wt: Path, py: str, base_sha: str, spec_path: Path | None, budget_min: float | None,
+                           workers: int, full_baseline: bool) -> Section:
+    """주입을 트리 사본 ``workers`` 개에서 동시에 — 기준선은 여기서 한 번, 몫 나누기·판정은 :func:`sec_mutations` 그대로.
+
+    사본마다 자식 하네스(``--shard i/n``)를 띄운다. 자식은 스레드 없이 혼자 돌아 ``preexec_fn`` 이 안전하고, 사본·임시 폴더가 따로라
+    서로의 주입을 못 본다. 어느 자식이든 결과를 못 남기면(죽음·메모리) 그 몫은 안 돈 것이다 — REJECT 다."""
+    import time
+    t_start = time.monotonic()
+    s = Section("mutations")
+    spec = spec_path or (wt / "tests/mutations.toml")
+    try:
+        muts = tomllib.loads(spec.read_text("utf-8")).get("mutation", [])
+    except (OSError, tomllib.TOMLDecodeError):
+        return sec_mutations(wt, py, base_sha, spec_path, None, budget_min, "all", full_baseline)   # 그쪽이 이유를 적는다
+    if not muts:
+        return sec_mutations(wt, py, base_sha, spec_path, None, budget_min, "all", full_baseline)
+    scratch = Path(tempfile.mkdtemp(prefix="verify_merge.par."))
+    try:
+        guards = [g for m in muts for g in m.get("guards") or []]
+        results, missing, out = run_baseline(wt, py, guards, scratch, full=full_baseline)
+        if not results and not missing:
+            s.fail((env_full(out) or "기준선 pytest 가 결과를 남기지 않았다") + "\n" + tail(out, 3000))
+            return s
+        _say_baseline(s, results, guards, full_baseline, time.monotonic() - t_start)
+        shared = scratch / "baseline.shared.json"
+        shared.write_text(json.dumps({"results": results, "missing": missing}), "utf-8")
+        left = None
+        if budget_min:
+            left = budget_min - (time.monotonic() - t_start) / 60
+            if left <= 0:
+                s.fail(f"기준선만으로 시간 예산({budget_min:g}분)을 다 썼다 — 변이를 돌리지 않았다")
+                return s
+        kids = []
+        for i in range(1, workers + 1):
+            copy = scratch / f"w{i}"
+            _clone_tree(wt, copy)
+            tmp = scratch / f"tmp{i}"
+            tmp.mkdir()
+            cmd = [py, str(Path(__file__).resolve()), str(copy), "--base", base_sha, "--only", "mutations",
+                   "--scope", "all", "--shard", f"{i}/{workers}", "--baseline-json", str(shared),
+                   "--worker-out", str(scratch / f"out{i}.json"), "--python", py]
+            if left:
+                cmd += ["--budget-min", f"{left:.3f}"]
+            if spec_path:
+                cmd += ["--mutations", str(spec_path)]
+            log = open(scratch / f"log{i}.txt", "w", encoding="utf-8")  # noqa: SIM115 — 자식이 끝날 때까지 쥔다
+            kids.append((i, log, subprocess.Popen(cmd, cwd=str(copy), env={**os.environ, "TMPDIR": str(tmp)},
+                                                  stdout=log, stderr=subprocess.STDOUT)))
+        s.say(f"동시 {workers}: 사본 {workers}개에서 몫 {workers}개를 돈다(잡 하나 — 청구는 벽시계)")
+        for i, log, kid in kids:
+            kid.wait()
+            log.close()
+            try:
+                got = json.loads((scratch / f"out{i}.json").read_text("utf-8"))
+            except (OSError, ValueError):
+                s.fail(f"몫 {i}/{workers} 가 결과를 못 남겼다(종료코드 {kid.returncode}) — 그 몫의 변이는 돌지 않았다\n"
+                       + tail((scratch / f"log{i}.txt").read_text("utf-8", "replace"), 1500))
+                continue
+            for sec in got:
+                for ln in sec["lines"]:
+                    s.say(f"[몫 {i}] {ln}")
+                if sec["status"] == REJECT:
+                    s.fail(f"몫 {i}/{workers} 의 {sec['name']} 판정이 REJECT 다 — 위 줄")
+                elif sec["status"] == WARN:
+                    s.warn(f"몫 {i}/{workers} 의 {sec['name']} 에 경고가 있다 — 위 줄")
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+    elapsed = time.monotonic() - t_start
+    s.say(f"전체 {elapsed / 60:.1f}분" + (f" (예산 {budget_min:g}분)" if budget_min else ""))
+    verdict, msg = budget_verdict(elapsed, budget_min, 0)
     if verdict == REJECT:
         s.fail(msg)
     elif verdict == WARN:
@@ -1022,15 +1138,13 @@ def budget_verdict(elapsed_s: float, budget_min: float | None, stopped: int) -> 
         return PASS, ""
     if stopped:
         return REJECT, (f"시간 예산의 두 배({2 * budget_min:g}분)를 넘어 변이 {stopped}개를 **돌리지 않고** "
-                        f"멈췄다 — 샤드를 늘리거나(ci.yml matrix) 느린 가드를 줄여라")
+                        f"멈췄다 — 느린 가드를 줄여라. 예산을 올리려면 머지당 분 상한부터 본다(scripts/ci_plan.py)")
     if elapsed_s > budget_min * 60:
-        return REJECT, (f"시간 예산 초과 {elapsed_s / 60:.1f}분 > {budget_min:g}분(샤드 실행은 한 몫, "
-                        f"샤드 없는 실행은 --budget-min × 샤드 수) — 샤드를 늘리거나"
-                        f"(ci.yml matrix) 위 느린 변이의 가드를 줄여라. 넘긴 채로 두면 다음 PR 이 잡 시간 "
-                        f"상한에 걸려 07:50 배포 관문이 막힌다")
+        return REJECT, (f"시간 예산 초과 {elapsed_s / 60:.1f}분 > {budget_min:g}분 — 머지당 청구 분이 상한을 넘는다"
+                        f"(scripts/ci_plan.py). 위 느린 변이의 가드를 줄여라. 샤드를 늘려도 청구 분은 안 준다")
     if elapsed_s > 0.75 * budget_min * 60:
         return WARN, (f"시간 예산의 75% 를 넘었다({elapsed_s / 60:.1f}/{budget_min:g}분) — 다음 몇 PR 안에 "
-                      f"샤드를 늘려야 한다")
+                      f"느린 가드를 줄여야 한다")
     return PASS, ""
 
 
@@ -1058,7 +1172,7 @@ EXPECT = {
     "수익률[%]": ("ret", "pct2"), "미실현[%p]": ("x", "pct1"),
     "G": ("G", "rhu2"), "선정": ("pick", "f2"),
     "종목": ("name", "clip"), "코드": ("code", "raw"),
-    "순매수[억]": ("flow", "amt"), "시총대비[%p]": ("a", "pct2"),
+    "순매수[억]": ("flow", "amt"), "시총대비[%p]": ("a", "pct2cap"),
 }
 if len(sys.argv) > 2 and sys.argv[2]:
     import json
@@ -1088,6 +1202,11 @@ def want(r, name):
         return V.fmt_pct(v, 1) if v is not None else "—"
     if how == "pct2":
         return V.fmt_pct(v) if v is not None else "—"
+    if how == "pct2cap":
+        # 권리락 뒤 신주가 아직 안 들어온 종목의 시총대비엔 표지가 붙는다(flow_view.CAP_PENDING_MARK, `cap_pending`). 표지를 모르면
+        # 맞게 그린 `+0.43!` 을 어긋남으로 내고(합성 데모 736건), 화면이 표지를 빠뜨리면 못 잡는다. 표지 없는 옛 워크트리는 숫자만.
+        mark = getattr(V, "CAP_PENDING_MARK", "") if r.get("cap_pending") else ""
+        return V.fmt_pct(v) + mark if v is not None else "—"
     if how == "f2":
         return f"{v:.2f}" if v is not None else "—"
     if how == "rhu2":
@@ -1483,10 +1602,25 @@ ALL = ("worktree", "identity", "lint", "tests", "mutations",
        "render", "pty")
 
 
+def build_demo(wt: Path, py: str, scratch: Path) -> tuple[str, str]:
+    """이 워크트리 코드로 합성 데모 리포트를 짓는다 — (폴더, 오류). DB·실데이터가 없는 곳(CI)에서 화면 층을 늘 돌리려고.
+
+    옛 사본이 아니라 **지금 코드가 만든** 폴더를 본다. 새 표지·새 열이 옛 리포트에 가려지지 않는다."""
+    out = scratch / "demo"
+    p = run([py, "-c", "import sys; from sectorflow.demo import ensure; ensure(sys.argv[1], force=True)", str(out)],
+            wt, py_env(wt), timeout=900)
+    if p.returncode != 0 or not (out / "numbers.html").exists():
+        return "", f"합성 데모를 짓지 못했다(rc={p.returncode})\n" + tail(p.stdout + p.stderr, 1500)
+    return str(out), ""
+
+
 def verify(wt: Path, base: str, report: str, only: set[str], py: str,
            spec: Path | None, shard: tuple[int, int] | None = None,
            budget_min: float | None = None,
-           scope: str = "all") -> tuple[str, list[Section]]:
+           scope: str = "all", demo: bool = False,
+           required: frozenset[str] | set[str] = frozenset(), workers: int = 1, full_baseline: bool = False,
+           baseline_json: Path | None = None) -> tuple[str, list[Section]]:
+    """``required`` — 사용자가 이름을 대어 요청한 층. 그 층의 SKIP 은 PASS 가 아니라 REJECT 다(폴더 오타로 아무것도 안 돌고 초록이었다)."""
     secs: list[Section] = []
     scratch = Path(tempfile.mkdtemp(prefix="verify_merge."))
     try:
@@ -1495,18 +1629,37 @@ def verify(wt: Path, base: str, report: str, only: set[str], py: str,
         if s0.status == REJECT:
             return REJECT, secs
         base_sha = git(wt, "merge-base", base, "HEAD")
+        if demo and only & {"render", "pty"}:
+            report, why = build_demo(wt, py, scratch)
+            if why:
+                s0.fail(why)
+                return REJECT, secs
+            s0.say(f"화면 층은 이 코드로 지은 합성 데모로 돈다: {report}")
+
+        def mutations() -> Section:
+            # changed·direct 는 가드만, 하나씩 돈다 — ci-local 은 같은 워크플로의 전체 pytest 를 이미 돌았다.
+            full = full_baseline and scope == "all" and shard is None
+            if workers > 1 and scope == "all" and shard is None and can_parallel(wt):
+                return sec_mutations_parallel(wt, py, base_sha, spec, budget_min, workers, full)
+            sec = sec_mutations(wt, py, base_sha, spec, shard, budget_min, scope, full, baseline_json)
+            if workers > 1 and shard is None:
+                sec.say(f"동시 {workers} 를 안 썼다 — 범위 {scope}, .git 폴더 {can_parallel(wt)}. 하나씩 돌았다")
+            return sec
+
         table = {
             "identity": lambda: sec_identity(wt, commits),
             "lint": lambda: sec_lint(wt, py, base_sha, scratch),
             "tests": lambda: sec_tests(wt, py),
-            "mutations": lambda: sec_mutations(wt, py, base_sha, spec, shard,
-                                               budget_min, scope),
+            "mutations": mutations,
             "render": lambda: sec_render(wt, py, report, scratch, spec),
             "pty": lambda: sec_pty(wt, py, report, scratch),
         }
         for name in ALL[1:]:
             if name in only:
-                secs.append(table[name]())
+                sec = table[name]()
+                if sec.status == SKIP and name in required:
+                    sec.fail("요청한 층을 돌리지 못했다 — 돌지 않은 검사는 통과가 아니다")
+                secs.append(sec)
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
     verdict = REJECT if any(s.status == REJECT for s in secs) else PASS
@@ -1704,7 +1857,10 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("worktree", nargs="?", help="검증할 워크트리 경로")
     ap.add_argument("--base", default=DEFAULT_BASE, help="기준 브랜치/커밋")
-    ap.add_argument("--report-dir", default=DEFAULT_REPORT, help="실데이터 리포트 폴더")
+    ap.add_argument("--report-dir", default=None,
+                    help=f"화면 층(render·pty)이 볼 리포트 폴더(기본 {DEFAULT_REPORT}, 없으면 합성 데모). 준 폴더가 없으면 REJECT")
+    ap.add_argument("--demo", action="store_true",
+                    help="화면 층을 이 코드로 지은 합성 데모로 돌린다(DB·실데이터 불요, 새 표지가 옛 리포트에 가려지지 않는다)")
     ap.add_argument("--only", default="", help="돌릴 항목 (쉼표): " + ",".join(ALL[1:]))
     ap.add_argument("--python", default=None, help="쓸 인터프리터")
     ap.add_argument("--mutations", default=None,
@@ -1715,6 +1871,12 @@ def main(argv: list[str] | None = None) -> int:
                     help="주입 검증을 n 몫으로 나눠 i 번째만: i/n (CI matrix). changed 범위에선 무시")
     ap.add_argument("--budget-min", type=float, default=None,
                     help="주입 검증 시간 예산(분). 넘으면 REJECT, 75%% 넘으면 WARN, 두 배면 멈춘다")
+    ap.add_argument("--workers", type=int, default=1,
+                    help="전체 범위의 주입을 트리 사본 N 개에서 동시에(CI). 링크드 워크트리·changed·direct 는 1. 메모리는 memcap 트리 상한이 본다")
+    ap.add_argument("--full-baseline", action="store_true",
+                    help="기준선을 전체 pytest 로 — 같은 잡의 검사 한 벌을 겸한다(전체 범위에서만)")
+    ap.add_argument("--baseline-json", default=None, help=argparse.SUPPRESS)   # 부모가 돈 기준선(동시 실행의 자식)
+    ap.add_argument("--worker-out", default=None, help=argparse.SUPPRESS)      # 자식이 판정을 넘기는 파일
     ap.add_argument("--scope", choices=("auto", "all", "changed", "direct"), default="auto",
                     help="주입할 변이 범위. direct: PR CI — 직접 건드린 변이만(넓히지 않는다). auto: CI 이고 GITHUB_ACTIONS 가 아니며(로컬 ci-local) "
                          "--only mutations 이면 changed(merge-base 이후 바뀐 파일에 닿는 변이만), "
@@ -1722,7 +1884,7 @@ def main(argv: list[str] | None = None) -> int:
     a = ap.parse_args(argv)
 
     if a.self_test:
-        return self_test(interpreter(REPO, a.python), a.report_dir)
+        return self_test(interpreter(REPO, a.python), a.report_dir or DEFAULT_REPORT)
     if not a.worktree:
         ap.error("워크트리 경로가 필요하다 (또는 --self-test)")
 
@@ -1742,11 +1904,24 @@ def main(argv: list[str] | None = None) -> int:
             # 샤드를 어차피 안 쓰므로 넘어간다. 전체 범위(GitHub)에서 틀린 샤드는 오류다.
             if scope != "changed":
                 ap.error(str(e))
-    verdict, secs = verify(wt, a.base, a.report_dir, only,
-                           interpreter(wt, a.python), spec, shard, a.budget_min, scope)
+    report = a.report_dir or DEFAULT_REPORT
+    # 폴더를 안 줬고 기본 폴더도 없으면(CI·새 체크아웃) 데모로 돈다. 줬는데 없으면 오타다 — 아래 required 가 REJECT 로 낸다.
+    demo = a.demo or (not a.report_dir and not (Path(report) / "numbers.html").exists())
+    required = (set(only) if a.only else set()) | ({"render", "pty"} & only if a.report_dir else set())
+    verdict, secs = verify(wt, a.base, report, only, interpreter(wt, a.python), spec, shard,
+                           a.budget_min, scope, demo, required, a.workers, a.full_baseline,
+                           Path(a.baseline_json) if a.baseline_json else None)
+    if a.worker_out:
+        Path(a.worker_out).write_text(json.dumps([{"name": x.name, "status": x.status, "lines": x.lines}
+                                                  for x in secs if x.name == "mutations"]
+                                                 or [{"name": x.name, "status": x.status, "lines": x.lines} for x in secs],
+                                                 ensure_ascii=False), "utf-8")
     print(render_report(wt, verdict, secs))
+    print(memcap.describe(), file=sys.stderr)
     return 0 if verdict == PASS else 1
 
 
 if __name__ == "__main__":
+    memcap.cap_memory()                       # 하네스 자신도 — 자식은 run() 의 preexec 로 다시 건다
+    memcap.watch_tree()
     sys.exit(main())

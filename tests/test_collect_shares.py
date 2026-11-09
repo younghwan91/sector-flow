@@ -58,3 +58,27 @@ def test_seed_round_trips_through_market_cap_asof(tmp_path, day, want_shares):
 def test_share_event_counts_only_real_share_count_changes(tp, rt, want):
     """배율이 0·결측·−100% 이하이면 주식수 이벤트가 아니다(``log1p`` 가 0 이거나 터진다). 1% 는 진짜 이벤트다."""
     assert _share_event(tp, rt) is want
+
+
+def _cap_of(con, day: str) -> float:
+    return market_cap_asof_bulk(con, pd.DataFrame({"code": ["078130"], "date": [day]})).iloc[0]
+
+
+def test_zero_close_in_supply_demand_falls_back_to_the_raw_price(tmp_path):
+    """수급의 종가 0 은 '못 받음' 이다 — 그대로 곱하면 그날 시총이 0 이 되고 시총대비가 터진다."""
+    con = write.open_db(tmp_path / "s.db")
+    write.upsert_shares(con, [("078130", "2026-01-02", 1000)], "seed")
+    con.execute("INSERT INTO supply_demand(code, date, close, source) VALUES (?,?,?,?)", ("078130", "2026-01-05", 0, "kiwoom"))
+    con.execute("INSERT INTO daily_bars_raw(code, date, close) VALUES (?,?,?)", ("078130", "2026-01-05", 100))
+    con.commit()
+    assert _cap_of(con, "2026-01-05") == pytest.approx(100_000)
+
+
+def test_minus_100_percent_event_is_not_a_share_event(tmp_path):
+    """−100% 는 배율이 아니다(``log1p(-1)`` = −∞) — 세면 그 뒤 시총이 전부 무한대다."""
+    con = write.open_db(tmp_path / "s.db")
+    write.upsert_shares(con, [("078130", "2026-01-02", 1000)], "seed")
+    con.execute("INSERT INTO corporate_actions VALUES (?,?,?,?)", ("078130", "2026-01-03", "16", -100.0))
+    con.execute("INSERT INTO supply_demand(code, date, close, source) VALUES (?,?,?,?)", ("078130", "2026-01-05", 100, "kiwoom"))
+    con.commit()
+    assert _cap_of(con, "2026-01-05") == pytest.approx(100_000)
