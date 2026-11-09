@@ -2668,6 +2668,23 @@ def test_banner_says_when_block_judging_was_skipped(data):
     assert "대량 체결 판정: 건너뜀 — 그날 분봉이 없다" in "\n".join(banner_lines(State(d), 80))
 
 
+def test_what_changed_is_on_the_first_page_at_80x24(data):
+    """'오늘 무엇이 달라졌나' 는 첫 쪽에 있다 — 부호 바뀜·들고 남이 31줄 뒤(80×24 둘째 쪽)였다. 경고가 많은 날도 그렇다."""
+    from sectorflow.tui.flow_view import banner_view, view_width
+    d = json.loads(json.dumps(data))
+    d["today"]["day_change"] = {"prev_date": "2026-08-27", "flip_min_share": 0.02,
+                                "flips": {"전체": {"inst": [{"sector": "가상A", "prev": -5.0, "now": 9.0}]}}}
+    d["change"] = {"prev_date": "2026-08-27", "prev_final": False, "window": 20, "top_n": 5,
+                   "top": {"전체": {"inst": {"entered": ["가상B"], "exited": ["가상C"]}, "invpen": {"entered": [], "exited": []}}}}
+    d["today"]["block_suspects"] = {"status": "ok", "unjudged": 3, "markets": {
+        "거래소": [{"name": f"가상종목{i}", "off_pct": 90.0} for i in range(4)], "코스닥": []}}
+    d["today"]["krx_truth"] = {"status": "ok", "markets": {"거래소": {"total_pct": 16.8, "hot": True},
+                                                          "코스닥": {"total_pct": 6.0, "hot": True}}}
+    page = "\n".join(banner_view(State(d), view_width(80), 24))
+    assert "가상A -5->+9" in page.replace(" ", " "), page
+    assert "들어옴 가상B" in page and "나감 가상C" in page, page
+
+
 def test_final_diff_line_and_help_list(data):
     """확정 리포트면 첫 화면에 '잠정→확정 변경: N칸', 도움말 끝에 그 목록."""
     from sectorflow.tui.flow_view import HELP, final_diff_line, help_entries

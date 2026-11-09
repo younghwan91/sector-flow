@@ -3892,10 +3892,10 @@ id = "final-top-changes-only-in-help"
 why = "아침 확정 리포트에서 크게 바뀐 칸이 도움말 끝에만 있다 — 첫 화면에서 안 보인다"
 guards = ["tests/test_tui_flow_view.py::test_final_report_puts_top_changes_and_extreme_moves_on_the_first_screen"]
 file = "src/sectorflow/tui/flow_view.py"
-find = """        top = final_top_changes(d)
-        if top:"""
-replace = """        top = final_top_changes(d)
-        if False:"""
+find = """    top = final_top_changes(d)
+    if top:"""
+replace = """    top = final_top_changes(d)
+    if False:"""
 
 [[mutation]]
 id = "final-extreme-moves-hidden"
@@ -8545,6 +8545,34 @@ find = """    for b in F["blocks"]:
         L.append("""
 replace = """    for b in []:
         L.append("""
+
+[[mutation]]
+id = "tui-changed-after-the-context"
+why = "달라진 것을 극단 목록 뒤로 보내면 80×24 에서 둘째 쪽으로 밀린다 — 첫 질문의 답이 첫 쪽에 없다"
+guards = ["tests/test_tui_flow_view.py::test_what_changed_is_on_the_first_page_at_80x24"]
+
+[[mutation.edits]]
+file = "src/sectorflow/tui/flow_view.py"
+find = """    lines += _changed_lines(st, width)
+    lines.append(pad("", width))
+    lines += _ctx_lines(d, mkts, width)"""
+replace = """    lines.append(pad("", width))
+    lines += _ctx_lines(d, mkts, width)"""
+
+[[mutation.edits]]
+file = "src/sectorflow/tui/flow_view.py"
+find = """        lines.append(_items_line(f"   {tag}{ko} %ile≤{PCT_LO:.0f}: ", lo, width))
+    return lines"""
+replace = """        lines.append(_items_line(f"   {tag}{ko} %ile≤{PCT_LO:.0f}: ", lo, width))
+    return lines + _changed_lines(st, width)"""
+
+[[mutation]]
+id = "web-changed-card-after-rank"
+why = "웹 '달라진 것' 카드가 순위 뒤로 가면 390폭에서 2,000px 아래다"
+guards = ["tests/test_web_quality.py::test_web_today_panel_answers_what_changed_first"]
+file = "scripts/templates/sector_numbers.html"
+find = """    g.append(c4b);"""
+replace = """    queueMicrotask(()=>g.append(c4b));"""
 
 [[mutation]]
 id = "digest-published-chip-always"

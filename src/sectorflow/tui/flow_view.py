@@ -1724,16 +1724,64 @@ def _conc_min(d: dict) -> int:
     return int(rhu((((d.get("today") or {}).get("concentration") or {}).get("min_share") or 0.0) * 100.0))
 
 
+def _changed_lines(st: State, width: int) -> list[str]:
+    """오늘 무엇이 달라졌나 — 어제와 부호 바뀐 섹터, 직전 리포트 대비 들고 남, 잠정→확정 변경. 첫 화면 앞쪽(80×24 첫 쪽)에 둔다."""
+    d, mk = st.d, st.market
+    actors = banner_actors(d, mk)
+    lines = [pad(" ── 오늘 달라진 것 ──", width)]
+    flips = {a: day_flip_items(d, mk, a) for a, _ko in actors}
+    if all(v is not None for v in flips.values()):
+        lines.append(pad(_first_fitting(width, day_flip_title(d)), width))
+        for a, ko in actors:
+            lines.append(_items_line(f"   {ko}: ", flips[a], width))
+    C = d.get("change")
+    if C:
+        lines.append(pad(_first_fitting(width, change_title(C)), width))
+        for a, ko in BANNER_ACTORS:
+            items = change_items(d, mk, a)
+            if items is None:
+                lines.append(pad(f"   {ko}: 비교 없음 — 직전 리포트에 이 시장이 없다", width))
+            else:
+                lines.append(_items_line(f"   {ko}: ", items, width, empty="변동 없음"))
+    else:
+        why = d.get("change_reason") or "비교 못 함"
+        # 이유를 지키고 머리말을 줄인다 — 120칸에서 이유가 통째로 잘려 "비교 없음" 만 남았다(3차 리뷰).
+        lines.append(pad(_first_fitting(width, [f" 직전 리포트 대비: 비교 없음 — {why}",
+                                                f" 직전 대비 없음: {why}",
+                                                f" 직전 대비 없음: {why.split(' — ')[0]}",
+                                                " 직전 리포트 대비: 비교 없음"]), width))
+    lines += _final_lines(d, width)
+    if d.get("final") and d.get("final_diff"):
+        lines.append(_items_line("   잠정→확정 극단 목록 변화: ", final_extreme_changes(d, mk, actors), width, empty="없음"))
+    return lines
+
+
+def _final_lines(d: dict, width: int) -> list[str]:
+    """잠정→확정 요약 — 확정 리포트에만. 긴 비교 없음 이유는 앞 토막까지 줄인다."""
+    fdl = final_diff_line(d)
+    if not fdl:
+        return []
+    lines = [pad(_first_fitting(width, [fdl, fdl.split(" — ")[0]]), width)]
+    top = final_top_changes(d)
+    if top:
+        lines.append(_items_line("   큰 변경(1일): ", top, width))
+    return lines
+
+
 def _banner_today(st: State, width: int) -> list[str]:
+    """첫 화면 본문 — 오늘 시장 숫자와 경고 → **달라진 것** → 맥락(수익률·연속·집중) → 섹터 순위·극단.
+
+    '오늘 무엇이 달라졌나' 가 31줄 뒤(80×24 둘째 쪽)에 있었다(5회차 리뷰). 지우지 않고 순서만 바꿨다.
+    """
     d, mk = st.d, st.market
     mkts = [mk] if mk != "전체" else st.markets[1:]
     prov = not d.get("final")
-    lines = _ctx_lines(d, mkts, width)
     M = ((d.get("today") or {}).get("market") or {}).get(mk) or {}
     net = M.get("net") or {}
     parts = [f"{ko} {fmt_amt((net.get(k) or {}).get('v'))}{_pct_tag((net.get(k) or {}).get('pct'))}"
              for k, ko in ACTORS]
     head = f" 오늘 {mk} 순매수[억(1년%ile)]: "
+    lines = []
     if cell_len(head + " · ".join(parts)) <= width:
         lines.append(pad(head + " · ".join(parts), width))
     elif cell_len(head + " · ".join(parts[:2])) <= width:  # 4주체는 합 ≈ 0 이라 하나라도 잘리면 그림이 틀린다 — 두 줄로
@@ -1752,6 +1800,9 @@ def _banner_today(st: State, width: int) -> list[str]:
     note = block_note(d)
     if note:
         lines.append(pad(f" ※ {note}", width))
+    lines += _changed_lines(st, width)
+    lines.append(pad("", width))
+    lines += _ctx_lines(d, mkts, width)
     unc = unclassified_count(d, mkts)
     if unc:
         lines.append(pad(_first_fitting(width, [
@@ -1786,31 +1837,6 @@ def _banner_today(st: State, width: int) -> list[str]:
         hi, lo = today_extremes(d, mk, a)
         lines.append(_items_line(f"   {tag}{ko} %ile≥{PCT_HI:.0f}: ", hi, width))
         lines.append(_items_line(f"   {tag}{ko} %ile≤{PCT_LO:.0f}: ", lo, width))
-    flips = {a: day_flip_items(d, mk, a) for a, _ko in actors}
-    if all(v is not None for v in flips.values()):
-        lines.append(pad(_first_fitting(width, day_flip_title(d)), width))
-        for a, ko in actors:
-            lines.append(_items_line(f"   {ko}: ", flips[a], width))
-    fch = final_extreme_changes(d, mk, actors)
-    if d.get("final") and d.get("final_diff"):
-        lines.append(_items_line("   잠정→확정 극단 목록 변화: ", fch, width, empty="없음"))
-    lines.append(pad("", width))
-    C = d.get("change")
-    if C:
-        lines.append(pad(_first_fitting(width, change_title(C)), width))
-        for a, ko in BANNER_ACTORS:
-            items = change_items(d, mk, a)
-            if items is None:
-                lines.append(pad(f"   {ko}: 비교 없음 — 직전 리포트에 이 시장이 없다", width))
-            else:
-                lines.append(_items_line(f"   {ko}: ", items, width, empty="변동 없음"))
-    else:
-        why = d.get("change_reason") or "비교 못 함"
-        # 이유를 지키고 머리말을 줄인다 — 120칸에서 이유가 통째로 잘려 "비교 없음" 만 남았다(3차 리뷰).
-        lines.append(pad(_first_fitting(width, [f" 직전 리포트 대비: 비교 없음 — {why}",
-                                                f" 직전 대비 없음: {why}",
-                                                f" 직전 대비 없음: {why.split(' — ')[0]}",
-                                                " 직전 리포트 대비: 비교 없음"]), width))
     return lines
 
 
@@ -1892,7 +1918,7 @@ def banner_lines(st: State, width: int) -> list[str]:
     투신+연기금을 "많이 살수록 좋다" 로 세는데 그 순위 정보는 부호가 **음**이었다
     (docs/validation/). 그래서 여기에는 누가 어디서 사고팔았나만 적는다 — 모든 값은
     페이로드 `today`·`change`·`final_diff`·`revision_stats` 에 이미 있는 것을 옮길 뿐이고, 줄 순서는 금액
-    크기(측정값)다. 웹 수치표 맨 위 "오늘" 패널이 같은 사실을 같은 순서로 적는다.
+    크기(측정값)다. 웹 수치표 맨 위 "오늘" 패널이 같은 사실을 같은 순서로 적는다(시장 → 달라진 것 → 맥락 → 순위·극단).
     마지막 줄은 언제나 :data:`BANNER_DISCLAIMER` 다(:func:`banner_view` 가 높이와 무관하게 남긴다).
     """
     d = st.d
@@ -1908,12 +1934,8 @@ def banner_lines(st: State, width: int) -> list[str]:
     lines.append(_items_line("   ", flips, width))
     # 웹 '오늘' 패널과 같은 말 — 목록만 두면 눌림·전환 판정으로 읽힌다(`reversal_flags` 는 판정 불가 라벨이다).
     lines.append(pad(_first_fitting(width, list(FLIP_NOTE)), width))
-    fdl = final_diff_line(d)
-    if fdl:
-        lines.append(pad(_first_fitting(width, [fdl, fdl.split(" — ")[0]]), width))
-        top = final_top_changes(d)
-        if top:
-            lines.append(_items_line("   큰 변경(1일): ", top, width))
+    if not st.has_today:                     # `오늘` 블록이 있으면 '달라진 것' 절이 이미 적었다
+        lines += _final_lines(d, width)
     lines.append(pad(_first_fitting(width, list(BANNER_DISCLAIMER)), width))
     return lines
 
