@@ -76,6 +76,54 @@ def test_judge_runs_the_group_then_everything_and_restores_the_source(tmp_path):
     assert (tmp_path / "lib.py").read_text("utf-8") == src
 
 
+def _mini(tmp_path: Path, tests: dict[str, str]) -> tuple[Path, list[dict]]:
+    root = tmp_path / "root"
+    (root / "tests").mkdir(parents=True)
+    (root / "lib.py").write_text("def add(a, b):\n    return a + b\n", "utf-8")
+    for name, body in tests.items():
+        (root / "tests" / name).write_text(body, "utf-8")
+    (root / "pyproject.toml").write_text('[tool.pytest.ini_options]\npythonpath = ["."]\ntestpaths = ["tests"]\n')
+    return root, MS.mutants((root / "lib.py").read_text("utf-8"), "lib.py")
+
+
+def test_a_test_red_without_the_mutant_is_not_a_kill(tmp_path):
+    """원본에서도 빨간 검사(부하 탓 등)가 잡았다고 세면 표본이 부푼다 — 그 검사를 빼고 다시 판정한다."""
+    root, ms = _mini(tmp_path, {"test_a.py": "from lib import add\n\n\ndef test_ok():\n    assert add(1, 2)\n",
+                                "test_b.py": "def test_red():\n    assert False\n"})
+    m = next(x for x in ms if x["kind"] == "arith")
+    got = MS.judge(root, {**m, "tests": []}, [], 60, tmp_path / "t")
+    assert got["verdict"] == "survived" and got["flaky"] == ["tests/test_b.py::test_red"], got
+
+
+def test_shallow_source_checks_do_not_count_as_kills(tmp_path, monkeypatch):
+    """소스 글자를 대조하는 검사는 어떤 변이에도 빨개진다 — 동작을 잡은 것이 아니다."""
+    body = "import pathlib\n\n\ndef test_anchor():\n    assert 'a + b' in pathlib.Path('lib.py').read_text()\n"
+    root, ms = _mini(tmp_path, {"test_spec.py": body, "test_other.py": "def test_other():\n    assert True\n"})
+    m = next(x for x in ms if x["kind"] == "arith")
+    assert MS.judge(root, {**m, "tests": []}, [], 60, tmp_path / "t")["verdict"] == "killed"
+    monkeypatch.setattr(MS, "SHALLOW", ("tests/test_spec.py",))
+    got = MS.judge(root, {**m, "tests": []}, [], 60, tmp_path / "t")
+    assert got["verdict"] == "survived", got
+
+
+def test_tmpdir_stays_outside_the_clone(tmp_path):
+    """클론 안이면 'git 밖' 을 전제한 검사(사본 판정 등)가 변이와 무관하게 빨개진다."""
+    root, ms = _mini(tmp_path, {"test_t.py": "import os\n\n\ndef test_t():\n    "
+                                             "assert not os.environ['TMPDIR'].startswith(os.getcwd())\n"})
+    m = next(x for x in ms if x["kind"] == "arith")
+    got = MS.judge(root, {**m, "tests": []}, [], 60)
+    assert got["verdict"] == "survived", got
+
+
+def test_memory_limit_turns_a_runaway_mutant_into_a_failure(tmp_path, monkeypatch):
+    """메모리를 먹는 변이가 머신을 흔들지 않는다 — 상한에서 ``MemoryError`` 로 검사가 빨개진다(리뷰 표본에서 SIGKILL 이 났다)."""
+    monkeypatch.setattr(MS, "MEM_LIMIT", 2 * 1024 ** 3)
+    body = "def test_grow():\n    x = []\n    while True:\n        x.append(bytearray(10 ** 8))\n"
+    root, _ms = _mini(tmp_path, {"test_g.py": body})
+    rc, first = MS.pytest_once(root, tmp_path / "t", [], [], 60)
+    assert rc == 1 and first == "tests/test_g.py::test_grow", (rc, first)
+
+
 def test_draw_is_deterministic_per_seed_and_respects_coverage_and_diff(tmp_path):
     def git(*a):
         subprocess.run(["git", *a], cwd=tmp_path, env=GIT_ENV, check=True, capture_output=True)

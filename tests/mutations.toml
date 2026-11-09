@@ -7967,3 +7967,37 @@ guards = ["tests/test_mutation_sample.py::test_draw_is_deterministic_per_seed_an
 file = "scripts/mutation_sample.py"
 find = """        rnd.shuffle(pool)"""
 replace = """        rnd.shuffle(pool) if False else None"""
+
+[[mutation]]
+id = "sampler-counts-a-red-baseline-test-as-a-kill"
+why = "원본에서도 빨간 검사를 잡힘으로 세어 표본이 부푼다(첫 재실행에서 12건이 이렇게 부풀었다)"
+guards = ["tests/test_mutation_sample.py::test_a_test_red_without_the_mutant_is_not_a_kill"]
+file = "scripts/mutation_sample.py"
+find = """        if clean == 0:
+            return 1, first"""
+replace = """        if True:
+            return 1, first"""
+
+[[mutation]]
+id = "sampler-runs-shallow-source-checks"
+why = "앵커 대조 검사가 모든 변이를 잡는 것처럼 보인다"
+guards = ["tests/test_mutation_sample.py::test_shallow_source_checks_do_not_count_as_kills"]
+file = "scripts/mutation_sample.py"
+find = """            cmd += ["--ignore", f]"""
+replace = """            pass"""
+
+[[mutation]]
+id = "sampler-tmpdir-inside-the-clone"
+why = "클론 안의 TMPDIR 이 git 밖을 전제한 검사를 거짓으로 빨갛게 한다"
+guards = ["tests/test_mutation_sample.py::test_tmpdir_stays_outside_the_clone"]
+file = "scripts/mutation_sample.py"
+find = """    tmp = tmp or Path(tempfile.gettempdir()) / f"sf-mutsample-{root.name}-tmp""""
+replace = """    tmp = tmp or root / ".tmp""""
+
+[[mutation]]
+id = "sampler-has-no-memory-limit"
+why = "무한 루프 변이가 머신 메모리를 먹어 운영 배치까지 흔든다"
+guards = ["tests/test_mutation_sample.py::test_memory_limit_turns_a_runaway_mutant_into_a_failure"]
+file = "scripts/mutation_sample.py"
+find = """    resource.setrlimit(resource.RLIMIT_AS, (MEM_LIMIT, MEM_LIMIT))"""
+replace = """    pass"""

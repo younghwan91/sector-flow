@@ -14,6 +14,11 @@
 묶음의 검사(:data:`GROUPS`)만, 살아남으면 전체 pytest 를 돈다. 판정: ``killed``(pytest 종료코드 1) · ``survived``(0) · ``timeout`` ·
 ``invalid``(수집 오류 등 — 변이가 문법·import 를 깨뜨렸다, 잡힌 것으로 세지 않는다).
 
+**거짓 잡힘을 세지 않는다.** 표본 숫자가 부풀면 도구가 없는 것만 못하다. 그래서 (1) 소스 글자를 보는 검사(:data:`SHALLOW` — 앵커·인용
+대조)는 돌리지 않고, (2) 잡았다는 검사를 **변이를 뺀 트리에서 다시 돌려** 거기서도 빨가면(부하 탓 등) 그 검사를 빼고 다시 판정한다
+(``flaky`` 에 적는다), (3) ``TMPDIR`` 를 클론 밖에 둔다 — 클론 안이면 "git 밖" 을 전제한 검사가 빨개진다. 무한 루프로 메모리를 먹는
+변이가 머신을 흔들지 않게 프로세스 메모리에 상한(:data:`MEM_LIMIT`)을 건다.
+
 표본은 시드와 코드에 달렸다(코드·커버리지가 바뀌면 같은 시드도 다른 변이를 뽑는다) — 같은 변이를 다시 돌리려면 ``--replay``.
 """
 from __future__ import annotations
@@ -26,6 +31,7 @@ import os
 import queue
 import random
 import re
+import resource
 import shutil
 import subprocess
 import sys
@@ -53,6 +59,10 @@ GROUPS: dict[str, tuple[list[str], list[str], bool]] = {
 CMP = {ast.Gt: ">=", ast.GtE: ">", ast.Lt: "<=", ast.LtE: "<", ast.Eq: "!=", ast.NotEq: "==",
        ast.In: "not in", ast.NotIn: "in", ast.Is: "is not", ast.IsNot: "is"}
 ARITH = {ast.Add: "-", ast.Sub: "+", ast.Mult: "/", ast.Div: "*"}
+#: 소스 글자를 대조하는 검사 — 줄이 바뀌면 동작과 무관하게 빨개진다. 이걸로 잡힌 것은 잡힌 것이 아니다.
+SHALLOW = ("tests/test_mutation_spec.py", "tests/test_docs_refs.py")
+#: 검사 프로세스 하나의 주소 공간 상한(바이트). e2e 도 1GiB 안쪽이다.
+MEM_LIMIT = 8 * 1024 ** 3
 
 
 def mutants(source: str, path: str, executed: set[int] | None = None, only: set[int] | None = None) -> list[dict]:
@@ -116,37 +126,75 @@ def verdict(rc: "int | str") -> str:
     return {0: "survived", 1: "killed", "timeout": "timeout"}.get(rc, "invalid")
 
 
-def pytest_once(root: Path, tests: list[str], deselect: list[str], timeout: int) -> tuple["int | str", str]:
+def _limit_memory() -> None:
+    resource.setrlimit(resource.RLIMIT_AS, (MEM_LIMIT, MEM_LIMIT))
+
+
+def first_failure(stdout: str) -> str:
+    """요약의 첫 ``FAILED``·``ERROR`` 줄의 nodeid. 없으면 빈 문자열."""
+    for ln in stdout.splitlines():
+        if ln.startswith(("FAILED ", "ERROR ")):
+            return ln.split(" ", 1)[1].split(" - ", 1)[0].strip()
+    return ""
+
+
+def pytest_once(root: Path, tmp: Path, tests: list[str], deselect: list[str], timeout: int) -> tuple["int | str", str]:
+    tmp.mkdir(parents=True, exist_ok=True)
     env = {**os.environ, "PYTHONPATH": f"{root}/src{os.pathsep}{root}", "PYTHONDONTWRITEBYTECODE": "1",
-           "TMPDIR": str(root / ".tmp")}
+           "TMPDIR": str(tmp)}
     env.pop("KR_QUANT_DB", None)
-    (root / ".tmp").mkdir(exist_ok=True)
     cmd = [sys.executable, "-m", "pytest", "-q", "-x", "-p", "no:cacheprovider", "--no-header", "--tb=no", *tests]
+    for f in SHALLOW:
+        if (root / f).exists():
+            cmd += ["--ignore", f]
     for d in deselect:
         cmd += ["--deselect", d]
     try:
-        p = subprocess.run(cmd, cwd=root, env=env, capture_output=True, text=True, timeout=timeout)
+        p = subprocess.run(cmd, cwd=root, env=env, capture_output=True, text=True, timeout=timeout,
+                           preexec_fn=_limit_memory)
     except subprocess.TimeoutExpired:
         return "timeout", ""
     finally:
-        shutil.rmtree(root / ".tmp", ignore_errors=True)
-    first = next((x for x in p.stdout.splitlines() if x.startswith(("FAILED", "ERROR"))), "")
-    return p.returncode, first[:150]
+        shutil.rmtree(tmp, ignore_errors=True)
+    return p.returncode, first_failure(p.stdout)
 
 
-def judge(root: Path, m: dict, deselect: list[str], timeout: int) -> dict:
+def _pytest_with_confirm(root: Path, tmp: Path, m: dict, orig: bytes, mutated: bytes, tests: list[str],
+                         deselect: list[str], timeout: int, flaky: list[str]) -> tuple["int | str", str]:
+    """주입한 채 돌리고, 잡았으면 원본에서 그 검사를 다시 본다. 원본에서도 빨간 검사는 빼고 다시 돈다(세 번까지)."""
+    p = root / m["file"]
+    skip = list(deselect)
+    for _ in range(3):
+        rc, first = pytest_once(root, tmp, tests, skip, timeout)
+        if rc != 1 or not first:
+            return rc, first
+        p.write_bytes(orig)
+        clean, _f = pytest_once(root, tmp, [first], [], timeout)
+        p.write_bytes(mutated)
+        if clean == 0:
+            return 1, first
+        flaky.append(first)
+        skip.append(first)
+    return "invalid", first
+
+
+def judge(root: Path, m: dict, deselect: list[str], timeout: int, tmp: "Path | None" = None) -> dict:
     """묶음 검사 → 살아남으면 전체 pytest. 소스는 무슨 일이 있어도 되돌린다."""
     t0 = time.monotonic()
+    tmp = tmp or Path(tempfile.gettempdir()) / f"sf-mutsample-{root.name}-tmp"
     orig = apply_mutant(root, m)
+    mutated = (root / m["file"]).read_bytes()
+    flaky: list[str] = []
     try:
-        rc, first = pytest_once(root, m["tests"], deselect, timeout)
+        rc, first = _pytest_with_confirm(root, tmp, m, orig, mutated, m["tests"], deselect, timeout, flaky)
         stage = "group"
         if rc == 0:
-            rc, first = pytest_once(root, [], deselect, timeout)
+            rc, first = _pytest_with_confirm(root, tmp, m, orig, mutated, [], deselect + flaky, timeout, flaky)
             stage = "full"
     finally:
         (root / m["file"]).write_bytes(orig)
-    return {**m, "rc": rc, "verdict": verdict(rc), "stage": stage, "first": first, "dt": round(time.monotonic() - t0, 1)}
+    return {**m, "rc": rc, "verdict": verdict(rc), "stage": stage, "first": first[:150], "flaky": flaky,
+            "dt": round(time.monotonic() - t0, 1)}
 
 
 def changed_lines(root: Path, base: str, path: str) -> set[int]:
@@ -189,7 +237,7 @@ def run_all(sample: list[dict], repo: Path, workers: int, deselect: list[str], t
     def job(m: dict) -> dict:
         root = q.get()
         try:
-            r = judge(root, m, deselect, timeout)
+            r = judge(root, m, deselect, timeout, work / f"{root.name}.tmp")
         finally:
             q.put(root)
         print(r["group"], r["verdict"], r["stage"], r["file"], r["line"], repr(r["old"]), "->", repr(r["new"]),
@@ -226,6 +274,9 @@ def main(argv: list[str] | None = None) -> int:
         shutil.rmtree(work, ignore_errors=True)
     Path(a.out).write_text(json.dumps(res, ensure_ascii=False, indent=0), "utf-8")
     print(dict(Counter(r["verdict"] for r in res)))
+    flakes = Counter(f for r in res for f in r["flaky"])
+    if flakes:
+        print(f"원본에서도 빨갛던 검사(잡힘으로 안 셌다): {dict(flakes)}")
     for r in res:
         if r["verdict"] == "survived":
             print(f"생존 {r['file']}:{r['line']} {r['old']!r} -> {r['new']!r} | {r['text'][:100]}")
