@@ -1088,7 +1088,7 @@ def col3(c):
     """
     return c[0], c[1], c[2]
 
-def check_block(tag, lines, width, cols, nhead, rows, want_of, state=None):
+def check_block(tag, lines, width, cols, nhead, rows, want_of, state=None, head_of=None):
     for i, ln in enumerate(lines):
         if cell_starts(ln)[-1] != width:
             bad.append(f"{tag} 행{i} 표시폭 {cell_starts(ln)[-1]} != {width}: "
@@ -1100,8 +1100,8 @@ def check_block(tag, lines, width, cols, nhead, rows, want_of, state=None):
         span = V.col_span(cols, name)
         if span is None or span[0] + w > width:
             continue
-        # 종목 목록 헤더는 창·주체마다 짧은 증거 표지를 단다(`name_head`, 3차 리뷰 D2-M1) — 화면이 그리는 글자로 본다.
-        shown = V.name_head(name, state) if state is not None and hasattr(V, "name_head") else name
+        # 종목 목록·섹터 표 헤더는 창·주체마다 짧은 증거 표지를 단다(`name_head`·`table_head`) — 화면이 그리는 글자로 본다.
+        shown = head_of(name) if head_of is not None else V.name_head(name, state) if state is not None and hasattr(V, "name_head") else name
         if slice_cells(head, *span) != V.pad(shown, w, right):
             bad.append(f"{tag} 헤더 '{shown}' 이 자기 칸에 없다")
     spans = {c[0]: V.col_span(cols, c[0]) for c in cols}
@@ -1133,6 +1133,8 @@ def check_block(tag, lines, width, cols, nhead, rows, want_of, state=None):
                 bad.append(f"{tag} '{name}' 이 {got!r} 로 잘려 보인다 (참값 {val!r})")
 
 st = V.State(d)
+# 섹터 표 헤더가 그리는 글자 — 앞날을 검정한 칸은 `가속[%p][무]` 처럼 표지가 붙는다. 표지 없는 열 이름과 비교하면 거짓 위반이다.
+table_head = (lambda h: V.table_head(h, st)) if hasattr(V, "table_head") else None
 widths = [40, 80, 100, 132, 150, 170, 200]
 n = 0
 seen_sort_keys = set()
@@ -1183,7 +1185,7 @@ for width in widths:
                     cols = V._fit(V.table_cols(st, width), width)
                     tag = (f"w{width} {V.WINDOWS[wi]}/{st.market}/"
                            f"{V.ACTORS[ai][1]}/{V.SORTS[si][1]}")
-                    check_block(tag, lines, width, cols, nhead, rows, want)
+                    check_block(tag, lines, width, cols, nhead, rows, want, head_of=table_head)
                     # 주체 일관성 — 화면의 임펄스·가속이 **선택된 주체**의 숫자인가.
                     # 위 want() 는 렌더가 쓴 것과 같은 투영 행에서 값을 다시 만드므로
                     # "기관 값이 그대로 남았다" 부류에는 동어반복이다. 그래서 여기서는
@@ -1222,7 +1224,7 @@ for width in widths:
                     if span is not None:
                         if name is None:
                             bad.append(f"{tag} 정렬키 {key} 에 SORT_COL 항목이 없다")
-                        elif slice_cells(lines[0], *span).strip() != name.strip():
+                        elif slice_cells(lines[0], *span).strip() != (table_head(name) if table_head else name).strip():
                             bad.append(f"{tag} 정렬 하이라이트가 다른 열을 가리킨다")
                     # 종목 목록 화면
                     if si == 0:
@@ -1263,7 +1265,7 @@ if hasattr(st, "explore"):
                     bad.append(f"{tag} 예외 {e!r}")
                     continue
                 check_block(tag, lines, width, V._fit(V.table_cols(st, width), width),
-                            nhead, rows, want)
+                            nhead, rows, want, head_of=table_head)
                 if st.selected() is None:
                     continue
                 nl, nh = V.names_lines(st, width)
