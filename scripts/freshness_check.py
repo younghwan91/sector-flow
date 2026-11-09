@@ -504,8 +504,8 @@ def main(argv: list[str] | None = None) -> int:
             rc, lines = judge(root, today, n, market_open=market_open)
             # 전 거래일은 달력이 정한다 — DB 의 마지막 수급일로 물으면 수집이 통째로 빠진 날이 "전 거래일" 에서 사라진다.
             prev = krx_calendar.prev_trading_day(today) or db_prev
-            for xrc, xlines in (check_prev_final(root, prev), check_external_truth(root, prev), check_published_truth(root, prev),
-                                check_slo(root, prev),
+            for xrc, xlines in (check_prev_final(root, prev), check_external_truth(root, prev),
+                                check_published_truth(root, prev), check_slo(root, prev),
                                 check_ledger_today(root, today, now), check_probes(root, now),
                                 check_calendar(today)):
                 rc, lines = worse(rc, xrc), lines + xlines

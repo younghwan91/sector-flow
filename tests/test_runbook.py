@@ -237,7 +237,7 @@ def test_runbook_names_the_github_billing_stop():
 def test_recovery_runbook_is_there_and_was_rehearsed():
     """reports/ 는 백업 대상이 아니다 — 디스크를 잃은 날 읽을 순서와, 실제로 돌려 잰 시간이 있어야 한다."""
     book = _runbook()
-    sec = book[book.index("### 3.2 디스크 소실·새 머신 복구"):]
+    sec = book[book.index("## 디스크 소실·새 머신 복구"):]
     for must in ("rebuild_history.py", "ln -sfn", "cron-install", "uv sync --extra pg", "events.jsonl", ".archive",
                  "seed_revisions.py", "backup_to_gdrive.sh", "리허설 실측"):
         assert must in sec, must

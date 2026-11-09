@@ -426,7 +426,7 @@ def test_cli_refuses_to_rewrite_a_published_report_and_out_leaves_it_alone(tmp_p
 
 
 def test_runbook_repro_commands_never_rewrite_a_published_payload():
-    text = (REPO / "README.md").read_text("utf-8")
+    text = (REPO / "docs/runbook.md").read_text("utf-8")
     cmds = re.findall(r"krx_truth\.py --payload [^`]*", text)
     assert cmds and all("--out" in c for c in cmds), cmds
 

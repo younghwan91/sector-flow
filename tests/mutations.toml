@@ -5028,8 +5028,8 @@ id = "freshness-main-skips-external-truth"
 why = "main 이 외부 참값 점검을 안 부르면 대조가 며칠째 안 돌아도 아무도 모른다"
 guards = ["tests/test_freshness_check.py::test_cron_path_flags_a_previous_day_external_truth_skip_streak"]
 file = "scripts/freshness_check.py"
-find = "check_external_truth(root, prev), check_slo(root, prev),"
-replace = "(0, []), check_slo(root, prev),"
+find = '''check_external_truth(root, prev),'''
+replace = '''(0, []),'''
 [[mutation]]
 id = "freshness-skip-mark-drifts"
 why = "verify_report 와 다른 글을 찾아 연속 SKIP 경고를 영영 못 본다"
@@ -6697,7 +6697,7 @@ replace = "    if False:"
 id = "runbook-repro-rewrites-published"
 why = "런북의 재현 명령이 --out 을 잃으면 그대로 따라 한 사람이 2 로 막히거나 게시본을 건드린다"
 guards = ["tests/test_krx_truth.py::test_runbook_repro_commands_never_rewrite_a_published_payload"]
-file = "README.md"
+file = "docs/runbook.md"
 find = "--fetch --out \"$(mktemp -d -p ~/.cache)\""
 replace = "--fetch"
 
@@ -6817,7 +6817,7 @@ replace = "        if False:"
 id = "runbook-billing-row-dropped"
 why = "결제 정지 줄이 없으면 CI 가 멈춘 원인을 코드에서 찾는다"
 guards = ["tests/test_runbook.py::test_runbook_names_the_github_billing_stop"]
-file = "README.md"
+file = "docs/runbook.md"
 find = "The job was not started because recent account payments have failed or your spending limit needs to be increased"
 replace = "잡이 안 돈다"
 
@@ -6825,9 +6825,9 @@ replace = "잡이 안 돈다"
 id = "recovery-section-dropped"
 why = "복구 절차의 리허설 시간이 사라지면 얼마나 걸릴지 모른 채 시작한다"
 guards = ["tests/test_runbook.py::test_recovery_runbook_is_there_and_was_rehearsed"]
-file = "README.md"
-find = "### 3.2 디스크 소실·새 머신 복구"
-replace = "### 3.2 복구"
+file = "docs/runbook.md"
+find = "## 디스크 소실·새 머신 복구"
+replace = "## 복구"
 
 # ── 오늘의 수급 다이제스트(scripts/digest.py) — 밖에 나갈 글이라 "말하면 안 되는 것" 쪽 검사가 중심이다.
 
@@ -8440,8 +8440,8 @@ id = "freshness-main-skips-published"
 why = "점검 함수를 main 이 안 부르면 75 가 안 나간다"
 guards = ["tests/test_freshness_check.py::test_cron_path_flags_a_previous_day_published_truth_skip_streak"]
 file = "scripts/freshness_check.py"
-find = "            trc, tlines = check_published_truth(Path(a.root), prev)"
-replace = "            trc, tlines = 0, []"
+find = '''check_published_truth(root, prev),'''
+replace = '''(0, []),'''
 
 [[mutation]]
 id = "cron-truth-off"

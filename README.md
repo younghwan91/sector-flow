@@ -134,7 +134,8 @@ scripts/
 ├── sector_flow.py          # DB → payload.json (+ viewer.html)
 ├── sector_numbers.py       # payload → numbers.html (templates/)
 ├── verify_report.py        # 리포트 자기 검증 (§9)
-├── krx_truth.py            # (선택) KRX 공표 거래대금과 대조
+├── krx_truth.py            # 공표 시장값과 시장 합계 대조 (내부 전용)
+├── krx_calendar.py         # KRX 휴장 달력 — 거래일 판정·SLO 분모
 ├── digest.py               # (선택) 다이제스트 글·카드 — 폴더에만 쓴다
 ├── trust_page.py           # 검증·품질 페이지 trust.html
 ├── rebuild_history.py      # 지난 기준일 여러 날 재구성
@@ -145,6 +146,7 @@ scripts/
 ├── web_smoke.py            # 웹 두 장을 진짜 브라우저로 여는 검사 (§10)
 ├── ledger_numbers.py       # sw-ledger 한계 화면의 실측 재현
 ├── verify_merge.py         # 병합 전 검증 — 실데이터 렌더·pty·변이 (§10)
+├── ci_plan.py              # CI 가 이번 커밋에 돌릴 변이 범위를 정한다
 ├── diff_coverage.py        # 변경 줄 커버리지 관문 (CI)
 └── docs_refs.py            # docs/formulas.md 의 `파일:줄` 인용 검사·--fix (§10)
 deploy/crontab.simnode      # 크론 정본

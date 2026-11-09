@@ -103,15 +103,15 @@
 **운영 사건 원장(`reports/events.jsonl`)** — 폴더 바꿔 끼우기가 INCOMPLETE·검증 실패 흔적과 mtime 을 지우고
 크론 로그는 5MB 에서 돌아, "언제 게시됐나·몇 번 막혔나·게시 뒤 숫자가 바뀐 날" 을 나중에 셀 수 없었다. 그래서
 실행·잡·웹 프로브·신선도 판정마다 JSON 한 줄을 **덧붙이기만** 한다(자르지 않는다 — 50MB 를 넘으면 `events.jsonl.2` 로
-이어 쓴다). 형식·통계는 [`scripts/ops_ledger.py`](scripts/ops_ledger.py)(`uv run python scripts/ops_ledger.py`,
-`--days 90`·`--json`·`--errata`), 기한(잠정 18:30 · 확정 다음날 10:40 · 웹 5분 프로브 200)은 [`docs/slo.md`](docs/slo.md) 가
+이어 쓴다). 형식·통계는 [`scripts/ops_ledger.py`](../scripts/ops_ledger.py)(`uv run python scripts/ops_ledger.py`,
+`--days 90`·`--json`·`--errata`), 기한(잠정 18:30 · 확정 다음날 10:40 · 웹 5분 프로브 200)은 [`docs/slo.md`](slo.md) 가
 정의하고 20:30 신선도 점검이 전 거래일을 그 기한에 대 본다. 원장 기록 실패는 리포트를 멈추지 않고, 원장은 웹
 허용 목록에 없어 밖에 보이지 않는다.
 
 ## 공표치 대조
 
 크론 리포트(`KR_QUANT_KRX_TRUTH=1`)는 네이버 시장값(개인·외국인·기관, KRX 원표와 같은지 미확인)과 시장 1일 순매수 금액을 대조해 오차 %만
-`today.krx_truth` 에 적고, 공표 수치는 `krx_truth.json` 에만 둔다([`scripts/krx_truth.py`](scripts/krx_truth.py)) — 약관을 확인하지 못해
+`today.krx_truth` 에 적고, 공표 수치는 `krx_truth.json` 에만 둔다([`scripts/krx_truth.py`](../scripts/krx_truth.py)) — 약관을 확인하지 못해
 **내부 대조 전용**이다. 화면에 공표 수치를 싣지 않고 비공개 리포트 밖으로 재배포하지 않는다. 시장별 GET 한 번(타임아웃 10초, 망 오류 재시도 1회),
 기준일당 최대 2회다. KRX 표는 익명 조회가 막혀 있다(`KR_QUANT_KRX_TRUTH_SOURCE=krx` 는 풀렸을 때를 위해 남겼다).
 실패(망·공표 전·형식 변화)는 SKIP 이다 — 리포트는 그대로 만들고, 3회 이어지면 다음날 신선도 점검이 경고한다.
