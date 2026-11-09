@@ -175,6 +175,24 @@ def test_stats_measures_punctuality_gate_verify_final_delays_and_rebuilds():
     assert s["freshness"] == {"n": 1, "warn": 1, "error": 0}
 
 
+def test_final_diff_unknown_counts_days_not_events():
+    """첫 확정에 기록이 있으면 재시도의 null 은 '비교 불가' 가 아니다. 검증에 걸린 기록 뒤의 null 은 믿지 않아 비운 것이다."""
+    def ev(asof, hh, diff, verify="pass"):
+        return {"asof": asof, "outcome": "final", "ts": f"2026-11-09T{hh:02d}:00:00Z", "diff": diff, "verify": verify}
+    reports = [
+        ev("2026-11-02", 1, 410), ev("2026-11-02", 2, None),                 # 첫 확정 기록 → 재시도 null: 안다
+        ev("2026-11-03", 1, 415, "fail"), ev("2026-11-03", 2, 410),           # 옛 코드 실패 → 이어받음: 안다
+        ev("2026-11-04", 1, 415, "fail"), ev("2026-11-04", 2, None),          # 걸린 기록을 안 이음: 모른다
+        ev("2026-11-05", 1, None),                                            # 처음부터 없음: 모른다
+        ev("2026-11-06", 1, 415, "fail"),                                     # 걸렸지만 숫자는 있다(verify_failed_days 가 센다)
+        {"asof": "2026-10-30", "outcome": "rebuilt", "ts": "2026-11-09T01:00:00Z", "diff": None},
+    ]
+    assert ol.final_diff_unknown(reports) == ["2026-11-04", "2026-11-05"]
+    # 순서가 뒤섞여도 시각으로 본다.
+    assert ol.final_diff_unknown([ev("2026-11-04", 2, None), ev("2026-11-04", 1, 415, "fail")]) == ["2026-11-04"]
+    assert ol.final_diff_unknown([ev("2026-11-07", 2, 3, "fail"), ev("2026-11-07", 1, None)]) == []
+
+
 def test_stats_window_cuts_old_events():
     old = _report("2026-09-01T09:12:00Z", "2026-09-01", "published")
     s30 = ol.stats([*FIX, old], 30, now=NOW)

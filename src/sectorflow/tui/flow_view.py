@@ -1399,8 +1399,12 @@ def final_diff_line(d: dict) -> str | None:
     if fd is None:
         why = d.get("final_diff_reason") or "이유 없음"
         return f" 잠정→확정 비교 없음: {why}"
+    # 앞에 둔다 — 폭 80 이면 괄호 끝이 잘린다.
+    kind = "잠정 열" if fd.get("rebased") else "기록"
+    first = f"첫 확정 {fd['inherited_from'][5:]} {kind}, " if fd.get("inherited_from") else ""
+    wins = "·".join(map(str, fd.get("windows") or (1, 5)))
     return (f" 잠정→확정 변경: {fd.get('n_changed', 0)}칸 / {fd.get('n_cells', 0)}칸"
-            f" (±{fd.get('tol', 0)}억 초과, 1·5일 순매수) — 목록은 ? 도움말 끝")
+            f" ({first}±{fd.get('tol', 0)}억 초과, {wins}일 순매수) — 목록은 ? 도움말 끝")
 
 
 def final_diff_help(d: dict) -> list[tuple[str, str]]:
@@ -1417,7 +1421,13 @@ def final_diff_help(d: dict) -> list[tuple[str, str]]:
         return "—" if v is None else f"{v:+,.2f}"
     base = "확정" if fd.get("base_final") else "잠정"
     out.append(("", f"바꿔 끼운 {base} 리포트({fd.get('base_built', '?')} KST) 대비"))
-    out.append(("", f"순매수[억] 1·5일 · 반올림 ±{fd.get('tol')}억 초과만"))
+    if fd.get("rebased"):
+        out.extend([("", f"첫 확정({fd['inherited_from']} KST) 뒤 값이 또 바뀌었다"),
+                    ("", "그 기록의 잠정 열로 1일 칸만 다시 셌다(5일 잠정 합은 없다)")])
+    elif fd.get("inherited_from"):
+        out.append(("", f"첫 확정({fd['inherited_from']} KST)의 기록을 이어받았다"))
+    wins = "·".join(map(str, fd.get("windows") or (1, 5)))
+    out.append(("", f"순매수[억] {wins}일 · 반올림 ±{fd.get('tol')}억 초과만"))
     moved = [t for t in fd.get("market_totals") or []
              if t.get("diff") is None or abs(t["diff"]) > (fd.get("tol") or 0)]
     out.append(("", f"시장 합계 {len(fd.get('market_totals') or [])}칸 중 {len(moved)}칸 바뀜"))

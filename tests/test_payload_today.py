@@ -287,7 +287,19 @@ def test_final_diff_lists_only_changes_beyond_rounding(tmp_path):
     assert "코스닥/금융 기관 1일" in txt and "3칸 바뀜" in txt
     assert _t_fails(new) == []
     new["final_diff"]["changed"][0]["new"] += 1.0
-    assert _t_fails(new), "확정값을 틀리게 적어도 검증기가 모른다"
+    assert "T/잠정 → 확정 — 확정값·차이가 페이로드에서 다시 나오는가" in _t_fails(new), "확정값을 틀리게 적어도 검증기가 모른다"
+
+
+def test_final_diff_row_within_the_rounding_tolerance_fails_the_verifier(tmp_path):
+    """문턱 안쪽 칸을 '바뀜' 으로 실으면 검증기가 거부한다 — 생산자 규칙이 느슨해지면 알게 하는 쪽."""
+    _prev, new = _prev_and_cur()
+    fd = sf.final_diff_compute(new, json.loads(json.dumps(new)))
+    ser = new["flows"]["코스닥"]["금융"]["inst"]
+    fd["changed"] = [{"market": "코스닥", "sector": "금융", "actor": "inst", "win": 1,
+                      "old": round(ser[-1] - 0.05, 2), "new": ser[-1], "diff": 0.05}]
+    fd["n_changed"] = 1
+    new.update(final=True, final_diff=fd, final_diff_reason=None)
+    assert "T/잠정 → 확정 — 확정값·차이가 페이로드에서 다시 나오는가" in _t_fails(new)
 
 
 def test_final_diff_keeps_every_one_day_cell_as_provisional_and_final(tmp_path):
