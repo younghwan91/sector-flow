@@ -166,7 +166,7 @@ def test_fold_items_breaks_at_item_boundaries():
     assert [ln.strip() for ln in lines] == ["머리: " + "가" * 20, "나" * 20, "다" * 20]
     assert FV._fold_items(" 머리: ", [], 20)[0].strip() == "머리: 없음"
     # 머리말 옆에 첫 항목이 안 들어가면 머리말이 혼자 선다.
-    alone = FV._fold_items("머" * 20 + ": ", ["가" * 20], 42)
+    alone = FV._fold_items("머" * 20 + ": ", ["가" * 20], 44)
     assert alone[0].strip().endswith(":") and "가" * 20 in alone[1], alone
 
 
