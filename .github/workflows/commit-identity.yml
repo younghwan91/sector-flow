@@ -24,6 +24,7 @@ jobs:
     # 브랜치·태그 삭제 푸시엔 검사할 커밋도, checkout 할 ref 도 없다.
     if: ${{ !github.event.deleted }}
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
         with:

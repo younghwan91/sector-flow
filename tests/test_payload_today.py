@@ -412,6 +412,7 @@ def test_main_writes_final_diff_next_to_the_payload(tmp_path, monkeypatch):
     monkeypatch.setattr(sf, "index_returns", lambda *a, **k: {m: {} for m in SECTORS})
     monkeypatch.setattr(sf, "sector_cap_monthly", lambda *a: {})
     monkeypatch.setattr(sf, "market_context", lambda con, d, P: None)
+    monkeypatch.setattr(sf, "rights_pending", lambda con, codes, asof: {})
     build = tmp_path / f"{dates[-1]}.building.9"
     build.mkdir()
     out = build / "payload.json"
@@ -513,7 +514,9 @@ def test_market_context_puts_index_and_gap_inside_today(P, monkeypatch):
     Q = json.loads(json.dumps(P))
     monkeypatch.setattr(sf, "krx_index_block", lambda con, dates, mk: {"거래소": {"ret": {"1": 1.0}}})
     monkeypatch.setattr(sf, "approx_gap", lambda con, df, asof, mk: {"코스닥": {"pct": 6.0}})
+    monkeypatch.setattr(sf, "block_suspects", lambda con, df, asof, mk: {"status": "skip", "reason": "x"})
     sf.market_context(None, None, Q)
+    assert Q["today"]["block_suspects"] == {"status": "skip", "reason": "x"}
     assert Q["today"]["krx_index"] == {"거래소": {"ret": {"1": 1.0}}}
     assert Q["today"]["market"]["코스닥"]["approx_gap"] == {"pct": 6.0}
     assert Q["today"]["market"]["거래소"]["approx_gap"] is None

@@ -20,12 +20,19 @@ KR_QUANT_REPORTS=<게시본 폴더> uv run python research/validation/q2_calc/re
 
 ## 입력 — 지금 reports/ 그대로는 안 된다
 
-기준일 2026-09-15·10-15·11-06 의 `payload.json`·`numbers.html`. 11-06 은 **18:10 잠정 게시본**이어야 하는데, 지금
-`reports/2026-11-06` 은 11-08 확정 모드로 다시 만든 판(고친 코드)이다. 옛 판은 그날 세션 스크래치의
-`prod-2026-11-06-backup/` 에만 있었다. 09-15·10-15 는 지금 `reports/` 그대로다(numbers.html 은 11-08 01:37 에 고치기 전
-코드로 다시 그린 판 — Q2 가 비교한 것이 이 판이다). 세 폴더를 한 곳에 모아 `KR_QUANT_REPORTS` 로 준다.
+기준일 2026-09-15·10-15·11-06 의 `payload.json`·`numbers.html`. 지금 `reports/` 는 2026-11-09 에 48개 전부 다시 만들어 이 판이 아니다.
+옛 판은 운영 머신의 `reports/.archive/` 에 있다. 09-15·10-15 는 `pre-rebuild-2026-11-08/`(numbers.html 은 11-08 01:37 에 고치기 전
+코드로 다시 그린 판 — Q2 가 비교한 것이 이 판이다), 11-06 은 **18:10 잠정 게시본**이어야 하므로 `2026-11-06-provisional/` 이다.
+세 폴더를 한 곳에 심볼릭 링크로 모아 `KR_QUANT_REPORTS` 로 준다.
 
-## 기대값 (2026-11-08, 스크래치 백업의 11-06 잠정판으로 다시 돌려 match rate 표가 처음 실행과 같았다)
+```bash
+A=~/git/sector-flow/reports/.archive; R=$(mktemp -d)
+ln -s $A/pre-rebuild-2026-11-08/2026-09-15 $A/pre-rebuild-2026-11-08/2026-10-15 $R/
+ln -s $A/2026-11-06-provisional $R/2026-11-06
+KR_QUANT_REPORTS=$R uv run python research/validation/q2_calc/recompute.py
+```
+
+## 기대값 (2026-11-09, 위 `.archive` 입력으로 다시 돌려 accel·G 가 처음 실행과 같았다)
 
 기본 변형: k·b·t 36/36, inst·forgn·indiv·etc·tv·cap·ret·x·U 100%, **accel 888/972 (91.36%)**, **G 413/972 (42.49%)**, 전체 94.10%.
 G 불일치는 문서가 관문(a>0·x>0·ẍ>0)을 적지 않아서, accel 불일치는 시장에 없는 섹터를 0.0 으로 내는 결함 4 와 조각 분모 차이.

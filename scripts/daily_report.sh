@@ -41,15 +41,28 @@ EV_STARTED="$(date -u +%FT%TZ)"
 EV_MODE="normal"
 [ -z "${KR_QUANT_FINAL:-}" ] || EV_MODE="final"
 [ -z "${KR_QUANT_ASOF:-}" ] || EV_MODE="rebuild"
-EV_ASOF="" EV_OUTCOME="error" EV_GATE="" EV_VERIFY="" EV_CHECKS="" EV_FAILS="" EV_FINAL="" EV_DIFF=""
+EV_ASOF="" EV_OUTCOME="error" EV_GATE="" EV_VERIFY="" EV_CHECKS="" EV_FAILS="" EV_FINAL="" EV_DIFF="" EV_SHA=""
+# 트랩이 읽는 변수는 트랩을 걸기 **전에** 비운다 — 환경에서 물려받은 BUILD 를 트랩이 rm -rf 한다(tests/test_ops_ledger.py 가 본다).
+BUILD=""
 _dr_event() {
   local rc="$1"
   # 옆에 짓던 폴더 청소 — 성공해 옮겼으면($BUILD 없음) 아무 일도 없다. 원장 기록과 한 트랩에 묶는다.
   [ -z "${BUILD:-}" ] || rm -rf "$BUILD" 2>/dev/null || true
   local commit
   commit="${KR_QUANT_CODE_REV:-$(git -C "$REPO" rev-parse HEAD 2>/dev/null || true)}"
-  sf_event_append "$OUT_ROOT" "{\"ts\":\"$(date -u +%FT%TZ)\",\"event\":\"report\",\"asof\":$(sf_q "$EV_ASOF"),\"mode\":\"$EV_MODE\",\"rc\":$rc,\"outcome\":\"$EV_OUTCOME\",\"gate\":$(sf_q "$EV_GATE"),\"verify\":$(sf_q "$EV_VERIFY"),\"verify_checks\":${EV_CHECKS:-null},\"verify_fails\":${EV_FAILS:-null},\"final\":${EV_FINAL:-false},\"diff\":${EV_DIFF:-null},\"commit\":$(sf_q "$commit"),\"started\":\"$EV_STARTED\"}"
+  sf_event_append "$OUT_ROOT" "{\"ts\":\"$(date -u +%FT%TZ)\",\"event\":\"report\",\"asof\":$(sf_q "$EV_ASOF"),\"mode\":\"$EV_MODE\",\"rc\":$rc,\"outcome\":\"$EV_OUTCOME\",\"gate\":$(sf_q "$EV_GATE"),\"verify\":$(sf_q "$EV_VERIFY"),\"verify_checks\":${EV_CHECKS:-null},\"verify_fails\":${EV_FAILS:-null},\"final\":${EV_FINAL:-false},\"diff\":${EV_DIFF:-null},\"payload_sha\":$(sf_q "$EV_SHA"),\"commit\":$(sf_q "$commit"),\"started\":\"$EV_STARTED\"}"
 }
+
+# 부속 단계의 상한 — 안쪽 ``timeout`` 은 자기 프로세스 그룹을 만들어(상한에 걸리면 손자까지 끊으려고) 크론 줄의 바깥 ``timeout`` 이 보낸 TERM 이 안 간다.
+# 전경으로 돌리면 셸은 그 자식을 기다리느라 TERM 트랩을 못 돌리고 KILL 로 죽는다: rc 137, 원장에 report 줄 없음, .building.N 잔류, 자식은 고아로
+# 계속 돈다(2026-11-09 재현). 배경으로 띄워 ``wait`` 하면 트랩이 바로 돌고, 트랩이 안쪽 timeout 에 TERM 을 넘긴다(그가 자기 그룹에 전한다).
+BOUNDED_PID=""
+_bounded() {
+  timeout -k 10s "$@" &
+  BOUNDED_PID=$!
+  wait "$BOUNDED_PID"
+}
+_bounded_stop() { [ -z "${BOUNDED_PID:-}" ] || kill -TERM "$BOUNDED_PID" 2>/dev/null || true; }
 
 # **겹쳐 돌지 않는다.** 크론(18:10·19:10·08:20)끼리는 timeout 40m 이라 안 겹치지만, 손으로 돌린
 # KR_QUANT_FORCE 와 크론이 겹치면 같은 기준일을 둘이 옆에 지어 바꿔 끼우다 서로의 폴더를 지운다.
@@ -58,6 +71,12 @@ _dr_event() {
 # 자식(파이썬)도 fd 9 를 물려받아, 셸이 죽어도 자식이 다 끝날 때까지 잠금이 남는다.
 mkdir -p "$OUT_ROOT"
 trap '_dr_event $?' EXIT
+# 시그널로 끝나면 bash 는 EXIT 트랩을 돌리되 $? 가 직전 명령의 것(대개 0)이다 — 크론 timeout 이 끊은 실행이 원장에 rc:0, outcome:error
+# 로 남았다. 관례대로 128+시그널 번호로 끝내 그 값이 트랩에 가게 한다.
+# 부속 단계(_bounded)가 돌고 있으면 끊어 주고 끝난다.
+trap '_bounded_stop; exit 129' HUP
+trap '_bounded_stop; exit 130' INT
+trap '_bounded_stop; exit 143' TERM
 LOCK="$OUT_ROOT/.report.lock"
 exec 9>>"$LOCK"
 if ! flock -n 9; then
@@ -222,7 +241,7 @@ fi
 if [ -f "$DEST/numbers.html" ] && [ ! -f "$DEST/VERIFY_FAILED.txt" ] && [ -z "${KR_QUANT_FORCE:-}" ] \
    && [ -z "$FINAL_REBUILD" ]; then
   echo "[$(date '+%F %T')] $ASOF 리포트가 이미 있다 — 건너뛴다(휴장일이거나 재실행)."
-  # 달력이 없어 휴장과 수집 실패를 못 가른다 — 갈라야 할 사람에게 사실을 준다.
+  # 여기서는 휴장과 수집 실패를 안 가른다(갈라 내는 것은 20:30 freshness_check 와 KRX 달력) — 지금 보는 사람에게 사실을 준다.
   if [[ "$ASOF" < "$TODAY" ]]; then
     echo "    최신 수급이 오늘($TODAY)이 아니다. 오늘이 거래일이면 수집이 안 된 것이다 — quant-airflow 를 확인하라."
   fi
@@ -328,6 +347,16 @@ if [ -n "$EV_SUMMARY" ]; then EV_CHECKS="${EV_SUMMARY%% *}" EV_FAILS="${EV_SUMMA
 if [ -f "$BUILD/final_diff.json" ]; then
   EV_DIFF="$(grep -o '"n_changed"[[:space:]]*:[[:space:]]*[0-9][0-9]*' "$BUILD/final_diff.json" 2>/dev/null | head -n 1 | grep -o '[0-9][0-9]*$')" || true
 fi
+# 부속 산출물 — 다이제스트·검증 페이지는 짓는 폴더 안에서 만들어 리포트와 **함께** 바꿔 낀다(게시된 폴더의 파일 하나를 고쳐 쓰는 길은 없다).
+# 실패·멈춤에도 리포트는 게시한다. 다만 조용히 빠지면 안 된다 — VERIFY.txt 끝에 적고 맨 끝에서 75(경고)로 알린다.
+SIDE_FAIL=""
+# 오늘의 수급 다이제스트(scripts/digest.py, 끄려면 KR_QUANT_DIGEST=0) — 폴더에만 쓴다(밖으로 보내지 않는다). 상한 5분·오프라인·판 고정.
+if [ "${KR_QUANT_DIGEST:-1}" != "0" ]; then UV_OFFLINE=1 _bounded "${KR_QUANT_DIGEST_TIMEOUT:-5m}" "${UVR[@]}" --with 'playwright==1.48.0' python scripts/digest.py --dir "$BUILD" || { echo "[$(date '+%F %T')] ⚠️ 다이제스트를 못 만들었다(실패 또는 시간 초과) — 리포트는 그대로 게시한다" >&2; SIDE_FAIL+="digest "; }; fi
+# 글은 됐는데 카드만 못 찍은 날 — 웹의 /latest/digest.png 가 404 다.
+if [ "${KR_QUANT_DIGEST:-1}" != "0" ] && [ -f "$BUILD/digest.md" ] && [ ! -f "$BUILD/digest.png" ]; then
+  echo "[$(date '+%F %T')] ⚠️ 다이제스트 카드(digest.png)를 못 찍었다 — 글은 만들었다" >&2
+  SIDE_FAIL+="digest.png "
+fi
 
 if [ -n "$REBUILD" ] && [ -n "$FINAL_OK" ]; then
   echo "[$(date '+%F %T')] 재구성 — daily_finalize 확인 뒤 확정된 DB 값으로 만들었다(REBUILT.txt)." > "$BUILD/FINAL.txt"
@@ -365,6 +394,16 @@ if [ -n "$REBUILD" ]; then
     echo "finalize: $FINALIZE_STATE"
   } > "$BUILD/REBUILT.txt"
 fi
+# 검증·품질 페이지(scripts/trust_page.py) — 이 판의 표시 파일(VERIFY·FINAL·REBUILT)을 다 쓴 뒤라야 그날 줄이 맞는다.
+# 다른 기준일·원장·.archive 는 읽기만 한다. 재구성을 옆 루트에 지으면 KR_QUANT_TRUST_ROOT 가 운영 루트를 가리킨다(rebuild_history.py).
+if ! _bounded "${KR_QUANT_TRUST_TIMEOUT:-5m}" "${UVR[@]}" python scripts/trust_page.py \
+     --root "${KR_QUANT_TRUST_ROOT:-$OUT_ROOT}" --build "$BUILD" --asof "$ASOF"; then
+  echo "[$(date '+%F %T')] ⚠️ 검증·품질 페이지를 못 만들었다 — 리포트는 그대로 게시한다" >&2
+  SIDE_FAIL+="trust.html "
+fi
+if [ -n "$SIDE_FAIL" ]; then
+  { echo; echo "부속 산출물 실패: ${SIDE_FAIL% } — 리포트 숫자와 무관하다. 다시 만들려면 KR_QUANT_FORCE=1 scripts/daily_report.sh"; } >> "$BUILD/VERIFY.txt" 2>/dev/null || true
+fi
 if [ -d "$DEST" ]; then
   OLD="$DEST.replaced.$$"
   mv "$DEST" "$OLD"
@@ -382,6 +421,8 @@ else
 fi
 # 게시됐다 — 원장의 결말(검증에 걸렸어도 게시는 됐다. verify 필드가 그걸 말한다).
 [ -z "$FINAL_OK" ] || EV_FINAL=true
+# 게시한 숫자의 지문 — 같은 기준일을 다시 게시했을 때 정말 바뀌었는지를 --errata 가 가른다.
+EV_SHA="$(sha256sum "$DEST/payload.json" 2>/dev/null | cut -d' ' -f1)" || true
 if [ -n "$REBUILD" ]; then
   EV_OUTCOME="rebuilt"
 elif [ -n "$FINAL_OK" ]; then
@@ -406,6 +447,11 @@ if [ "$VERIFY_RC" -eq 0 ]; then
   fi
 else
   echo "[$(date '+%F %T')] ⚠️ 게시했지만 검증에 걸렸다 — $DEST (latest). 화면과 HTML 이 ⚠ 로 표시하고, 같은 기준일이면 다음 크론이 다시 만든다."
+fi
+# 부속 산출물만 빠졌으면 경고다 — 이미 실패·미확인(75)이면 그쪽 알림에 본문으로 실린다.
+if [ -n "$SIDE_FAIL" ] && [ "$VERIFY_RC" -eq 0 ]; then
+  echo "[$(date '+%F %T')] ⚠️ 리포트는 게시했지만 부속 산출물을 못 만들었다(${SIDE_FAIL% }) — 위 ⚠️ 줄이 이유다. 고친 뒤 KR_QUANT_FORCE=1 $0" >&2
+  VERIFY_RC=75
 fi
 ls -lh "$DEST" | tail -n +2 | awk '{print "   ", $9, $5}'
 # 검증에 걸린 리포트도 게시한다(화면·HTML 이 ⚠ 로 말한다). 다만 크론에는 실패로 돌려 알림이 가게 한다.

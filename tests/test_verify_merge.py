@@ -1,9 +1,9 @@
 """주입 검증 하네스(`scripts/verify_merge.py`)의 속도·범위 장치가 **판정을 바꾸지 않는가**.
 
 CI 의 주입 검증이 PR 마다 4~10분씩 늘어(261개 8분 → 302개 22.7분, 잡 상한 30분) 기준선을 한 번에 돌리고,
-샤드로 나누고, 시간 예산을 걸고, 로컬 pre-push 는 바뀐 것만 돌게 했다. 빨라진 하네스가 못 잡는 변이를
+샤드로 나누고, 시간 예산을 걸고, 로컬 pre-push 와 PR 은 바뀐 것만 돌게 했다. 빨라진 하네스가 못 잡는 변이를
 "잡혔다" 고 하거나 샤드가 변이를 빠뜨리면 이 게이트는 장식이 된다 — 그걸 작은 가짜 레포로 본다.
-`--self-test` 는 진짜 레포 전체로 같은 것을 보지만 수십 분이라 주 1회(CI schedule)만 돈다.
+`--self-test` 는 진짜 레포로 같은 것을 보지만 오래 걸려 주 1회(CI schedule)만 돈다.
 """
 from __future__ import annotations
 
@@ -122,6 +122,24 @@ def test_new_test_without_mutation_is_rejected_unless_exempt_with_a_reason(mini)
     assert "샤드 1 이 한다" in out
 
 
+def test_identity_section_rejects_another_address_on_either_side(mini):
+    """작성자·커미터 어느 쪽이든 레포 설정과 다르면 REJECT, GitHub 머지 주소는 통과. 자기 검증의 같은 시나리오는 주 1회이고,
+    로컬에서는 전역 신원 훅이 그 커밋을 막아 시나리오가 성립하지 않는다 — 판정 자체는 여기서 매번 본다."""
+    wt, _ = mini
+    def commit_as(author: str, committer: str) -> str:
+        (wt / "lib.py").write_text((wt / "lib.py").read_text("utf-8") + "\n", "utf-8")
+        _git(wt, "add", "-A")
+        subprocess.run(["git", "commit", "-q", "-m", "x"], cwd=wt, check=True, capture_output=True,
+                       env={**GIT_ENV, "GIT_AUTHOR_EMAIL": author, "GIT_COMMITTER_EMAIL": committer})
+        return _git(wt, "rev-parse", "HEAD")
+    me, other = "t@example.com", "someone@corp.example.com"
+    assert VM.sec_identity(wt, [commit_as(me, me)]).status == VM.PASS
+    assert VM.sec_identity(wt, [commit_as(me, "noreply@github.com")]).status == VM.PASS
+    for a, c in ((other, me), (me, other)):
+        s = VM.sec_identity(wt, [commit_as(a, c)])
+        assert s.status == VM.REJECT and other in "\n".join(s.lines)
+
+
 def test_changed_scope_runs_only_mutations_touching_the_branch(mini):
     wt, _ = mini
     other = BLIND.replace('file = "lib.py"', 'file = "other.py"').replace(
@@ -137,35 +155,52 @@ def test_changed_scope_runs_only_mutations_touching_the_branch(mini):
     assert "[add-subtracts] 잡힘" in out and "[other]" not in out
 
 
+def test_direct_scope_does_not_widen_and_runs_new_declarations_first():
+    """PR 범위 — 직접 닿은 변이만. FULL_TRIGGERS 로 넓히면 머지의 절반이 다시 전체다(최근 34 머지 중 17건 이상)."""
+    a = {"id": "a", "guards": ["tests/t1.py::x"], "file": "src/a.py", "find": "1"}
+    b = {"id": "b", "guards": ["tests/t2.py::y"], "edits": [{"file": "src/b.py", "find": "2"}]}
+    c = {"id": "c", "guards": ["tests/t3.py::z"], "file": "src/c.py", "find": "3"}
+    base = {"a": a, "b": b, "c": dict(c, find="old")}
+    pick = lambda ch: [m["id"] for m in VM.direct_scope([a, b, c], ch, base)[0]]  # noqa: E731
+    assert pick(set()) == ["c"]                                  # 선언이 바뀐 것은 늘
+    assert pick({"src/a.py"}) == ["c", "a"]                      # 새 선언이 먼저
+    assert pick({"tests/t2.py"}) == ["c", "b"]
+    for full in ("uv.lock", "pyproject.toml", "scripts/sector_flow.py", "scripts/templates/x.html"):
+        assert pick({full}) == ["c"], full                       # 넓히지 않는다 — 전체는 main push 가 돈다
+    assert pick({"src/a.py", "src/b.py", "src/c.py"}) == ["c", "a", "b"]
+
+
+def test_direct_scope_runs_the_touched_mutation_and_only_warns_on_budget(mini):
+    """PR 범위가 진짜로 주입하고(이름만 바꾼 건너뛰기가 아니다), 시간이 넘치면 PR 을 막는 대신 멈추고 경고한다."""
+    wt, _ = mini
+    other = BLIND.replace('file = "lib.py"', 'file = "other.py"').replace(
+        "sub-adds-but-guard-is-blind", "other")
+    (wt / "tests" / "mutations.toml").write_text(SPEC + other, "utf-8")
+    (wt / "other.py").write_text("def sub(a, b):\n    return a - b\n", "utf-8")
+    _commit(wt, "other")
+    base = _git(wt, "rev-parse", "HEAD")
+    (wt / "lib.py").write_text(LIB + "\n", "utf-8")
+    _commit(wt, "touch lib")
+    s, out = _run(wt, base, scope="direct", budget_min=12)
+    assert s.status == VM.PASS and "범위: direct" in out and "1/2개" in out
+    assert "[add-subtracts] 잡힘" in out and "[other]" not in out
+    s, out = _run(wt, base, scope="direct", budget_min=1e-6)
+    assert s.status == VM.WARN and "돌리지 않고" in out and "main push" in out and "잡힘" not in out
+
+
 def test_budget_overrun_stops_and_rejects(mini):
     wt, base = mini
     s, out = _run(wt, base, budget_min=1e-6)
     assert s.status == VM.REJECT and "돌리지 않고" in out and "잡힘" not in out
-    # 샤드 없는 실행이라 예산에 샤드 수(mini 엔 ci.yml 이 없다 → 4)를 곱했다고 적는다.
-    assert "× 샤드 4" in out
 
 
-def test_unsharded_budget_scales_by_the_ci_shard_count(tmp_path):
-    """--budget-min 은 CI 샤드 한 몫의 예산이다 — 샤드 없이(전체 몫) 돌면 샤드 수를 곱한다.
-
-    안 곱하면 변이가 늘 때마다 ci-local 전체 실행이 전부 REJECT 로 막힌다(2026-11-09, 692개
-    12.3분 > 12분). 샤드가 주어지면 그대로다."""
-    wf = tmp_path / ".github" / "workflows"
-    wf.mkdir(parents=True)
-    (wf / "ci.yml").write_text(
-        "    strategy:\n      matrix:\n        shard: [1, 2, 3, 4, 5, 6]\n", "utf-8")
-    assert VM.ci_shard_count(tmp_path) == 6
-    eff, why = VM.effective_budget(12, None, tmp_path)
-    assert eff == 72 and "× 샤드 6" in why and "72" in why
-    assert VM.effective_budget(12, (2, 6), tmp_path) == (12, "")     # 샤드 한 몫은 그대로
-    assert VM.effective_budget(None, None, tmp_path) == (None, "")   # 예산이 없으면 아무것도 안 한다
-    (wf / "ci.yml").write_text("jobs: {}\n", "utf-8")               # matrix 가 없으면 4 로 본다
-    assert VM.ci_shard_count(tmp_path) == 4
-    assert VM.ci_shard_count(tmp_path / "nope") == 4
-    # 실제 ci.yml 의 matrix 와 같은 수를 읽는다 — 식이 어긋나면 여기서 끊긴다.
-    import re
-    shards = re.search(r"shard: \[([\d, ]+)\]", (REPO / ".github/workflows/ci.yml").read_text("utf-8"))
-    assert VM.ci_shard_count(REPO) == len(shards.group(1).split(","))
+def test_local_changed_scope_warns_on_time_instead_of_blocking_the_push(mini):
+    """pre-push 가 sector_flow·verify_merge 를 건드리면 changed 가 전체라 37분쯤 든다. 시간으로 막으면 푸시가 전부 막힌다 — 전체는 main 이 돈다."""
+    wt, base = mini
+    (wt / "lib.py").write_text(LIB + "\n", "utf-8")
+    _commit(wt, "touch")
+    s, out = _run(wt, base, scope="changed", budget_min=1e-6)
+    assert s.status == VM.WARN and "돌리지 않고" in out and "main push" in out
 
 
 def test_shards_partition_the_declarations_deterministically():
@@ -266,7 +301,7 @@ def test_budget_verdict():
 def test_cli_passes_shard_budget_and_scope_through(monkeypatch, tmp_path, capsys):
     seen = {}
 
-    def fake_verify(wt, base, report, only, py, spec, shard, budget, scope):
+    def fake_verify(wt, base, report, only, py, spec, shard, budget, scope, *rest):
         seen.update(only=only, shard=shard, budget=budget, scope=scope)
         return VM.PASS, []
     monkeypatch.setattr(VM, "verify", fake_verify)
@@ -333,6 +368,28 @@ def test_only_a_test_failure_counts_as_caught(mini):
     assert "[add-subtracts] 잡힘" not in out
 
 
+def test_children_get_the_memory_cap(tmp_path, monkeypatch):
+    """하네스가 띄우는 모든 자식(변이 주입 pytest·기준선 포함)에 상한이 걸린다. 값만 읽는다 — 할당하지 않는다."""
+    monkeypatch.setenv(VM.memcap.LIMIT_ENV, "1024")
+    p = VM.run([sys.executable, "-c", "import resource as r; print(r.getrlimit(r.RLIMIT_DATA)[0])"], tmp_path)
+    assert int(p.stdout) == 1024 ** 3
+
+
+def test_a_mutant_stopped_by_the_memory_cap_is_not_caught(mini, monkeypatch):
+    """폭주를 상한(또는 커널)이 끊은 빨강을 '잡힘' 으로 세면 안 된다 — 11:05·11:25 의 OOM 이 그렇게 '잡힘 14.9초' 로 지나갔다.
+    상한이 없으면 변이가 할당 전에 단언으로 죽으니 이 검사 자신은 폭주하지 않는다."""
+    monkeypatch.setenv(VM.memcap.LIMIT_ENV, "1024")
+    wt, base = mini
+    grow = ("    import resource\\n    assert resource.getrlimit(resource.RLIMIT_DATA)[0] == " + str(1024 ** 3)
+            + "\\n    return [bytearray(10 ** 8) for _ in iter(int, 1)]")
+    (wt / "tests" / "mutations.toml").write_text(SPEC.replace('replace = "    return a - b"', f'replace = "{grow}"'), "utf-8")
+    _commit(wt, "runaway mutation")
+    s, out = _run(wt, base)
+    assert s.status == VM.REJECT and "[add-subtracts] 판정 불가 — 메모리 상한" in out, out
+    assert "[add-subtracts] 잡힘" not in out
+    assert (wt / "lib.py").read_text("utf-8") == LIB
+
+
 def test_changed_src_reaches_guards_through_imports_scripts_and_strings(tmp_path):
     """바뀐 src 모듈 → 그걸 import 하는 src 모듈 → 그걸 쓰는 스크립트 → 그 스크립트를 띄우는 검사까지 닿는다."""
     files = {
@@ -377,3 +434,255 @@ def test_render_smoke_expects_the_g_column_rounded_like_the_tui():
     g_col = next(c for c in FV._TABLE_COLS if c.header == "G")
     for v in (0.595, 0.125, -0.335, 0.6, None):
         assert ns["want"]({"G": v}, "G") == g_col.fn({"G": v}, None)
+
+
+def test_a_same_named_guard_in_another_file_does_not_cover_a_new_test(mini):
+    """다른 파일의 동명 가드는 내 검사가 자기 버그를 잡는다는 증거가 아니다."""
+    wt, base = mini
+    (wt / "tests" / "test_other.py").write_text("from lib import add\n\n\ndef test_add():\n    assert add(0, 0) == 0\n",
+                                                "utf-8")
+    _commit(wt, "same name, other file")
+    s, out = _run(wt, base)
+    assert s.status == VM.REJECT and "tests/test_other.py::test_add" in out, out
+    assert VM.guard_names_test("tests/a.py::Cls::test_x[p1]", "tests/a.py::test_x")
+    assert not VM.guard_names_test("tests/b.py::test_x", "tests/a.py::test_x")
+
+
+def test_removed_mutation_needs_a_written_reason(mini):
+    """변이를 지우기만 하면 하네스가 볼 것이 줄어 초록이 된다 — 이유가 diff 에 남아야 한다."""
+    wt, base = mini
+    (wt / "tests" / "mutations.toml").write_text(SPEC + BLIND.replace("test_blind", "test_add"), "utf-8")
+    _commit(wt, "base2")
+    base2 = _git(wt, "rev-parse", "HEAD")
+    (wt / "tests" / "mutations.toml").write_text(SPEC, "utf-8")
+    _commit(wt, "drop one")
+    s, out = _run(wt, base2)
+    assert s.status == VM.REJECT and "[sub-adds-but-guard-is-blind] 가 기준 이후 사라졌다" in out, out
+
+    (wt / "tests" / "mutations.toml").write_text(
+        SPEC + '\n[[removed]]\nid = "sub-adds-but-guard-is-blind"\nwhy = "짧"\n', "utf-8")
+    _commit(wt, "short reason")
+    assert _run(wt, base2)[0].status == VM.REJECT
+    (wt / "tests" / "mutations.toml").write_text(
+        SPEC + '\n[[removed]]\nid = "sub-adds-but-guard-is-blind"\nwhy = "빼기 함수를 지워 버그가 표현 불가능해졌다"\n', "utf-8")
+    _commit(wt, "reason")
+    s, out = _run(wt, base2)
+    assert s.status == VM.PASS, out
+
+
+# ── 머지당 분을 줄인 장치들(잡 하나·기준선 공유·동시 실행·바이트코드)이 판정을 바꾸지 않는가 ──────────────────────────
+
+
+def _with_package(wt: Path) -> None:
+    """하네스의 임포트 출처 검사가 지나가게 — 자식 하네스는 ``sectorflow`` 가 자기 사본에서 오는지 본다."""
+    (wt / "src" / "sectorflow").mkdir(parents=True)
+    (wt / "src" / "sectorflow" / "__init__.py").write_text("", "utf-8")
+    _commit(wt, "package")
+
+
+def test_full_baseline_doubles_as_the_test_run_and_rejects_a_red_test_no_mutation_guards(mini):
+    """전체 pytest 가 가드 기준선을 겸하면 main 의 pytest 한 벌이 사라진다 — 가드가 아닌 검사의 실패도 막아야 그 한 벌을 대신한다."""
+    wt, base = mini
+    s, out = _run(wt, base, full_baseline=True)
+    assert s.status == VM.PASS and "전체 pytest 2건이 가드 1개를 겸한다" in out and "[add-subtracts] 잡힘" in out
+    (wt / "tests" / "test_other.py").write_text("def test_red():\n    assert False\n", "utf-8")
+    _commit(wt, "red, not a guard")
+    s, out = _run(wt, base, full_baseline=True)
+    assert s.status == VM.REJECT and "pytest 실패 1건" in out and "test_red" in out
+    s, out = _run(wt, _git(wt, "rev-parse", "HEAD"))                # 가드만 도는 기준선은 그 검사를 안 본다
+    assert s.status == VM.PASS, out
+
+
+def test_baseline_leaves_bytecode_that_injection_keeps_valid(mini):
+    """기준선만 .pyc 를 쓴다 — 안 쓰면 변이마다 전부 다시 컴파일해 러너에서 주입이 두 배였다. 주입이 .pyc 를 덮거나 원본 mtime 을 잃으면
+    다음 실행이 옛 바이트코드를 읽거나 다시 컴파일한다."""
+    wt, base = mini
+    before = (wt / "lib.py").stat().st_mtime_ns
+    s, out = _run(wt, base)
+    assert s.status == VM.PASS, out
+    assert (wt / "lib.py").stat().st_mtime_ns == before            # 복구는 mtime 까지
+    pycs = list((wt / "__pycache__").glob("lib.*.pyc"))
+    assert pycs, "기준선이 .pyc 를 안 남겼다"
+    # 헤더: 매직 4 + 플래그 4 + 원본 mtime(초) 4 + 크기 4. 주입 실행이 쓴 것이면 변이의 mtime 이 박힌다.
+    assert int.from_bytes(pycs[0].read_bytes()[8:12], "little") == before // 10 ** 9
+
+
+def test_each_mutant_gets_an_mtime_no_bytecode_can_match(tmp_path):
+    """.pyc 는 (mtime 초, 크기)로 맞춰 본다 — 같은 크기의 변이가 원본·앞 변이와 같은 초면 변이가 **안 들어간 채** 판정한다."""
+    f = tmp_path / "m.py"
+    f.write_text("x = 1\n", "utf-8")
+    t0 = f.stat().st_mtime_ns
+    seen = {t0 // 10 ** 9}
+    for _ in range(3):
+        VM._stamp_mutant(f, t0)
+        seen.add(f.stat().st_mtime_ns // 10 ** 9)
+    assert len(seen) == 4
+
+
+def _parallel(wt: Path, base: str, **kw):
+    s = VM.sec_mutations_parallel(wt, sys.executable, base, None, kw.pop("budget_min", None), 2, kw.pop("full", False))
+    return s, "\n".join(s.lines)
+
+
+def test_parallel_injects_every_mutation_once_in_copies_and_baselines_once(mini):
+    """동시 실행이 몫을 빠뜨리거나 겹치면 초록이 거짓말이다. 기준선은 부모 한 번뿐이고 원본 트리는 손대지 않는다."""
+    wt, _ = mini
+    _with_package(wt)
+    (wt / "tests" / "test_lib.py").write_text(TESTS + "\n\ndef test_sub():\n    assert sub(5, 3) == 2\n", "utf-8")
+    other = BLIND.replace("tests/test_lib.py::test_blind", "tests/test_lib.py::test_sub").replace(
+        "sub-adds-but-guard-is-blind", "sub-adds")
+    (wt / "tests" / "mutations.toml").write_text(SPEC + other, "utf-8")
+    _commit(wt, "two mutations")
+    base = _git(wt, "rev-parse", "HEAD")
+    s, out = _parallel(wt, base, budget_min=30, full=True)
+    assert s.status == VM.PASS, out
+    assert out.count("[add-subtracts] 잡힘") == 1 and out.count("[sub-adds] 잡힘") == 1, out
+    assert out.count("기준선:") == 1 and "전체 pytest 3건" in out and "동시 2" in out
+    assert (wt / "lib.py").read_text("utf-8") == LIB
+    assert not _git(wt, "status", "--porcelain")
+
+
+def test_clone_keeps_source_folders_named_like_outputs_and_the_bytecode_timestamps(mini, tmp_path):
+    """뿌리의 ``reports/`` 는 산출물이지만 ``docs/strategy/reports`` 는 소스다 — 빠지면 사본의 문서 검사가 주입 없이도 빨갛다.
+    mtime 을 잃으면 기준선의 ``.pyc`` 가 사본에서 안 맞아 동시 실행이 다시 컴파일한다."""
+    wt, _ = mini
+    (wt / "docs" / "reports").mkdir(parents=True)
+    (wt / "docs" / "reports" / "x.md").write_text("문서", "utf-8")
+    (wt / "reports").mkdir()
+    (wt / "reports" / "big.html").write_text("산출물", "utf-8")
+    before = (wt / "lib.py").stat().st_mtime_ns
+    copy = tmp_path / "copy"
+    VM._clone_tree(wt, copy)
+    assert (copy / "docs" / "reports" / "x.md").exists() and not (copy / "reports").exists()
+    assert (copy / "lib.py").stat().st_mtime_ns == before
+    assert (copy / ".git").is_dir()
+
+
+def test_parallel_passes_a_red_mutation_verdict_up(mini):
+    wt, _ = mini
+    _with_package(wt)
+    (wt / "tests" / "mutations.toml").write_text(SPEC + BLIND, "utf-8")
+    _commit(wt, "blind")
+    s, out = _parallel(wt, _git(wt, "rev-parse", "HEAD"))
+    assert s.status == VM.REJECT and "[sub-adds-but-guard-is-blind] 변이를 넣었는데" in out and "REJECT 다" in out, out
+
+
+def test_parallel_full_baseline_failure_is_rejected(mini):
+    wt, _ = mini
+    _with_package(wt)
+    (wt / "tests" / "test_other.py").write_text("def test_red():\n    assert False\n", "utf-8")
+    _commit(wt, "red")
+    s, out = _parallel(wt, _git(wt, "rev-parse", "HEAD"), full=True)
+    assert s.status == VM.REJECT and "pytest 실패 1건" in out, out
+
+
+def test_parallel_child_that_leaves_no_result_is_rejected(mini, monkeypatch):
+    """자식이 죽으면(메모리·시그널) 그 몫은 돌지 않았다 — 나머지 몫이 초록이어도 통과가 아니다."""
+    wt, base = mini
+    monkeypatch.setattr(VM, "run_baseline", lambda *a, **k: ({"tests/test_lib.py::test_add": {"outcome": "passed"}}, [], ""))
+    s = VM.sec_mutations_parallel(wt, "/bin/false", base, None, None, 2, False)
+    assert s.status == VM.REJECT and "결과를 못 남겼다" in "\n".join(s.lines)
+
+
+def test_parallel_is_only_for_a_tree_with_its_own_git_dir(tmp_path):
+    """링크드 워크트리의 .git 은 파일이다 — 사본들이 인덱스 하나를 나눠 쓰게 된다."""
+    (tmp_path / ".git").write_text("gitdir: /x\n", "utf-8")
+    assert not VM.can_parallel(tmp_path)
+    (tmp_path / ".git").unlink()
+    (tmp_path / ".git").mkdir()
+    assert VM.can_parallel(tmp_path)
+
+
+def test_scoped_runs_ignore_workers_and_the_full_baseline(mini, monkeypatch):
+    """ci-local 은 gate 잡을 changed 범위로 돈다 — 전체 pytest 는 같은 워크플로의 test 잡이 돌았고, 사본 동시 실행은 전체 범위의 것이다."""
+    wt, base = mini
+    calls = {}
+
+    def seq(_wt, _py, _base, _spec, shard, budget, scope, full, bj):
+        calls["seq"] = (scope, full)
+        return VM.Section("mutations")
+    monkeypatch.setattr(VM, "sec_mutations", seq)
+    monkeypatch.setattr(VM, "sec_mutations_parallel", lambda *a: calls.update(par=a) or VM.Section("mutations"))
+    monkeypatch.setattr(VM, "sec_worktree", lambda *a: (VM.Section("worktree"), []))
+    VM.verify(wt, base, "", {"mutations"}, sys.executable, None, None, 35, "changed", workers=2, full_baseline=True)
+    assert calls == {"seq": ("changed", False)}
+    calls.clear()
+    VM.verify(wt, base, "", {"mutations"}, sys.executable, None, None, 35, "all", workers=2, full_baseline=True)
+    assert "par" in calls and calls["par"][-2:] == (2, True) and "seq" not in calls
+    calls.clear()
+    monkeypatch.setattr(VM, "can_parallel", lambda _wt: False)
+    VM.verify(wt, base, "", {"mutations"}, sys.executable, None, None, 35, "all", workers=2, full_baseline=True)
+    assert calls == {"seq": ("all", True)}
+
+
+def test_a_tree_kill_during_a_mutant_is_not_a_catch(mini, monkeypatch):
+    """감시자가 검사의 자식을 죽이면 검사가 실패해 종료코드 1 이 된다 — 그 빨강을 '잡힘' 으로 세면 안 된다."""
+    wt, base = mini
+    counts = iter(range(100))
+    monkeypatch.setattr(VM.memcap, "tree_kills", lambda: next(counts))
+    s, out = _run(wt, base)
+    assert s.status == VM.REJECT and "[add-subtracts] 판정 불가 — 이 변이가 도는 동안" in out and "잡힘" not in out
+
+
+def _main_seen(monkeypatch, argv: list[str]) -> dict:
+    seen: dict = {}
+
+    def fake(wt, base, report, only, py, spec, shard, budget, scope, demo, required, *rest):
+        seen.update(report=report, demo=demo, required=required)
+        return VM.PASS, []
+    monkeypatch.setattr(VM, "verify", fake)
+    assert VM.main(argv) == 0
+    return seen
+
+
+def test_cli_uses_the_demo_only_when_no_folder_was_given_and_the_default_is_missing(monkeypatch, tmp_path):
+    (tmp_path / "wt").mkdir()
+    wt = str(tmp_path / "wt")
+    monkeypatch.setattr(VM, "DEFAULT_REPORT", str(tmp_path / "none"))
+    assert _main_seen(monkeypatch, [wt, "--only", "render"])["demo"] is True
+    assert _main_seen(monkeypatch, [wt, "--only", "render", "--report-dir", str(tmp_path / "typo")])["demo"] is False
+    (tmp_path / "real").mkdir()
+    (tmp_path / "real" / "numbers.html").write_text("x", "utf-8")
+    monkeypatch.setattr(VM, "DEFAULT_REPORT", str(tmp_path / "real"))
+    assert _main_seen(monkeypatch, [wt, "--only", "render"])["demo"] is False
+    assert _main_seen(monkeypatch, [wt, "--only", "render", "--demo"])["demo"] is True
+    # 이름을 댄 층·폴더를 댄 화면 층만 필수다 — 인자 없는 전체 실행의 SKIP 은 SKIP 으로 남는다.
+    assert _main_seen(monkeypatch, [wt, "--only", "render"])["required"] == {"render"}
+    assert _main_seen(monkeypatch, [wt, "--report-dir", str(tmp_path / "typo")])["required"] == {"render", "pty"}
+    assert _main_seen(monkeypatch, [wt])["required"] == set()
+
+
+def test_a_layer_that_was_asked_for_and_could_not_run_is_rejected_not_passed(mini, tmp_path):
+    """폴더 오타로 화면 층이 전부 건너뛰어졌는데 ``판정: PASS``·rc 0 이었다. 요청한 층의 SKIP 은 통과가 아니다."""
+    wt, base = mini
+    _with_package(wt)
+    missing = str(tmp_path / "typo")
+    verdict, secs = VM.verify(wt, base, missing, {"render", "pty"}, sys.executable, None, required={"render", "pty"})
+    assert verdict == VM.REJECT and all(s.status == VM.REJECT for s in secs if s.name in ("render", "pty"))
+    verdict, secs = VM.verify(wt, base, missing, {"render", "pty"}, sys.executable, None)      # 요청 안 했으면 SKIP 그대로
+    assert verdict == VM.PASS and {s.status for s in secs if s.name in ("render", "pty")} == {VM.SKIP}
+
+
+def test_demo_that_cannot_be_built_is_rejected(mini):
+    wt, base = mini
+    _with_package(wt)                                       # 빈 패키지 — sectorflow.demo 가 없다
+    verdict, secs = VM.verify(wt, base, "", {"render"}, sys.executable, None, demo=True)
+    assert verdict == VM.REJECT and "합성 데모를 짓지 못했다" in "\n".join(secs[0].lines)
+
+
+def test_render_smoke_expects_the_rights_mark_on_the_cap_share_column():
+    """시총대비 칸의 `!`(cap_pending)를 기대값이 몰라 합성 데모에서 거짓 위반 736건이 났다. 화면이 표지를 빠뜨리면 이 기대값이 잡는다."""
+    import ast
+
+    sys.path.insert(0, str(REPO / "src"))
+    from sectorflow.tui import flow_view as FV
+    tree = ast.parse(VM.RENDER_SMOKE)
+    keep = [n for n in tree.body
+            if (isinstance(n, ast.Assign) and any(getattr(t, "id", "") == "EXPECT" for t in n.targets))
+            or (isinstance(n, ast.FunctionDef) and n.name == "want")]
+    ns: dict = {"V": FV}
+    exec(compile(ast.Module(body=keep, type_ignores=[]), "render_smoke", "exec"), ns)
+    col = next(c for c in FV.names_cols() if c.header == "시총대비[%p]")
+    for row in ({"a": 0.43, "cap_pending": True}, {"a": 0.43}, {"a": None}):
+        assert ns["want"](row, "시총대비[%p]") == col.fn(row, None), row
+    assert ns["want"]({"a": 0.43, "cap_pending": True}, "시총대비[%p]").endswith(FV.CAP_PENDING_MARK)

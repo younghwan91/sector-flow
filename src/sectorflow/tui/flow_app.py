@@ -12,6 +12,7 @@ pty 검사만으로는 "통과했는데 아무것도 안 한" 검사가 반복�
 
 Run:  sw-flow                       # <repo>/reports/latest
       sw-flow --dir <리포트 폴더>
+      sw-flow --demo                # 합성 데이터(실데이터 아님) — DB·폴더 없이
 """
 
 from __future__ import annotations
@@ -31,7 +32,7 @@ from sectorflow.tui.flow_view import (
     ONE_DAY, State, banner_lines, ret_label, banner_view, cell_len as view_cell_len, color_spans,
     detail_lines, detail_title_span, footer_line, header_lines, help_entries, help_lines,
     hint_desc, hint_line,
-    is_section, missing_report_hint, name_sort_span, names_lines, report_warnings,
+    is_section, missing_report_hint, name_sort_span, names_lines, no_report_help, report_warnings,
     B_SHORT, scroll_mark, sort_evidence, sort_span, staleness_warning, table_lines, tier_for,
     view_width)
 
@@ -47,7 +48,7 @@ def load(report_dir: str) -> dict:
     path = os.path.join(os.path.expanduser(report_dir), "numbers.html")
     if not os.path.exists(path):
         raise SystemExit(f"리포트를 찾을 수 없다: {path}\n"
-                         f"  먼저 scripts/daily_report.sh 를 돌리거나 --dir 로 지정하라."
+                         f"{no_report_help('sw-flow')}"
                          f"{missing_report_hint(report_dir)}")
     try:
         with open(path, encoding="utf-8") as f:
@@ -69,7 +70,8 @@ def load(report_dir: str) -> dict:
     if missing:
         raise SystemExit(f"{path} 의 데이터에 없는 키: {', '.join(missing)} — "
                          f"리포트 형식이 바뀌었나?\n  있는 키: {sorted(d)}")
-    d["report_warnings"] = staleness_warning(d["asof"]) + report_warnings(report_dir, d["asof"])
+    # 합성 데모의 기준일은 고정이라 '며칠 지난 리포트' 가 뜻이 없다 — 표지는 제목 맨 앞에 따로 있다.
+    d["report_warnings"] = ([] if d.get("demo") else staleness_warning(d["asof"])) + report_warnings(report_dir, d["asof"])
     return d
 
 
@@ -272,7 +274,7 @@ def layout(h: int, drill: bool = False) -> Layout:
     foot_y = max(h - 1, 0)
     hint_y = h - 2 if h >= 5 else -1
     limit = hint_y if hint_y >= 0 else foot_y      # 표가 쓸 수 있는 y 의 끝(배타)
-    nhead = 2 if drill else 1                      # 표 자체의 머리 줄(제목·열이름)
+    nhead = 3 if drill else 1                      # 표 자체의 머리 줄(제목·고정 문구·열이름)
     # 상세는 우선순위 순서로 그린다(제목 → 반대편 → 순매수상위 → 순매도상위).
     # 한 줄이 더 필요해진 것은 **4주체 줄** 때문이다 — "기관이 팔았다" 다음에
     # 오는 질문이 "그럼 누가 받았지" 라, 그 답이 화면을 바꾸지 않고 여기 있다.
@@ -457,12 +459,12 @@ def _draw(scr, st: State) -> None:
             sel = i >= nhead and (first + i - nhead) == st.drow
             if i == 0:
                 base = curses.color_pair(C_AMBER) | curses.A_BOLD if col else curses.A_BOLD
-            elif i == 1:
+            elif i == nhead - 1:
                 base = curses.color_pair(C_HEAD) if col else curses.A_REVERSE
             else:
                 base = _row_attr(col, sel)
-            _put(scr, top + i, line, base, col and i > 1, sel)
-            if i == 1:
+            _put(scr, top + i, line, base, col and i >= nhead, sel)
+            if i == nhead - 1:
                 _hl_sort(scr, top + i, nspan, col)
         shown = min(rows_avail, max(len(body) - first, 0))
         # 종목 패널 — `layout` 이 자리를 잡아 두고 `_stock_detail_lines` 가 내용을 내는데, 이 갈래가
@@ -705,6 +707,8 @@ def handle_key(st: State, k: int, page: int = 10, help_page: int = 10) -> bool:
             # 대신 도움말 첫 줄과 푸터가 "종료는 닫은 뒤 q 를 한 번 더" 라고
             # 밝힌다 — 관례를 어기는 쪽은 화면에 적어야 한다.
             st.help = False
+            if st.help_back:            # 첫 화면에서 연 도움말은 첫 화면으로 — 표로 떨어지면 읽던 자리를 잃는다
+                st.banner, st.help_back = True, False
         return True
 
     # h 는 vim 에서 '왼쪽' 이다. l·→ 이 드릴다운 진입이므로 h 는 **나가기** 여야
@@ -864,12 +868,21 @@ BANNER_SCROLL = {curses.KEY_DOWN: 1, ord("j"): 1, curses.KEY_UP: -1, ord("k"): -
                  curses.KEY_NPAGE: 10, ord(" "): 10, curses.KEY_PPAGE: -10}
 
 
+#: 첫 화면을 닫으면서 **표에서도 그대로 듣는** 키.
+BANNER_FORWARD = {ord(c) for c in "?1wWmMaAsSre"} | {curses.KEY_F1}
+
+
 def banner_key(st: State, k: int, width: int, height: int) -> bool:
     """첫 화면의 키 하나 — 계속 돌면 True. 넘치는 동안 스크롤 키는 훑고, 그 밖의 키는 닫는다."""
     if k in (curses.KEY_RESIZE,):            # 리사이즈는 "아무 키" 가 아니다 — 다시 그린다
         return True
     step = BANNER_SCROLL.get(k)
     if step and len(banner_lines(st, width)) > height:
+        # Space·PgDn 은 끝에 닿았으면 표로 나간다 — 제목이 "아무 키나 눌러 표로" 라고 적는데 끝에서 멈추면 거짓이다(more 와 같은 관례).
+        at_end = st.brow >= len(banner_lines(st, width)) - 2 - max(height - 2, 0)
+        if k in (ord(" "), curses.KEY_NPAGE) and at_end:
+            st.banner = False
+            return True
         st.brow = max(0, st.brow + (step if abs(step) == 1 else (height - 2) * (1 if step > 0 else -1)))
         banner_view(st, width, height)            # 아래 끝에서 멈추게 한 번 맞춘다
         return True
@@ -880,12 +893,15 @@ def banner_key(st: State, k: int, width: int, height: int) -> bool:
 def leave_banner(st: State, k: int) -> bool:
     """배너를 닫는 키 처리 — 계속 돌면 True. 터미널이 사라졌거나(-1) `q` 면 False.
 
-    "아무 키" 라도 `q` 와 `?` 는 제 일을 한다. 닫기만 하면 `q` 를 두 번 눌러야 끝나고,
-    `?` 를 누른 사람은 도움말 대신 표를 본다.
+    "아무 키" 라도 표의 조작 키는 제 일을 한다. 닫기만 하면 `q` 를 두 번 눌러야 끝나고, `?` 를 누른 사람은 도움말 대신
+    표를 보고, `1` 을 누른 사람은(제목이 `1 키로 1일 창` 이라 적는다) 20일 표를 본다. Enter·방향키 같은 나머지는 닫기만 한다 —
+    표로 넘어가려던 Enter 가 맨 윗줄 섹터의 드릴다운이 되면 안 된다.
     """
     if k in (-1, ord("q")):
         return False
     if k in (ord("?"), curses.KEY_F1):
+        st.help_back = True
+    if k in BANNER_FORWARD:
         handle_key(st, k)
     return True
 
@@ -971,7 +987,11 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="섹터 자금흐름 TUI")
     ap.add_argument("--dir", default=DEFAULT_DIR,
                     help="리포트 폴더 (기본: %(default)s)")
+    ap.add_argument("--demo", action="store_true", help="합성 데이터로 띄운다 — 실데이터 아님, DB 불요")
     a = ap.parse_args()
+    if a.demo:
+        from sectorflow.demo import ensure  # noqa: PLC0415 — 화면만 볼 때 pandas 등을 안 부르게
+        a.dir = ensure()
     data = load(a.dir)
     run_curses(_loop, data)
 

@@ -20,6 +20,7 @@
 #
 # 상한: timeout 40m(실측 2~5분). DB 가 걸려 멈춘 배치가 다음 크론과 겹치지 않고, 끊기면 124 로 오류 알림이 간다.
 # -k 2m 은 TERM 을 무시하고 버티는 자식을 KILL 한다. 문장 하나는 DB 쪽 statement_timeout(10분, storage.connect)이 끊는다.
+# 네이버 대조는 **기본 꺼짐** — 약관을 확인하지 못해 승인 전에는 크론이 네이버를 부르지 않는다(켜는 법은 docs/runbook.md '네이버 대조').
 # 겹침: daily_report.sh 가 reports/.report.lock 을 flock -n 으로 잡는다. 못 잡으면(손으로 돌린 실행과 겹침)
 # 75(경고)로 끝난다 — 0 으로 조용히 끝내면 08:20 확정 모드가 밀린 날이 영영 잠정으로 남아도 아무도 모른다.
 # 잠금을 스크립트 안에 둔 것은 손으로 돌린 실행도 같은 잠금을 잡게 하려고다.
@@ -29,8 +30,8 @@
 20 10 * * 2-6 mkdir -p /home/young/git/sector-flow/reports && KR_QUANT_FINAL=1 /home/young/git/sector-flow/scripts/cron_run.sh sector-flow-report -- timeout -k 2m 40m /home/young/git/sector-flow/scripts/daily_report.sh >> /home/young/git/sector-flow/reports/cron.log 2>&1
 
 # 신선도 점검 — 평일 20:30(19:10 재시도·18:47 까지 간 수집 뒤). 결과만 본다(scripts/freshness_check.py):
-# 오늘 수급이 왔는데 latest 가 오늘이 아니면 1, 수급이 없는데 장중 틱이 있으면 75(틱도 없으면 휴장으로 0),
-# 전 거래일에 FINAL.txt 가 없으면 75, alert.sh 가 읽을 ALERT_WEBHOOK_URL 이 비었거나 GET 에 죽어 있으면 75 —
+# 오늘 수급이 왔는데 latest 가 오늘이 아니면 1, 달력상 거래일인데 수급이 없으면 1(달력의 휴장은 0),
+# 전 거래일에 FINAL.txt 가 없으면·미게시면·원장이 비면 75, alert.sh 가 읽을 ALERT_WEBHOOK_URL 이 비었거나 GET 에 죽어 있으면 75 —
 # 그러면 위의 모든 알림이 로그에만 남는다. 리포트·수급·확정 점검이 0 이면 HEARTBEAT_URL(있으면)로 하트비트를 보낸다 —
 # 웹훅이 없어도 보낸다(하트비트만 써도 된다). 웹훅이 **있는데 죽었으면** 안 보낸다 — 그날은 외부 감시가 유일한 통로다.
 30 20 * * 1-5 mkdir -p /home/young/git/sector-flow/reports && /home/young/git/sector-flow/scripts/cron_run.sh sector-flow-fresh -- timeout -k 1m 10m /home/young/git/sector-flow/scripts/freshness_check.sh >> /home/young/git/sector-flow/reports/cron.log 2>&1

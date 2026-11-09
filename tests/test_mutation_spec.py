@@ -97,3 +97,26 @@ def test_the_harness_self_test_anchor_is_live():
     assert (REPO / vm.SELF_TEST_FILE).read_text("utf-8").count(vm.SELF_TEST_FIND) == 1
     path, _, name = vm.SELF_TEST_GUARD.partition("::")
     assert name in _test_names(path)
+
+
+#: 변이가 없어도 되는 쉘·템플릿 — (경로, 이유). 그 파일에 변이가 생기면 여기서 지운다.
+NO_MUTATION_OK = {
+}
+
+
+def test_every_shell_script_and_template_is_a_mutation_target():
+    """.sh·.html 은 줄 커버리지 밖이라 변이가 유일한 근거다 — 대상이 아닌 파일은 무엇을 고쳐도 아무도 모른다."""
+    targets = {e.get("file") for m in MUTATIONS for e in _edits(m)}
+    files = {p.relative_to(REPO).as_posix() for pat in ("scripts/*.sh", "scripts/templates/*.html")
+             for p in REPO.glob(pat)}
+    assert files - targets == set(NO_MUTATION_OK), files - targets
+    assert not set(NO_MUTATION_OK) - files, "지운 파일이 표에 남았다"
+
+
+# mutation-exempt: 지금 [[removed]] 가 비어 있어 주입해도 돌 행이 없다 — 선언 표의 정합성만 본다
+def test_removed_entries_have_reasons_and_are_really_gone():
+    doc = tomllib.loads(SPEC.read_text("utf-8"))
+    ids = {m.get("id") for m in MUTATIONS}
+    for r in doc.get("removed", []):
+        assert r.get("id") and r.get("why"), r
+        assert r["id"] not in ids, f"지웠다고 적었는데 남아 있다: {r['id']}"

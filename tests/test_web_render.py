@@ -319,6 +319,59 @@ def test_web_layer_one_day_list_does_not_care_how_ties_are_ordered(PD, tmp_path)
     D2 = SN.build(P2)
     assert not [f for f in _w_fails(P2, D2, _write(tmp_path, P2, D2)) if "1일 종목 목록" in f]
 
+# ── 권리락 신주 미반영 표지·종목 시총대비가 웹에 그려지는가 ─────────────────────────────────
+
+def _pending_payload(P):
+    """1일 기관 금액이 가장 큰 섹터의 맨 위 종목에 표지를 단다(뷰어 상위 목록에 든다)."""
+    P2 = json.loads(json.dumps(P))
+    sec = max(P2["today"]["sectors"]["전체"], key=lambda s: abs((P2["today"]["sectors"]["전체"][s].get("inst") or {}).get("v") or 0))
+    rows = [(c, n) for c, n in P2["names"].items() if n.get("sector") == sec and (n.get("win") or {}).get("1")]
+    code, nm = max(rows, key=lambda t: t[1]["win"]["1"].get("inst") or 0.0)
+    nm["win"]["1"]["inst"] = abs(nm["win"]["1"].get("inst") or 1.0) + 1000.0
+    nm["cap"] = nm.get("cap") or 5000.0
+    nm["cap_pending"] = {"date": "2026-10-26", "rt": -49.75}
+    return P2, sec, nm
+
+
+@node
+def test_viewer_marks_the_share_of_cap_of_a_rights_pending_stock(PD, tmp_path):
+    P, _ = PD
+    P2, _sec, _nm = _pending_payload(P)
+    D2 = SN.build(P2)
+    assert not [f for f in _w_fails(P2, D2, _write(tmp_path, P2, D2)) if "1일 종목 목록" in f]
+    patch = ('pp(t.a)+"%p"+(t.pend?"!":"")', 'pp(t.a)+"%p"')
+    fails = _w_fails(P2, D2, _write(tmp_path, P2, D2, viewer_patch=patch))
+    assert any("1일 종목 목록" in f for f in fails), fails
+
+
+@node
+def test_web_layer_catches_a_viewer_share_of_cap_on_the_wrong_scale(PD, tmp_path):
+    """시총대비 칸은 금액 칸 옆에 있는데 W 층이 안 떴다 — ×0.1 이어도 초록이었다."""
+    P, D = PD
+    patch = ("a:(r.cap&&r.cap>0)?v/r.cap*100:null", "a:(r.cap&&r.cap>0)?v/r.cap*10:null")
+    fails = _w_fails(P, D, _write(tmp_path, P, D, viewer_patch=patch))
+    assert any("1일 종목 목록" in f for f in fails), fails
+
+
+@node
+def test_pages_name_the_rights_pending_stocks_and_stay_silent_without_them(PD, tmp_path):
+    """수치표는 섹터 표 아래, 뷰어는 고른 섹터의 종목 목록 위에 표지 글을 적는다. 없으면 글도 없다."""
+    P, D = PD
+    probe_n = '__out({t:document.getElementById("cap-pending").textContent, h:document.getElementById("cap-pending").hidden});'
+    _write(tmp_path, P, D)
+    got = VR._w_run(shutil.which("node"), str(tmp_path / "numbers.html"), probe_n)
+    assert got == {"t": "", "h": True}, got
+    P2, sec, nm = _pending_payload(P)
+    D2 = SN.build(P2)
+    _write(tmp_path, P2, D2)
+    got = VR._w_run(shutil.which("node"), str(tmp_path / "numbers.html"), probe_n)
+    assert got["h"] is False and nm["name"] in got["t"] and "10-26" in got["t"] and "-49.8%" in got["t"], got
+    probe_v = ('i1=NDATE-1; i0=NDATE-1; market="전체"; actor="inst"; render(); picked=' + json.dumps(sec, ensure_ascii=False)
+               + '; renderNames(); __out(document.getElementById("d-pending").textContent);')
+    got = VR._w_run(shutil.which("node"), str(tmp_path / "viewer.html"), probe_v)
+    assert nm["name"] in got and "권리락 신주 미반영 1종목" in got, got
+
+
 # ── 외부 참값 연속 SKIP — 옆 기준일 폴더의 VERIFY.txt 를 거슬러 세고 3번째부터 WARN(실패 아님) ──────────
 
 _SKIP_TXT = "  [OK  ] F · KRX 지수\n       SKIP 정규장 종가 대조 — 2026-11-0x regular_close 준비 안 됨({'pending': 9})\n"
@@ -484,3 +537,102 @@ def test_viewer_rounds_like_the_tui(tmp_path):
     got = VR._w_run(shutil.which("node"), str(page), f"__out({{a:{json.dumps(vals)}.map(amt), p:{json.dumps(vals)}.map(pp)}});")
     assert got["a"] == [VR._w_minus(FV.fmt_amt(v)) for v in vals]
     assert got["p"] == [VR._w_minus(FV.fmt_pct(v)) for v in vals]
+
+
+# ── #32 의 ±0 부류, 뷰어 창 합 경로(2026-09-02·09-28 재구성) — 상쇄된 창 합의 잔차 부호 ──────────────
+
+#: 네 double 의 정확한 합은 0 — 왼쪽부터 더할 때만(뷰어 JS, 파이썬 3.11 sum) −2.8e-17 이 남는다(3.12+ sum 은 보정 합이라 0.0).
+_CANCEL_JS_NEG = [0.1, -0.5, 0.3, 0.1]
+#: 세 double 의 정확한 합 자체가 음수(십진 오차) — 어느 쪽으로 더해도 잔차가 남는다. 블록(zsum 전)·검증기(rhu 전)가 '−0' 이 되는 쪽.
+_CANCEL_BOTH_NEG = [-0.1, -0.2, 0.3]
+
+
+def _flows_patch(P: dict, mkt: str, pats: dict) -> dict:
+    """``flows[mkt][sec][actor]`` 의 마지막 20일 머리에 패턴을 심는다(나머지 0) — 20·60·120일 합이 그 패턴이 된다."""
+    P2 = json.loads(json.dumps(P))
+    nd = len(P2["dates"])
+    for (sec, actor), pat in pats.items():
+        arr = [0.0] * nd
+        arr[nd - 20:nd - 20 + len(pat)] = pat
+        P2["flows"][mkt][sec][actor] = arr
+    return P2
+
+
+@node
+def test_viewer_window_sum_that_cancels_is_plus_zero_everywhere(PD, tmp_path):
+    """상쇄돼 0 인 20일 합이 뷰어 표·막대 '+0' = 블록 '+0' = 검증기 '+0' 이다.
+
+    2026-09-02·09-28 재구성: 종이/목재 20일 합이 뷰어(JS, 왼쪽부터)에서 −2.8e-17, 블록·검증기(파이썬)에서
+    0.0 또는 −2.8e-17 로 남아 '−0' vs '+0' 셋이 서로 갈렸다. 금융은 JS 쪽만, 반도체는 양쪽 다 음의 잔차 —
+    뷰어 `Z`·블록 `zsum`·검증기 `_w_rhu` 중 **어느 하나**를 빼도 빨개진다.
+    """
+    P, _ = PD
+    P2 = _flows_patch(P, "코스닥", {("금융", "etc"): _CANCEL_JS_NEG, ("반도체", "etc"): _CANCEL_BOTH_NEG})
+    a = P2["flows"]["코스닥"]["금융"]["etc"]
+    # 전제는 파이썬 판에 안 묶는 math.fsum(정확한 합)으로 적는다 — sum() 은 3.12 에서 보정 합으로 바뀌었다.
+    assert functools.reduce(operator.add, a, 0.0) < 0 and math.fsum(a) == 0.0, "픽스처가 JS 쪽 잔차를 안 만든다"
+    b = P2["flows"]["코스닥"]["반도체"]["etc"]
+    assert functools.reduce(operator.add, b, 0.0) < 0 and math.fsum(b) < 0, "픽스처가 양쪽 음의 잔차를 안 만든다"
+    D2 = SN.build(P2)
+    for w in ("20", "60", "120"):
+        blk = {r["sector"]: r for r in D2["blocks"][f"{w}|코스닥"]["rows"]}
+        assert blk["금융"]["etc"] == 0.0 and math.copysign(1, blk["금융"]["etc"]) > 0
+        assert blk["반도체"]["etc"] == 0.0 and math.copysign(1, blk["반도체"]["etc"]) > 0
+    fails = [f for f in _w_fails(P2, D2, _write(tmp_path, P2, D2)) if "뷰어" in f]
+    assert fails == [], fails
+
+
+@node
+def test_viewer_market_total_that_cancels_is_plus_zero(PD, tmp_path):
+    """섹터 합(각각은 0 아님)이 시장 전체에서 상쇄될 때 — KPI 카드도 '+0' 이다.
+
+    sum() 이 잔차를 지워도 KPI 는 섹터 27개를 **다시 누적**하므로 제 잔차를 만든다(음수 둘을 먼저 더하면 −5.6e-17).
+    검증기의 시장 합(`out["tot"]`)도 같은 자리에서 지운다 — 한쪽만 지우면 '+0' vs '−0' 으로 빨갛다.
+    """
+    P, _ = PD
+    secs = [s for s in P["sectors"] if s in P["flows"]["코스닥"]]
+    # D.sectors 순회 순서대로 음·음·양 — 각 섹터 합은 −0.1·−0.2·+0.3(0 아님), 시장 합만 0.
+    pats = {(secs[0], "etc"): [-0.1], (secs[1], "etc"): [-0.2], (secs[2], "etc"): [0.3]}
+    for s in secs[3:]:
+        pats[(s, "etc")] = [0.0]
+    P2 = _flows_patch(P, "코스닥", pats)
+    tots = [sum(P2["flows"]["코스닥"][s]["etc"]) for s in secs[:3]]
+    acc = functools.reduce(operator.add, tots, 0.0)
+    assert acc != 0.0 and acc < 0, "픽스처가 시장 합의 음 잔차를 안 만든다"
+    D2 = SN.build(P2)
+    fails = [f for f in _w_fails(P2, D2, _write(tmp_path, P2, D2)) if "뷰어" in f]
+    assert fails == [], fails
+
+
+def _viewer_probe(P: dict, tmp_path, probe: str) -> dict:
+    return VR._w_run(shutil.which("node"), str(_write(tmp_path, P, SN.build(P)) / "viewer.html"), probe)
+
+
+@node
+def test_viewer_detail_bars_kill_the_residual_of_two_markets(PD, tmp_path):
+    """기관 세부 막대 — 두 시장의 창 합을 더하면 각 합은 0 이 아니어서 `sum()` 의 문턱을 지나고, 그 누적에서 잔차가 난다.
+
+    비교 상대가 없는 글자라 W 층이 못 본다 — 직접 찍어 본다. 코스닥 −0.1·−0.2, 거래소 +0.3 → 왼쪽부터 −5.6e-17.
+    """
+    P2 = json.loads(json.dumps(PD[0]))
+    nd = len(P2["dates"])
+    for mkt, pat in ((P2["markets"][0], [-0.1, -0.2]), (P2["markets"][1], [0.3])):
+        arr = [0.0] * nd
+        arr[nd - 20:nd - 20 + len(pat)] = pat
+        P2["detail"][mkt]["금융"]["invtrt"] = arr
+    assert functools.reduce(operator.add, [-0.1, -0.2, 0.3], 0.0) < 0
+    got = _viewer_probe(P2, tmp_path, 'i1=NDATE-1; i0=NDATE-20; market="전체"; actor="inst"; picked="금융"; render();\n'
+                                      'const i=Object.keys(D.detail_labels).indexOf("invtrt");\n'
+                                      '__out({t:document.getElementById("detbars").children[i].children[2].textContent});')
+    assert got["t"] == "+0", got
+
+
+@node
+def test_viewer_chart_end_label_agrees_with_the_bars_when_the_window_cancels(PD, tmp_path):
+    """누적 선 끝 라벨은 `sum()` 을 안 지나고 제 손으로 누적한다 — 같은 화면의 막대 '+0' 옆에 '−0' 을 적었다."""
+    P2 = _flows_patch(PD[0], "코스닥", {("금융", "etc"): _CANCEL_JS_NEG})
+    probe = ('i1=NDATE-1; i0=NDATE-20; market="코스닥"; actor="etc"; metric="amt"; picked="금융"; render();\n'
+             'const svg=document.getElementById("line").children[0];\n'
+             '__out({labels:svg.children.filter(e=>e.getAttribute("class")==="endlab").map(e=>e.textContent)});')
+    got = _viewer_probe(P2, tmp_path, probe)
+    assert got["labels"] == ["금융~ +0억"], got

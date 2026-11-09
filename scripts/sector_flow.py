@@ -25,8 +25,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
+import sys
 import warnings
 from datetime import datetime, timedelta, timezone
 
@@ -36,7 +38,7 @@ from sectorflow.basis import BASIS_SLOT, DATA_BASIS
 from sectorflow.sector_override import SECTOR_OVERRIDE, SOURCE as OVERRIDE_SOURCE, UNCLASSIFIED, fingerprint
 from sectorflow.storage import (
     _is_pg,
-    connect, db_default, market_cap_asof_bulk, read_supply_demand, recent_dates)
+    connect, db_default, market_cap_asof_bulk, read_supply_demand, recent_dates, rights_pending)
 
 # pandas 는 psycopg2 연결을 "검증 안 된 DBAPI" 라며 read_sql 마다 UserWarning 을 낸다. 동작엔 문제가 없는데
 # 크론 로그를 덮어 진짜 경고를 묻는다(2026-11 cron.log 에 1,491줄). 이 메시지만 끈다 — 크론의 전역 -W 는 다른 경고까지 끈다.
@@ -406,6 +408,8 @@ def build_payload(df: pd.DataFrame, dates: list[str], caps: pd.DataFrame,
     }
     out["today"] = today_block(out, _market_daily(df, dates, markets))
     out["today"]["streaks"] = streak_block(out)
+    out["today"]["day_change"] = day_change_block(out)
+    out["today"]["concentration"] = concentration_block(out)
     return out
 
 
@@ -424,8 +428,9 @@ TODAY_MIN_LIVE = 0.25
 TODAY_ACTORS = (("inst", "기관"), ("invtrt", "투신"), ("penfnd_etc", "연기금"),
                 ("invpen", "투신+연기금"), ("forgn", "외국인"), ("indiv", "개인"),
                 ("etc", "기타법인"))
-#: 시장 합계에 싣는 주체 — 4주체(합 ≈ 0)와 투신·연기금.
-MARKET_ACTORS = ("inst", "forgn", "indiv", "etc", "invtrt", "penfnd_etc", "invpen")
+#: 시장 합계에 싣는 주체 — 4주체(합 ≈ 0)와 기관 세부 금투·투신·연기금. 금투가 기관 총액을 채우는 날을 화면이 적는다
+#: (2026-11-06 기관 +19,714억 중 금투 +20,181억·투신 −3,186억).
+MARKET_ACTORS = ("inst", "forgn", "indiv", "etc", "fnnc_invt", "invtrt", "penfnd_etc", "invpen")
 #: 시장 맥락 수익률의 구간(거래일).
 MARKET_RET_WINDOWS = (1, 20)
 #: 직전 리포트 대비 — 이 구간 순매수 순위와 상위 몇 섹터의 들고 남.
@@ -658,6 +663,130 @@ def streak_block(P: dict) -> dict:
     return out
 
 
+# ─────────────────────────────────────────────── 하루 단위 변화 — 어제와 무엇이 다른가
+#
+# 극단 목록은 오늘 값만 말하고, 부호 반전 줄은 5일 대 15일을 말한다. 어제 하루와의 차이는 어디에도 없었다
+# (11-05→11-06 기관 전기/전자 −1,625→+7,057). 세기만 한다 — 앞날을 말하지 않는다(CLAUDE.md 화면·리포트 규칙).
+
+#: 극단(1년 %ile)의 **보이는 정수** 문턱 — 화면에 95 로 적힌 날은 95 로 센다(``digest.pct_int`` 와 같은 반올림).
+DAY_PCT_HI, DAY_PCT_LO = 95, 5
+#: 하루 단위 변화를 싣는 주체 — 첫 화면이 적을 수 있는 주체(기관·투신+연기금·그날 최대 순매매 주체).
+DAY_ACTORS = ("inst", "invpen", "forgn", "indiv", "etc")
+#: 부호가 바뀐 섹터의 크기 문턱 — |어제| 와 |오늘| 이 각각 그날 (시장, 주체) 섹터 목록 Σ|값| 의 이 몫 이상.
+#: 작은 칸의 +2억 → −3억 은 부호가 잡음이다. 문턱은 목록 안 몫으로 잡는다(CLAUDE.md 화면·리포트 규칙).
+DAY_FLIP_MIN_SHARE = 0.02
+
+
+def _visible_pct(p: float) -> int:
+    """화면이 적는 백분위 정수 — 소수 1자리로 실은 값을 0.5 올림(``flow_view.pct_int`` 와 같은 값)."""
+    return int(math.floor(round(p, 1) + 0.5 + 1e-9))
+
+
+def extreme_run(ser: list[float], hi: bool) -> int:
+    """마지막 날부터 거슬러 **그날 값의 1년 %ile** 이 같은 쪽 극단인 날 수. 오늘이 극단이 아니면 0.
+
+    날마다 그날까지의 일별 값으로 다시 잰다(:func:`day_pct`) — 오늘 분포로 어제를 재면 미래를 본다.
+    페이로드 첫날보다 앞은 모르므로 그 앞에서 끊긴다.
+    """
+    k = 0
+    for end in range(len(ser), 1, -1):
+        p = day_pct(ser[:end])
+        if p is None:
+            break
+        q = _visible_pct(p)
+        if not (q >= DAY_PCT_HI if hi else q <= DAY_PCT_LO):
+            break
+        k += 1
+    return k
+
+
+def day_change_block(P: dict) -> dict:
+    """``payload["today"]["day_change"]`` — 극단 목록의 지속 일수와 어제와 부호가 바뀐 섹터.
+
+    ``extreme[시장][주체]["hi"|"lo"][섹터]`` = 그 극단에 며칠째인가(1 = 오늘 처음). ``flips[시장][주체]`` = 어제와
+    부호가 반대이고 양일 다 크기 문턱을 넘은 섹터(|오늘| 큰 순). 얇은 섹터·``(미분류)`` 는 부호 줄에서 뺀다.
+    """
+    dates = P["dates"]
+    out: dict = {"prev_date": dates[-2] if len(dates) > 1 else None, "pct_hi": DAY_PCT_HI, "pct_lo": DAY_PCT_LO,
+                 "flip_min_share": DAY_FLIP_MIN_SHARE, "min_members": STREAK_MIN_MEMBERS, "extreme": {}, "flips": {}}
+    for mkey, mks in _mkeys(P):
+        present = [s for s in P["sectors"] if _present(P, mks, s)]
+        for a in DAY_ACTORS:
+            sers = {s: x for s in present if (x := _series(P, mks, s, a)) is not None}
+            ext: dict = {"hi": {}, "lo": {}}
+            for s, x in sers.items():
+                for side, hi in (("hi", True), ("lo", False)):
+                    k = extreme_run(x, hi)
+                    if k:
+                        ext[side][s] = k
+            out["extreme"].setdefault(mkey, {})[a] = ext
+            flips = []
+            if len(dates) > 1:
+                g_now = sum(abs(x[-1]) for x in sers.values())
+                g_prev = sum(abs(x[-2]) for x in sers.values())
+                for s, x in sers.items():
+                    if s == UNCLASSIFIED or _members(P, mks, s) < STREAK_MIN_MEMBERS:
+                        continue
+                    if (x[-1] * x[-2] < 0 and abs(x[-1]) >= DAY_FLIP_MIN_SHARE * g_now
+                            and abs(x[-2]) >= DAY_FLIP_MIN_SHARE * g_prev):
+                        flips.append({"sector": s, "prev": x[-2], "now": x[-1]})
+                flips.sort(key=lambda f: (-abs(f["now"]), f["sector"]))
+            out["flips"].setdefault(mkey, {})[a] = flips
+    return out
+
+
+# ─────────────────────────────────────────────── 거래대금 집중 — 섹터 하나가 사실상 두 종목인 날
+#
+# 전기/전자는 2026-11-06 전체 시장 거래대금의 63% 이고 그 76% 가 두 종목이다(외국인 |순매수| 1위 48일 중 44일).
+# 섹터 합계만 적으면 그 칸이 두 종목의 이야기라는 걸 모른다. 분류는 그대로 두고 두 종목을 뺀 값을 나란히 적는다.
+
+#: 집중 줄에 싣는 섹터 — 그날 그 시장 거래대금의 이 몫 이상. 문턱은 목록 안 몫이다.
+CONCENTRATION_MIN_SHARE = 0.20
+#: 거래대금 상위 몇 종목을 보나.
+CONCENTRATION_TOP = 2
+#: 두 종목을 뺀 값을 적는 주체.
+CONCENTRATION_ACTORS = ("inst", "invpen", "forgn", "indiv", "etc")
+
+
+def concentration_block(P: dict) -> dict:
+    """``payload["today"]["concentration"]`` — 시장별로 거래대금 몫이 큰 섹터의 상위 종목 몫과 그 종목을 뺀 순매수.
+
+    종목 값은 ``names[code].win["1"]``(소수 1자리), 섹터 값은 ``today.sectors`` 다. 얇은 섹터·``(미분류)`` 는 뺀다.
+    """
+    T = P["today"]
+    out: dict = {"min_share": CONCENTRATION_MIN_SHARE, "top_n": CONCENTRATION_TOP, "markets": {}}
+    for mkey, mks in _mkeys(P):
+        total = ((T["market"].get(mkey) or {}).get("tv")) or 0.0
+        rows = T["sectors"].get(mkey) or {}
+        picked = []
+        for s, row in rows.items():
+            tv = row.get("tv") or 0.0
+            if (s == UNCLASSIFIED or _members(P, mks, s) < STREAK_MIN_MEMBERS or not total
+                    or tv < CONCENTRATION_MIN_SHARE * total):
+                continue
+            stocks = []
+            for code, nm in (P.get("names") or {}).items():
+                w = (nm.get("win") or {}).get("1")
+                if w and nm.get("sector") == s and nm.get("market") in mks and w.get("tv"):
+                    stocks.append((-w["tv"], str(code), nm.get("name", "—"), w))
+            stocks.sort(key=lambda t: t[:2])
+            top = stocks[:CONCENTRATION_TOP]
+            if not top:
+                continue
+
+            def stock_value(w: dict, a: str) -> float:
+                return ((w.get("invtrt") or 0.0) + (w.get("penfnd_etc") or 0.0)) if a == "invpen" else (w.get(a) or 0.0)
+            rest = {a: round(((row.get(a) or {}).get("v") or 0.0) - sum(stock_value(t[3], a) for t in top), 1)
+                    for a in CONCENTRATION_ACTORS}
+            top_tv = sum(-t[0] for t in top)
+            picked.append({"sector": s, "tv": tv, "market_share_pct": round(tv / total * 100.0, 1),
+                           "top": [{"code": t[1], "name": t[2], "tv": -t[0]} for t in top],
+                           "top_share_pct": round(top_tv / tv * 100.0, 1), "rest": rest})
+        picked.sort(key=lambda r: (-r["tv"], r["sector"]))
+        out["markets"][mkey] = picked
+    return out
+
+
 def _ranks(P: dict, mks: list[str], actor: str, win: int):
     """섹터의 ``win`` 일 순매수 순위(1 = 가장 많이 샀다). 동률은 섹터 이름순. 못 세면 ``None``."""
     if len(P.get("dates") or []) < win:
@@ -852,7 +981,7 @@ def _record_mismatch(Q: dict, fd: dict) -> "str | None":
     """잠정 대비 기록이 자기 안에서·그 기록을 낸 페이로드 ``Q`` 와 어긋나면 그 칸 이름 — 잠정 없이도 보이는 것만 본다.
 
     ``cells_1d`` 의 잠정 열이 1일 ``changed``·시장 합계와 맞는가, 확정 열이 ``Q`` 와 맞는가, 극단 들고 남이 ``Q`` 의 목록과
-    모순되지 않는가. 5일 잠정 합은 바뀐 칸에만 남아 합계를 문턱 폭 안에서만 잴 수 있다.
+    모순되지 않는가, 종목 층의 행이 ``Q`` 와 맞는가. 5일 잠정 합은 바뀐 칸에만 남아 합계를 문턱 폭 안에서만 잴 수 있다.
     """
     cells, rows = fd.get("cells_1d"), fd.get("changed") or []
     if not isinstance(cells, list):
@@ -914,7 +1043,7 @@ def _record_mismatch(Q: dict, fd: dict) -> "str | None":
                     or any(pct.get(s) is not None and pct[s] >= PCT_HI + _EXT_SLACK for s in ch.get("hi_out") or [])
                     or any(pct.get(s) is not None and pct[s] <= PCT_LO - _EXT_SLACK for s in ch.get("lo_out") or [])):
                 return f"extremes_change {mkey}/{a}"
-    return None
+    return _stock_record_mismatch(Q, fd["stocks"]) if isinstance(fd.get("stocks"), dict) else None
 
 
 def _inherit_final_diff(P: dict, old: dict, built: str, folder: str) -> "tuple[dict | None, str | None]":
@@ -925,7 +1054,8 @@ def _inherit_final_diff(P: dict, old: dict, built: str, folder: str) -> "tuple[d
 
     * 그 기록이 검증에 걸렸거나(:func:`_failed_record_why`) 자기 안에서 어긋나면(:func:`_record_mismatch`) 잇지 않고 비교 없음.
     * 값이 첫 확정과 같으면 그대로 잇는다(``base_built`` 는 그날 저녁 잠정의 시각, ``inherited_from`` 은 첫 확정의 시각).
-    * 값이 또 바뀌었으면 잠정 열만 이어 1일 칸을 다시 센다(:func:`_rebase_final_diff`).
+    * 값이 또 바뀌었으면 잠정 열만 이어 1일 칸을 다시 센다(:func:`_rebase_final_diff`). 기록에 종목 층이 있는데 종목 칸만
+      움직인 경우도 그렇다(:func:`_stock_layer_moved`) — 섹터 칸이 같아도 그 층의 확정 열이 낡았다.
 
     0칸이라고 쓰지 않는다. ``built`` 는 바꿔 끼울 리포트의 생성 시각.
     """
@@ -944,8 +1074,34 @@ def _inherit_final_diff(P: dict, old: dict, built: str, folder: str) -> "tuple[d
         return None, f"{REFINAL_WHY}첫 확정의 잠정 대비 기록이 어긋나 잇지 않는다({why})"
     first = fd.get("inherited_from") or built
     if _head_cells(P) == _head_cells(old) and not extremes_change(P, old):
-        return {**fd, "inherited_from": first}, None
+        if not _stock_layer_moved(P, old, fd):
+            return {**fd, "inherited_from": first}, None
     return _rebase_final_diff(P, old, fd, first), None
+
+
+def _stock_cells(Q: dict) -> tuple:
+    """:func:`stock_diff` 가 페이로드에서 읽는 것 — 종목별 (시장, 섹터, 네 주체 1일 칸)과 (시장, 섹터) 구성."""
+    return ({c: (m, s, [w.get(a) for a in STOCK_DIFF_ACTORS]) for c, (m, s, _n, w) in _win1(Q).items()},
+            _stock_membership(Q))
+
+
+def _stock_layer_moved(P: dict, old: dict, fd: dict) -> bool:
+    """이어받을 기록의 종목 층이 낡았는가 — 기록에 그 층이 없으면 낡을 것도 없다(옛 코드의 첫 확정)."""
+    return isinstance(fd.get("stocks"), dict) and _stock_cells(P) != _stock_cells(old)
+
+
+def _stock_record_mismatch(Q: dict, S: dict) -> "str | None":
+    """종목 층이 그 기록을 낸 페이로드 ``Q`` 와 어긋나면 그 칸 이름 — 행 수와 확정 열만 볼 수 있다(잠정 칸은 ``Q`` 에 없다)."""
+    rows, now = S.get("rows") or [], _win1(Q)
+    if len(rows) != min(S.get("n_rows") or 0, S.get("cap", STOCK_DIFF_CAP)):
+        return "stocks 행 수"
+    for m, s, c, _name, vals in rows:
+        r = now.get(c)
+        w = r[3] if r is not None and r[:2] == (m, s) else {}
+        for a, (_vo, vn) in vals.items():
+            if not _near(vn, w.get(a), 0.051):
+                return f"stocks 확정값 {m}/{s}/{c}/{a}"
+    return None
 
 
 def _rebase_final_diff(P: dict, old: dict, fd: dict, first: str) -> dict:
@@ -953,6 +1109,8 @@ def _rebase_final_diff(P: dict, old: dict, fd: dict, first: str) -> dict:
 
     폴더를 바꿔 끼우면 잠정 열은 이 기록에만 남는다. 버리면 그날이 수정 폭에서 빠진다. 5일 칸은 낼 수 없다 — 잠정
     5일 합은 바뀐 칸에만 남았다. 극단 들고 남은 ``old`` 의 목록을 그 기록의 들고 남으로 되돌려 잠정 목록을 얻는다.
+    종목 층(``stocks``)은 ``None`` — 종목의 잠정 칸은 문턱·상한을 넘은 행에만 남아 다시 셀 수 없고, 첫 확정의 것을 들고
+    가면 확정 열이 이 리포트와 어긋난다. 그날은 수정 폭의 종목 층에서 빠지고 섹터 층에는 남는다.
     """
     prov = {(m, s, a): vo for m, s, a, vo, _ in fd["cells_1d"]}
     wins = [1]
@@ -980,6 +1138,7 @@ def _rebase_final_diff(P: dict, old: dict, fd: dict, first: str) -> dict:
             "n_cells": n_cells, "n_changed": len(changed),
             "changed": changed, "market_totals": totals,
             "cells_1d": cells_1d,
+            "stocks": None,
             "pct_hi": PCT_HI, "pct_lo": PCT_LO, "extremes_change": ext,
             "inherited_from": first, "rebased": True}
 
@@ -1037,6 +1196,7 @@ def final_diff_compute(P: dict, old: dict) -> dict:
         "n_cells": n_cells, "n_changed": len(changed),
         "changed": changed, "market_totals": totals,
         "cells_1d": cells_1d,
+        "stocks": stock_diff(P, old),
         "pct_hi": PCT_HI, "pct_lo": PCT_LO, "extremes_change": ext_change,
     }
 
@@ -1084,6 +1244,156 @@ def extremes_change(P: dict, old: dict) -> dict:
     return out
 
 
+# ─────────────────────────────────────────────── 잠정 → 확정 — 종목(기관상위) 층
+#
+# 섹터 칸만으로는 "무엇을 샀나" 의 수정이 안 보인다 — 드릴다운의 행동 단위는 종목이다. 전 종목
+# (~2,600)을 다 실으면 하루 수백 KB 가 붙고, 화면 규칙상 "그 섹터를 움직였다" 고 부르지 않는 행
+# (|순매수| ≈ 0, 실측 51%)의 수정 폭은 볼 이유가 없다. 그래서 **기관상위**(아래 STOCK_DIFF_CUT)만 본다.
+
+#: 종목 수정 기록의 주체 — 화면 신뢰 순서(기관 안에서 투신·연기금 우선)와 외국인. 종목 1일 칸(``names[].win["1"]``)에
+#: 있는 값 그대로다.
+STOCK_DIFF_ACTORS = ("inst", "invtrt", "penfnd_etc", "forgn")
+#: 기관상위 경계 — (시장, 섹터)에서 1일 |기관 순매수| 큰 순으로 훑은 누적 기여율이 이 %를 **처음 넘긴 행까지**.
+#: 화면 종목 목록의 누적[%] 가로줄(``flow_view.CUM_CUT``)과 같은 정의·같은 값이다(실측 평균 6.2종목이 80% 를 설명).
+STOCK_DIFF_CUT = 80.0
+#: 종목 행을 ``rows`` 에 싣는 문턱(억) — 네 주체 중 하나라도 |확정 − 잠정| 이 이걸 넘는 행만. 종목 1일 집계는
+#: 0.1억 단위 반올림이라 0.5억 아래의 차이는 반올림 잡음과 구분되지 않는다. 요약 통계는 문턱과 무관하게 센다.
+STOCK_DIFF_TOL = 0.5
+#: ``rows`` 상한 — max|Δ| 큰 순(한쪽 값이 없는 행이 맨 앞 — '값이 없는 것'은 작은 차이가 아니다). 크기를 묶는다.
+STOCK_DIFF_CAP = 200
+#: 상위 3 유지율의 최소 목록 크기 — (시장, 섹터, 주체)에 1일 칸이 이보다 적으면 유지율이 늘 100% 에 붙는다
+#: (섹터 쪽 ``REV_TOP_MIN_SECTORS`` 와 같은 이유).
+STOCK_TOP_MIN = 6
+
+
+def _win1(P: dict) -> dict:
+    """code → (시장, 섹터, 이름, 1일 칸) — ``names`` 에서 1일 칸이 있는 종목만(그날 거래가 없으면 칸이 없다)."""
+    out: dict = {}
+    for code, r in (P.get("names") or {}).items():
+        w = (r.get("win") or {}).get("1")
+        if w and r.get("market") and r.get("sector"):
+            out[code] = (r["market"], r["sector"], r.get("name"), w)
+    return out
+
+
+def _stock_drivers(w1: dict) -> set:
+    """기관상위 코드 집합 — (시장, 섹터)마다 1일 |기관| 큰 순 누적 기여율이 :data:`STOCK_DIFF_CUT` 를 처음 넘긴 행까지."""
+    groups: dict = {}
+    for code, (m, s, _n, w) in w1.items():
+        groups.setdefault((m, s), []).append((abs(w.get("inst") or 0.0), code))
+    out: set = set()
+    for rows in groups.values():
+        tot = sum(v for v, _c in rows)
+        if not tot:
+            continue
+        rows.sort(key=lambda t: (-t[0], t[1]))
+        cum = 0.0
+        for v, code in rows:
+            out.add(code)
+            cum += v
+            if cum >= STOCK_DIFF_CUT / 100.0 * tot:
+                break
+    return out
+
+
+def _stock_top3(new1: dict, old1: dict, dropped: set, n: "int | None" = None) -> tuple[int, int]:
+    """(유지된 칸, 목록 수) — (시장, 섹터, 주체)마다 잠정 상위 ``n``(기본 :data:`REV_TOP_N`) 종목 중
+    확정 상위 ``n`` 에도 있는 수.
+
+    순위는 1일 순매수 큰 순, 동률은 코드순. 양쪽에 1일 칸이 :data:`STOCK_TOP_MIN` 종목 미만인 목록과
+    종목 구성이 갈린(``dropped``) (시장, 섹터)는 세지 않는다.
+    """
+    n = REV_TOP_N if n is None else n
+    by_new: dict = {}
+    by_old: dict = {}
+    for d, by in ((new1, by_new), (old1, by_old)):
+        for code, (m, s, _n, w) in d.items():
+            by.setdefault((m, s), []).append((code, w))
+    kept = lists = 0
+    for ms in sorted(by_new):
+        rows_o = by_old.get(ms)
+        if ms in dropped or rows_o is None or len(by_new[ms]) < STOCK_TOP_MIN or len(rows_o) < STOCK_TOP_MIN:
+            continue
+        for a in STOCK_DIFF_ACTORS:
+            top_n = {c for c, _w in sorted(by_new[ms], key=lambda t: (-(t[1].get(a) or 0.0), t[0]))[:n]}
+            top_o = {c for c, _w in sorted(rows_o, key=lambda t: (-(t[1].get(a) or 0.0), t[0]))[:n]}
+            kept += len(top_n & top_o)
+            lists += 1
+    return kept, lists
+
+
+def _stock_membership(P: dict) -> dict:
+    """(시장, 섹터) → ``names`` 의 종목 코드 집합 — 1일 칸 유무와 무관하게 전부."""
+    out: dict = {}
+    for code, r in (P.get("names") or {}).items():
+        out.setdefault((r.get("market"), r.get("sector")), set()).add(code)
+    return out
+
+
+def stock_diff(P: dict, old: dict) -> "dict | None":
+    """``final_diff["stocks"]`` — 잠정(``old``) → 확정(``P``)에서 **기관상위 종목**의 1일 수정.
+
+    * 어느 쪽이든 1일 종목 칸이 하나도 없으면 ``None`` — 옛 형식(1일 창이 생기기 전) 게시본과의 비교는
+      종목 층을 말할 수 없다(모든 기관상위를 "수정"이라 적는 것은 거짓이다). 시드가 이 경우를 실제로 밟았다.
+    * 모집단: 잠정·확정 각각의 기관상위(:func:`_stock_drivers`) 합집합. 한쪽에만 1일 칸이 있으면 없는 쪽은
+      ``None`` — 수집 시각 뒤에 처음 잡힌(또는 사라진) 종목도 수정 사건이다.
+    * 종목 구성이 갈린 (시장, 섹터)(``names`` 의 코드 집합이 다르다 — 재구성 시드처럼 그 사이 편입·분류
+      변경이 섞인 경우)는 통째로 뺀다. 수정 폭이 아니다. 뺀 수는 ``dropped_sectors``.
+    * ``rows``: 네 주체 중 max|Δ| 가 :data:`STOCK_DIFF_TOL` 을 넘는 행만, max|Δ| 큰 순(한쪽 없음이 맨 앞)
+      :data:`STOCK_DIFF_CAP` 개까지. 꼴은 ``[시장, 섹터, 코드, 이름, {주체: [잠정, 확정]}]``.
+    * 요약(상한·문턱과 무관): 분모 게이트(|확정| ≥ :data:`REV_GATE_SHARE` × 그 (시장, 섹터, 주체) 기관상위
+      Σ|확정|)를 넘는 칸의 |확정 − 잠정| ÷ |확정| 중앙값(``rel_median_pct``)·부호 뒤집힘(``flips``), 그리고
+      (시장, 섹터, 주체) 상위 3 종목 유지(:func:`_stock_top3`).
+    """
+    new1, old1 = _win1(P), _win1(old)
+    if not new1 or not old1:
+        return None
+    mn, mo = _stock_membership(P), _stock_membership(old)
+    dropped = {ms for ms in set(mn) | set(mo) if mn.get(ms) != mo.get(ms)}
+    drivers = {c for c in _stock_drivers(new1) | _stock_drivers(old1)
+               if (new1.get(c) or old1[c])[:2] not in dropped}
+    tot: dict = {}
+    for c in drivers:
+        if c not in new1:
+            continue
+        m, s, _n, w = new1[c]
+        for a in STOCK_DIFF_ACTORS:
+            tot[(m, s, a)] = tot.get((m, s, a), 0.0) + abs(w.get(a) or 0.0)
+    rel: list = []
+    flips = 0
+    rows: list = []
+    for c in sorted(drivers):
+        m, s, name = (new1.get(c) or old1[c])[:3]
+        wn = new1[c][3] if c in new1 else None
+        wo = old1[c][3] if c in old1 else None
+        vals, dmax = {}, None
+        for a in STOCK_DIFF_ACTORS:
+            vn = None if wn is None else wn.get(a)
+            vo = None if wo is None else wo.get(a)
+            vals[a] = [vo, vn]
+            if vo is None or vn is None:
+                dmax = float("inf")
+                continue
+            dmax = max(dmax or 0.0, abs(vn - vo))
+            if vn and abs(vn) >= REV_GATE_SHARE * tot[(m, s, a)]:
+                rel.append(abs(vn - vo) / abs(vn) * 100.0)
+                flips += vo * vn < 0
+        if dmax is not None and dmax > STOCK_DIFF_TOL:
+            rows.append((dmax, [m, s, c, name, vals]))
+    rows.sort(key=lambda t: (-t[0], t[1][2]))
+    kept, lists = _stock_top3(new1, old1, dropped)
+    return {
+        "cut": STOCK_DIFF_CUT, "tol": STOCK_DIFF_TOL, "cap": STOCK_DIFF_CAP,
+        "actors": list(STOCK_DIFF_ACTORS), "gate_share": REV_GATE_SHARE,
+        "top_n": REV_TOP_N, "top_min": STOCK_TOP_MIN,
+        "n_stocks": len(drivers), "n_cells": len(rel),
+        "rel_median_pct": round(float(pd.Series(rel).median()), 1) if rel else None,
+        "flips": flips, "top3_kept": kept, "top3_lists": lists,
+        "n_rows": len(rows), "dropped_sectors": len(dropped),
+        "rows": [r for _d, r in rows[:STOCK_DIFF_CAP]],
+    }
+
+
 # ─────────────────────────────────────────────── 잠정 → 확정 수정 폭 — 지난 확정 리포트에서 모은다
 #
 # 18:10 리포트는 수집 시각(~16:00~18:10)의 스냅숏이다. 애프터마켓은 20:00 까지 돌고 확정치는 다음날 새벽
@@ -1098,8 +1408,8 @@ REV_DAYS = 20
 REV_GATE_SHARE = 0.02
 
 
-def _final_cells(root: str, date: str) -> "tuple[list | None, str | None]":
-    """그 기준일 확정 리포트의 ``cells_1d`` — ``final_diff.json``(작다) 먼저, 없으면 ``payload.json``."""
+def _final_cells(root: str, date: str) -> "tuple[dict | None, str | None]":
+    """그 기준일 확정 리포트의 잠정 대비(``final_diff`` 꼴) — ``final_diff.json``(작다) 먼저, 없으면 ``payload.json``."""
     folder = os.path.join(root, date)
     if not os.path.isfile(os.path.join(folder, "FINAL.txt")):
         return None, "확정 아님"
@@ -1122,8 +1432,8 @@ def _final_cells(root: str, date: str) -> "tuple[list | None, str | None]":
     return _usable_base(fd, date)
 
 
-def _usable_base(fd: dict, date: str) -> "tuple[list | None, str | None]":
-    """그 확정 리포트의 잠정 대비가 **그날 저녁의 잠정 리포트** 대비인가 — 아니면 (None, 이유).
+def _usable_base(fd: dict, date: str) -> "tuple[dict | None, str | None]":
+    """그 확정 리포트의 잠정 대비가 **그날 저녁의 잠정 리포트** 대비인가 — 맞으면 (그 기록, None), 아니면 (None, 이유).
 
     바꿔 끼운 리포트가 기준일 당일에 만든 것이어야 한다(``base_built`` 의 날짜 = 기준일). 다음날 확정 전에
     손으로 다시 만든 것이나 확정 위에 다시 만든 것은 "18:10 잠정이 얼마나 바뀌나" 를 말하지 않는다.
@@ -1136,7 +1446,7 @@ def _usable_base(fd: dict, date: str) -> "tuple[list | None, str | None]":
         return None, "칸별 기록 없음(옛 형식)"
     if str(fd.get("base_built") or "")[:10] != date:
         return None, f"바꿔 끼운 리포트가 기준일 당일 것이 아니다({fd.get('base_built')})"
-    return fd["cells_1d"], None
+    return fd, None
 
 
 def revision_rows(cells: list, gate_share: float = REV_GATE_SHARE) -> tuple[list[float], int]:
@@ -1166,7 +1476,7 @@ REV_SEED_DIR = ".revision_seed"
 REV_SEED_LABEL = "시드: 아카이브 18:10 게시본 대 확정 재구성"
 
 
-def _seed_cells(root: str, date: str) -> "tuple[list | None, str | None]":
+def _seed_cells(root: str, date: str) -> "tuple[dict | None, str | None]":
     path = os.path.join(root, REV_SEED_DIR, f"{date}.json")
     if not os.path.isfile(path):
         return None, None
@@ -1228,18 +1538,23 @@ def revision_stats(P: dict, root: "str | None") -> dict:
     부호 뒤집힘 수, 그리고 (시장, 주체)별 상위 3 섹터가 잠정→확정에서 그대로인 몫(``top3_keep_pct``).
     이 리포트가 확정이면 자기 ``final_diff`` 도 넣는다. 기준일보다 뒤의 폴더는 읽지 않는다. 확정 기록이 없는
     기준일은 아카이브 시드(:data:`REV_SEED_DIR`)를 읽고 ``seed`` 에 그 날짜와 출처를 적는다.
+
+    종목(기관상위) 층(``stocks``): 그 기록이 ``final_diff["stocks"]`` 요약을 남긴 날들에서 모은다 — 칸 수·부호
+    뒤집힘·상위 3 유지는 날들의 합이고, ``rel_median_pct`` 는 **일별 중앙값의 중앙값**이다(종목 칸 원자료는
+    날마다 요약으로만 남는다 — ``rows`` 는 문턱·상한이 걸린 발췌라 모으면 치우친다). 요약이 없는 옛 기록의
+    날은 ``n_dates`` 에 안 센다. 기록이 하나도 없으면 ``None``.
     """
     asof = P["dates"][-1]
     out = {"days": REV_DAYS, "gate_share": REV_GATE_SHARE, "win": 1, "n_dates": 0, "dates": [],
            "n_cells": 0, "rel_median_pct": None, "flips": 0, "top_n": REV_TOP_N,
-           "top3_keep_pct": None, "top3_lists": 0, "seed": None, "skipped": {}}
+           "top3_keep_pct": None, "top3_lists": 0, "seed": None, "skipped": {}, "stocks": None}
     found: list = []
     seeded: list = []
     own = P.get("final_diff") if P.get("final") else None
     if isinstance(own, dict):
-        cells, why = _usable_base(own, asof)
-        if cells is not None:
-            found.append((asof, cells))
+        fd, why = _usable_base(own, asof)
+        if fd is not None:
+            found.append((asof, fd))
         else:
             out["skipped"][asof] = why
     if root and os.path.isdir(root):
@@ -1253,32 +1568,50 @@ def revision_stats(P: dict, root: "str | None") -> dict:
                 break
             if not (re.fullmatch(r"\d{4}-\d{2}-\d{2}", name) and name < asof):
                 continue
-            cells, why = _final_cells(root, name) if os.path.isdir(os.path.join(root, name)) else (None, "확정 아님")
-            if cells is None:
-                sc, swhy = _seed_cells(root, name)
-                if sc is not None:
-                    found.append((name, sc))
+            fd, why = _final_cells(root, name) if os.path.isdir(os.path.join(root, name)) else (None, "확정 아님")
+            if fd is None:
+                sfd, swhy = _seed_cells(root, name)
+                if sfd is not None:
+                    found.append((name, sfd))
                     seeded.append(name)
                     continue
                 why = swhy or why
                 if why != "확정 아님":
                     out["skipped"][name] = why
                 continue
-            found.append((name, cells))
+            found.append((name, fd))
     found.sort()
     rel, flips, kept, lists = [], 0, 0, 0
-    for _d, cells in found:
+    sdays, smeds, scells, sflips, skept, slists = 0, [], 0, 0, 0, 0
+    for _d, fd in found:
+        cells = fd["cells_1d"]
         r, f = revision_rows(cells)
         rel += r
         flips += f
         k, t = revision_top3(cells)
         kept += k
         lists += t // REV_TOP_N
+        S = fd.get("stocks")
+        if isinstance(S, dict):
+            sdays += 1
+            scells += S.get("n_cells") or 0
+            sflips += S.get("flips") or 0
+            if S.get("rel_median_pct") is not None:
+                smeds.append(S["rel_median_pct"])
+            skept += S.get("top3_kept") or 0
+            slists += S.get("top3_lists") or 0
     out.update(n_dates=len(found), dates=[d for d, _ in found], n_cells=len(rel), flips=flips,
                rel_median_pct=round(float(pd.Series(rel).median()), 1) if rel else None,
                top3_keep_pct=round(100.0 * kept / (lists * REV_TOP_N), 1) if lists else None,
                top3_lists=lists,
                seed={"label": REV_SEED_LABEL, "dates": sorted(seeded)} if seeded else None)
+    if sdays:
+        out["stocks"] = {
+            "n_dates": sdays, "n_cells": scells, "flips": sflips,
+            "rel_median_pct": round(float(pd.Series(smeds).median()), 1) if smeds else None,
+            "top3_keep_pct": round(100.0 * skept / (slists * REV_TOP_N), 1) if slists else None,
+            "top3_lists": slists,
+        }
     return out
 
 
@@ -1324,7 +1657,7 @@ def final_diff_text(P: dict, top: int = 15) -> str:
 #: 2026-09-14 이후 애프터마켓(~20:00)까지 포함한 통합 종가라, 같은 날 둘이 갈린다(11-06: 거래소 자체 바구니
 #: −4.37% vs KOSPI −6.02%. 정규장 종가로 다시 재면 0.01%p 안에서 맞는다).
 KRX_INDEX = (("거래소", "001", "코스피"), ("코스닥", "101", "코스닥"))
-#: 금액 근사 오차 칩을 띄우는 문턱(%).
+#: 종가·VWAP 환산 차 칩을 띄우는 문턱(%).
 APPROX_GAP_WARN = 5.0
 _QTY_COLS = ("individual", "foreign_", "institution", "etc_corp")
 
@@ -1359,9 +1692,11 @@ def krx_index_block(con, dates: list[str], markets: list[str]) -> dict:
 
 
 def approx_gap(con, df: pd.DataFrame, asof: str, markets: list[str]) -> dict:
-    """시장별 **순매수 금액 근사 오차**[%] — 종가 환산과 VWAP 환산의 차이(D1 검토 M4).
+    """시장별 **종가·VWAP 환산 차**[%] — 내부 자료끼리의 대조다(D1 검토 M4). 실제 오차가 아니다.
 
-    순매수 금액은 수량 × 그날 종가로 복원한다(``load``). 참값에 가까운 것은 그날 VWAP 환산이다. 그날
+    네이버 시장값 기준 차이는 ``krx_truth`` 가 잰다 — 48일 실측에서 이 값은 최대 3.12% 인데 네이버 시장값 기준 거래소
+    오차는 중앙 5.7% 였다(``docs/validation/2026-11-09-market-total-vs-published.md``). 순매수 금액은
+    수량 × 그날 종가로 복원한다(``load``). 그날
     종목 i 의 4주체 |순매수 수량| 합을 :math:`n_i` 라 할 때
 
     ``gap = |Σ n_i·close_i − Σ n_i·vwap_i| / Σ n_i·vwap_i × 100``,  ``vwap_i = trade_value(백만원)·1e6 / volume``
@@ -1424,24 +1759,118 @@ def _sector_gap_max(cov: pd.DataFrame, market_vwap: float) -> "dict | None":
     return best
 
 
+#: 분봉 밖 거래 큼 — 그날 거래량 중 분봉에 없는 몫의 문턱.
+BLOCK_OFF_MIN = 0.5
+#: 분모 게이트 — 그 종목 최대 주체 금액이 시장 Σ|개인·외국인·기관 순매수| 의 이 몫 이상일 때만 띄운다.
+BLOCK_SHARE_MIN = 0.01
+#: 분봉 수집 완료 게이트 — 분봉이 있는 종목의 (분봉 합 ÷ 거래량) 중앙이 이 미만이면 판정하지 않는다.
+BLOCK_MIN_COVER = 0.95
+
+
+def _minute_volume(con, asof: str) -> "dict[str, float] | None":
+    """그날 종목별 분봉 거래량 합. ``minute_bars`` 표가 없는 DB(테스트 픽스처·BYO)는 ``None``."""
+    pg = _is_pg(con)
+    exists = pd.read_sql_query(
+        "SELECT to_regclass('public.minute_bars') IS NOT NULL AS ok" if pg else
+        "SELECT count(*) AS ok FROM sqlite_master WHERE type='table' AND name='minute_bars'", con)
+    if not bool(exists["ok"].iloc[0]):
+        return None
+    ph = "%s" if pg else "?"
+    nxt = (datetime.fromisoformat(asof) + timedelta(days=1)).date().isoformat()
+    q = pd.read_sql_query(
+        f"SELECT code, SUM(volume) AS vm FROM minute_bars WHERE ts >= {ph} AND ts < {ph} GROUP BY code",
+        con, params=[asof, nxt])
+    return {r.code: float(r.vm) for r in q.itertuples() if r.vm is not None}
+
+
+def block_suspects(con, df: pd.DataFrame, asof: str, markets: list[str]) -> dict:
+    """시장별 **분봉 밖 거래 큼** 종목 — 시장 합계가 네이버 시장값과 크게 갈린 날의 원인 후보(측정, 2026-11-09).
+
+    ``off = max(0, volume − Σ분봉 volume) / volume`` 이 :data:`BLOCK_OFF_MIN` 이상이고 최대 주체 금액
+    ``max_a |q_a|·P`` 가 시장 ``Σ_a |Σ q_a·P|`` 의 :data:`BLOCK_SHARE_MIN` 이상인 종목(a = 개인·외국인·기관).
+    분봉 밖 거래량이 시간외 대량매매라는 것은 **추정**이다 — 체결 유형 자료가 없다. 분봉이 없는 종목은 판정하지
+    않고(``unjudged`` = 금액 게이트는 넘었는데 분봉이 없어 판정 못 한 종목 수), 표가 없거나 수집이 덜 끝난 날은
+    ``status: skip`` 으로 이유를 적는다(0 건과 모름을 가른다). 대조한 범위(10-12 까지)에서 수량은 네이버 종목 값과 같았다 —
+    금액까지 맞다는 말은 아니고, 시장값과 정의 차이일 수 있다는 표지다(까닭 미확인).
+    문서 ``docs/validation/2026-11-09-market-total-vs-published.md`` 의 정의와 같다.
+    """
+    minutes = _minute_volume(con, asof)
+    if minutes is None:
+        return {"status": "skip", "reason": "분봉 표(minute_bars)가 없다"}
+    if not minutes:
+        return {"status": "skip", "reason": "그날 분봉이 없다"}
+    ph = "%s" if _is_pg(con) else "?"
+    bars = pd.read_sql_query(f"SELECT code, volume, source FROM daily_bars WHERE date = {ph}", con, params=[asof])
+    bars = (bars.assign(_k=(bars["source"] != "kiwoom").astype(int))
+                .sort_values(["code", "_k"]).drop_duplicates("code"))
+    volume = {r.code: float(r.volume) for r in bars.itertuples() if r.volume and float(r.volume) > 0}
+    ratios = [minutes[c] / v for c, v in volume.items() if c in minutes]
+    cover = float(pd.Series(ratios).median()) if ratios else 0.0
+    if cover < BLOCK_MIN_COVER:
+        return {"status": "skip", "reason": f"분봉 수집이 덜 끝났다(분봉 합÷거래량 중앙 {cover * 100:.0f}%)"}
+    day = df[df["date"] == asof]
+    out: dict = {m: [] for m in markets}
+    unjudged = 0
+    for m in markets:
+        sub = day[day["market"] == m]
+        amts = {a: sub[a].astype(float).fillna(0.0) for a in ("indiv", "forgn", "inst")}
+        den = sum(abs(float(v.sum())) for v in amts.values())
+        if not den:
+            continue
+        for i, r in enumerate(sub.itertuples()):
+            actor, amt = max(((a, float(x.iloc[i])) for a, x in amts.items()), key=lambda kv: abs(kv[1]))
+            if abs(amt) < BLOCK_SHARE_MIN * den:
+                continue
+            v, vm = volume.get(r.code), minutes.get(r.code)
+            if v is None or vm is None:
+                unjudged += 1
+                continue
+            off = max(0.0, v - vm) / v
+            if off >= BLOCK_OFF_MIN:
+                out[m].append({"code": r.code, "name": r.name, "off_pct": round(off * 100.0, 1),
+                               "actor": actor, "amt": round(amt, 1)})
+        out[m].sort(key=lambda x: (-abs(x["amt"]), x["code"]))
+    return {"status": "ok", "off_min": BLOCK_OFF_MIN, "share_min": BLOCK_SHARE_MIN, "unjudged": unjudged, "markets": out}
+
+
 def market_context(con, df: pd.DataFrame, P: dict) -> None:
-    """``today`` 에 KRX 지수(정규장)와 시장별 금액 근사 오차를 붙인다 — 제자리 수정."""
+    """``today`` 에 KRX 지수(정규장)·시장별 금액 근사 오차·분봉 밖 거래 큼을 붙인다 — 제자리 수정."""
     T = P["today"]
     T["krx_index"] = krx_index_block(con, P["dates"], P["markets"])
     T["approx_gap_warn"] = APPROX_GAP_WARN
     gaps = approx_gap(con, df, P["dates"][-1], P["markets"])
     for mkey, M in T["market"].items():
         M["approx_gap"] = gaps.get(mkey)
+    T["block_suspects"] = block_suspects(con, df, P["dates"][-1], P["markets"])
 
 
-def _krx_truth():
-    """옆 스크립트 ``krx_truth.py`` — ``scripts/`` 는 패키지가 아니라 importlib 로 읽는다(선택 기능)."""
+#: 설치본(wheel)에는 일부러 없는 옆 스크립트 — 내부 검증 전용이고 목적지가 data.krx.co.kr 이라 BYO 설계 §4.2 허용 목록 밖이다.
+KRX_TRUTH_SCRIPT = "krx_truth.py"
+
+
+def _attach_krx_truth(payload: dict, build_dir: "str | None", root: "str | None",
+                      path: "str | None" = None) -> None:
+    """네이버 시장값 대조(선택 기능) — 어떤 실패도 리포트를 깨지 않는다.
+
+    ``attach`` 안의 실패는 그쪽이 skip 블록으로 바꾼다. 여기는 그 앞, **모듈을 읽는 단계**의 보호다. ``scripts/`` 는
+    패키지가 아니라 importlib 로 읽는다. 파일이 없으면(설치본) 꺼진 것과 같고, 못 읽으면 skip 블록을 남긴다.
+    """
+    p = path or os.path.join(os.path.dirname(os.path.abspath(__file__)), KRX_TRUTH_SCRIPT)
+    if not os.path.isfile(p):
+        if os.environ.get("KR_QUANT_KRX_TRUTH") == "1":
+            print(f"⚠️ [네이버 대조] {KRX_TRUTH_SCRIPT} 가 없는 설치본이라 건너뛴다", file=sys.stderr)
+        return
     import importlib.util  # noqa: PLC0415
-    p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "krx_truth.py")
-    spec = importlib.util.spec_from_file_location("krx_truth", p)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+    try:
+        spec = importlib.util.spec_from_file_location("krx_truth", p)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+    except Exception as e:  # noqa: BLE001 — 선택 기능의 버그가 본 리포트를 죽이면 안 된다
+        if isinstance(payload.get("today"), dict):
+            payload["today"]["krx_truth"] = {"status": "skip", "reason": f"모듈 로드 실패: {e!r}"}
+        print(f"⚠️ [네이버 대조] 내부 오류 — 모듈 로드 실패 {e!r}. 리포트는 그대로 만든다", file=sys.stderr)
+        return
+    mod.attach(payload, build_dir, root)
 
 
 def script_json(payload: dict) -> str:
@@ -1490,6 +1919,9 @@ def main():
                               sorted(df["market"].dropna().unique()), members)
     cap_monthly = sector_cap_monthly(con, df, dates)
     payload = build_payload(df, dates, caps, cap_monthly)
+    # 권리락 뒤 신주가 아직 상장 전인 종목 — 값은 그대로 두고 표지만 싣는다(storage.SHARE_EVENTS 주석).
+    for code, pending in rights_pending(con, sorted(payload["names"]), dates[-1]).items():
+        payload["names"][code]["cap_pending"] = pending
     payload["sector_override"] = override_block(OVERRIDE_APPLIED)
     market_context(con, df, payload)
     con.close()
@@ -1515,11 +1947,11 @@ def main():
                 with open(os.path.join(here, "final_diff.json"), "w", encoding="utf-8") as f:
                     json.dump(payload["final_diff"], f, ensure_ascii=False)
     payload["revision_stats"] = revision_stats(payload, root)
-    # KRX 공식 거래대금 대조(선택, D1-m2) — 같은 기준일 캐시(krx_truth.json)가 있거나
-    # KR_QUANT_KRX_TRUTH=1 일 때만. 실패·버그는 attach 안에서 skip 블록이 된다 — 리포트를 깨지 않는다.
-    _krx_truth().attach(payload,
-                        os.path.dirname(os.path.abspath(a.json or a.html)) if (a.json or a.html) else None,
-                        root)
+    # 네이버 시장값 대조(선택, D1-m2) — 같은 기준일 캐시(krx_truth.json)가 있거나
+    # KR_QUANT_KRX_TRUTH=1 일 때만. 실패·버그는 skip 블록이 된다 — 리포트를 깨지 않는다.
+    _attach_krx_truth(payload,
+                      os.path.dirname(os.path.abspath(a.json or a.html)) if (a.json or a.html) else None,
+                      root)
     if a.rebuilt:
         # 키를 재구성일 때만 싣는다 — 화면이 "재구성" 을 붙인다.
         payload["rebuilt"] = True

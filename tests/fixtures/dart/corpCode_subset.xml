@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<result>
+<list>
+        <corp_code>00173449</corp_code>
+        <corp_name>빌리언스</corp_name>
+        <corp_eng_name>Billions Co.,Ltd.</corp_eng_name>
+        <stock_code>044480</stock_code>
+        <modify_date>20260915</modify_date>
+    </list>
+<list>
+        <corp_code>00145437</corp_code>
+        <corp_name>아센디오</corp_name>
+        <corp_eng_name>Ascendio Co., Ltd.</corp_eng_name>
+        <stock_code>012170</stock_code>
+        <modify_date>20261028</modify_date>
+    </list>
+<list>
+        <corp_code>00434003</corp_code>
+        <corp_name>다코</corp_name>
+        <corp_eng_name>Daco corporation</corp_eng_name>
+        <stock_code> </stock_code>
+        <modify_date>20170630</modify_date>
+    </list>
+</result>

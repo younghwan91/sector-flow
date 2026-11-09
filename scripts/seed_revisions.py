@@ -77,6 +77,10 @@ def candidates(archives: list[str]) -> list[tuple[str, str]]:
         if os.path.isfile(os.path.join(a, "payload.json")):
             out.append((None, a))
             continue
+        if not os.path.isdir(a):
+            # 디스크 소실 뒤에는 아카이브가 없다 — docs/runbook.md. 시드 없이도 화면은 돈다(수정 폭 칸이 비어 있을 뿐).
+            print(f"  건너뜀 {a}: 아카이브 폴더가 없다 — 그날 저녁 게시본은 다시 만들 수 없다(docs/runbook.md)")
+            continue
         for name in sorted(os.listdir(a)):
             d = os.path.join(a, name)
             if os.path.isfile(os.path.join(d, "payload.json")):
@@ -129,6 +133,9 @@ def seed_one(folder: "str | None", arch: str, final_root: str, since: str) -> tu
         "base_final": False,
         "base_built": built.strftime("%Y-%m-%d %H:%M"),
         "cells_1d": cells,
+        # 종목(기관상위) 층 — final_diff_compute 안의 stock_diff 가 같은 membership 규칙으로
+        # 구성이 갈린 (시장, 섹터)를 이미 뺐다(dropped_sectors). 그대로 싣는다.
+        "stocks": fd["stocks"],
         "seed": {"label": sf.REV_SEED_LABEL,
                  "provisional": os.path.abspath(path),
                  "final": os.path.abspath(os.path.join(fdir, "payload.json")),
@@ -136,9 +143,14 @@ def seed_one(folder: "str | None", arch: str, final_root: str, since: str) -> tu
                  "made": datetime.now(sf.KST).strftime("%Y-%m-%d %H:%M")},
     }
     med = sorted(rel)[len(rel) // 2] if rel else None
+    S = fd["stocks"]
+    smed = None if S is None else S["rel_median_pct"]
+    stk = " · 종목 층 없음(게시본에 1일 종목 칸이 없다 — 옛 형식)" if S is None else (
+        f" · 기관상위 {S['n_stocks']}종목 행 {S['n_rows']} 중앙 "
+        + ("—" if smed is None else f"{smed:.1f}%"))
     line = (f"칸 {len(cells)}(버림 {dropped}) · 게이트 통과 {len(rel)} · 중앙 "
             f"{'—' if med is None else f'{med:.1f}%'} · 뒤집힘 {flips} · 상위3 유지 "
-            f"{'—' if not tot else f'{100 * kept / tot:.0f}%'}")
+            f"{'—' if not tot else f'{100 * kept / tot:.0f}%'}{stk}")
     return doc, line
 
 

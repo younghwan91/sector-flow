@@ -429,11 +429,15 @@ def main() -> None:
         pass
     ap = argparse.ArgumentParser(description="자금 원장 — 주체×섹터 순매수")
     ap.add_argument("--dir", default=DEFAULT_DIR, help="리포트 폴더 (기본: %(default)s)")
+    ap.add_argument("--demo", action="store_true", help="합성 데이터로 띄운다 — 실데이터 아님, DB 불요")
     ap.add_argument("--dump", action="store_true", help="색 없는 평문으로 찍고 끝낸다")
     ap.add_argument("--width", type=int, default=100, help="--dump 의 폭")
     a = ap.parse_args()
     if a.width < 1:
         ap.error("--width 는 1 이상이어야 한다")
+    if a.demo:
+        from sectorflow.demo import ensure  # noqa: PLC0415 — 화면만 볼 때 pandas 등을 안 부르게
+        a.dir = ensure()
     mo = Model(load(a.dir))
     if a.dump:
         try:

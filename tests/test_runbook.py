@@ -1,6 +1,6 @@
-"""운영 런북(README §3.1)과 크론 래퍼 — 알림이 오면 할 일이 적혀 있는가, 래퍼가 제 알림을 망치지 않는가.
+"""운영 런북(docs/runbook.md)과 크론 래퍼 — 알림이 오면 할 일이 적혀 있는가, 래퍼가 제 알림을 망치지 않는가.
 
-* 운영자에게 가는 문구(크론 꼬리 → alert.sh)마다 §3.1 에 줄이 있다. 목록은 손으로 고른다(:data:`MESSAGES`) —
+* 운영자에게 가는 문구(크론 꼬리 → alert.sh)마다 런북에 줄이 있다. 목록은 손으로 고른다(:data:`MESSAGES`) —
   같은 뜻의 문구 여럿을 한 줄이 받기도 하고, 표에는 원문 그대로가 아니라 열쇠말만 적기도 해서다. 대신 원천에서
   ⚠️·stderr·알림 제목 꼴의 줄을 정규식으로 긁어, 목록에 없는 **새 문구**가 생기면 빨개진다.
 * ``cron_run.sh`` 는 임시 파일·로그·KILL 알림을 진짜 셸로 돌려 본다(가짜 alert.sh, 임시 레포).
@@ -23,13 +23,10 @@ REPO = Path(__file__).resolve().parent.parent
 
 
 def _runbook() -> str:
-    text = (REPO / "README.md").read_text("utf-8")
-    m = re.search(r"^### 3\.1 .*?(?=^## )", text, re.S | re.M)
-    assert m, "README 에 §3.1 이 없다"
-    return m.group(0)
+    return (REPO / "docs/runbook.md").read_text("utf-8")
 
 
-# (원천 파일, 원천에 있는 문구, §3.1 에 있어야 할 문구). 원천 문구가 사라지면(말을 바꿨으면) 여기도 고친다.
+# (원천 파일, 원천에 있는 문구, 런북에 있어야 할 문구). 원천 문구가 사라지면(말을 바꿨으면) 여기도 고친다.
 MESSAGES: list[tuple[str, str, str]] = [
     # cron_run.sh — 알림 제목과 본문
     ("scripts/cron_run.sh", "실패 (rc=", "실패 (rc="),
@@ -80,6 +77,18 @@ MESSAGES: list[tuple[str, str, str]] = [
     ("scripts/freshness_check.py", "오늘 리포트가 안 걸렸다", "오늘 리포트가 안 걸렸다"),
     ("scripts/freshness_check.py", "supply_demand 가 비었다", "supply_demand 가 비었다"),
     ("scripts/freshness_check.py", "휴장일이면 무시", "휴장일이면 무시"),
+    ("scripts/freshness_check.py", "달력상 거래일인데 supply_demand 가 비었다", "달력상 거래일인데"),
+    ("scripts/freshness_check.py", "[달력] 오늘(", "[달력] 오늘(…)은 달력에 휴장"),
+    ("scripts/freshness_check.py", "[달력] {", "[달력] <해>년이 scripts/krx_calendar.py 에 없다"),
+    ("scripts/freshness_check.py", "자기 검증에 걸린 채 latest", "자기 검증에 걸린 채 latest"),
+    ("scripts/freshness_check.py", "확정 리포트가 자기 검증에 걸렸다", "확정 리포트가 자기 검증에 걸렸다"),
+    ("scripts/freshness_check.py", "이 미게시다", "미게시다"),
+    ("scripts/freshness_check.py", "실행 기록이 원장에 없다", "실행 기록이 원장에 없다"),
+    ("scripts/freshness_check.py", "18:10 뒤 실행 기록이 원장에 없다", "18:10 뒤 실행 기록이 원장에 없다"),
+    ("scripts/freshness_check.py", "이 점검의 판정을 원장에 못 썼다", "이 점검의 판정을 원장에 못 썼다"),
+    ("scripts/freshness_check.py", "[웹] /healthz 프로브가", "프로브가 N분째 없다"),
+    ("scripts/freshness_check.py", "시간째 안 받았다", "시간째 안 받았다"),
+    ("scripts/freshness_check.py", "개 뒤처졌다", "뒤처졌다"),
     ("scripts/freshness_check.py", "이 확정되지 않았다", "이 확정되지 않았다"),
     ("scripts/freshness_check.py", "ALERT_WEBHOOK_URL 이 비었다", "ALERT_WEBHOOK_URL 이 비었다"),
     ("scripts/freshness_check.py", "200 으로 답했지만 JSON 이 아니다", "200 으로 답했지만 JSON 이 아니다"),
@@ -97,15 +106,22 @@ MESSAGES: list[tuple[str, str, str]] = [
     ("scripts/finalize_done.py", "를 덮지 않는다", "덮지 않는다"),
     ("scripts/finalize_done.py", "아직 안 돌았거나 도는 중", "아직 안 돌았거나 도는 중"),
     ("scripts/finalize_done.py", "성공으로 끝나지 않았다", "성공으로 끝나지 않았다"),
-    # krx_truth.py — (선택) KRX 공식 거래대금 대조의 ⚠️ 줄(리포트 빌드 로그 → 크론 꼬리)
-    ("scripts/krx_truth.py", "[KRX 공식 대조] SKIP", "[KRX 공식 대조] SKIP"),
-    ("scripts/krx_truth.py", "근사 오차 큼", "[KRX 공식 대조] 근사 오차 큼"),
-    ("scripts/krx_truth.py", "내부 오류", "[KRX 공식 대조] 내부 오류"),
+    ("scripts/finalize_done.py", "수집 실패가 문턱을 넘었거나 완료 줄이 없다", "수집 실패가 문턱을 넘었거나 완료 줄이 없다"),
+    # krx_truth.py — 네이버 대조의 ⚠️ 줄(리포트 빌드 로그 → 크론 꼬리)
+    ("scripts/krx_truth.py", "[네이버 대조] SKIP", "[네이버 대조] SKIP"),
+    ("scripts/krx_truth.py", "차이 큼", "[네이버 대조] 차이 큼"),
+    ("scripts/krx_truth.py", "내부 오류", "[네이버 대조] 내부 오류"),
+    ("scripts/freshness_check.py", "[네이버 대조] 전 거래일", "[네이버 대조] 전 거래일"),
     ("scripts/krx_truth.py", "krx_truth.json 을 못 재웠다", "krx_truth.json 을 못 재웠다"),
     # completeness_gate.py — 수집 미완 본문의 [FAIL] 줄
     ("scripts/completeness_gate.py", "[FAIL]", "[FAIL]"),
     ("scripts/completeness_gate.py", "daily_price_adjust", "daily_price_adjust"),
     ("scripts/completeness_gate.py", "시장 목록이 비었다", "시장 목록이 비었다"),
+    # daily_report.sh — 부속 산출물(다이제스트·검증 페이지): 리포트는 게시되고 75 로 알린다
+    ("scripts/daily_report.sh", "다이제스트를 못 만들었다", "다이제스트를 못 만들었다"),
+    ("scripts/daily_report.sh", "다이제스트 카드(digest.png)를 못 찍었다", "다이제스트 카드(digest.png)를 못 찍었다"),
+    ("scripts/daily_report.sh", "검증·품질 페이지를 못 만들었다", "검증·품질 페이지를 못 만들었다"),
+    ("scripts/daily_report.sh", "부속 산출물을 못 만들었다", "부속 산출물을 못 만들었다"),
 ]
 
 #: 긁힌 줄 가운데 운영자에게 가지 않거나 런북 줄이 필요 없는 것 — (원천 파일, 문구, 이유).
@@ -180,9 +196,9 @@ def _src(rel: str) -> str:
 
 @pytest.mark.parametrize(("src", "phrase", "row"), MESSAGES, ids=[f"{s.split('/')[-1]}:{p}" for s, p, _ in MESSAGES])
 def test_every_operator_message_has_a_runbook_row(src, phrase, row):
-    """알림이 왔는데 README §3.1 에 그 문구가 없으면 새벽에 코드를 읽어야 한다."""
-    assert phrase in _src(src), f"{src} 에 '{phrase}' 가 없다 — 문구를 바꿨으면 MESSAGES 와 §3.1 을 같이 고쳐라"
-    assert row in _runbook(), f"README §3.1 에 '{row}' 가 없다({src} 의 '{phrase}' 알림에 할 일이 없다)"
+    """알림이 왔는데 런북에 그 문구가 없으면 새벽에 코드를 읽어야 한다."""
+    assert phrase in _src(src), f"{src} 에 '{phrase}' 가 없다 — 문구를 바꿨으면 MESSAGES 와 런북을 같이 고쳐라"
+    assert row in _runbook(), f"docs/runbook.md 에 '{row}' 가 없다({src} 의 '{phrase}' 알림에 할 일이 없다)"
 
 
 def _scraped() -> list[tuple[str, str]]:
@@ -203,11 +219,29 @@ def test_scraper_still_finds_messages_in_every_source():
 
 
 def test_new_operator_messages_need_a_runbook_entry():
-    """⚠️·stderr·알림 제목 꼴의 새 문구는 MESSAGES(→ §3.1 줄) 나 EXEMPT(이유) 에 들어가야 한다."""
+    """⚠️·stderr·알림 제목 꼴의 새 문구는 MESSAGES(→ 런북 줄) 나 EXEMPT(이유) 에 들어가야 한다."""
     known = [(s, p) for s, p, _ in MESSAGES] + [(s, p) for s, p, _ in EXEMPT]
     orphans = [(rel, msg) for rel, msg in _scraped()
                if not any(s == rel and p in msg for s, p in known)]
     assert not orphans, "런북 줄이 없는 운영자 문구:\n" + "\n".join(f"  {r}: {m}" for r, m in orphans)
+
+
+def test_runbook_names_the_github_billing_stop():
+    """결제 정지는 코드 탓처럼 보인다 — CI 가 안 돌아 pull-all --ci-gate 가 조용히 멈춘다. 문구와 복구 뒤 재실행이 있어야 한다."""
+    book = _runbook()
+    assert "job was not started" in book and "spending limit" in book
+    row = next(ln for ln in book.splitlines() if "spending limit" in ln)
+    assert "gh run rerun" in row and "복구 뒤" in row
+
+
+def test_recovery_runbook_is_there_and_was_rehearsed():
+    """reports/ 는 백업 대상이 아니다 — 디스크를 잃은 날 읽을 순서와, 실제로 돌려 잰 시간이 있어야 한다."""
+    book = _runbook()
+    sec = book[book.index("## 디스크 소실·새 머신 복구"):]
+    for must in ("rebuild_history.py", "ln -sfn", "cron-install", "uv sync --extra pg", "events.jsonl", ".archive",
+                 "seed_revisions.py", "backup_to_gdrive.sh", "리허설 실측"):
+        assert must in sec, must
+    assert re.search(r"\d+초", sec), "리허설 시간이 없다"
 
 
 def test_exemptions_still_point_at_real_lines():
@@ -414,3 +448,16 @@ def test_every_script_reading_sql_through_pandas_silences_the_dbapi_warning():
             if 'filterwarnings("ignore", message="pandas only supports SQLAlchemy"' not in text:
                 missing.append(path.name)
     assert not missing, f"read_sql 을 타는데 pandas DBAPI 경고를 안 끈 스크립트: {missing}"
+
+
+def test_runbook_stays_out_of_the_readme_and_pointers_follow_it():
+    """런북이 README 앞머리를 막아 설치(§4)가 51% 지점에 있었다. 다시 자라지 않고, 알림 문구가 옛 자리를 안 가리킨다."""
+    readme = (REPO / "README.md").read_text("utf-8")
+    assert "### 3.1" not in readme and "docs/runbook.md" in readme
+    old = "README §" + "3.1"
+    stale = [str(p.relative_to(REPO)) for root in ("scripts", "src", "docs")
+             for p in (REPO / root).rglob("*")
+             if p.suffix in {".py", ".sh", ".md", ".toml"} and "strategy" not in p.parts and old in p.read_text("utf-8")]
+    if old in (REPO / "CLAUDE.md").read_text("utf-8"):
+        stale.append("CLAUDE.md")
+    assert not stale, f"옛 자리({old})를 가리킨다: {stale}"

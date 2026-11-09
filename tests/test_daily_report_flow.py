@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -47,6 +48,16 @@ FAKE_VERIFY = """
 import os, sys
 sys.exit(int(os.environ.get("FAKE_VERIFY_RC", "0")))
 """
+#: 짓는 폴더 안에 쓰는 가짜 검증 페이지 — 진짜는 test_trust_page 가 보고, 여기서는 배선만 본다.
+FAKE_TRUST = """
+import os, pathlib, sys
+a = sys.argv
+if os.environ.get("FAKE_TRUST_RC"):
+    sys.exit(int(os.environ["FAKE_TRUST_RC"]))
+b = pathlib.Path(a[a.index("--build") + 1])
+marks = sorted(p.name for p in b.iterdir())
+(b / "trust.html").write_text(a[a.index("--asof") + 1] + " " + b.name + " " + " ".join(marks))
+"""
 
 
 def _seed(db: Path, today_kosdaq: int) -> None:
@@ -87,15 +98,17 @@ def repo(tmp_path):
     r = tmp_path / "sector-flow"
     (r / "scripts").mkdir(parents=True)
     for name in ("daily_report.sh", "_env.sh", "_ledger.sh", "cron_run.sh", "completeness_gate.py",
-                 "finalize_done.py", "freshness_check.sh", "freshness_check.py", "ops_ledger.py"):
+                 "finalize_done.py", "freshness_check.sh", "freshness_check.py", "ops_ledger.py", "krx_calendar.py"):
         shutil.copy(REPO / "scripts" / name, r / "scripts" / name)
     (r / "scripts" / "sector_flow.py").write_text(FAKE_SECTOR_FLOW)
     (r / "scripts" / "sector_numbers.py").write_text(FAKE_NUMBERS)
     (r / "scripts" / "verify_report.py").write_text(FAKE_VERIFY)
-    (r / ".env").write_text(f"KR_QUANT_DB={tmp_path / 'db.sqlite'}\n")
-    # `uv run --quiet --extra pg python X` → 이 인터프리터로 X.
+    (r / "scripts" / "trust_page.py").write_text(FAKE_TRUST)
+    # 다이제스트는 기본 켜짐이지만 진짜는 Playwright 가 든다 — 여기서는 끄고, 배선은 아래 검사가 따로 본다.
+    (r / ".env").write_text(f"KR_QUANT_DB={tmp_path / 'db.sqlite'}\nKR_QUANT_DIGEST=0\n")
+    # `uv run --quiet --extra pg [--with X] python Y` → 이 인터프리터로 Y.
     uv = tmp_path / "uv"
-    uv.write_text(f'#!/bin/sh\nshift 5\nexec "{sys.executable}" "$@"\n')
+    uv.write_text(f'#!/bin/sh\nwhile [ "$1" != python ]; do shift; done\nshift\nexec "{sys.executable}" "$@"\n')
     uv.chmod(uv.stat().st_mode | stat.S_IEXEC)
     return r
 
@@ -329,6 +342,14 @@ def _cron_lines() -> list[str]:
     return [x for x in text.splitlines() if x.strip() and not x.startswith("#")]
 
 
+def test_no_cron_line_calls_naver_before_approval():
+    """네이버 약관을 확인하지 못했다 — 크론이 켜면 main 푸시만으로 다음날부터 외부 호출이 돈다. 켜는 건 사용자 승인 뒤다."""
+    lines = _cron_lines()
+    assert len([ln for ln in lines if "scripts/daily_report.sh" in ln]) >= 3
+    for ln in lines:
+        assert "KR_QUANT_KRX_TRUTH" not in ln, ln
+
+
 def test_every_report_cron_line_makes_the_log_dir_and_wraps():
     """새 clone 엔 ``reports/`` 가 없다 — ``>> reports/cron.log`` 가 스크립트보다 먼저 터진다."""
     lines = _cron_lines()
@@ -490,7 +511,9 @@ def write_attempt(f: Path, ended_kst: str, ok: bool = True) -> None:
     from datetime import datetime, timezone
     t = kst_epoch(ended_kst)
     stamp = datetime.fromtimestamp(t, timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+    # 완료 줄은 실제 기록과 같은 모양 — finalize_done 이 fail= 을 읽는다(rebuild_adjusted 는 안 읽는다).
     f.write_text(f"[{stamp}.000+0000] {{local_task_job_runner.py:123}} INFO - ::group::Pre task\n"
+                 f"[{stamp}.100+0000] {{logging_mixin.py:190}} INFO - ✅ 완료: done=2631 skip=0 fail=1 | 일봉 10,522행\n"
                  f"... Task exited with return code {0 if ok else 1}\n")
     os.utime(f, (t, t))
 
@@ -712,3 +735,106 @@ def test_rebuild_records_verified_finalize_and_the_full_commit(repo, tmp_path):
     assert "finalize: verified" in lines
     rev = [ln for ln in lines if ln.startswith("commit: ")][0].split(": ", 1)[1]
     assert rev == "?" or len(rev) >= 40, f"짧은 sha: {rev}"            # 시험 레포는 git 이 아니라 '?'
+
+
+# ─────────────────────────────── 부속 산출물 — 검증 페이지·다이제스트의 배선
+
+def _digest_on(repo: Path, tmp_path: Path, body: str = None) -> None:
+    (repo / ".env").write_text(f"KR_QUANT_DB={tmp_path / 'db.sqlite'}\n")
+    (repo / "scripts" / "digest.py").write_text(body or """
+import pathlib, sys
+b = pathlib.Path(sys.argv[sys.argv.index("--dir") + 1])
+(b / "digest.md").write_text("글")
+(b / "digest.png").write_bytes(b"png")
+""")
+
+
+def test_trust_page_is_built_inside_the_build_folder_and_swapped_with_the_report(repo):
+    """배치가 부른다 — 짓는 폴더 안에서, 표시 파일을 다 쓴 뒤에. 강제 재생성 뒤에도 페이지가 있다(예전엔 사라져 404)."""
+    _seed(repo.parent / "db.sqlite", today_kosdaq=50)
+    r = _run(repo)
+    assert r.returncode == 0, r.stderr
+    page = (repo / "reports" / TODAY / "trust.html")
+    assert (repo / "reports" / "latest" / "trust.html").exists()
+    said = page.read_text().split()
+    assert said[0] == TODAY and ".building." in said[1], "게시된 폴더에 고쳐 쓰면 안 된다"
+    assert "VERIFY.txt" in said and "numbers.html" in said
+    r = _run(repo, KR_QUANT_FORCE="1")
+    assert r.returncode == 0 and (repo / "reports" / "latest" / "trust.html").exists()
+
+
+def test_rebuild_writes_the_page_after_its_markers(repo, tmp_path):
+    """재구성은 REBUILT.txt·FINAL.txt 를 쓴 뒤에 페이지를 만든다 — 먼저 부르면 그날 줄이 '잠정' 으로 찍힌다."""
+    _seed(repo.parent / "db.sqlite", today_kosdaq=50)
+    r = _run(repo, KR_QUANT_ASOF=DAYS[-2], KR_QUANT_AIRFLOW_LOGS=_finalize_logs(tmp_path / "logs"))
+    assert r.returncode == 0, r.stderr
+    said = (repo / "reports" / DAYS[-2] / "trust.html").read_text().split()
+    assert "REBUILT.txt" in said
+
+
+def test_trust_page_failure_publishes_warns_and_is_recorded_in_verify(repo, tmp_path):
+    """페이지를 못 만들어도 리포트는 게시한다. 다만 조용히 빠지지 않는다 — 75(경고), VERIFY.txt 끝줄, 검증 실패 아님."""
+    _seed(repo.parent / "db.sqlite", today_kosdaq=50)
+    r = _run(repo, FAKE_TRUST_RC="1")
+    assert r.returncode == 75, r.stderr
+    assert "검증·품질 페이지를 못 만들었다" in r.stderr and "부속 산출물을 못 만들었다(trust.html)" in r.stderr
+    dest = repo / "reports" / TODAY
+    assert (dest / "numbers.html").exists() and (repo / "reports" / "latest").resolve() == dest
+    assert "부속 산출물 실패: trust.html" in (dest / "VERIFY.txt").read_text()
+    assert not (dest / "VERIFY_FAILED.txt").exists(), "리포트 숫자의 실패가 아니다"
+    assert not (dest / "trust.html").exists()
+
+
+def test_digest_is_on_by_default_and_lands_in_the_build(repo, tmp_path):
+    """크론 줄에 스위치가 없어도 만든다 — 예전엔 켜는 곳이 없어 웹의 /latest/digest.md 가 늘 404 였다."""
+    _seed(repo.parent / "db.sqlite", today_kosdaq=50)
+    _digest_on(repo, tmp_path)
+    r = _run(repo)
+    assert r.returncode == 0, r.stderr
+    assert (repo / "reports" / "latest" / "digest.md").read_text() == "글"
+    assert (repo / "reports" / "latest" / "digest.png").exists()
+
+
+def test_digest_failure_and_missing_card_warn_without_blocking(repo, tmp_path):
+    _seed(repo.parent / "db.sqlite", today_kosdaq=50)
+    _digest_on(repo, tmp_path, "import sys\nsys.exit(1)\n")
+    r = _run(repo)
+    assert r.returncode == 75 and "다이제스트를 못 만들었다" in r.stderr
+    dest = repo / "reports" / TODAY
+    assert (dest / "numbers.html").exists() and "부속 산출물 실패: digest" in (dest / "VERIFY.txt").read_text()
+    # 글만 되고 카드가 없는 날 — 웹의 digest.png 가 404 인데 종료코드는 0 이던 틈.
+    _digest_on(repo, tmp_path, """
+import pathlib, sys
+(pathlib.Path(sys.argv[sys.argv.index("--dir") + 1]) / "digest.md").write_text("글")
+""")
+    r = _run(repo, KR_QUANT_FORCE="1")
+    assert r.returncode == 75 and "카드(digest.png)를 못 찍었다" in r.stderr
+
+
+def test_digest_can_be_turned_off(repo, tmp_path):
+    _seed(repo.parent / "db.sqlite", today_kosdaq=50)
+    _digest_on(repo, tmp_path, "raise SystemExit('부르면 안 된다')\n")
+    r = _run(repo, KR_QUANT_DIGEST="0")
+    assert r.returncode == 0, r.stderr
+    assert not (repo / "reports" / TODAY / "digest.md").exists()
+
+
+def test_cron_timeout_during_a_side_product_still_records_and_cleans(repo):
+    """부속 산출물(다이제스트·검증 페이지) 단계에서 크론 40분 상한이 걸리면 — 안쪽 ``timeout`` 은 자기 프로세스 그룹이라 바깥 TERM 이 안 간다.
+    셸은 자식을 기다리느라 트랩을 못 돌리고 KILL 로 죽어 rc 137, 원장에 report 줄 없음, ``.building.N`` 잔류였다(재현 2026-11-09)."""
+    _seed(repo.parent / "db.sqlite", today_kosdaq=50)
+    pidfile = repo.parent / "sleeper.pid"
+    (repo / "scripts" / "trust_page.py").write_text(
+        f"import os, time\nopen({str(pidfile)!r}, 'w').write(str(os.getpid()))\ntime.sleep(25)\n")
+    t0 = time.monotonic()
+    p = subprocess.run(["timeout", "-k", "4s", "3s", str(repo / "scripts" / "daily_report.sh")],
+                       capture_output=True, text=True, env=_env(repo), timeout=45)
+    assert time.monotonic() - t0 < 20, "부속 단계 프로세스가 끝까지 살아 파이프를 쥐었다"
+    assert p.returncode == 124, f"KILL 까지 갔다(137)면 트랩이 안 돌았다: {p.returncode}\n{p.stderr}"
+    events = [json.loads(ln) for ln in (repo / "reports" / "events.jsonl").read_text().splitlines()]
+    report = [e for e in events if e["event"] == "report"]
+    assert report and report[-1]["rc"] == 143 and report[-1]["outcome"] == "error", events
+    assert not list((repo / "reports").glob("*.building.*")), "짓다 만 폴더가 남았다"
+    time.sleep(0.3)
+    pid = int(pidfile.read_text())
+    assert not Path(f"/proc/{pid}").exists() or "Z" in Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0], "부속 단계 프로세스가 살아 남았다"

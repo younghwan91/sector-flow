@@ -120,9 +120,14 @@ def comovement(d) -> None:
 
 
 def spikes(d, sector: str = "전기/전자", win: int = 20) -> None:
-    """§3.4 — 구간 합 뒤에 숨은 하루짜리 사건(GUARDRAILS §10 취약성의 시각화판)."""
+    """§3.4 — 구간 합 뒤에 숨은 하루짜리 사건(GUARDRAILS §10 취약성의 시각화판).
+
+    기본 섹터가 없는 리포트(합성 데모는 이름이 전부 가상이다)면 거래가 가장 큰 섹터로 — ``KeyError`` 로 죽으면 앞 절도 못 읽는다."""
     F, mkts, dates = d["flows"], d["markets"], d["dates"]
     n = len(dates)
+    if any(sector not in F[m] for m in mkts):
+        shared = sorted(set.intersection(*(set(F[m]) for m in mkts)))
+        sector = max(shared, key=lambda s: sum(abs(x) for m in mkts for k in ACTOR_KEYS for x in F[m][s][k]))
     print(f"## §3.4 단일 사건 집중도 — 최근 {win}거래일 · {sector}")
     for k in ACTOR_KEYS:
         v = [sum(F[m][sector][k][i] for m in mkts) for i in range(n - win, n)]

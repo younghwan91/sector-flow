@@ -100,12 +100,21 @@ def test_viewer_renders_stock_lists_from_the_payload_shape(tmp_path):
 @node
 def test_viewer_says_why_the_stock_list_is_empty_outside_presets(tmp_path):
     texts = _page("sector_flow.html", _viewer_payload(), tmp_path)
-    assert any("5·20·60·120일 기간에만" in t for t in texts), "1일·전체 단추를 눌렀는데 설명이 없다"
+    assert any("5·20·60·120일 구간에만" in t for t in texts), "1일·전체 단추를 눌렀는데 설명이 없다"
 
 
 @node
 def test_viewer_marks_a_stale_report(tmp_path):
     assert any("일 지난 리포트" in t for t in _page("sector_flow.html", _viewer_payload("2026-01-05"), tmp_path))
+
+
+@node
+def test_demo_pages_do_not_warn_about_age(tmp_path):
+    """합성 데모의 기준일은 고정이다 — 받은 폴더를 위한 경고가 데모를 고장처럼 보이게 한다."""
+    viewer = dict(_viewer_payload("2026-01-05"), demo=True)
+    numbers = dict(_numbers_data(combined=False, asof="2026-01-05"), demo=True)
+    assert not any("일 지난 리포트" in t for t in _page("sector_flow.html", viewer, tmp_path))
+    assert not any("일 지난 리포트" in t for t in _page("sector_numbers.html", numbers, tmp_path))
 
 
 def test_viewer_does_not_claim_krx_index_returns():
@@ -193,7 +202,7 @@ def test_numbers_drops_a_sector_with_no_stocks_in_the_market(tmp_path):
                             "inst": 0.0, "accel": 0.0}]
     d["combined"]["전체"]["rows"].append({"sector": "없는섹터", "n_all": 0, "G": None, "per": {}, "pass_n": 0})
     texts = _page("sector_numbers.html", d, tmp_path)
-    assert "있는섹터" in texts, "픽스처가 행을 하나도 안 그린다 — 이 검사가 헛돈다"
+    assert "있는섹터~" in texts, "픽스처가 행을 하나도 안 그린다 — 이 검사가 헛돈다"
     assert "없는섹터" not in texts
 
 
@@ -412,36 +421,81 @@ def test_numbers_today_panel_says_when_the_report_has_no_today(tmp_path):
 @node
 def test_numbers_gap_chip_only_above_threshold(tmp_path):
     D = _today_numbers()
-    assert not any("금액 근사 오차 큼" in t for t in _page("sector_numbers.html", D, tmp_path))
+    assert not any("환산 차 큼" in t for t in _page("sector_numbers.html", D, tmp_path))
     D["today"]["market"]["코스닥"]["approx_gap"]["pct"] = 6.1
-    assert any("금액 근사 오차 큼(코스닥 6.1%)" in t for t in _page("sector_numbers.html", D, tmp_path))
+    assert any("종가·VWAP 환산 차 큼(코스닥 6.1%)" in t for t in _page("sector_numbers.html", D, tmp_path))
 
 
 @node
 def test_numbers_today_panel_shows_the_official_gap_line(tmp_path):
-    """오늘 패널 — KRX 공식 거래대금 대비 근사 오차 줄(시장별, 게이트 칸은 —). 기능 꺼짐이면 침묵.
+    """오늘 패널 — 네이버 시장값 대비 차이 줄(합계·주체, 게이트 칸은 —, 부호 반대 표지). 기능 꺼짐이면 침묵.
 
     주입: 줄을 안 그리게 하면 실패한다.
     """
     D = _today_numbers()
-    assert not any("공식 거래대금 대비" in t for t in _page("sector_numbers.html", D, tmp_path))
-    D["today"]["krx_truth"] = {"status": "ok", "date": "2026-08-28", "warn": 5.0, "markets": {
-        "거래소": {"inst": {"gap_pct": 3.73}, "forgn": {"gap_pct": 1.7},
-                "indiv": {"gap_pct": 2.29}, "etc": {"gap_pct": 0.07}},
-        "코스닥": {"inst": {"gap_pct": 4.02}, "forgn": {"gap_pct": 8.17},
-                "indiv": {"gap_pct": 2.43}, "etc": {"gap_pct": None}}}}
+    assert not any("네이버 시장값" in t for t in _page("sector_numbers.html", D, tmp_path))
+    D["today"]["krx_truth"] = {"status": "ok", "date": "2026-08-28", "warn": 5.0, "label": "네이버 시장값, 내부 대조용", "markets": {
+        "거래소": {"total_pct": 2.3, "hot": False, "inst": {"gap_pct": 3.73, "flip": False}, "forgn": {"gap_pct": 1.7, "flip": False},
+                "indiv": {"gap_pct": 2.29, "flip": False}, "etc": None},
+        "코스닥": {"total_pct": 6.04, "hot": True, "inst": {"gap_pct": 4.02, "flip": False}, "forgn": {"gap_pct": 8.17, "flip": True},
+                "indiv": {"gap_pct": None, "flip": False}, "etc": None}}}
     joined = "\n".join(_page("sector_numbers.html", D, tmp_path))
-    assert "공식 거래대금 대비 근사 오차(거래소): 기관 3.7% · 외국인 1.7% · 개인 2.3% · 기타법인 0.1% (KRX 공표치, 내부 검증용)" in joined
-    assert "공식 거래대금 대비 근사 오차(코스닥): 기관 4.0% · 외국인 8.2% · 개인 2.4% · 기타법인 — (KRX 공표치, 내부 검증용)" in joined
+    assert "네이버 시장값 대비 차이(거래소): 합계 2.3% · 기관 3.7% · 외국인 1.7% · 개인 2.3% (네이버 시장값, 내부 대조용)" in joined
+    assert "네이버 시장값 대비 차이(코스닥): 합계 6.0% · 기관 4.0% · 외국인 8.2% 부호 반대 · 개인 — (네이버 시장값, 내부 대조용)" in joined
+    # 칩은 네이버 시장값 기준 hot 인 시장에만 — 내부 VWAP 차가 작아도 뜬다
+    assert "⚠ 네이버 시장값과 차이 큼(코스닥 6.0%)" in joined
+    assert "차이 큼(거래소" not in joined
 
 
 @node
 def test_numbers_today_panel_names_the_krx_truth_skip_reason(tmp_path):
-    """공식 대조를 건너뛴 리포트는 침묵이 아니라 이유를 적는다 — 빈 자리가 고장인지 꺼짐인지 갈리게."""
+    """네이버 대조를 건너뛴 리포트는 침묵이 아니라 칩과 이유를 적는다 — 빈 자리가 고장인지 꺼짐인지 갈리게."""
     D = _today_numbers()
-    D["today"]["krx_truth"] = {"status": "skip", "reason": "LOGOUT — 로그인 장벽"}
+    D["today"]["krx_truth"] = {"status": "skip", "reason": "네이버 접속 실패"}
     joined = "\n".join(_page("sector_numbers.html", D, tmp_path))
-    assert "KRX 공식 거래대금 대조: 건너뜀 — LOGOUT — 로그인 장벽" in joined
+    assert "네이버 대조: 건너뜀 — 네이버 접속 실패" in joined
+    assert "⚠ 네이버 대조 건너뜀" in joined
+
+
+@pytest.mark.parametrize("tpl", ["sector_numbers.html", "sector_flow.html"])
+def test_touch_targets_are_44px_on_touch_screens(tpl):
+    """폰에서 구간·시장 단추가 26px 이었다. 터치 화면에서만 44px — 마우스 화면의 밀도는 그대로."""
+    css = (REPO / "scripts/templates" / tpl).read_text("utf-8")
+    block = re.search(r"@media \(pointer:coarse\),\(max-width:900px\)\{([^{]*)\{min-height:44px", css)
+    assert block and ".seg button" in block.group(1) and "select" in block.group(1)
+
+
+def test_viewer_ranking_list_is_not_capped_by_an_inner_scroll():
+    """13행 목록의 마지막 줄(얇은 섹터)이 안쪽 스크롤 뒤로 말없이 숨었다 — 표시 없는 잘림이다."""
+    css = (REPO / "scripts/templates/sector_flow.html").read_text("utf-8")
+    assert not re.search(r"\.rows\{[^}]*max-height", css)
+
+
+@node
+def test_numbers_is_quiet_about_naver_when_the_switch_is_off(tmp_path):
+    """기본 꺼짐 — 오늘 패널에 네이버 칩·건너뜀·차이 줄이 없다. 도움말의 48일 실측 설명은 측정 기록이라 남는다."""
+    D = _today_numbers()
+    D["today"].pop("krx_truth", None)
+    texts = _page("sector_numbers.html", D, tmp_path)
+    assert not any(t.startswith(("⚠ 네이버", "네이버 대조", "네이버 시장값 대비")) for t in texts)
+
+
+@node
+def test_numbers_block_suspect_chip_names_the_stock_with_evidence(tmp_path):
+    """분봉 밖 거래 큼 칩 — 종목과 분봉 밖 몫, 증거 표지. 목록이 비었거나 skip 이면 없다."""
+    D = _today_numbers()
+    D["today"]["block_suspects"] = {"status": "ok", "markets": {"거래소": [], "코스닥": []}}
+    assert not any("분봉 밖 거래 큼" in t for t in _page("sector_numbers.html", D, tmp_path))
+    D["today"]["block_suspects"]["markets"]["거래소"] = [
+        {"code": "034730", "name": "SK", "off_pct": 91.8, "actor": "indiv", "amt": -8841.8},
+        {"code": "2", "name": "B", "off_pct": 60.0, "actor": "indiv", "amt": 5.0},
+        {"code": "3", "name": "C", "off_pct": 55.4, "actor": "indiv", "amt": 4.0},
+        {"code": "4", "name": "D", "off_pct": 55.0, "actor": "indiv", "amt": 3.0}]
+    joined = "\n".join(_page("sector_numbers.html", D, tmp_path))
+    assert "⚠ 분봉 밖 거래 큼(거래소): SK 분봉 밖 92% · B 분봉 밖 60% · C 분봉 밖 55% · D 분봉 밖 55% [측정]" in joined
+    assert "근사 오차 큼" not in joined, "오차라고 단정하면 검증 결론과 칩이 어긋난다"
+    D["today"]["block_suspects"] = {"status": "skip", "reason": "분봉 표(minute_bars)가 없다"}
+    assert not any("분봉 밖 거래 큼 —" in t for t in _page("sector_numbers.html", D, tmp_path))
 
 
 @node

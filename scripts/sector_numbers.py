@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""섹터 수치 페이지 — 매매 판단용 숫자만. 해석·추천 없음.
+"""섹터 수치 페이지 — 수급 사실 숫자만. 해석·추천 없음.
 
 `sector_flow.py` 가 만든 시계열 페이로드를 여러 구간(5·20·60·120거래일) × 시장
 (전체·거래소·코스닥)으로 집계해 **정적 표**로 낸다. 탐색용 인터랙션은 뷰어 쪽에 있고
@@ -119,6 +119,17 @@ def spark_segs(ser: list[float], i0: int, i1: int, k: int = SPARK_SEGS) -> list[
     return out
 
 
+def zsum(t: float) -> float:
+    """상쇄돼 0 인 창 합의 이진 잔차를 지운다 — 0 근방(|합| < 1e-6, 참값 0 이외엔 못 오는 영역)만 +0.0 으로.
+
+    잔차가 ±2.7e-17 로 남으면 부호를 원값에서 읽는 표시(`A`·`fmt_amt`)가 '+0'·'−0' 으로 갈린다
+    (2026-09-02·09-28 재구성, 종이/목재 20일 — 뷰어 JS 와 더하는 순서가 달라 잔차 부호가 반대였다).
+    격자 스냅(`rhu(·, 6)`)이 아닌 문턱인 이유: 스냅은 971.4999999999999 를 971.5 로 바꿔 표시 반올림
+    검사(비 RHU 반올림 잡기)를 무디게 한다. 뷰어 `Z`·검증기 `_w_viewer_expect` 와 같은 문턱.
+    """
+    return 0.0 if abs(t) < 1e-6 else t
+
+
 def agg(P: dict, markets: list[str], sec: str, i0: int, i1: int) -> dict:
     def s(key):
         t = 0.0
@@ -126,7 +137,7 @@ def agg(P: dict, markets: list[str], sec: str, i0: int, i1: int) -> dict:
             a = P["flows"].get(m, {}).get(sec, {}).get(key)
             if a:
                 t += sum(a[i0:i1 + 1])
-        return t
+        return zsum(t)
     cap = sum(P["cap"].get(m, {}).get(sec, 0.0) for m in markets)
     # 분자(자금흐름)와 분모(시총)와 수익률이 **모두 같은 종목집합**이다.
     # 이전 판본은 수익률만 KRX 업종지수(다른 바구니)에서 가져왔고, 그 불일치가

@@ -1,7 +1,7 @@
 """문서가 가리키는 레포 경로가 **실제로 있는가** — README·CLAUDE.md·docs/*.md.
 
 파일을 옮기거나 지운 뒤 문서의 `scripts/…` 나 상대 링크가 남으면, 장애 대응 중에 없는 명령을 치게 된다
-(README §3.1 이 지금 없는 스크립트를 가리킨 적이 있다). 인용 줄 번호(`파일:줄`)는 tests/test_docs_refs.py 가 본다 —
+(런북 이 지금 없는 스크립트를 가리킨 적이 있다). 인용 줄 번호(`파일:줄`)는 tests/test_docs_refs.py 가 본다 —
 여기서는 경로만 본다.
 
 * 백틱 안의 `scripts/`·`src/`·`docs/`·`tests/`·`deploy/`·`research/` 로 시작하는 경로(앞이 `/`·`~` 면 다른 레포라 뺀다)
@@ -32,8 +32,6 @@ ALLOWED = {
     ("docs/formulas.md", "docs/kqflow-formulas.pdf"): "2026-11-08 지운 옛 판 — 지웠다고 적은 자리",
     ("docs/formulas.md", "src/kr_quant/tui/"): "swing-it 옛 경로 대조표",
     ("docs/formulas.md", "docs/GUARDRAILS.md"): "swing-it 의 파일이라고 적은 자리",
-    ("README.md", "docs/strategy/inquiries/krx_market_data.md"):
-        "strategy-a-plus 브랜치(질의 문서 작업 트리)의 파일이라고 적은 자리 — KRX 공식 대조의 이용 범위 질의",
 }
 
 TICK = re.compile(r"`([^`\n]+)`")
@@ -91,3 +89,9 @@ def test_allowed_entries_are_still_mentioned():
     for rel, said in ALLOWED:
         by_doc.setdefault(rel, {s for s, _ in _mentions(REPO / rel)})
         assert said in by_doc[rel], f"{rel} 에 더는 `{said}` 가 없다 — ALLOWED 에서 지워라"
+
+
+def test_allowed_entries_really_point_nowhere():
+    """허용 항목은 '없는 경로를 일부러 말하는 자리' 다. 그 경로가 생기면 항목이 진짜 오타를 덮을 일만 남는다."""
+    alive = sorted((rel, said) for rel, said in ALLOWED if _exists(REPO / said))
+    assert not alive, f"이제 있는 경로다 — ALLOWED 에서 지워라: {alive}"

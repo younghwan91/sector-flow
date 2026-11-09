@@ -38,7 +38,7 @@ from collections import OrderedDict
 from sectorflow.basis import BASIS_HELP
 from sectorflow.tui.flow_view import (
     HELP_TITLE_TIERS, MARKET_ORDER, cell_len, cell_width, fit_widths, fmt_amt, help_desc,
-    help_lines, hint_line, missing_report_hint, pad, report_warnings, scroll_mark,
+    demo_mark, help_lines, hint_line, missing_report_hint, no_report_help, pad, report_warnings, scroll_mark,
     staleness_warning, status_chip, tier_for)
 
 ACTORS = (("indiv", "개인"), ("forgn", "외국인"), ("inst", "기관"), ("etc", "기타법인"))
@@ -128,7 +128,7 @@ def load(report_dir: str) -> dict:
     if not os.path.exists(path):
         raise SystemExit(
             f"페이로드를 찾을 수 없다: {path}\n"
-            f"  먼저 scripts/daily_report.sh 를 돌리거나 --dir 로 지정하라."
+            f"{no_report_help('sw-ledger')}"
             f"{missing_report_hint(report_dir)}")
     try:
         with open(path, encoding="utf-8") as f:
@@ -157,7 +157,8 @@ def load(report_dir: str) -> dict:
     if no_flow:
         raise SystemExit(f"{path}: 시장 {', '.join(no_flow)} 의 흐름이 없다 — "
                          f"markets 와 flows 가 어긋난다.")
-    d["report_warnings"] = (staleness_warning(d["dates"][-1])
+    # 합성 데모의 기준일은 고정이라 '며칠 지난 리포트' 가 뜻이 없다 — 표지는 제목 맨 앞에 따로 있다.
+    d["report_warnings"] = (([] if d.get("demo") else staleness_warning(d["dates"][-1]))
                             + report_warnings(report_dir, d["dates"][-1]))
     return d
 
@@ -614,6 +615,9 @@ class Model:
         ai = ACTOR_KEYS.index(self.actor)
         out = []
         for s in self.sectors:
+            # 이 시장에 종목이 없는 섹터는 행이 아니다 — 코스닥에 없는 섹터 다섯이 `+0` 행으로 떴다(flow `absent_row` 와 같은 규칙).
+            if not self.n_stocks(s) and not self.cap(s):
+                continue
             # 4주체 일별을 **한 번만** 뽑아 합계·잔여·몫·최대일을 여기서 다 낸다.
             # 예전엔 net×4 + net("resid") + spike 가 각각 daily 를 다시 돌았다.
             d4 = [self.daily(s, k)[-w:] for k in ACTOR_KEYS]
@@ -802,7 +806,7 @@ class Model:
 def header_lines(mo: Model, width: int) -> list[str]:
     d = mo.d
     chip = status_chip(d)
-    l1 = (f" 자금 원장 · {mo.dates[-1]} {chip} · "
+    l1 = (f"{demo_mark(d)} 자금 원장 · {mo.dates[-1]} {chip} · "
           f"{mo.dates[max(0, len(mo.dates) - mo.window)]}~{mo.dates[-1]} "
           f"({mo.window}거래일)")
     # ⚠️ 동시성 화면에는 **정렬이 없다**(순서는 평균상관이다). 칩이 정렬을 계속
@@ -1279,7 +1283,7 @@ LIMITS = [
     "",
     "6. 섹터쌍 상관은 **동시성**이지 이동이 아니다. 그리고 이 데이터에서는 동시성조차",
     "   널을 못 이긴다 — 개인·기관·외국인은 음의 상관 쌍이 관측 **{C3}** 로",
-    "   널(50%)보다 **드물다**. 섹터 자금흐름은 공통요인(위험선호)이 지배한다.",
+    "   널(50%)보다 **드물다**. 왜 그런지(공통요인 등)는 여기서 재지 않았다.",
     "   범위는 β제거 끈 상태로 {COMBOS} **전수**를 **이 리포트({ASOF})로** 잰 값이다.",
     "   β제거(d)를 켜면 셋은 {C3D} 다 — 판정은 조합마다 판정줄이 말한다.",
     "   예전엔 17~34% 라 적혀 있었는데 그건 잰 적 없는 좁은 범위였다 —",
