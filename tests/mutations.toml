@@ -8677,6 +8677,14 @@ find = """        if not (page.parent / unquote(u.path)).exists():"""
 replace = """        if False:"""
 
 [[mutation]]
+id = "guide-drops-block-suspect-row"
+why = "가이드에서 표지 설명이 빠지면 고객이 ⚠ 칩의 뜻을 찾을 곳이 없다"
+guards = ["tests/test_first_reader.py::test_first_screen_marks_are_explained_in_the_guide_and_readme"]
+file = "docs/reading-guide.md"
+find = "| ⚠ `대량 체결 의심` |"
+replace = "| ⚠ `큰 체결` |"
+
+[[mutation]]
 id = "digest-published-chip-always"
 why = "다이제스트 공표치 오차 줄이 hot 과 무관하게 나온다"
 guards = ["tests/test_digest.py::test_published_error_chip_follows_krx_truth_hot"]

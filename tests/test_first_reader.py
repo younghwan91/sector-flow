@@ -41,9 +41,17 @@ def test_every_script_is_in_the_readme_tree():
 
 @pytest.mark.parametrize("term", [
     "투신", "연기금", "금투", "기타법인", "VWAP", "%p", "잠정", "확정", "ρ", "IC", "OLS", "K1", "K2", "K3", "S1", "Q3c",
-    "β제거", "gross", "임펄스", "가속", "재구성", "연속 순매매", "합성 데모"])
+    "β제거", "gross", "임펄스", "가속", "재구성", "연속 순매매", "합성 데모",
+    "네이버 시장값", "대량 체결 의심", "권리락", "거래대금 집중", "금투÷기관", "신규·N일째"])
 def test_glossary_defines_the_term(term):
     assert re.search(rf"^\| [^|]*{re.escape(term)}[^|]*\|", GLOSSARY, re.M), f"용어집 표에 '{term}' 이 없다"
+
+
+@pytest.mark.parametrize("mark", ["네이버 시장값", "대량 체결 의심", "금투÷기관", "거래대금 집중", "신규"])
+def test_first_screen_marks_are_explained_in_the_guide_and_readme(mark):
+    """화면에 뜨는 표지는 가이드와 README §5.1 에서 찾을 수 있다 — 없어진 칩 `금액 근사 오차 ⚠` 만 적혀 있었다."""
+    assert mark in GUIDE and mark in _section(README, "### 5.1 키", "### 5.2"), mark
+    assert "금액 근사 오차" not in GUIDE and "금액 근사 오차" not in GLOSSARY.split("## 검증")[0]
 
 
 def test_glossary_defines_every_short_evidence_mark():
