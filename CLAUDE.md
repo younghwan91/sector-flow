@@ -14,7 +14,7 @@
   `scripts/rebuild_history.py --root <폴더> --from … --to …`(오래된 날부터 — `change` 가 직전 폴더를 읽는다). 폴더에 `REBUILT.txt`(`commit:` 전체 sha·`finalize:`).
   origin/main 의 깨끗한 체크아웃에서만 돈다(`--allow-unmerged` 는 리허설). daily_finalize 창(3일) 밖의 날은 `finalize: unverified`
   — FINAL.txt 없이 '확정 기록 없음' 으로 표시한다.
-- 화면: `uv run sw-flow`, `uv run sw-ledger` (`reports/latest` 를 연다). 데이터 없이는 `--demo`(합성, `src/sectorflow/demo.py`). 문서·그림의 예는 실데이터 대신 데모로 만든다.
+- 화면: `uv run sw-flow`, `uv run sw-ledger` (`reports/latest` 를 연다). 데이터 없이는 `--demo`(합성, `src/sectorflow/demo.py`). 문서·그림의 예는 실데이터 대신 데모로 만든다(`scripts/demo_shots.py`, 원장 `docs/SCREENSHOTS.md`). 화면 코드를 고치면 그림을 다시 찍는다.
 - 검증·품질 페이지·다이제스트: 배치가 짓는 폴더 안에서 만들어 함께 바꿔 낀다(웹 `/latest/trust.html`·`/latest/digest.md`·`.png`, 문서 사본 `/latest/validation/`). 다이제스트는 기본 켜짐(`KR_QUANT_DIGEST=0` 으로 끈다), 밖으로 보내는 길은 없다. 미리 보기는 `uv run python scripts/trust_page.py --root reports --out <밖의 경로>`.
 - 금칙어 표는 `src/sectorflow/wording.py` 하나다 — 수치표·뷰어·검증 페이지·다이제스트·README 가 같이 쓴다(`tests/test_wording.py`).
 - DB(TimescaleDB `kr_quant`, **읽기 전용**): `set -a; . ~/git/quant-airflow/.env; set +a` 뒤 `$KR_QUANT_DB`, psycopg2 는 `--extra pg`.
@@ -41,7 +41,7 @@
 - 2026-09-14 이후 `daily_bars` 의 고가·저가·종가·거래량은 애프터마켓 포함 통합값이다(시가만 정규장). 정의는 quant-airflow `CLAUDE.md` §3·`docs/schema.md`.
   그래서 리포트의 하루 수익률은 전일 20:00 → 당일 20:00(통합 종가)이고 KRX 지수(정규장 15:30)와 같은 날 갈린다(11-06 −4.37% vs −6.02%).
   화면·웹이 `KRX 지수(정규장)` 를 나란히 적는 이유다. 정규장 수익률이라고 쓰지 않는다.
-- **시장 합계는 시장 전체가 아니다.** `supply_demand`·`daily_bars`·`stocks` 에 우선주·리츠 등 139코드가 없다(삼성전자우 포함). 큰 체결은 18시 잠정엔 없고 확정에서 들어온다. 네이버 시장값과의 오차·원인 분해는
+- **시장 합계는 시장 전체가 아니다.** `supply_demand`·`daily_bars`·`stocks` 에 우선주·리츠 등 139코드가 없다(삼성전자우 포함). 큰 체결이 18시 잠정엔 없고 확정에서 들어온 것은 6개 시장-일에서 확인했다. 네이버 시장값과의 오차·원인 분해는
   `docs/validation/2026-11-09-market-total-vs-published.md`. `scripts/krx_truth.py` 는 네이버 시장값(약관 미확인, **내부 대조 전용** — 페이로드엔 오차 % 만)을 쓴다.
 - 시총 = **원 종가**(`supply_demand.close`, 없으면 `daily_bars_raw`) × 그 시점 상장주식수(as-of 스냅샷 뒤의 분할·병합·감자를 다시 센다). `daily_bars` 는 키움 수정주가라
   시총에 쓰면 과거가 배수로 부푼다(`storage.market_cap_asof_bulk`, 2026-11-08 검증 `docs/validation/`). swing-it 사본도 같은지 볼 것.

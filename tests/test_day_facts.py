@@ -387,7 +387,7 @@ def test_digest_lists_detail_flip_and_concentration():
     assert "금투 +20,181(92)" in body and "금투÷기관 102%" in body
     assert "전기/전자 -1,625→+7,057" in body
     assert "통신 100·신규" in body and "제약 96·3일째" in body
-    assert "상위2 SK하이닉스·삼성전자 76%" in body and "2종목 제외 기관 -1,299" in body
+    assert "상위2 SK하이닉스·삼성전자 76%" in body and "2종목 제외[억] 기관 -1,299" in body
     dg.check_compliance(body)
 
 

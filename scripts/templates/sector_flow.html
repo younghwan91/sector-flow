@@ -786,7 +786,7 @@ renderRetNote();
 /** 받은 폴더·멈춘 배치를 오늘 것으로 읽지 않게. 문턱은 화면(`STALE_DAYS`)과 같다. */
 function staleChip(asof,box){
   const age=Math.floor((Date.now()-Date.parse(asof+"T00:00:00+09:00"))/864e5);
-  if(age<4) return;
+  if(age<4||D.demo) return;
   const c=el("span","chip live"); c.append(el("span","dot"),document.createTextNode("⚠ "+age+"일 지난 리포트"));
   box.append(c);
 }

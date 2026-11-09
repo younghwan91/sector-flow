@@ -107,11 +107,11 @@ MESSAGES: list[tuple[str, str, str]] = [
     ("scripts/finalize_done.py", "아직 안 돌았거나 도는 중", "아직 안 돌았거나 도는 중"),
     ("scripts/finalize_done.py", "성공으로 끝나지 않았다", "성공으로 끝나지 않았다"),
     ("scripts/finalize_done.py", "수집 실패가 문턱을 넘었거나 완료 줄이 없다", "수집 실패가 문턱을 넘었거나 완료 줄이 없다"),
-    # krx_truth.py — 공표치 대조의 ⚠️ 줄(리포트 빌드 로그 → 크론 꼬리)
-    ("scripts/krx_truth.py", "[공표치 대조] SKIP", "[공표치 대조] SKIP"),
-    ("scripts/krx_truth.py", "오차 큼", "[공표치 대조] 오차 큼"),
-    ("scripts/krx_truth.py", "내부 오류", "[공표치 대조] 내부 오류"),
-    ("scripts/freshness_check.py", "[공표치] 전 거래일", "[공표치] 전 거래일"),
+    # krx_truth.py — 네이버 대조의 ⚠️ 줄(리포트 빌드 로그 → 크론 꼬리)
+    ("scripts/krx_truth.py", "[네이버 대조] SKIP", "[네이버 대조] SKIP"),
+    ("scripts/krx_truth.py", "차이 큼", "[네이버 대조] 차이 큼"),
+    ("scripts/krx_truth.py", "내부 오류", "[네이버 대조] 내부 오류"),
+    ("scripts/freshness_check.py", "[네이버 대조] 전 거래일", "[네이버 대조] 전 거래일"),
     ("scripts/krx_truth.py", "krx_truth.json 을 못 재웠다", "krx_truth.json 을 못 재웠다"),
     # completeness_gate.py — 수집 미완 본문의 [FAIL] 줄
     ("scripts/completeness_gate.py", "[FAIL]", "[FAIL]"),

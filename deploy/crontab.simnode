@@ -20,7 +20,7 @@
 #
 # 상한: timeout 40m(실측 2~5분). DB 가 걸려 멈춘 배치가 다음 크론과 겹치지 않고, 끊기면 124 로 오류 알림이 간다.
 # -k 2m 은 TERM 을 무시하고 버티는 자식을 KILL 한다. 문장 하나는 DB 쪽 statement_timeout(10분, storage.connect)이 끊는다.
-# 공표치 대조: KR_QUANT_KRX_TRUTH=1 — 시장별 GET 한 번(타임아웃 10초·망 오류 재시도 1회, 기준일당 최대 2회), scripts/krx_truth.py.
+# 네이버 대조: KR_QUANT_KRX_TRUTH=1 — 시장별 GET 한 번(타임아웃 10초·망 오류 재시도 1회, 기준일당 최대 2회), scripts/krx_truth.py.
 # 겹침: daily_report.sh 가 reports/.report.lock 을 flock -n 으로 잡는다. 못 잡으면(손으로 돌린 실행과 겹침)
 # 75(경고)로 끝난다 — 0 으로 조용히 끝내면 08:20 확정 모드가 밀린 날이 영영 잠정으로 남아도 아무도 모른다.
 # 잠금을 스크립트 안에 둔 것은 손으로 돌린 실행도 같은 잠금을 잡게 하려고다.

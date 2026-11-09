@@ -108,6 +108,15 @@ def test_viewer_marks_a_stale_report(tmp_path):
     assert any("일 지난 리포트" in t for t in _page("sector_flow.html", _viewer_payload("2026-01-05"), tmp_path))
 
 
+@node
+def test_demo_pages_do_not_warn_about_age(tmp_path):
+    """합성 데모의 기준일은 고정이다 — 받은 폴더를 위한 경고가 데모를 고장처럼 보이게 한다."""
+    viewer = dict(_viewer_payload("2026-01-05"), demo=True)
+    numbers = dict(_numbers_data(combined=False, asof="2026-01-05"), demo=True)
+    assert not any("일 지난 리포트" in t for t in _page("sector_flow.html", viewer, tmp_path))
+    assert not any("일 지난 리포트" in t for t in _page("sector_numbers.html", numbers, tmp_path))
+
+
 def test_viewer_does_not_claim_krx_index_returns():
     """수익률은 자체 바구니다(`retOf`). 설명만 옛 계산을 말하고 있었다."""
     html = (REPO / "scripts" / "templates" / "sector_flow.html").read_text("utf-8")
@@ -419,33 +428,33 @@ def test_numbers_gap_chip_only_above_threshold(tmp_path):
 
 @node
 def test_numbers_today_panel_shows_the_official_gap_line(tmp_path):
-    """오늘 패널 — 공표 시장값 대비 오차 줄(합계·주체, 게이트 칸은 —, 부호 반대 표지). 기능 꺼짐이면 침묵.
+    """오늘 패널 — 네이버 시장값 대비 차이 줄(합계·주체, 게이트 칸은 —, 부호 반대 표지). 기능 꺼짐이면 침묵.
 
     주입: 줄을 안 그리게 하면 실패한다.
     """
     D = _today_numbers()
-    assert not any("공표 시장값" in t for t in _page("sector_numbers.html", D, tmp_path))
+    assert not any("네이버 시장값" in t for t in _page("sector_numbers.html", D, tmp_path))
     D["today"]["krx_truth"] = {"status": "ok", "date": "2026-08-28", "warn": 5.0, "label": "네이버 시장값, 내부 대조용", "markets": {
         "거래소": {"total_pct": 2.3, "hot": False, "inst": {"gap_pct": 3.73, "flip": False}, "forgn": {"gap_pct": 1.7, "flip": False},
                 "indiv": {"gap_pct": 2.29, "flip": False}, "etc": None},
         "코스닥": {"total_pct": 6.04, "hot": True, "inst": {"gap_pct": 4.02, "flip": False}, "forgn": {"gap_pct": 8.17, "flip": True},
                 "indiv": {"gap_pct": None, "flip": False}, "etc": None}}}
     joined = "\n".join(_page("sector_numbers.html", D, tmp_path))
-    assert "공표 시장값 대비 오차(거래소): 합계 2.3% · 기관 3.7% · 외국인 1.7% · 개인 2.3% (네이버 시장값, 내부 대조용)" in joined
-    assert "공표 시장값 대비 오차(코스닥): 합계 6.0% · 기관 4.0% · 외국인 8.2% 부호 반대 · 개인 — (네이버 시장값, 내부 대조용)" in joined
-    # 칩은 공표치 기준 hot 인 시장에만 — 내부 VWAP 차가 작아도 뜬다
-    assert "⚠ 공표 시장값과 오차 큼(코스닥 6.0%)" in joined
-    assert "오차 큼(거래소" not in joined
+    assert "네이버 시장값 대비 차이(거래소): 합계 2.3% · 기관 3.7% · 외국인 1.7% · 개인 2.3% (네이버 시장값, 내부 대조용)" in joined
+    assert "네이버 시장값 대비 차이(코스닥): 합계 6.0% · 기관 4.0% · 외국인 8.2% 부호 반대 · 개인 — (네이버 시장값, 내부 대조용)" in joined
+    # 칩은 네이버 시장값 기준 hot 인 시장에만 — 내부 VWAP 차가 작아도 뜬다
+    assert "⚠ 네이버 시장값과 차이 큼(코스닥 6.0%)" in joined
+    assert "차이 큼(거래소" not in joined
 
 
 @node
 def test_numbers_today_panel_names_the_krx_truth_skip_reason(tmp_path):
-    """공표치 대조를 건너뛴 리포트는 침묵이 아니라 칩과 이유를 적는다 — 빈 자리가 고장인지 꺼짐인지 갈리게."""
+    """네이버 대조를 건너뛴 리포트는 침묵이 아니라 칩과 이유를 적는다 — 빈 자리가 고장인지 꺼짐인지 갈리게."""
     D = _today_numbers()
     D["today"]["krx_truth"] = {"status": "skip", "reason": "네이버 접속 실패"}
     joined = "\n".join(_page("sector_numbers.html", D, tmp_path))
-    assert "공표치 대조: 건너뜀 — 네이버 접속 실패" in joined
-    assert "⚠ 공표치 대조 건너뜀" in joined
+    assert "네이버 대조: 건너뜀 — 네이버 접속 실패" in joined
+    assert "⚠ 네이버 대조 건너뜀" in joined
 
 
 @node
@@ -460,7 +469,8 @@ def test_numbers_block_suspect_chip_names_the_stock_with_evidence(tmp_path):
         {"code": "3", "name": "C", "off_pct": 55.4, "actor": "indiv", "amt": 4.0},
         {"code": "4", "name": "D", "off_pct": 55.0, "actor": "indiv", "amt": 3.0}]
     joined = "\n".join(_page("sector_numbers.html", D, tmp_path))
-    assert "⚠ 대량 체결 의심 — 근사 오차 큼(거래소: SK 분봉 밖 92%·B 분봉 밖 60%·C 분봉 밖 55% 외 1종목) [측정]" in joined
+    assert "⚠ 대량 체결 의심 — 정의 차이(거래소): SK 분봉 밖 92% · B 분봉 밖 60% · C 분봉 밖 55% · D 분봉 밖 55% [측정]" in joined
+    assert "근사 오차 큼" not in joined, "값이 틀린 게 아니라 정의가 갈린 것이다 — 검증 결론과 칩이 어긋났다"
     D["today"]["block_suspects"] = {"status": "skip", "reason": "분봉 표(minute_bars)가 없다"}
     assert not any("대량 체결 의심 —" in t for t in _page("sector_numbers.html", D, tmp_path))
 

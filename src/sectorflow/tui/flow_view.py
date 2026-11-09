@@ -16,7 +16,7 @@ from datetime import date
 
 from sectorflow.basis import (  # noqa: F401 — RET_LABEL* 는 이 모듈 이름으로도 읽힌다(검사·앱)
     BASIS_HELP, DATA_BASIS_SHORT, DEMO_MARK, NOT_TESTED_NOTE, RET_LABEL, RET_LABEL_PROV, RET_LABEL_PROV_SHORT, RET_LABEL_SHORT,
-    ret_label, rhu, status_label,
+    ret_label, rhu, status_label, truth_gap_label,
 )
 
 #: East Asian Width 가 'A'(Ambiguous) 인 글자를 **두 칸으로 센다**.
@@ -1232,28 +1232,30 @@ def _ctx_lines(d: dict, markets: list[str], width: int) -> list[str]:
 
 
 def _gap_chips(d: dict, markets: list[str]) -> list[str]:
-    """금액 경고 칩 — 공표치 기준 오차(판정의 기준)·대량 체결 의심·종가↔VWAP 환산 차. 없으면 빈 목록.
+    """금액 경고 항목 — 대량 체결 의심(드물다)·네이버 시장값 차이·종가↔VWAP 환산 차 순. 없으면 빈 목록.
 
-    `공표 시장값과 오차 큼(거래소 7.1%)` 은 ``today.krx_truth`` 의 시장 합계 판정(``hot``)이고, 대조를 건너뛴
-    리포트는 `공표치 대조 건너뜀` 으로 드러낸다. 종가↔VWAP 는 내부 자료끼리의 차이라 실제 오차가 아니다 —
-    48일 실측 최대 3.12% 였는데 공표치 기준 거래소 오차는 28일이 5% 를 넘었다.
+    순서: 5% 문턱이 거래소 중앙값(5.7%) 바로 아래라 네이버 칩은 48일 중 28일 뜬다. 드문 쪽을 먼저 둬야 밀려나지 않는다.
+    대량 체결은 종목마다 한 항목이다 — 호출하는 쪽이 :func:`_fold_items` 로 접어 **이름을 다 보인다**.
+    `네이버 시장값과 차이 큼(거래소 7.1%)` 은 ``today.krx_truth`` 의 시장 합계 판정(``hot``)이고, 대조를 건너뛴
+    리포트는 `네이버 대조 건너뜀` 으로 드러낸다. 종가↔VWAP 는 내부 자료끼리의 차이라 실제 오차가 아니다 —
+    48일 실측 최대 3.12% 였는데 네이버 시장값 기준 거래소 오차는 28일이 5% 를 넘었다.
     """
     T = d.get("today") or {}
     out = []
+    bs = T.get("block_suspects") or {}
+    if bs.get("status") == "ok":
+        for m in markets:
+            names = block_items((bs.get("markets") or {}).get(m) or [])
+            if names:
+                out += [f"대량 체결 의심 — 정의 차이({m}): {names[0]}", *names[1:]]
     kt = T.get("krx_truth")
     if kt and kt.get("status") != "ok":
-        out.append("공표치 대조 건너뜀")
+        out.append("네이버 대조 건너뜀")
     elif kt:
         for m in markets:
             row = (kt.get("markets") or {}).get(m) or {}
             if row.get("hot"):
-                out.append(f"공표 시장값과 오차 큼({m} {rhu(row['total_pct'], 1):.1f}%)")
-    bs = T.get("block_suspects") or {}
-    if bs.get("status") == "ok":
-        for m in markets:
-            names = (bs.get("markets") or {}).get(m) or []
-            if names:
-                out.append(f"대량 체결 의심 — 근사 오차 큼({m}: {block_names(names)})")
+                out.append(f"{truth_gap_label(kt)}({m} {rhu(row['total_pct'], 1):.1f}%)")
     warn = T.get("approx_gap_warn", 5.0)
     for m in markets:
         g = ((T.get("market") or {}).get(m) or {}).get("approx_gap")
@@ -1267,10 +1269,19 @@ def _gap_chips(d: dict, markets: list[str]) -> list[str]:
     return out
 
 
-def block_names(names: list[dict], top: int = 3) -> str:
-    """대량 체결 의심 목록 한 줄 — `SK 분봉 밖 92%·넷마블 분봉 밖 99% 외 1종목`. 웹 ``blockNames`` 와 같은 글자."""
-    head = "·".join(f"{x['name']} 분봉 밖 {rhu(x['off_pct'], 0):.0f}%" for x in names[:top])
-    return head + (f" 외 {len(names) - top}종목" if len(names) > top else "")
+def block_items(names: list[dict]) -> list[str]:
+    """대량 체결 의심 종목 항목 — `SK 분봉 밖 92%`. 웹 ``blockNames`` 와 같은 글자(그쪽은 ` · ` 로 잇는다)."""
+    return [f"{x['name']} 분봉 밖 {rhu(x['off_pct'], 0):.0f}%" for x in names]
+
+
+def block_note(d: dict) -> "str | None":
+    """대량 체결을 판정 못 한 몫 — 0 건과 모름을 가른다. 웹 오늘 패널의 주석과 같은 글자. 판정을 다 했거나 옛 리포트면 None."""
+    bs = (d.get("today") or {}).get("block_suspects") or {}
+    if bs.get("status") == "ok":
+        return f"대량 체결 판정 못 한 종목 {bs['unjudged']}개(분봉 없음)" if bs.get("unjudged") else None
+    if bs.get("status") == "skip":
+        return f"대량 체결 판정: 건너뜀 — {bs.get('reason') or '이유 없음'}"
+    return None
 
 
 def unclassified_count(d: dict, markets: list[str]) -> int:
@@ -1441,20 +1452,20 @@ def final_diff_help(d: dict) -> list[tuple[str, str]]:
     return out
 
 
-#: 공식 대조 절의 주체 순서·이름 — 페이로드 ``today.krx_truth.markets.*`` 의 키.
+#: 네이버 대조 절의 주체 순서·이름 — 페이로드 ``today.krx_truth.markets.*`` 의 키.
 KRX_TRUTH_KO = (("inst", "기관"), ("forgn", "외국인"), ("indiv", "개인"), ("etc", "기타법인"))
 
 
 def krx_truth_help(d: dict) -> list[tuple[str, str]]:
-    """도움말 끝 — 공표 시장값 대비 오차(페이로드 ``today.krx_truth``). 공표 수치는 싣지 않는다.
+    """도움말 끝 — 네이버 시장값 대비 차이(페이로드 ``today.krx_truth``). 네이버 수치는 싣지 않는다.
 
-    주체 칸의 ``—`` 는 분모 게이트다 — |공표 순매수| 가 그 시장 거래대금의 문턱 몫 미만이면 상대 오차가 잡음이라
-    내지 않는다. 그런 날의 큰 오차는 맨 앞 `합계`(Σ|오차| ÷ Σ|공표|)가 잡는다.
+    주체 칸의 ``—`` 는 분모 게이트다 — |네이버 순매수| 가 그 시장 거래대금의 문턱 몫 미만이면 상대 오차가 잡음이라
+    내지 않는다. 그런 날의 큰 오차는 맨 앞 `합계`(Σ|차| ÷ Σ|네이버|)가 잡는다.
     """
     kt = (d.get("today") or {}).get("krx_truth")
     if not kt:
         return []                                # 기능을 안 켠 리포트 — 절도 없다
-    out = [("", ""), ("", "── 이 리포트: 공표 시장값 대조(내부 대조 전용) ──")]
+    out = [("", ""), ("", "── 이 리포트: 네이버 시장값 대조(내부 대조 전용) ──")]
     if kt.get("status") != "ok":
         return out + [("", f"건너뜀: {kt.get('reason') or '이유 없음'}")]
 
@@ -1471,8 +1482,31 @@ def krx_truth_help(d: dict) -> list[tuple[str, str]]:
 
 
 def help_entries(st: "State") -> list[tuple[str, str]]:
-    """도움말 = 고정 :data:`HELP` + 이 리포트에만 있는 것(잠정 → 확정 변경 목록·KRX 공식 대조)."""
-    return HELP + final_diff_help(st.d) + krx_truth_help(st.d)
+    """도움말 = 고정 :data:`HELP` + 이 리포트에만 있는 것(잠정 → 확정 변경 목록·KRX 네이버 대조)."""
+    return HELP + _wrap_help(final_diff_help(st.d) + krx_truth_help(st.d))
+
+
+#: 리포트마다 다른 도움말 줄의 폭(칸). 앞 들여쓰기 3칸을 빼고 80칸에 든다. 줄 수가 터미널 폭과 무관해야 스크롤 하한이 맞는다.
+HELP_WRAP_W = 76
+
+
+def _wrap_help(entries: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    """이유·라벨처럼 길이를 모르는 줄을 공백에서 접는다 — 80칸에서 `(네이`·`만들어` 로 잘렸다(5회차 리뷰)."""
+    out = []
+    for name, desc in entries:
+        if cell_len(desc) <= HELP_WRAP_W:
+            out.append((name, desc))
+            continue
+        lead = desc[:len(desc) - len(desc.lstrip())]
+        cur = ""
+        for word in desc.split():
+            cand = f"{cur} {word}" if cur else word
+            if cur and cell_len(lead + cand) > HELP_WRAP_W:
+                out.append((name, lead + cur))
+                name, lead, cand = "", lead + "  " if not out[-1][1].startswith(lead + "  ") else lead, word
+            cur = cand
+        out.append((name, lead + cur))
+    return out
 
 
 #: 그날 시장 순매수 |금액| 이 가장 큰 주체를 찾는 후보 — 4주체(합 ≈ 0).
@@ -1713,16 +1747,64 @@ def _conc_min(d: dict) -> int:
     return int(rhu((((d.get("today") or {}).get("concentration") or {}).get("min_share") or 0.0) * 100.0))
 
 
+def _changed_lines(st: State, width: int) -> list[str]:
+    """오늘 무엇이 달라졌나 — 어제와 부호 바뀐 섹터, 직전 리포트 대비 들고 남, 잠정→확정 변경. 첫 화면 앞쪽(80×24 첫 쪽)에 둔다."""
+    d, mk = st.d, st.market
+    actors = banner_actors(d, mk)
+    lines = [pad(" ── 오늘 달라진 것 ──", width)]
+    flips = {a: day_flip_items(d, mk, a) for a, _ko in actors}
+    if all(v is not None for v in flips.values()):
+        lines.append(pad(_first_fitting(width, day_flip_title(d)), width))
+        for a, ko in actors:
+            lines.append(_items_line(f"   {ko}: ", flips[a], width))
+    C = d.get("change")
+    if C:
+        lines.append(pad(_first_fitting(width, change_title(C)), width))
+        for a, ko in BANNER_ACTORS:
+            items = change_items(d, mk, a)
+            if items is None:
+                lines.append(pad(f"   {ko}: 비교 없음 — 직전 리포트에 이 시장이 없다", width))
+            else:
+                lines.append(_items_line(f"   {ko}: ", items, width, empty="변동 없음"))
+    else:
+        why = d.get("change_reason") or "비교 못 함"
+        # 이유를 지키고 머리말을 줄인다 — 120칸에서 이유가 통째로 잘려 "비교 없음" 만 남았다(3차 리뷰).
+        lines.append(pad(_first_fitting(width, [f" 직전 리포트 대비: 비교 없음 — {why}",
+                                                f" 직전 대비 없음: {why}",
+                                                f" 직전 대비 없음: {why.split(' — ')[0]}",
+                                                " 직전 리포트 대비: 비교 없음"]), width))
+    lines += _final_lines(d, width)
+    if d.get("final") and d.get("final_diff"):
+        lines.append(_items_line("   잠정→확정 극단 목록 변화: ", final_extreme_changes(d, mk, actors), width, empty="없음"))
+    return lines
+
+
+def _final_lines(d: dict, width: int) -> list[str]:
+    """잠정→확정 요약 — 확정 리포트에만. 긴 비교 없음 이유는 앞 토막까지 줄인다."""
+    fdl = final_diff_line(d)
+    if not fdl:
+        return []
+    lines = [pad(_first_fitting(width, [fdl, fdl.split(" — ")[0]]), width)]
+    top = final_top_changes(d)
+    if top:
+        lines.append(_items_line("   큰 변경(1일): ", top, width))
+    return lines
+
+
 def _banner_today(st: State, width: int) -> list[str]:
+    """첫 화면 본문 — 오늘 시장 숫자와 경고 → **달라진 것** → 맥락(수익률·연속·집중) → 섹터 순위·극단.
+
+    '오늘 무엇이 달라졌나' 가 31줄 뒤(80×24 둘째 쪽)에 있었다(5회차 리뷰). 지우지 않고 순서만 바꿨다.
+    """
     d, mk = st.d, st.market
     mkts = [mk] if mk != "전체" else st.markets[1:]
     prov = not d.get("final")
-    lines = _ctx_lines(d, mkts, width)
     M = ((d.get("today") or {}).get("market") or {}).get(mk) or {}
     net = M.get("net") or {}
     parts = [f"{ko} {fmt_amt((net.get(k) or {}).get('v'))}{_pct_tag((net.get(k) or {}).get('pct'))}"
              for k, ko in ACTORS]
     head = f" 오늘 {mk} 순매수[억(1년%ile)]: "
+    lines = []
     if cell_len(head + " · ".join(parts)) <= width:
         lines.append(pad(head + " · ".join(parts), width))
     elif cell_len(head + " · ".join(parts[:2])) <= width:  # 4주체는 합 ≈ 0 이라 하나라도 잘리면 그림이 틀린다 — 두 줄로
@@ -1737,7 +1819,13 @@ def _banner_today(st: State, width: int) -> list[str]:
         lines += _fold_items("   기관 세부: ", detail, width)
     chips = _gap_chips(d, mkts if mk != "전체" else ["전체", *mkts])
     if chips:
-        lines.append(_items_line(" ⚠ ", chips + ["수량×종가 근사 — ? 도움말"], width))
+        lines += _fold_items(" ⚠ ", chips + ["수량×종가 근사 — ? 도움말"], width)
+    note = block_note(d)
+    if note:
+        lines.append(pad(f" ※ {note}", width))
+    lines += _changed_lines(st, width)
+    lines.append(pad("", width))
+    lines += _ctx_lines(d, mkts, width)
     unc = unclassified_count(d, mkts)
     if unc:
         lines.append(pad(_first_fitting(width, [
@@ -1749,7 +1837,7 @@ def _banner_today(st: State, width: int) -> list[str]:
     lines += _streak_lines(d, mk, width)
     conc = concentration_items(d, mk)
     if conc:
-        lines += _fold_items(f" 거래대금 집중[그 시장 거래대금의 {_conc_min(d)}% 이상인 섹터]: ", conc, width)
+        lines += _fold_items(f" 거래대금 집중[그 시장 거래대금의 {_conc_min(d)}% 이상인 섹터, 순매수 억]: ", conc, width)
     lines.append(pad("", width))
     actors = banner_actors(d, mk)
     ranked_lines = []
@@ -1772,31 +1860,6 @@ def _banner_today(st: State, width: int) -> list[str]:
         hi, lo = today_extremes(d, mk, a)
         lines.append(_items_line(f"   {tag}{ko} %ile≥{PCT_HI:.0f}: ", hi, width))
         lines.append(_items_line(f"   {tag}{ko} %ile≤{PCT_LO:.0f}: ", lo, width))
-    flips = {a: day_flip_items(d, mk, a) for a, _ko in actors}
-    if all(v is not None for v in flips.values()):
-        lines.append(pad(_first_fitting(width, day_flip_title(d)), width))
-        for a, ko in actors:
-            lines.append(_items_line(f"   {ko}: ", flips[a], width))
-    fch = final_extreme_changes(d, mk, actors)
-    if d.get("final") and d.get("final_diff"):
-        lines.append(_items_line("   잠정→확정 극단 목록 변화: ", fch, width, empty="없음"))
-    lines.append(pad("", width))
-    C = d.get("change")
-    if C:
-        lines.append(pad(_first_fitting(width, change_title(C)), width))
-        for a, ko in BANNER_ACTORS:
-            items = change_items(d, mk, a)
-            if items is None:
-                lines.append(pad(f"   {ko}: 비교 없음 — 직전 리포트에 이 시장이 없다", width))
-            else:
-                lines.append(_items_line(f"   {ko}: ", items, width, empty="변동 없음"))
-    else:
-        why = d.get("change_reason") or "비교 못 함"
-        # 이유를 지키고 머리말을 줄인다 — 120칸에서 이유가 통째로 잘려 "비교 없음" 만 남았다(3차 리뷰).
-        lines.append(pad(_first_fitting(width, [f" 직전 리포트 대비: 비교 없음 — {why}",
-                                                f" 직전 대비 없음: {why}",
-                                                f" 직전 대비 없음: {why.split(' — ')[0]}",
-                                                " 직전 리포트 대비: 비교 없음"]), width))
     return lines
 
 
@@ -1843,7 +1906,10 @@ def _banner_title(d: dict, width: int, mark: str = "") -> str:
     chip = status_chip(d)
     more = " · ↓↑ 더 보기" if mark else ""
     title = f"{demo_mark(d)} 오늘의 수급 · {d.get('asof', '')} {chip} — 아무 키나 눌러 표로{more}"
+    # 넘치는 폭에도 표로 가는 법을 남긴다 — 80칸 제목에 `↓↑ 더 보기` 만 있었다(5회차 리뷰).
     return pad(_first_fitting(width, [title + " · o:다시 열기 · q:종료" + mark, title + mark,
+                                      f"{demo_mark(d)} 오늘의 수급 · {d.get('asof', '')} {chip} · 아무 키: 표{more}{mark}",
+                                      f"{demo_mark(d)} 수급 {str(d.get('asof', ''))[5:]} {chip} · 아무 키: 표{more}{mark}",
                                       f"{demo_mark(d)} 오늘의 수급 · {d.get('asof', '')} {chip}{more}{mark}",
                                       f"{demo_mark(d)} 오늘의 수급 {chip}{mark}"]), width)
 
@@ -1878,11 +1944,12 @@ def banner_lines(st: State, width: int) -> list[str]:
     투신+연기금을 "많이 살수록 좋다" 로 세는데 그 순위 정보는 부호가 **음**이었다
     (docs/validation/). 그래서 여기에는 누가 어디서 사고팔았나만 적는다 — 모든 값은
     페이로드 `today`·`change`·`final_diff`·`revision_stats` 에 이미 있는 것을 옮길 뿐이고, 줄 순서는 금액
-    크기(측정값)다. 웹 수치표 맨 위 "오늘" 패널이 같은 사실을 같은 순서로 적는다.
+    크기(측정값)다. 웹 수치표 맨 위 "오늘" 패널이 같은 사실을 같은 순서로 적는다(시장 → 달라진 것 → 맥락 → 순위·극단).
     마지막 줄은 언제나 :data:`BANNER_DISCLAIMER` 다(:func:`banner_view` 가 높이와 무관하게 남긴다).
     """
     d = st.d
-    lines = [_banner_title(d, width), basis_line(width, elapsed_note(d.get("asof", "")))]
+    # 합성 데모의 기준일은 고정이다 — 'N일 전' 은 뜻이 없고 그림이 날마다 달라진다.
+    lines = [_banner_title(d, width), basis_line(width, "" if d.get("demo") else elapsed_note(d.get("asof", "")))]
     lines += _banner_today(st, width) if st.has_today else _banner_20d(st, width)
     lines.append(pad("", width))
     ko = ACTORS[st.ai][1]
@@ -1894,12 +1961,8 @@ def banner_lines(st: State, width: int) -> list[str]:
     lines.append(_items_line("   ", flips, width))
     # 웹 '오늘' 패널과 같은 말 — 목록만 두면 눌림·전환 판정으로 읽힌다(`reversal_flags` 는 판정 불가 라벨이다).
     lines.append(pad(_first_fitting(width, list(FLIP_NOTE)), width))
-    fdl = final_diff_line(d)
-    if fdl:
-        lines.append(pad(_first_fitting(width, [fdl, fdl.split(" — ")[0]]), width))
-        top = final_top_changes(d)
-        if top:
-            lines.append(_items_line("   큰 변경(1일): ", top, width))
+    if not st.has_today:                     # `오늘` 블록이 있으면 '달라진 것' 절이 이미 적었다
+        lines += _final_lines(d, width)
     lines.append(pad(_first_fitting(width, list(BANNER_DISCLAIMER)), width))
     return lines
 
@@ -2572,12 +2635,16 @@ def all_lines(st: State, width: int) -> tuple[list[str], int]:
                                bases[2]))
     title = tier_for(tiers, width)
     head = pad(" ".join(pad(c.header, c.width, c.right) for c in cols), width)
-    out = [pad(title, width), head]
+    # 점수 열의 증거 표지는 도움말에만 있었다 — 이 화면은 그 점수로 줄을 세우니 머리글에서 바로 말한다(README §8).
+    note = pad(_first_fitting(width, [f" 증거: 곱·섹터G {B_G} · 종목선정 {B_NEG} — 추천 아님",
+                                      f" 곱·섹터G {B_G} · 종목선정 {B_NEG}",
+                                      f" 곱·섹터G {B_G} · 선정 [쓸 수 없음]"]), width)
+    out = [pad(title, width), note, head]
     for t in rows:
         out.append(_render(cols, t, st, width))
     if not rows:
         out.append(pad("  (양쪽 관문을 다 통과한 종목이 없다)", width))
-    return out, 2
+    return out, 3
 
 
 #: 종목 목록의 고정 문구 — 첫 화면 면책은 '섹터' 만 말한다. 종목 층의 앞날 검정 범위는 다르다(docs/validation/ K1~K3).
@@ -3015,14 +3082,16 @@ HELP = [
     ("", "        날은 분봉 밖 대량 체결 — 09-14 무렵부터 네이버 시장값엔 없고"),
     ("", "        종목값엔 있다(까닭 미확인). 이 화면 값이 틀린 것이 아니라 정의가"),
     ("", "        갈린 것이다. 종가→VWAP 는 거래소 7%·코스닥 47% 줄인다."),
-    ("공식 대조", "크론 리포트는 네이버 시장값(KRX 원표 미대조)에 시장 합계를 대"),
-    ("", "        오차를 잰다. 합계 5% 초과면 '공표 시장값과 오차 큼' 칩. 공표"),
+    ("네이버 대조", "크론 리포트는 네이버 시장값(KRX 원표 미대조)에 시장 합계를 대"),
+    ("", "        차이를 잰다. 합계 5% 초과면 '네이버 시장값과 차이 큼' 칩. 네이버"),
     ("", "        수치는 화면에 없다(약관 미확인, 내부 대조 전용). 측정값은 이"),
-    ("", "        도움말 맨 끝 절. 못 받으면 '공표치 대조 건너뜀'."),
+    ("", "        도움말 맨 끝 절. 못 받으면 '네이버 대조 건너뜀'."),
     ("대량 체결", "거래량의 50% 이상이 분봉 밖이고 최대 주체 금액이 시장 Σ|주체|"),
-    ("", "        의 1% 이상인 종목. 시간외 대량매매라는 것은 추정이다. 큰 건은"),
-    ("", "        잠정 리포트에 없고 확정에서 들어왔다. 분봉 없는 종목은 판정 못"),
-    ("", "        한다. [측정]"),
+    ("", "        의 1% 이상인 종목. 시간외 대량매매라는 것은 추정이다. 이 화면 값이"),
+    ("", "        틀린 것이 아니라 시장값과 정의가 갈린 것이다(같은 체결이 네이버"),
+    ("", "        종목값엔 있다). 큰 건이 18시 잠정에 없던 것은 6개 시장-일에서만"),
+    ("", "        확인했다. 분봉 없는 종목은 판정 못 하고 그 수를 첫 화면에 적는다."),
+    ("", "        종목명은 첫 화면 ⚠ 줄에 다 있다. [측정]"),
     ("환산 차", "Σ|4주체 수량|×종가와 ×VWAP 의 차이 — 내부 자료끼리의 값이라 실제"),
     ("", "        오차가 아니다. 5% 초과면 '종가·VWAP 환산 차 큼' 칩(섹터 최대 포함)."),
     ("기관세부", "시장 줄 아래 금투·투신·연기금의 오늘 금액(1년%ile). 금투÷기관 은"),

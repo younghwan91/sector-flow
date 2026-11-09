@@ -263,6 +263,18 @@ def test_web_today_panel_tags_extremes_like_the_terminal(PD_thick, tmp_path):
 
 
 @node
+def test_web_today_panel_answers_what_changed_first(PD_thick, tmp_path):
+    """카드 순서 — 시장 → 달라진 것 → 맥락 → 순위·극단(TUI 첫 화면과 같다). 점프 링크 대상이 다 있다."""
+    P, D = PD_thick
+    html = WR._write(tmp_path, P, D) / "numbers.html"
+    ids = [c["id"] for c in _run(html, _TODAY) if c["id"]]
+    assert ids.index("t-net") < ids.index("t-day") < ids.index("t-change") < ids.index("t-ret") < ids.index("t-rank"), ids
+    page = html.read_text("utf-8")
+    links = re.findall(r'href="#([\w-]+)"', re.search(r'<nav class="jump".*?</nav>', page, re.S).group(0))
+    assert links and all(x in ids or f'id="{x}"' in page for x in links), links
+
+
+@node
 def test_web_layer_compares_new_today_lines_with_the_terminal(PD_thick, tmp_path):
     P, D = PD_thick
     assert WR._w_fails(P, D, WR._write(tmp_path, P, D)) == []

@@ -319,13 +319,13 @@ def check_external_truth(root: Path, prev: str | None) -> tuple[int, list[str]]:
     return 0, []
 
 
-#: verify_report.py 의 공표치 대조 표지 — 역시 **같은 글**.
-PUB_SKIP_MARK = "SKIP 공표치 대조"
-PUB_SKIP_STREAK_MARK = "공표치 대조 연속 SKIP"
+#: verify_report.py 의 네이버 대조 표지 — 역시 **같은 글**.
+PUB_SKIP_MARK = "SKIP 네이버 대조"
+PUB_SKIP_STREAK_MARK = "네이버 대조 연속 SKIP"
 
 
 def check_published_truth(root: Path, prev: str | None) -> tuple[int, list[str]]:
-    """전 거래일 검증이 공표 시장값 대조를 했나 — 연속 SKIP 경고(``[WARN]``)가 있으면 75, 한 번 SKIP 은 한 줄."""
+    """전 거래일 검증이 네이버 시장값 대조를 했나 — 연속 SKIP 경고(``[WARN]``)가 있으면 75, 한 번 SKIP 은 한 줄."""
     if not prev:
         return 0, []
     try:
@@ -334,10 +334,10 @@ def check_published_truth(root: Path, prev: str | None) -> tuple[int, list[str]]
         return 0, []
     hit = next((ln.strip() for ln in text.splitlines() if "[WARN]" in ln and PUB_SKIP_STREAK_MARK in ln), None)
     if hit:
-        return WARN, [f"⚠️ [공표치] 전 거래일({prev}) 검증: {hit}",
-                      f"    {root / prev / 'VERIFY.txt'} 의 '{PUB_SKIP_MARK}' 사유를 보라 — 시장 합계를 공표치에 며칠째 못 댔다."]
+        return WARN, [f"⚠️ [네이버 대조] 전 거래일({prev}) 검증: {hit}",
+                      f"    {root / prev / 'VERIFY.txt'} 의 '{PUB_SKIP_MARK}' 사유를 보라 — 시장 합계를 네이버 시장값에 며칠째 못 댔다."]
     if PUB_SKIP_MARK in text:
-        return 0, [f"[공표치] 전 거래일({prev}) 검증이 공표 시장값 대조를 건너뛰었다(SKIP) — 3번 이어지면 경고한다"]
+        return 0, [f"[네이버 대조] 전 거래일({prev}) 검증이 네이버 시장값 대조를 건너뛰었다(SKIP) — 3번 이어지면 경고한다"]
     return 0, []
 
 

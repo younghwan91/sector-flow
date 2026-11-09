@@ -1990,7 +1990,7 @@ def external_skip_streak(folder: "str | None", asof: str, skip_mark: str = VF_SK
 
     VERIFY.txt 에 SKIP 표지가 있으면 센다, 대조 줄(``외부 참값:``)이 있으면 멈춘다. 둘 다 없는 폴더(잠정만 남은 날·
     DB 대조 없이 돈 검증·리포트가 없는 날)는 대조를 시도하지 않은 것이라 세지도 끊지도 않는다.
-    공표치 대조(:func:`_vt_krx_truth`)도 표지만 바꿔 같은 규칙으로 센다.
+    네이버 대조(:func:`_vt_krx_truth`)도 표지만 바꿔 같은 규칙으로 센다.
     """
     if not folder:
         return 0
@@ -3384,27 +3384,27 @@ def _vt_concentration_check(P: dict) -> None:
     chk("T", "거래대금 집중 — 섹터·상위 종목·몫·제외 값 재계산", not bad, f"{n_rows}줄  " + "; ".join(bad[:2]))
 
 
-#: 공표치 대조의 분모 게이트·칩 문턱 — producer(krx_truth)를 읽지 않고 따로 적는다.
+#: 네이버 대조의 분모 게이트·칩 문턱 — producer(krx_truth)를 읽지 않고 따로 적는다.
 VT_KRX_MIN_TV_SHARE = 0.002
 VT_KRX_WARN = 5.0
 #: 페이로드 주체 → krx_truth.json 공표 행 — 역시 독립 사본. 네이버는 기타법인 행이 없다(그 주체는 비교 없음).
 VT_KRX_ROWS = {"inst": ("기관합계",), "forgn": ("외국인", "기타외국인"),
                "indiv": ("개인",), "etc": ("기타법인",)}
 #: VERIFY.txt 표지 — ``freshness_check.py`` 가 **같은 글**을 찾는다(``tests/test_freshness_check.py``).
-VT_SKIP_MARK = "SKIP 공표치 대조"
-VT_SKIP_STREAK_MARK = "공표치 대조 연속 SKIP"
-VT_DONE_MARK = "공표치 대조 — 오차가"
+VT_SKIP_MARK = "SKIP 네이버 대조"
+VT_SKIP_STREAK_MARK = "네이버 대조 연속 SKIP"
+VT_DONE_MARK = "네이버 대조 — 오차가"
 #: 공표 수치가 페이로드에 새지 않았나 — 블록 안에 이 키가 있으면 실패다(약관 미확인, 오차만 싣는다).
 VT_KRX_LEAK_KEYS = ("official", "approx", "diff", "rows")
 
 
 def _vt_krx_skip(P: dict, folder: "str | None", why: str) -> None:
-    """공표치 대조를 건너뛴다 — 사유와 연속 횟수를 남기고 :data:`VF_SKIP_WARN` 회째부터 WARN(실패가 아니다)."""
+    """네이버 대조를 건너뛴다 — 사유와 연속 횟수를 남기고 :data:`VF_SKIP_WARN` 회째부터 WARN(실패가 아니다)."""
     print(f"       {VT_SKIP_MARK} — {why}")
     streak = 1 + external_skip_streak(folder, P["dates"][-1], VT_SKIP_MARK, VT_DONE_MARK)
     msg = f"{VT_SKIP_STREAK_MARK} {streak}회(이 리포트 포함)"
     if streak >= VF_SKIP_WARN:
-        warn("T", msg, "공표 시장값을 며칠째 못 받았다 — 화면 칩이 공표치 기준 오차로 판정하지 못한다. "
+        warn("T", msg, "네이버 시장값을 며칠째 못 받았다 — 화면 칩이 네이버 시장값 기준 차이로 판정하지 못한다. "
                        "VERIFY.txt 의 사유를 보라")
     else:
         print(f"       {msg}")
@@ -3439,7 +3439,7 @@ def _vt_krx_truth(P: dict, folder: "str | None") -> None:
         leak = sorted({k for m in (kt.get("markets") or {}).values() for row in m.values()
                        if isinstance(row, dict) for k in row if k in VT_KRX_LEAK_KEYS})
         if leak or any(k in kt for k in VT_KRX_LEAK_KEYS + ("markets_raw",)):
-            bad.append(f"공표 수치가 페이로드에 새었다: {leak}")
+            bad.append(f"네이버 수치가 페이로드에 새었다: {leak}")
         n_cells = 0
         for m, rows in (official.get("rows") or {}).items():
             M = (T.get("market") or {}).get(m) or {}
@@ -3474,11 +3474,11 @@ def _vt_krx_truth(P: dict, folder: "str | None") -> None:
                 bad.append(f"{m} 합계 오차 {t} vs {total}")
             if bool(got_m.get("hot")) != bool(total is not None and total > VT_KRX_WARN):
                 bad.append(f"{m} 칩 판정 {got_m.get('hot')} — 합계 {total} · 문턱 {VT_KRX_WARN}")
-            print(f"       공표치 기준 오차 {m}: {'—' if total is None else f'{total:.2f}%'}"
+            print(f"       네이버 시장값 기준 차이 {m}: {'—' if total is None else f'{total:.2f}%'}"
                   f" (문턱 {VT_KRX_WARN:g}%, 소스 {official.get('source')})")
         if not n_cells:
             bad.append("대조한 칸이 0 — 파일 rows 가 비었다")
-    chk("T", f"{VT_DONE_MARK} 공표 행에서 다시 나오는가", not bad, "; ".join(bad[:3]))
+    chk("T", f"{VT_DONE_MARK} 받은 행에서 다시 나오는가", not bad, "; ".join(bad[:3]))
 
 
 # ─────────────────────────────────────────────── W. 웹 — 그려진 페이지의 숫자

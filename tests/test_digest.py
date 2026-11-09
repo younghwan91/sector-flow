@@ -146,14 +146,30 @@ def test_snapshot_from_fixture():
 
 
 def test_published_error_chip_follows_krx_truth_hot():
-    """다이제스트 경고 줄 — 공표치 기준 오차가 판정 기준이다. hot 인 시장만, 내부 VWAP 차와 이름을 가른다."""
+    """다이제스트 경고 줄 — 네이버 시장값 기준 차이가 판정 기준이다. hot 인 시장만, 내부 VWAP 차와 이름을 가른다."""
     P = fixture_payload()
     P["today"]["krx_truth"] = {"status": "ok", "markets": {"거래소": {"total_pct": 7.14, "hot": True},
                                                           "코스닥": {"total_pct": 3.0, "hot": False}}}
     gaps = dg.collect(P)["approx_gap"]
-    assert {"market": "거래소", "pct": 7.14, "label": "공표 시장값과 오차 큼"} in gaps
-    assert not any(g["label"] == "공표 시장값과 오차 큼" and g["market"] == "코스닥" for g in gaps)
+    assert {"market": "거래소", "pct": 7.14, "label": "네이버 시장값과 차이 큼"} in gaps
+    assert not any(g["label"] == "네이버 시장값과 차이 큼" and g["market"] == "코스닥" for g in gaps)
     assert any(g["label"] == "종가·VWAP 환산 차 큼" for g in gaps)
+
+
+def test_block_suspects_reach_the_digest_with_every_name_first():
+    """대량 체결 의심 — 글·카드 모두 종목명을 다 적고 잦은 차이 줄보다 앞이다. skip·빈 목록이면 없다."""
+    P = fixture_payload()
+    P["today"]["krx_truth"] = {"status": "ok", "markets": {"거래소": {"total_pct": 7.14, "hot": True}}}
+    P["today"]["block_suspects"] = {"status": "ok", "markets": {"거래소": [
+        {"name": "가상A", "off_pct": 91.8}, {"name": "가상B", "off_pct": 60.0}, {"name": "가상C", "off_pct": 55.0},
+        {"name": "가상D", "off_pct": 52.0}], "코스닥": []}}
+    F = dg.collect(P)
+    body = dg.body_text(F)
+    assert "대량 체결 의심 — 정의 차이(거래소): 가상A 분봉 밖 92% · 가상B 분봉 밖 60% · 가상C 분봉 밖 55% · 가상D 분봉 밖 52%" in body
+    assert body.index("대량 체결 의심") < body.index("네이버 시장값과 차이 큼")
+    assert "대량 체결 의심 — 정의 차이(거래소)" in dg.card_html(F)
+    P["today"]["block_suspects"] = {"status": "skip", "reason": "그날 분봉이 없다"}
+    assert "대량 체결" not in dg.body_text(dg.collect(P))
 
 
 def test_dominant_actor_is_by_absolute_amount():

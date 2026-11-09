@@ -197,6 +197,29 @@ def test_smoke_judges_every_page_at_every_width_and_keeps_only_console_errors(tm
     assert any("viewer.html 이 없다" in x for x in WS.smoke(str(tmp_path)))
 
 
+def test_smoke_opens_trust_and_list_pages_and_checks_demo_links(tmp_path, monkeypatch):
+    """검증·품질은 있으면, 기준일 목록은 폴더가 기준일이면 — 목록 넘침·안내 페이지 결함은 두 쪽만 보면 못 잡았다. 데모 폴더는 링크도 본다.
+
+    주입: 선택 쪽을 안 열거나 깨진 링크를 안 세면 실패한다.
+    """
+    day = tmp_path / "2026-10-30"
+    day.mkdir()
+    _folder(day)
+    (day / "trust.html").write_text("<html></html>", "utf-8")
+    (day / WS.DEMO_MARKER).write_text("[합성 데모]\n", "utf-8")
+    base = {k: v for k, v in CLEAN.items() if k not in ("console", "errors")}
+    pw = _FakePW(facts={("viewer.html", 390): dict(base, links=["numbers.html", "#x", "https://a.b/c", "../latest/trust.html"]),
+                        ("trust.html", 1440): dict(base, scroll_w=409, inner_w=390)})
+    _fake(monkeypatch, pw)
+    shots = tmp_path / "shots"
+    problems = WS.smoke(str(day), shots=str(shots))
+    assert {"trust-390.png", "index-390.png", "trust-1440.png", "index-1440.png"} <= set(pw.shots), pw.shots
+    assert problems == ["viewer.html@390 깨진 링크: ../latest/trust.html",
+                        "trust.html@1440 가로 넘침: 문서 폭 409px > 창 390px"], problems
+    (day / WS.DEMO_MARKER).unlink()
+    assert not any("깨진 링크" in x for x in WS.smoke(str(day))), "실 리포트의 ../latest 링크는 게시 루트에서 열린다"
+
+
 def test_smoke_exit_codes_and_the_chromium_fallback(tmp_path, monkeypatch, capsys):
     """0 통과 · 1 문제 · 2 환경(Playwright·Chromium 없음). 기본 Chromium 이 없으면 SF_CHROMIUM 으로 띄운다.
 

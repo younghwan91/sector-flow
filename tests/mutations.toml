@@ -1281,7 +1281,7 @@ id = "viewer-no-stale-chip"
 why = "두 달 묵은 리포트를 브라우저로 열어도 표시가 없다"
 guards = ["tests/test_report_pages.py::test_viewer_marks_a_stale_report"]
 file = "scripts/templates/sector_flow.html"
-find = "  if(age<4) return;"
+find = "  if(age<4||D.demo) return;"
 replace = "  return;"
 
 [[mutation]]
@@ -3132,7 +3132,7 @@ id = "web-stale-warning-never-shows"
 why = "배치가 멈춰 리포트가 며칠 지나도 목록 첫 화면이 말하지 않는다"
 guards = ["tests/test_serve_reports.py::test_index_warns_when_the_latest_report_is_old"]
 file = "scripts/serve_reports.py"
-find = "f'<code>reports/cron.log</code> 를 보라</span></p>') if age >= STALE_DAYS else \"\""
+find = "f'<code>reports/cron.log</code> 를 보라</span></p>') if age >= STALE_DAYS and not demo else \"\""
 replace = "f'<code>reports/cron.log</code> 를 보라</span></p>') if age >= STALE_DAYS * 10 else \"\""
 
 [[mutation]]
@@ -3892,10 +3892,10 @@ id = "final-top-changes-only-in-help"
 why = "아침 확정 리포트에서 크게 바뀐 칸이 도움말 끝에만 있다 — 첫 화면에서 안 보인다"
 guards = ["tests/test_tui_flow_view.py::test_final_report_puts_top_changes_and_extreme_moves_on_the_first_screen"]
 file = "src/sectorflow/tui/flow_view.py"
-find = """        top = final_top_changes(d)
-        if top:"""
-replace = """        top = final_top_changes(d)
-        if False:"""
+find = """    top = final_top_changes(d)
+    if top:"""
+replace = """    top = final_top_changes(d)
+    if False:"""
 
 [[mutation]]
 id = "final-extreme-moves-hidden"
@@ -4912,7 +4912,7 @@ id = "first-screen-drops-basis-line"
 why = "TUI 첫 화면에서 자료 범위(KRX 단독·NXT 제외) 줄이 빠져 도움말 끝까지 내려가야 보인다"
 guards = ["tests/test_data_basis.py::test_first_screen_states_the_data_basis_right_under_the_title"]
 file = "src/sectorflow/tui/flow_view.py"
-find = "    lines = [_banner_title(d, width), basis_line(width, elapsed_note(d.get(\"asof\", \"\")))]"
+find = "    lines = [_banner_title(d, width), basis_line(width, \"\" if d.get(\"demo\") else elapsed_note(d.get(\"asof\", \"\")))]"
 replace = "    lines = [_banner_title(d, width)]"
 
 [[mutation]]
@@ -5725,11 +5725,11 @@ replace = "        return (f\"{rhu(v or 0, 1):.1f}%\") + (\" 부호 반대\" if 
 
 [[mutation]]
 id = "krx-truth-help-tail-dropped"
-why = "도움말 조립에서 공식 대조 절이 빠지면 TUI 에서 측정값을 볼 길이 없다 — 첫 화면엔 안 싣기로 한 값이다"
+why = "도움말 조립에서 네이버 대조 절이 빠지면 TUI 에서 측정값을 볼 길이 없다 — 첫 화면엔 안 싣기로 한 값이다"
 guards = ["tests/test_krx_truth.py::test_help_entries_append_the_krx_truth_tail"]
 file = "src/sectorflow/tui/flow_view.py"
-find = "    return HELP + final_diff_help(st.d) + krx_truth_help(st.d)"
-replace = "    return HELP + final_diff_help(st.d)"
+find = "    return HELP + _wrap_help(final_diff_help(st.d) + krx_truth_help(st.d))"
+replace = "    return HELP + _wrap_help(final_diff_help(st.d))"
 
 [[mutation]]
 id = "krx-truth-build-hook-dropped"
@@ -5741,7 +5741,7 @@ replace = "    pass"
 
 [[mutation]]
 id = "web-today-hides-krx-truth"
-why = "웹 오늘 패널이 공표치 대조 줄을 안 그리면 측정한 오차가 브라우저에서 안 보인다"
+why = "웹 오늘 패널이 네이버 대조 줄을 안 그리면 측정한 오차가 브라우저에서 안 보인다"
 guards = ["tests/test_report_pages.py::test_numbers_today_panel_shows_the_official_gap_line"]
 file = "scripts/templates/sector_numbers.html"
 find = "  if(KT&&KT.status===\"ok\"){ const kg=r=>"
@@ -5752,8 +5752,8 @@ id = "web-today-silent-krx-truth-skip"
 why = "건너뛴 날 웹이 침묵하면 빈 자리가 고장인지 꺼짐인지 못 가른다 — SKIP 은 이유와 함께 보인다"
 guards = ["tests/test_report_pages.py::test_numbers_today_panel_names_the_krx_truth_skip_reason"]
 file = "scripts/templates/sector_numbers.html"
-find = "  else if(KT){ const w=el(\"span\",\"chip warn\",\"⚠ 공표치 대조 건너뜀\");"
-replace = "  else if(false){ const w=el(\"span\",\"chip warn\",\"⚠ 공표치 대조 건너뜀\");"
+find = "  else if(KT){ const w=el(\"span\",\"chip warn\",\"⚠ 네이버 대조 건너뜀\");"
+replace = "  else if(false){ const w=el(\"span\",\"chip warn\",\"⚠ 네이버 대조 건너뜀\");"
 
 # ── 운영 사건 원장(events.jsonl) — 쓰기·회전·통계·백필·SLO ───────────────────────
 
@@ -8236,7 +8236,7 @@ file = "scripts/verify_report.py"
 find = "VF_CAP_INDEX_JUMP = 3.0"
 replace = "VF_CAP_INDEX_JUMP = 5.0"
 
-# ── 공표 시장값 대조 — 네이버 소스·합계 판정·누출·연속 SKIP·대량 체결 의심 (4회차 D1) ──
+# ── 네이버 시장값 대조 — 네이버 소스·합계 판정·누출·연속 SKIP·대량 체결 의심 (4회차 D1) ──
 
 [[mutation]]
 id = "naver-zero-looks-published"
@@ -8427,7 +8427,7 @@ id = "freshness-published-mark-drifts"
 why = "표지 글이 verify_report 와 어긋나면 경고가 조용히 죽는다"
 guards = ["tests/test_freshness_check.py::test_published_marks_match_the_verifier"]
 file = "scripts/freshness_check.py"
-find = "PUB_SKIP_STREAK_MARK = \"공표치 대조 연속 SKIP\""
+find = "PUB_SKIP_STREAK_MARK = \"네이버 대조 연속 SKIP\""
 replace = "PUB_SKIP_STREAK_MARK = \"공표치 연속 SKIP\""
 
 [[mutation]]
@@ -8491,24 +8491,286 @@ id = "web-published-chip-always"
 why = "웹 공표치 오차 칩이 hot 과 무관하게 뜬다"
 guards = ["tests/test_report_pages.py::test_numbers_today_panel_shows_the_official_gap_line"]
 file = "scripts/templates/sector_numbers.html"
-find = "      if(g.hot){ const w=el(\"span\",\"chip warn\",\"⚠ 공표 시장값과 오차 큼(\""
-replace = "      if(true){ const w=el(\"span\",\"chip warn\",\"⚠ 공표 시장값과 오차 큼(\""
+find = "      if(g.hot){ const w=el(\"span\",\"chip warn\",\"⚠ \"+(KT.source"
+replace = "      if(true){ const w=el(\"span\",\"chip warn\",\"⚠ \"+(KT.source"
 
 [[mutation]]
 id = "web-block-chip-dropped"
 why = "웹이 대량 체결 의심을 안 그린다"
 guards = ["tests/test_report_pages.py::test_numbers_block_suspect_chip_names_the_stock_with_evidence"]
 file = "scripts/templates/sector_numbers.html"
-find = "    const w=el(\"span\",\"chip warn\",\"⚠ 대량 체결 의심 — 근사 오차 큼(\"+m+\": \"+blockNames(L)+\") \"+EV.block);\n"
-replace = "    return; const w=el(\"span\",\"chip warn\",\"⚠ 대량 체결 의심 — 근사 오차 큼(\"+m+\": \"+blockNames(L)+\") \"+EV.block);\n"
+find = "    const w=el(\"span\",\"chip warn\",\"⚠ 대량 체결 의심 — 정의 차이(\"+m+\"): \"+blockNames(L)+\" \"+EV.block);\n"
+replace = "    return; const w=el(\"span\",\"chip warn\",\"⚠ 대량 체결 의심 — 정의 차이(\"+m+\"): \"+blockNames(L)+\" \"+EV.block);\n"
 
 [[mutation]]
 id = "tui-published-chip-always"
 why = "화면 공표치 오차 칩이 hot 과 무관하게 뜬다"
 guards = ["tests/test_tui_flow_view.py::test_gap_chips_follow_the_published_error_and_block_suspects"]
 file = "src/sectorflow/tui/flow_view.py"
-find = "            if row.get(\"hot\"):\n                out.append(f\"공표 시장값과"
-replace = "            if True:\n                out.append(f\"공표 시장값과"
+find = "            if row.get(\"hot\"):\n                out.append(f\"{truth_gap_label(kt)}"
+replace = "            if True:\n                out.append(f\"{truth_gap_label(kt)}"
+
+[[mutation]]
+id = "truth-label-ignores-source"
+why = "칩이 소스를 안 보면 KRX 표로 댄 날에도 네이버라고 적는다 — 출처 표지가 거짓이 된다"
+guards = ["tests/test_tui_flow_view.py::test_gap_chips_follow_the_published_error_and_block_suspects"]
+file = "src/sectorflow/basis.py"
+find = '''"KRX 공표치와 차이 큼" if (kt or {}).get("source") == "krx" else'''
+replace = '''"KRX 공표치와 차이 큼" if False else'''
+
+[[mutation]]
+id = "tui-block-names-cut-with-remainder"
+why = "대량 체결을 다시 줄 하나로 자르면(`외 2`) 80칸·160칸에서 종목명을 볼 길이가 없다"
+guards = ["tests/test_tui_flow_view.py::test_banner_shows_every_block_suspect_name_at_every_width"]
+file = "src/sectorflow/tui/flow_view.py"
+find = """        lines += _fold_items(" ⚠ ", chips + ["수량×종가 근사 — ? 도움말"], width)"""
+replace = """        lines.append(_items_line(" ⚠ ", chips + ["수량×종가 근사 — ? 도움말"], width))"""
+
+[[mutation]]
+id = "tui-block-note-silent"
+why = "판정 건너뜀·미판정 수를 터미널이 안 적으면 0 건과 모름이 안 갈린다"
+guards = ["tests/test_tui_flow_view.py::test_banner_says_when_block_judging_was_skipped"]
+file = "src/sectorflow/tui/flow_view.py"
+find = """    note = block_note(d)
+    if note:"""
+replace = """    note = block_note(d)
+    if False:"""
+
+[[mutation]]
+id = "digest-block-names-dropped"
+why = "다이제스트만 대량 체결을 안 적으면 글로 받는 사람은 큰 차이의 원인을 모른다"
+guards = ["tests/test_digest.py::test_block_suspects_reach_the_digest_with_every_name_first"]
+file = "scripts/digest.py"
+find = """    for b in F["blocks"]:
+        L.append("""
+replace = """    for b in []:
+        L.append("""
+
+[[mutation]]
+id = "tui-changed-after-the-context"
+why = "달라진 것을 극단 목록 뒤로 보내면 80×24 에서 둘째 쪽으로 밀린다 — 첫 질문의 답이 첫 쪽에 없다"
+guards = ["tests/test_tui_flow_view.py::test_what_changed_is_on_the_first_page_at_80x24"]
+
+[[mutation.edits]]
+file = "src/sectorflow/tui/flow_view.py"
+find = """    lines += _changed_lines(st, width)
+    lines.append(pad("", width))
+    lines += _ctx_lines(d, mkts, width)"""
+replace = """    lines.append(pad("", width))
+    lines += _ctx_lines(d, mkts, width)"""
+
+[[mutation.edits]]
+file = "src/sectorflow/tui/flow_view.py"
+find = """        lines.append(_items_line(f"   {tag}{ko} %ile≤{PCT_LO:.0f}: ", lo, width))
+    return lines"""
+replace = """        lines.append(_items_line(f"   {tag}{ko} %ile≤{PCT_LO:.0f}: ", lo, width))
+    return lines + _changed_lines(st, width)"""
+
+[[mutation]]
+id = "web-changed-card-after-rank"
+why = "웹 '달라진 것' 카드가 순위 뒤로 가면 390폭에서 2,000px 아래다"
+guards = ["tests/test_web_quality.py::test_web_today_panel_answers_what_changed_first"]
+file = "scripts/templates/sector_numbers.html"
+find = """    g.append(c4b);"""
+replace = """    queueMicrotask(()=>g.append(c4b));"""
+
+[[mutation]]
+id = "first-screen-pgdn-stuck-at-end"
+why = "끝에서 PgDn 이 무반응이면 제목의 '아무 키나' 가 거짓이다"
+guards = ["tests/test_tui_flow_view.py::test_pgdn_at_the_end_of_the_first_screen_leaves_to_the_table"]
+file = "src/sectorflow/tui/flow_app.py"
+find = """        if k in (ord(" "), curses.KEY_NPAGE) and at_end:"""
+replace = """        if k == ord(" ") and at_end:"""
+
+[[mutation]]
+id = "first-screen-title-loses-table-hint"
+why = "넘치는 폭의 제목에서 표로 가는 법이 사라진다(80칸)"
+guards = ["tests/test_tui_flow_view.py::test_overflowing_first_screen_title_says_how_to_reach_the_table"]
+file = "src/sectorflow/tui/flow_view.py"
+find = """                                      f"{demo_mark(d)} 오늘의 수급 · {d.get('asof', '')} {chip} · 아무 키: 표{more}{mark}",
+                                      f"{demo_mark(d)} 수급 {str(d.get('asof', ''))[5:]} {chip} · 아무 키: 표{more}{mark}","""
+replace = ""
+
+[[mutation]]
+id = "help-report-lines-cut-at-80"
+why = "길이를 모르는 도움말 끝줄을 안 접으면 80칸에서 단어 중간에 잘린다"
+guards = ["tests/test_tui_flow_view.py::test_report_help_lines_fold_instead_of_cutting_at_80"]
+file = "src/sectorflow/tui/flow_view.py"
+find = """    return HELP + _wrap_help(final_diff_help(st.d) + krx_truth_help(st.d))"""
+replace = """    return HELP + final_diff_help(st.d) + krx_truth_help(st.d)"""
+
+[[mutation]]
+id = "all-stocks-header-without-badges"
+why = "`t` 화면 머리글에서 표지가 빠지면 판정 불가·쓸 수 없는 점수로 줄을 세운 표가 표지 없이 읽힌다"
+guards = ["tests/test_tui_flow_view.py::test_all_stocks_screen_header_carries_the_evidence_badges"]
+file = "src/sectorflow/tui/flow_view.py"
+find = """    out = [pad(title, width), note, head]"""
+replace = """    out = [pad(title, width), pad("", width), head]"""
+
+[[mutation]]
+id = "demo-trust-link-stays-404"
+why = "데모의 근거 링크를 안 고치면 면책 문구의 '검증·품질' 이 404 다 — 고객에겐 이 길뿐이다"
+guards = ["tests/test_demo.py::test_demo_links_stay_inside_the_folder_and_the_trust_page_gives_the_grounds"]
+file = "src/sectorflow/demo.py"
+find = """        html, n_l = re.subn(r'href="\\.\\./latest/trust\\.html', 'href="trust.html', html)"""
+replace = """        n_l = 1"""
+
+[[mutation]]
+id = "demo-without-trust-page"
+why = "안내 페이지를 안 쓰면 링크만 고쳐도 404 다"
+guards = ["tests/test_demo.py::test_demo_links_stay_inside_the_folder_and_the_trust_page_gives_the_grounds"]
+file = "src/sectorflow/demo.py"
+find = """    (out / "trust.html").write_text(trust_page(), "utf-8")"""
+replace = """    pass"""
+
+[[mutation]]
+id = "demo-no-minute-bars"
+why = "분봉이 없으면 대량 체결 판정이 건너뛰어져 데모에서 그 표지를 영영 못 본다"
+guards = ["tests/test_demo.py::test_demo_shows_every_mark_a_customer_can_meet"]
+file = "src/sectorflow/demo.py"
+find = """    con.executemany("INSERT INTO minute_bars(code,ts,volume) VALUES (?,?,?)", minute)"""
+replace = """    pass"""
+
+[[mutation]]
+id = "demo-not-final"
+why = "확정으로 안 만들면 확정 표지·잠정→확정 변경을 데모에서 못 본다"
+guards = ["tests/test_demo.py::test_demo_shows_every_mark_a_customer_can_meet"]
+file = "src/sectorflow/demo.py"
+find = """        _run("sector_flow.py", "--db", str(db), "--days", str(REPORT_DAYS), "--reports-root", str(root), "--final",
+             "--json", str(out / "payload.json"))"""
+replace = """        _run("sector_flow.py", "--db", str(db), "--days", str(REPORT_DAYS), "--reports-root", str(root),
+             "--json", str(out / "payload.json"))"""
+
+[[mutation]]
+id = "demo-synthetic-truth-gone"
+why = "네이버 대조 칩을 데모에서 못 보면 고객이 처음 보는 경고가 실 리포트에서 나온다"
+guards = ["tests/test_demo.py::test_demo_shows_every_mark_a_customer_can_meet"]
+file = "src/sectorflow/demo.py"
+find = """    attach_synthetic_truth(payload, out)
+"""
+replace = ""
+
+[[mutation]]
+id = "serve-demo-list-unmarked"
+why = "합성 데모 목록이 실 리포트처럼 읽히고 cron.log 를 보라고 한다"
+guards = ["tests/test_serve_reports.py::test_demo_list_page_says_it_is_synthetic_and_sends_no_one_to_the_cron_log"]
+file = "scripts/serve_reports.py"
+find = """    demo = _demo_notice(root, latest) if latest else None"""
+replace = """    demo = None"""
+
+[[mutation]]
+id = "smoke-skips-optional-pages"
+why = "목록·안내 페이지를 안 열면 390폭 넘침·표지 빠짐을 스모크가 못 본다"
+guards = ["tests/test_web_smoke.py::test_smoke_opens_trust_and_list_pages_and_checks_demo_links"]
+file = "scripts/web_smoke.py"
+find = """    if list_page:
+        targets.append((LIST_PAGE, list_page, False))"""
+replace = """    if False:
+        targets.append((LIST_PAGE, list_page, False))"""
+
+[[mutation]]
+id = "smoke-ignores-dead-links"
+why = "데모 안 깨진 링크를 안 세면 면책 근거 404 를 다시 못 본다"
+guards = ["tests/test_web_smoke.py::test_smoke_opens_trust_and_list_pages_and_checks_demo_links"]
+file = "scripts/web_smoke.py"
+find = """        if not (page.parent / unquote(u.path)).exists():"""
+replace = """        if False:"""
+
+[[mutation]]
+id = "guide-drops-block-suspect-row"
+why = "가이드에서 표지 설명이 빠지면 고객이 ⚠ 칩의 뜻을 찾을 곳이 없다"
+guards = ["tests/test_first_reader.py::test_first_screen_marks_are_explained_in_the_guide_and_readme"]
+file = "docs/reading-guide.md"
+find = "| ⚠ `대량 체결 의심` |"
+replace = "| ⚠ `큰 체결` |"
+
+[[mutation]]
+id = "attachment-a-drifts-from-the-screen"
+why = "첨부 A 의 화면이 낡으면 질의의 사실관계가 틀린다 — 기관 세부·부호 바뀜 없는 옛 화면을 인용했었다"
+guards = ["tests/test_demo.py::test_inquiry_attachment_quotes_the_current_screens"]
+file = "docs/strategy/inquiries/attachments/A_screen_example.md"
+find = " ── 오늘 달라진 것 ──"
+replace = " ── 달라진 것 ──"
+
+[[mutation]]
+id = "inquiry-overclaims-evidence-marks"
+why = "'열마다 표지' 는 지금 화면에 없는 주장이다 — 질의서에 다시 적으면 사실관계가 틀린다"
+guards = ["tests/test_first_reader.py::test_inquiries_state_what_the_first_screen_names_and_where_the_data_comes_from"]
+file = "docs/strategy/inquiries/fsc_advisory_scope.md"
+find = "첫 화면(사실 요약)의 줄마다 붙어 있지는 않습니다."
+replace = "열마다 근거 수준 표지가 있습니다."
+
+[[mutation]]
+id = "inquiry-drops-naver-source"
+why = "네이버도 원천이다 — 빼면 질의의 원천 설명이 거짓이다"
+guards = ["tests/test_first_reader.py::test_inquiries_state_what_the_first_screen_names_and_where_the_data_comes_from"]
+file = "docs/strategy/inquiries/krx_market_data.md"
+find = "- **네이버 금융**(m.stock.naver.com)의"
+replace = "- 다른 곳의"
+
+[[mutation]]
+id = "shots-stamp-first-row-only"
+why = "원장 sha 를 한 줄만 고치면 나머지 그림은 옛 코드로 적혀 재촬영 경보가 안 맞는다"
+guards = ["tests/test_screenshots_fresh.py::test_stamp_rewrites_every_manifest_row_and_only_those"]
+file = "scripts/demo_shots.py"
+find = """    new, n = ROW.subn(lambda m: f"{m.group(1)}{sha}{m.group(3)}", text)"""
+replace = """    new, n = ROW.subn(lambda m: f"{m.group(1)}{sha}{m.group(3)}", text, count=1)"""
+
+[[mutation]]
+id = "shots-wide-char-single-cell"
+why = "한글을 1칸 격자에 넣으면 그림 속 표의 열이 어긋난다"
+guards = ["tests/test_screenshots_fresh.py::test_ansi_to_html_keeps_color_width_and_trims_only_when_asked"]
+file = "scripts/demo_shots.py"
+find = """            w = 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1"""
+replace = """            w = 1"""
+
+[[mutation]]
+id = "shots-attachment-format-unchecked"
+why = "블록 수가 달라도 쓰면 첨부 A 의 화면이 엉뚱한 절로 들어간다"
+guards = ["tests/test_screenshots_fresh.py::test_attachment_rewrite_replaces_blocks_in_order_and_refuses_a_changed_format"]
+file = "scripts/demo_shots.py"
+find = """    if len(attachment_blocks(text)) != len(screens):"""
+replace = """    if False:"""
+
+[[mutation]]
+id = "web-demo-says-stale"
+why = "고정 기준일 데모가 웹에서 'N일 지난 리포트' 를 띄운다 — 고장처럼 보인다(README 그림에도 찍힌다)"
+guards = ["tests/test_report_pages.py::test_demo_pages_do_not_warn_about_age"]
+file = "scripts/templates/sector_numbers.html"
+find = "if(age>=4&&!D.demo) document"
+replace = "if(age>=4) document"
+
+[[mutation]]
+id = "screenshot-manifest-sha-stale"
+why = """화면 코드가 바뀌었는데 원장 sha 가 옛 커밋을 가리키면 README 그림이
+없는 화면을 보여준다 — 이 변이는 sha 를 TUI 가 달랐던 옛 main(a236be3)으로 되돌린다. 앵커는 sha 앞까지라 재촬영에도 안 깨진다"""
+guards = ["tests/test_screenshots_fresh.py::test_ui_change_after_manifest_sha_demands_retake"]
+file = "docs/SCREENSHOTS.md"
+find = "| docs/images/kqflow-today.png | src/sectorflow/tui/ | "
+replace = "| docs/images/kqflow-today.png | src/sectorflow/tui/ | a236be3d78bc87c4aacc888df7e355dc788608fb | "
+
+[[mutation]]
+id = "screenshot-manifest-row-dropped"
+why = "README 가 쓰는 이미지가 원장에서 빠지면 그 이미지만 신선도 검사 밖에서 썩는다"
+guards = ["tests/test_screenshots_fresh.py::test_every_readme_image_is_in_the_manifest"]
+
+[[mutation.edits]]
+file = "docs/SCREENSHOTS.md"
+find = "| docs/images/web-today.png | scripts/templates/ | "
+replace = "| docs/images/gone.png | scripts/templates/ | "
+
+[[mutation.edits]]
+file = "docs/SCREENSHOTS.md"
+find = "| docs/images/web-today.png | src/sectorflow/demo.py | "
+replace = "| docs/images/gone.png | src/sectorflow/demo.py | "
+
+[[mutation]]
+id = "demo-provisional-breaks-identity"
+why = "잠정 사본이 4주체 합 = 0 을 깨면 실 DB 와 다른 데모가 되고 검증기가 빨개진다"
+guards = ["tests/test_demo.py::test_demo_identities_hold_after_the_provisional_edit"]
+file = "src/sectorflow/demo.py"
+find = """"individual = individual - acc_trde_qty / 25 WHERE"""
+replace = """"individual = individual + acc_trde_qty / 25 WHERE"""
 
 [[mutation]]
 id = "digest-published-chip-always"
@@ -9196,7 +9458,8 @@ id = "fsc-inquiry-hides-stock-names"
 why = "금융위 질의서가 종목 표시를 숨긴다 — 사실이 틀린 질의의 회신은 쓸 수 없다"
 guards = ["tests/test_first_reader.py::test_inquiries_state_what_the_screen_really_shows"]
 file = "docs/strategy/inquiries/fsc_advisory_scope.md"
-find = "- **종목이 나옵니다.** 첫 화면에 섹터마다 그날 순매수 상위 종목 1~2개의 **종목명과 금액**이 있고, 섹터 표에 순매수·순매도 상위 종목이, 섹터를 열면(드릴다운) 그 섹터 **전 종목**의 주체별 순매수와 비중이 있습니다.\n"
+find = """- **종목이 나옵니다.** 첫 화면의 종목명은 세 자리입니다. (1) 섹터마다 그날 순매수 상위 종목 1~2개의 **종목명과 금액**. (2) `대량 체결 의심` 종목 전부의 **종목명**과 그날 거래량 중 분봉 밖 몫 — 드물게 뜨는 표지입니다. (3) `거래대금 집중` — 시장 거래대금의 20% 이상인 섹터의 상위 2종목 **종목명**과 몫, 그 둘을 뺀 순매수. 섹터 표에는 순매수·순매도 상위 종목이, 섹터를 열면(드릴다운) 그 섹터 **전 종목**의 주체별 순매수와 비중이 있습니다.
+"""
 replace = ""
 
 [[mutation]]
@@ -9476,7 +9739,7 @@ id = "first-screen-space-stops-at-the-end"
 why = "제목은 '아무 키나 눌러 표로' 인데 Space 가 끝에서 멈춘다"
 guards = ["tests/test_day_facts.py::test_space_at_the_end_of_the_first_screen_goes_to_the_table"]
 file = "src/sectorflow/tui/flow_app.py"
-find = "        if k == ord(\" \") and at_end:"
+find = "        if k in (ord(\" \"), curses.KEY_NPAGE) and at_end:"
 replace = "        if False:"
 
 [[mutation]]
@@ -9588,7 +9851,7 @@ id = "first-screen-arrow-leaves-at-the-end"
 why = "↓ 로 훑다 끝에서 표로 튕겨 나간다 — 나머지를 읽던 사람이 화면을 잃는다"
 guards = ["tests/test_day_facts.py::test_arrow_at_the_end_of_the_first_screen_stays"]
 file = "src/sectorflow/tui/flow_app.py"
-find = "        if k == ord(\" \") and at_end:"
+find = "        if k in (ord(\" \"), curses.KEY_NPAGE) and at_end:"
 replace = "        if at_end:"
 
 [[mutation]]
@@ -9620,8 +9883,8 @@ id = "digest-status-own-copy"
 why = "다이제스트가 지위 글자를 따로 적어 화면과 갈린다(재구성·확정기록없음을 잃는다)"
 guards = ["tests/test_day_facts.py::test_digest_status_is_the_screens_status"]
 file = "scripts/digest.py"
-find = "from sectorflow.basis import DATA_BASIS_SHORT, NOT_TESTED_NOTE, ret_label, rhu, status_label"
-replace = "from sectorflow.basis import DATA_BASIS_SHORT, NOT_TESTED_NOTE, ret_label, rhu\nstatus_label = lambda d: \"마감·확정\" if d.get(\"final\") else \"마감·잠정\""
+find = "from sectorflow.basis import DATA_BASIS_SHORT, NOT_TESTED_NOTE, ret_label, rhu, status_label, truth_gap_label"
+replace = "from sectorflow.basis import DATA_BASIS_SHORT, NOT_TESTED_NOTE, ret_label, rhu, truth_gap_label\nstatus_label = lambda d: \"마감·확정\" if d.get(\"final\") else \"마감·잠정\""
 
 [[mutation]]
 id = "disclaimer-binds-percentile-to-tested"

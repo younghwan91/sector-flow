@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""공표 시장값 대조 — 리포트의 시장 합계 순매수 금액을 공표치에 댄다. **내부 대조 전용** (D1-m2, 4회차 D1).
+"""네이버 시장값 대조 — 리포트의 시장 합계 순매수 금액을 공표치에 댄다. **내부 대조 전용** (D1-m2, 4회차 D1).
 
 리포트의 순매수 금액은 순매매 **수량 × 그날 종가** 근사고, 시장 합계는 ``supply_demand`` 에 있는 종목만의
 합이다. 종가 환산 vs VWAP 환산 차이(``approx_gap``)는 내부 자료끼리의 대조라 실제 오차를 못 본다 — 48일
-실측에서 ``approx_gap`` 칩은 0일 떴고(최대 3.12%) 공표치 기준 거래소 오차는 28일이 5% 를 넘었다
+실측에서 ``approx_gap`` 칩은 0일 떴고(최대 3.12%) 네이버 시장값 기준 거래소 오차는 28일이 5% 를 넘었다
 (``docs/validation/2026-11-09-market-total-vs-published.md``). 이 모듈은 기준일 공표치를 받아 시장×주체 상대
 오차를 ``today.krx_truth`` 에 적고, 화면·검증기는 그 값으로 판정한다.
 
@@ -273,7 +273,7 @@ def _skip(reason: str) -> dict:
 def _say(block: dict) -> None:
     """빌드 로그 한 줄 — 운영자 문구는 docs/runbook.md과 짝이다(tests/test_runbook.py). 오차만 적는다."""
     if block.get("status") != "ok":
-        print(f"⚠️ [공표치 대조] SKIP — {block.get('reason')}. 리포트는 그대로 만든다", file=sys.stderr)
+        print(f"⚠️ [네이버 대조] SKIP — {block.get('reason')}. 리포트는 그대로 만든다", file=sys.stderr)
         return
     for m, row in (block.get("markets") or {}).items():
         parts = []
@@ -284,10 +284,10 @@ def _say(block: dict) -> None:
             g = r.get("gap_pct")
             parts.append(f"{ACTOR_KO[a]} {'—' if g is None else f'{g:.2f}%'}" + (" 부호 반대" if r.get("flip") else ""))
         t = row.get("total_pct")
-        print(f"[공표치 대조] {m} 오차 합계 {'—' if t is None else f'{t:.2f}%'}: " + " · ".join(parts))
+        print(f"[네이버 대조] {m} 오차 합계 {'—' if t is None else f'{t:.2f}%'}: " + " · ".join(parts))
         if row.get("hot"):
-            print(f"⚠️ [공표치 대조] 오차 큼 — {m} {t:.2f}% (문턱 {KRX_GAP_WARN}%, {block.get('label')}). "
-                  "시장 합계가 공표치와 이만큼 다르다 — 금액 해석에 반영하라", file=sys.stderr)
+            print(f"⚠️ [네이버 대조] 차이 큼 — {m} {t:.2f}% (문턱 {KRX_GAP_WARN}%, {block.get('label')}). "
+                  "시장 합계가 이 시장값과 이만큼 다르다 — 값의 오류가 아니라 정의 차이일 수 있다, 금액 해석에 반영하라", file=sys.stderr)
 
 
 def attach(payload: dict, build_dir: "str | None", root: "str | None", *,
@@ -307,7 +307,7 @@ def attach(payload: dict, build_dir: "str | None", root: "str | None", *,
         t = payload.get("today")
         if isinstance(t, dict):
             t["krx_truth"] = block
-        print(f"⚠️ [공표치 대조] 내부 오류 — {e!r}. 리포트는 그대로 만든다", file=sys.stderr)
+        print(f"⚠️ [네이버 대조] 내부 오류 — {e!r}. 리포트는 그대로 만든다", file=sys.stderr)
         return block
 
 
@@ -352,7 +352,7 @@ def _attach(payload: dict, build_dir: "str | None", root: "str | None", *,
                 with open(os.path.join(build_dir, "krx_truth.json"), "w", encoding="utf-8") as f:
                     json.dump(official, f, ensure_ascii=False, indent=1)
             except OSError as e:
-                print(f"⚠️ [공표치 대조] krx_truth.json 을 못 재웠다({e}) — 다음 빌드가 다시 받는다",
+                print(f"⚠️ [네이버 대조] krx_truth.json 을 못 재웠다({e}) — 다음 빌드가 다시 받는다",
                       file=sys.stderr)
     else:
         block = _skip(reason or "캐시도 KR_QUANT_KRX_TRUTH 도 없다")
@@ -362,7 +362,7 @@ def _attach(payload: dict, build_dir: "str | None", root: "str | None", *,
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description="공표 시장값 ↔ 리포트 시장 합계 금액 대조(내부 대조 전용)")
+    ap = argparse.ArgumentParser(description="네이버 시장값 ↔ 리포트 시장 합계 금액 대조(내부 대조 전용)")
     ap.add_argument("--payload", required=True, help="리포트 payload.json — today.krx_truth 를 제자리에 채운다")
     ap.add_argument("--fetch", action="store_true", help="캐시가 없으면 공표치를 받는다(기본 소스 네이버)")
     ap.add_argument("--out", help="결과를 이 폴더에 쓴다(payload.json·krx_truth.json) — 게시된 리포트를 볼 때는 이것을 쓴다")

@@ -2619,11 +2619,11 @@ def test_gap_chip_appears_only_above_the_threshold(data):
 
 
 def test_gap_chips_follow_the_published_error_and_block_suspects(data):
-    """칩의 판정은 공표치 기준(krx_truth.hot) — 내부 VWAP 차가 작아도 뜬다. 대조 건너뜀·대량 체결 의심도 첫 화면에 드러난다.
+    """칩의 판정은 네이버 시장값 기준(krx_truth.hot) — 내부 VWAP 차가 작아도 뜬다. 대조 건너뜀·대량 체결 의심도 첫 화면에 드러난다.
 
     웹 칩과 같은 글자다(tests/test_report_pages.py).
     """
-    from sectorflow.tui.flow_view import _gap_chips, block_names
+    from sectorflow.tui.flow_view import _gap_chips, block_items
     d = json.loads(json.dumps(data))
     T = d["today"]
     T["krx_truth"] = {"status": "ok", "markets": {"거래소": {"total_pct": 7.14, "hot": True}, "코스닥": {"total_pct": 4.0, "hot": False}}}
@@ -2631,14 +2631,58 @@ def test_gap_chips_follow_the_published_error_and_block_suspects(data):
         {"name": "SK", "off_pct": 91.8}, {"name": "B", "off_pct": 60.0}, {"name": "C", "off_pct": 55.4}, {"name": "D", "off_pct": 55.0}],
         "코스닥": []}}
     chips = _gap_chips(d, ["전체", "거래소", "코스닥"])
-    assert "공표 시장값과 오차 큼(거래소 7.1%)" in chips
-    assert not any("오차 큼(코스닥" in c for c in chips)
-    assert "대량 체결 의심 — 근사 오차 큼(거래소: SK 분봉 밖 92%·B 분봉 밖 60%·C 분봉 밖 55% 외 1종목)" in chips
-    assert block_names([{"name": "SK", "off_pct": 91.8}]) == "SK 분봉 밖 92%"
+    assert "네이버 시장값과 차이 큼(거래소 7.1%)" in chips
+    assert not any("차이 큼(코스닥" in c for c in chips)
+    assert chips[:4] == ["대량 체결 의심 — 정의 차이(거래소): SK 분봉 밖 92%", "B 분봉 밖 60%", "C 분봉 밖 55%", "D 분봉 밖 55%"], \
+        "드문 대량 체결이 맨 앞이고 종목명을 다 적는다"
+    assert block_items([{"name": "SK", "off_pct": 91.8}]) == ["SK 분봉 밖 92%"]
+    T["krx_truth"] = {"status": "ok", "source": "krx", "markets": {"거래소": {"total_pct": 7.14, "hot": True}}}
+    assert "KRX 공표치와 차이 큼(거래소 7.1%)" in _gap_chips(d, ["거래소"])
     T["krx_truth"] = {"status": "skip", "reason": "망"}
-    assert "공표치 대조 건너뜀" in _gap_chips(d, ["거래소"])
+    assert "네이버 대조 건너뜀" in _gap_chips(d, ["거래소"])
     T["block_suspects"] = {"status": "skip", "reason": "분봉 표(minute_bars)가 없다"}
     assert not any("대량 체결" in c for c in _gap_chips(d, ["거래소"]))
+
+
+@pytest.mark.parametrize("width", [80, 160])
+def test_banner_shows_every_block_suspect_name_at_every_width(data, width):
+    """대량 체결 종목명은 어느 폭에서도 첫 화면에서 다 보인다 — `외 N` 으로 접으면 볼 길이가 없었다(80칸 `⚠ … 외 2`)."""
+    d = json.loads(json.dumps(data))
+    d["today"]["krx_truth"] = {"status": "ok", "markets": {"거래소": {"total_pct": 16.8, "hot": True},
+                                                          "코스닥": {"total_pct": 6.0, "hot": True}}}
+    d["today"]["block_suspects"] = {"status": "ok", "unjudged": 7, "markets": {
+        "거래소": [{"name": f"가상종목{i}", "off_pct": 90.0 - i} for i in range(5)],
+        "코스닥": [{"name": "가상코닥", "off_pct": 88.0}], "전체": []}}
+    text = "\n".join(banner_lines(State(d), width))
+    for name in [f"가상종목{i}" for i in range(5)] + ["가상코닥"]:
+        assert name in text, f"폭 {width} 에서 {name} 이 안 보인다"
+    assert text.index("대량 체결 의심") < text.index("네이버 시장값과 차이 큼"), "드문 표지가 잦은 칩에 밀렸다"
+    assert " ⚠ " in text and "외 " not in next(ln for ln in banner_lines(State(d), width) if "대량 체결 의심" in ln)
+    assert "대량 체결 판정 못 한 종목 7개(분봉 없음)" in text
+
+
+def test_banner_says_when_block_judging_was_skipped(data):
+    """판정 건너뜀은 0 건과 다르다 — 웹에만 적고 터미널이 침묵하면 '없음' 으로 읽힌다."""
+    d = json.loads(json.dumps(data))
+    d["today"]["block_suspects"] = {"status": "skip", "reason": "그날 분봉이 없다"}
+    assert "대량 체결 판정: 건너뜀 — 그날 분봉이 없다" in "\n".join(banner_lines(State(d), 80))
+
+
+def test_what_changed_is_on_the_first_page_at_80x24(data):
+    """'오늘 무엇이 달라졌나' 는 첫 쪽에 있다 — 부호 바뀜·들고 남이 31줄 뒤(80×24 둘째 쪽)였다. 경고가 많은 날도 그렇다."""
+    from sectorflow.tui.flow_view import banner_view, view_width
+    d = json.loads(json.dumps(data))
+    d["today"]["day_change"] = {"prev_date": "2026-08-27", "flip_min_share": 0.02,
+                                "flips": {"전체": {"inst": [{"sector": "가상A", "prev": -5.0, "now": 9.0}]}}}
+    d["change"] = {"prev_date": "2026-08-27", "prev_final": False, "window": 20, "top_n": 5,
+                   "top": {"전체": {"inst": {"entered": ["가상B"], "exited": ["가상C"]}, "invpen": {"entered": [], "exited": []}}}}
+    d["today"]["block_suspects"] = {"status": "ok", "unjudged": 3, "markets": {
+        "거래소": [{"name": f"가상종목{i}", "off_pct": 90.0} for i in range(4)], "코스닥": []}}
+    d["today"]["krx_truth"] = {"status": "ok", "markets": {"거래소": {"total_pct": 16.8, "hot": True},
+                                                          "코스닥": {"total_pct": 6.0, "hot": True}}}
+    page = "\n".join(banner_view(State(d), view_width(80), 24))
+    assert "가상A -5->+9" in page.replace(" ", " "), page
+    assert "들어옴 가상B" in page and "나감 가상C" in page, page
 
 
 def test_final_diff_line_and_help_list(data):
@@ -3419,6 +3463,56 @@ def test_banner_scroll_keys_scroll_only_when_it_overflows(data):
     st.banner = True
     assert banner_key(st, curses.KEY_DOWN, 79, 10) and st.banner and st.brow == 1
     assert banner_key(st, curses.KEY_DOWN, 79, 500) and not st.banner, "넘치지 않으면 ↓ 도 닫는다"
+
+
+def test_pgdn_at_the_end_of_the_first_screen_leaves_to_the_table(data):
+    """제목이 '아무 키나' 라고 적는데 끝에서 PgDn 이 무반응이었다."""
+    import curses
+    from sectorflow.tui.flow_app import banner_key
+    st = State(_with_net(data, forgn=-28336.0))
+    st.banner, st.brow = True, 10 ** 6
+    banner_key(st, curses.KEY_DOWN, 79, 10)
+    assert st.banner
+    assert banner_key(st, curses.KEY_NPAGE, 79, 10) and not st.banner
+
+
+@pytest.mark.parametrize("width", [79, 100, 160])
+def test_overflowing_first_screen_title_says_how_to_reach_the_table(data, width):
+    from sectorflow.tui.flow_view import banner_view
+    d = dict(_with_net(data, forgn=-28336.0), demo=True, final=True, rebuilt=True)    # 제목이 가장 긴 지위 — 80칸에서 긴 꼴이 안 들어간다
+    title = banner_view(State(d), width, 10)[0]
+    assert "표" in title and "더 보기" in title, title
+
+
+def test_report_help_lines_fold_instead_of_cutting_at_80(data):
+    """이 리포트의 도움말 끝줄 — 라벨(네이버…)·비교 없음 이유가 80칸에서 잘렸다. 단어를 잃지 않고 접는다."""
+    from sectorflow.tui.flow_view import cell_len, help_entries, help_lines, view_width
+    d = json.loads(json.dumps(data))
+    why = "재구성 리포트다 — 같은 기준일의 옛 리포트는 옛 코드·정의로 만들어 비교하지 않는다"
+    label = "네이버 시장값, KRX 원표 미대조, 내부 대조용"
+    d.update(final=True, final_diff=None, final_diff_reason=why)
+    d["today"]["krx_truth"] = {"status": "ok", "label": label, "markets": {"거래소": {
+        "total_pct": 16.8, "hot": True, "inst": {"gap_pct": 23.7, "flip": True}, "forgn": {"gap_pct": 8.2, "flip": False},
+        "indiv": {"gap_pct": 12.3, "flip": False}, "etc": None}}}
+    w = view_width(80)
+    lines, total = help_lines(w, 0, 10 ** 6, help_entries(State(d)))
+    tail = lines[total - 12:]
+    joined = " ".join(" ".join(ln.split()) for ln in tail)
+    assert why in joined and f"({label})" in joined, joined
+    assert total == help_lines(view_width(160), 0, 10 ** 6, help_entries(State(d)))[1], "줄 수가 폭에 따라 달라지면 스크롤 하한이 틀린다"
+    assert all(cell_len(ln) <= w for ln in tail)
+
+
+def test_all_stocks_screen_header_carries_the_evidence_badges(data):
+    """`t` 화면은 곱으로 줄을 세운다 — 곱·섹터G·종목선정의 표지를 머리글에서 말한다(README §8 과 같은 글자)."""
+    from sectorflow.tui.flow_view import B_G, B_NEG, State as S, all_lines, view_width
+    st = S(data)
+    lines, nh = all_lines(st, 160)
+    assert nh == 3 and B_G in lines[1] and B_NEG in lines[1], lines[:3]
+    from pathlib import Path
+    readme = (Path(__file__).resolve().parent.parent / "README.md").read_text("utf-8")
+    assert f"`{B_G}`" in readme and f"`{B_NEG}`" in readme
+    assert B_G in all_lines(st, view_width(80))[0][1]
 
 
 def test_half_rounds_up_like_the_web():

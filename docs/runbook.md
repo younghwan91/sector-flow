@@ -53,10 +53,10 @@
 | `web 실패 (rc=137)` | `serve.sh` 가 TERM 을 5초 버틴 서버를 KILL 했다 — 그 서버를 띄웠던 래퍼의 알림이다. 위 재시작 알림과 같은 박자(연속 첫 회·12회마다)로만 온다 | 위 재시작 알림의 이유를 본다. 매번 KILL 까지 가면 서버가 TERM 에 끝나지 않는 것이다 — `tail reports/serve.log` |
 | `web 실패 (rc=1)`, 본문 `누구인지(.serve.pid) 몰라 못 끈다` | 잠금(`reports/.serve.lock`)을 쥔 프로세스가 `/healthz` 에 대답하지 않는데, `.serve.pid` 가 없거나 그 pid 가 이 서버가 아니라 안전하게 못 끈다. 한 시간 이어질 때 알린다 | `cat reports/.serve.pid`, `fuser -v reports/.serve.lock` 로 잠금 주인을 찾아 끈다. 다음 5분 크론이 다시 띄운다 |
 | `web 실패 (rc=1)`, 본문 `Tailscale 주소가 없다` · `에 못 묶었다` · 웹이 안 열린다 | Tailscale 이 없거나 포트가 막힌 채 한 시간이 지났다(`reports/.serve.misses` 가 센다). 서버가 죽었다(rc 가 서버 종료코드) | `tail reports/serve.log`, `tailscale ip -4`, `ss -ltnp \| grep 8765`. 손으로 띄우려면 `scripts/serve.sh`. 대답 없는 서버는 크론이 5분 안에 끄고 다시 띄운다 |
-| `report` 로그·본문에 `[공표치 대조] SKIP` | 공표 시장값을 못 받았다 — 망·공표 전·휴장·형식 변화·캐시 기준일 불일치. 리포트는 그대로 만들어졌다(실패 아님) | 꼬리의 이유를 본다. 받아지면 `KR_QUANT_KRX_TRUTH=1 KR_QUANT_FORCE=1 scripts/daily_report.sh` 로 그 기준일을 다시 만든다 |
-| `freshness 경고 (rc=75)` 20:30, 본문 `[공표치] 전 거래일(…) 검증: …` | 공표치 대조가 3번 연속 건너뛰어졌다 — 그동안 화면 칩이 공표치 기준으로 판정하지 못했다 | 그 날 `VERIFY.txt` 의 `SKIP 공표치 대조` 줄에서 이유를 본다. 네이버 응답 형식이 바뀌었으면 `scripts/krx_truth.py` 의 `_parse_naver` 를 고친다 |
-| `report` 로그·본문에 `[공표치 대조] 오차 큼` | 시장 합계가 공표치와 문턱(5%)을 넘게 다르다 — 값의 버그가 아니라 정의 차이(우선주 등 미수집·분봉 밖 대량 체결)와 환산 근사의 측정이다. 거래소는 평소에도 절반 넘는 날 뜬다(48일 중 28일) | 그날 금액 해석에 반영한다. 큰 날은 `today.block_suspects` 로 어느 종목인지 본다. 공표 수치는 `reports/<기준일>/krx_truth.json` 에만 있다 |
-| `report` 로그에 `[공표치 대조] 내부 오류` | krx_truth 모듈 버그 — 대조만 빠지고 리포트는 그대로 만들어졌다 | `uv run python scripts/krx_truth.py --payload reports/latest/payload.json --fetch --out "$(mktemp -d -p ~/.cache)"` 로 재현해 Traceback 을 본다 |
+| `report` 로그·본문에 `[네이버 대조] SKIP` | 네이버 시장값을 못 받았다 — 망·공표 전·휴장·형식 변화·캐시 기준일 불일치. 리포트는 그대로 만들어졌다(실패 아님) | 꼬리의 이유를 본다. 받아지면 `KR_QUANT_KRX_TRUTH=1 KR_QUANT_FORCE=1 scripts/daily_report.sh` 로 그 기준일을 다시 만든다 |
+| `freshness 경고 (rc=75)` 20:30, 본문 `[네이버 대조] 전 거래일(…) 검증: …` | 네이버 대조가 3번 연속 건너뛰어졌다 — 그동안 화면 칩이 네이버 시장값 기준으로 판정하지 못했다 | 그 날 `VERIFY.txt` 의 `SKIP 네이버 대조` 줄에서 이유를 본다. 네이버 응답 형식이 바뀌었으면 `scripts/krx_truth.py` 의 `_parse_naver` 를 고친다 |
+| `report` 로그·본문에 `[네이버 대조] 차이 큼` | 시장 합계가 네이버 시장값과 문턱(5%)을 넘게 다르다 — 값의 버그가 아니라 정의 차이(우선주 등 미수집·분봉 밖 대량 체결)와 환산 근사의 측정이다. 거래소는 평소에도 절반 넘는 날 뜬다(48일 중 28일) | 그날 금액 해석에 반영한다. 큰 날은 `today.block_suspects` 로 어느 종목인지 본다. 네이버 수치는 `reports/<기준일>/krx_truth.json` 에만 있다 |
+| `report` 로그에 `[네이버 대조] 내부 오류` | krx_truth 모듈 버그 — 대조만 빠지고 리포트는 그대로 만들어졌다 | `uv run python scripts/krx_truth.py --payload reports/latest/payload.json --fetch --out "$(mktemp -d -p ~/.cache)"` 로 재현해 Traceback 을 본다 |
 | `report` 로그에 `krx_truth.json 을 못 재웠다` | 공식값은 받아 대조했는데 캐시 파일을 못 썼다 — 디스크·권한 | `df -h ~/git/sector-flow/reports`, `ls -ld reports/<기준일>*`. 다음 빌드가 다시 받는다 |
 | 고친 코드가 다음날에도 안 돈다 · `morning-sync` 알림에 `hold sector-flow` · `fresh 경고 (rc=75)`, 본문 `[배포] 운영 체크아웃이 origin/main 보다 커밋 N개 뒤처졌다` | 07:50 `pull-all --ci-gate` 가 CI 가 초록이 아닌 커밋을 받지 않았다. 마지막 07:50 전에 올라온 커밋만 경고한다(오늘 낮의 머지는 내일 내려온다) | GitHub Actions 를 초록으로 고친다. 확인했고 당장 필요하면 `git -C ~/git/sector-flow pull --ff-only` |
 | GitHub Actions 잡이 시작도 안 하고 실패, 로그에 `The job was not started because recent account payments have failed or your spending limit needs to be increased` · 위 `[배포]` 경고가 며칠 이어짐 | GitHub 결제 정지 — CI 가 안 돌아 어떤 커밋도 초록이 안 되고, `pull-all --ci-gate` 가 전부 멈춘다. 코드 탓이 아니다 | Settings → Billing 에서 결제·spending limit 을 푼다. **복구 뒤**: 멈춘 커밋의 CI 는 저절로 안 돈다 — `gh run list -R younghwan91/sector-flow -L 5` 로 찾아 `gh run rerun <id> --failed` 또는 빈 커밋을 올린다. 다음 07:50 이 받는다(당장은 로컬 `verify_merge.py` 를 통과한 것을 확인하고 `git -C ~/git/sector-flow pull --ff-only`) |
@@ -108,10 +108,10 @@
 정의하고 20:30 신선도 점검이 전 거래일을 그 기한에 대 본다. 원장 기록 실패는 리포트를 멈추지 않고, 원장은 웹
 허용 목록에 없어 밖에 보이지 않는다.
 
-## 공표치 대조
+## 네이버 대조
 
 크론 리포트(`KR_QUANT_KRX_TRUTH=1`)는 네이버 시장값(개인·외국인·기관, KRX 원표와 같은지 미확인)과 시장 1일 순매수 금액을 대조해 오차 %만
-`today.krx_truth` 에 적고, 공표 수치는 `krx_truth.json` 에만 둔다([`scripts/krx_truth.py`](../scripts/krx_truth.py)) — 약관을 확인하지 못해
-**내부 대조 전용**이다. 화면에 공표 수치를 싣지 않고 비공개 리포트 밖으로 재배포하지 않는다. 시장별 GET 한 번(타임아웃 10초, 망 오류 재시도 1회),
+`today.krx_truth` 에 적고, 네이버 수치는 `krx_truth.json` 에만 둔다([`scripts/krx_truth.py`](../scripts/krx_truth.py)) — 약관을 확인하지 못해
+**내부 대조 전용**이다. 화면에 네이버 수치를 싣지 않고 비공개 리포트 밖으로 재배포하지 않는다. 시장별 GET 한 번(타임아웃 10초, 망 오류 재시도 1회),
 기준일당 최대 2회다. KRX 표는 익명 조회가 막혀 있다(`KR_QUANT_KRX_TRUTH_SOURCE=krx` 는 풀렸을 때를 위해 남겼다).
 실패(망·공표 전·형식 변화)는 SKIP 이다 — 리포트는 그대로 만들고, 3회 이어지면 다음날 신선도 점검이 경고한다.

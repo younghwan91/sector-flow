@@ -5,6 +5,7 @@ import gzip
 import http.client
 import importlib.util
 import os
+import re
 import shutil
 import signal
 import socket
@@ -138,6 +139,16 @@ def test_index_marks_latest_failed_and_incomplete(get):
 def test_index_warns_when_the_latest_report_is_old(root):
     assert "일 지난 리포트" in srv.index_html(str(root), today=date(2026, 11, 12))
     assert "일 지난 리포트" not in srv.index_html(str(root), today=date(2026, 11, 9))
+
+
+def test_demo_list_page_says_it_is_synthetic_and_sends_no_one_to_the_cron_log(root):
+    """합성 데모를 웹으로 열면 목록이 실 리포트처럼 읽혔고 'cron.log 를 보라' 를 띄웠다."""
+    latest = srv.latest_date(str(root))
+    (root / latest / "DEMO.txt").write_text("[합성 데모] 숫자·이름 전부 난수\nfingerprint: x\n", "utf-8")
+    page = srv.index_html(str(root), today=date(2027, 1, 1))
+    assert "<title>[합성 데모] " in page and "data-demo-banner" in page and "숫자·이름 전부 난수" in page
+    assert "cron.log" not in page and "평일 18:10" not in page
+    assert re.search(r"\.tag\.warn\{[^}]*white-space:normal", page), "긴 경고가 390폭 밖으로 밀린다(409px)"
 
 
 def test_latest_falls_back_to_the_newest_built_folder(root):

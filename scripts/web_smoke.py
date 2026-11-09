@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-"""웹 스모크 — 진짜 Chromium(Playwright)으로 numbers.html·viewer.html 을 폭 1440·390 에서 열어 본다.
+"""웹 스모크 — 진짜 Chromium(Playwright)으로 리포트 쪽들을 폭 1440·390 에서 열어 본다.
 
-검증기 W 층은 node 최소 DOM 으로 **숫자**를 맞춘다 — 브라우저 오류와 레이아웃은 못 본다. 여기서는 셋만 본다.
+numbers.html·viewer.html 은 늘, 검증·품질(trust.html)은 폴더에 있으면, 기준일 목록은 폴더 이름이 기준일이면(부모가 루트) 본다.
+검증기 W 층은 node 최소 DOM 으로 **숫자**를 맞춘다 — 브라우저 오류와 레이아웃은 못 본다. 여기서는 넷만 본다.
 
 * 콘솔 오류·페이지 예외가 없는가.
 * 문서가 가로로 넘치지 않는가 — ``documentElement.scrollWidth > innerWidth``. 본표(``.tw``)는 제 안에서 옆으로 미는
   것이 의도라 문서 폭만 본다(폰 390 에서 페이지 전체가 밀리면 결함이다).
 * numbers.html 의 '오늘' 패널(``#today``)이 보이고 비어 있지 않은가.
+* 합성 데모 폴더면 쪽 안의 상대 링크가 다 열리는가 — 면책 문구의 근거 링크가 404 였다.
 
 외부 글꼴(fonts.googleapis.com) 요청은 빈 응답으로 막는다 — 네트워크 사정이 콘솔 오류로 섞이지 않게.
 
@@ -23,13 +25,23 @@ from __future__ import annotations
 
 import argparse
 import glob
+import importlib.util
 import os
+import re
 import sys
+import tempfile
 from pathlib import Path
+from urllib.parse import unquote, urlsplit
 
 #: 볼 폭 — 데스크톱과 폰(README 의 웹 캡처와 같은 폭).
 WIDTHS = (1440, 390)
 PAGES = ("numbers.html", "viewer.html")
+#: 폴더에 있을 때만 여는 쪽.
+OPTIONAL_PAGES = ("trust.html",)
+#: 기준일 목록의 표시 이름 — 파일이 아니라 ``serve_reports.index_html`` 이 만든다.
+LIST_PAGE = "index.html"
+#: 이 파일이 있으면 합성 데모 폴더다(``sectorflow.demo.MARKER``) — 그 안에서 링크가 닫혀야 한다.
+DEMO_MARKER = "DEMO.txt"
 #: 넘침 여유[px] — 소수 픽셀 반올림.
 OVERFLOW_SLACK = 1
 
@@ -39,7 +51,8 @@ _MEASURE = """() => {
   if (t) { const r = t.getBoundingClientRect(), cs = getComputedStyle(t);
     today = {w: r.width, h: r.height, top: r.top + window.scrollY, display: cs.display, visibility: cs.visibility,
              cards: g ? g.children.length : 0}; }
-  return {scroll_w: document.documentElement.scrollWidth, inner_w: window.innerWidth, today};
+  const links = [...document.querySelectorAll("a[href]")].map(a => a.getAttribute("href"));
+  return {scroll_w: document.documentElement.scrollWidth, inner_w: window.innerWidth, today, links};
 }"""
 
 
@@ -50,6 +63,7 @@ def judge(page: str, width: int, facts: dict) -> list[str]:
     out += [f"{tag} 페이지 예외: {m}" for m in facts.get("errors") or []]
     if facts.get("scroll_w", 0) > facts.get("inner_w", 0) + OVERFLOW_SLACK:
         out.append(f"{tag} 가로 넘침: 문서 폭 {facts['scroll_w']}px > 창 {facts['inner_w']}px")
+    out += [f"{tag} 깨진 링크: {x}" for x in facts.get("dead_links") or []]
     if page == "numbers.html":
         t = facts.get("today")
         if not t:
@@ -87,17 +101,51 @@ def launch(p):
             raise NoBrowser(f"Chromium({exe})을 못 띄웠다 ({type(e2).__name__})") from e2
 
 
+def dead_links(page: Path, links: "list[str] | None") -> list[str]:
+    """쪽 안의 상대 링크 중 디스크에 없는 것 — 외부·절대(서버 경로)·같은 쪽 안 링크는 안 본다."""
+    out = []
+    for href in links or []:
+        u = urlsplit(href)
+        if u.scheme or u.netloc or not u.path or u.path.startswith("/"):
+            continue
+        if not (page.parent / unquote(u.path)).exists():
+            out.append(href)
+    return out
+
+
+def _list_page(folder: str, out_dir: str) -> "Path | None":
+    """폴더 이름이 기준일이면 그 부모를 루트로 기준일 목록을 만들어 준다 — 서버 없이 같은 HTML 을 본다."""
+    path = Path(folder).resolve()
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", path.name):
+        return None
+    spec = importlib.util.spec_from_file_location("_smoke_serve_reports", Path(__file__).with_name("serve_reports.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    page = Path(out_dir) / LIST_PAGE
+    page.write_text(mod.index_html(str(path.parent)), "utf-8")
+    return page
+
+
 def smoke(folder: str, widths=WIDTHS, shots: "str | None" = None) -> list[str]:
-    """``folder`` 의 두 페이지를 폭마다 열어 :func:`judge` 의 문제를 모은다. Playwright 가 없으면 ImportError."""
+    """``folder`` 의 쪽들을 폭마다 열어 :func:`judge` 의 문제를 모은다. Playwright 가 없으면 ImportError."""
     from playwright.sync_api import sync_playwright
 
+    with tempfile.TemporaryDirectory() as tmp:
+        return _smoke(sync_playwright, folder, widths, shots, _list_page(folder, tmp))
+
+
+def _smoke(sync_playwright, folder: str, widths, shots: "str | None", list_page: "Path | None") -> list[str]:
     problems: list[str] = []
+    is_demo = (Path(folder) / DEMO_MARKER).exists()
+    targets = [(n, Path(folder) / n, True) for n in PAGES]
+    targets += [(n, Path(folder) / n, False) for n in OPTIONAL_PAGES if (Path(folder) / n).is_file()]
+    if list_page:
+        targets.append((LIST_PAGE, list_page, False))
     with sync_playwright() as p:
         browser = launch(p)
         try:
-            for page_name in PAGES:
-                path = Path(folder) / page_name
-                if not path.is_file():
+            for page_name, path, required in targets:
+                if required and not path.is_file():
                     problems.append(f"{page_name} 이 없다({path})")
                     continue
                 for w in widths:
@@ -110,6 +158,8 @@ def smoke(folder: str, widths=WIDTHS, shots: "str | None" = None) -> list[str]:
                     pg.goto(path.resolve().as_uri(), wait_until="load")
                     pg.wait_for_timeout(200)
                     facts = dict(pg.evaluate(_MEASURE), console=console, errors=errors)
+                    if is_demo:
+                        facts["dead_links"] = dead_links(path, facts.get("links"))
                     problems += judge(page_name, w, facts)
                     if shots:
                         os.makedirs(shots, exist_ok=True)
@@ -135,7 +185,7 @@ def main(argv: "list[str] | None" = None) -> int:
         return 2
     for ln in problems:
         print(f"⚠️ {ln}")
-    print(f"웹 스모크: {len(PAGES)}쪽 × 폭 {'·'.join(map(str, WIDTHS))} — 문제 {len(problems)}건")
+    print(f"웹 스모크: 폭 {'·'.join(map(str, WIDTHS))} — 문제 {len(problems)}건")
     return 1 if problems else 0
 
 

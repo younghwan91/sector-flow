@@ -1694,7 +1694,7 @@ def krx_index_block(con, dates: list[str], markets: list[str]) -> dict:
 def approx_gap(con, df: pd.DataFrame, asof: str, markets: list[str]) -> dict:
     """시장별 **종가·VWAP 환산 차**[%] — 내부 자료끼리의 대조다(D1 검토 M4). 실제 오차가 아니다.
 
-    공표치 기준 오차는 ``krx_truth`` 가 잰다 — 48일 실측에서 이 값은 최대 3.12% 인데 공표치 기준 거래소
+    네이버 시장값 기준 차이는 ``krx_truth`` 가 잰다 — 48일 실측에서 이 값은 최대 3.12% 인데 네이버 시장값 기준 거래소
     오차는 중앙 5.7% 였다(``docs/validation/2026-11-09-market-total-vs-published.md``). 순매수 금액은
     수량 × 그날 종가로 복원한다(``load``). 그날
     종목 i 의 4주체 |순매수 수량| 합을 :math:`n_i` 라 할 때
@@ -1784,7 +1784,7 @@ def _minute_volume(con, asof: str) -> "dict[str, float] | None":
 
 
 def block_suspects(con, df: pd.DataFrame, asof: str, markets: list[str]) -> dict:
-    """시장별 **대량 체결 의심** 종목 — 시장 합계가 공표치와 크게 갈린 날의 원인 후보(측정, 2026-11-09).
+    """시장별 **대량 체결 의심** 종목 — 시장 합계가 네이버 시장값과 크게 갈린 날의 원인 후보(측정, 2026-11-09).
 
     ``off = max(0, volume − Σ분봉 volume) / volume`` 이 :data:`BLOCK_OFF_MIN` 이상이고 최대 주체 금액
     ``max_a |q_a|·P`` 가 시장 ``Σ_a |Σ q_a·P|`` 의 :data:`BLOCK_SHARE_MIN` 이상인 종목(a = 개인·외국인·기관).
@@ -1850,7 +1850,7 @@ KRX_TRUTH_SCRIPT = "krx_truth.py"
 
 def _attach_krx_truth(payload: dict, build_dir: "str | None", root: "str | None",
                       path: "str | None" = None) -> None:
-    """공표 시장값 대조(선택 기능) — 어떤 실패도 리포트를 깨지 않는다.
+    """네이버 시장값 대조(선택 기능) — 어떤 실패도 리포트를 깨지 않는다.
 
     ``attach`` 안의 실패는 그쪽이 skip 블록으로 바꾼다. 여기는 그 앞, **모듈을 읽는 단계**의 보호다. ``scripts/`` 는
     패키지가 아니라 importlib 로 읽는다. 파일이 없으면(설치본) 꺼진 것과 같고, 못 읽으면 skip 블록을 남긴다.
@@ -1858,7 +1858,7 @@ def _attach_krx_truth(payload: dict, build_dir: "str | None", root: "str | None"
     p = path or os.path.join(os.path.dirname(os.path.abspath(__file__)), KRX_TRUTH_SCRIPT)
     if not os.path.isfile(p):
         if os.environ.get("KR_QUANT_KRX_TRUTH") == "1":
-            print(f"⚠️ [공표치 대조] {KRX_TRUTH_SCRIPT} 가 없는 설치본이라 건너뛴다", file=sys.stderr)
+            print(f"⚠️ [네이버 대조] {KRX_TRUTH_SCRIPT} 가 없는 설치본이라 건너뛴다", file=sys.stderr)
         return
     import importlib.util  # noqa: PLC0415
     try:
@@ -1868,7 +1868,7 @@ def _attach_krx_truth(payload: dict, build_dir: "str | None", root: "str | None"
     except Exception as e:  # noqa: BLE001 — 선택 기능의 버그가 본 리포트를 죽이면 안 된다
         if isinstance(payload.get("today"), dict):
             payload["today"]["krx_truth"] = {"status": "skip", "reason": f"모듈 로드 실패: {e!r}"}
-        print(f"⚠️ [공표치 대조] 내부 오류 — 모듈 로드 실패 {e!r}. 리포트는 그대로 만든다", file=sys.stderr)
+        print(f"⚠️ [네이버 대조] 내부 오류 — 모듈 로드 실패 {e!r}. 리포트는 그대로 만든다", file=sys.stderr)
         return
     mod.attach(payload, build_dir, root)
 
@@ -1947,7 +1947,7 @@ def main():
                 with open(os.path.join(here, "final_diff.json"), "w", encoding="utf-8") as f:
                     json.dump(payload["final_diff"], f, ensure_ascii=False)
     payload["revision_stats"] = revision_stats(payload, root)
-    # 공표 시장값 대조(선택, D1-m2) — 같은 기준일 캐시(krx_truth.json)가 있거나
+    # 네이버 시장값 대조(선택, D1-m2) — 같은 기준일 캐시(krx_truth.json)가 있거나
     # KR_QUANT_KRX_TRUTH=1 일 때만. 실패·버그는 skip 블록이 된다 — 리포트를 깨지 않는다.
     _attach_krx_truth(payload,
                       os.path.dirname(os.path.abspath(a.json or a.html)) if (a.json or a.html) else None,

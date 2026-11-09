@@ -46,7 +46,7 @@ import sys
 from datetime import date
 from pathlib import Path
 
-from sectorflow.basis import DATA_BASIS_SHORT, NOT_TESTED_NOTE, ret_label, rhu, status_label
+from sectorflow.basis import DATA_BASIS_SHORT, NOT_TESTED_NOTE, ret_label, rhu, status_label, truth_gap_label
 from sectorflow.wording import BANNED, banned_hits  # noqa: F401 — 금칙어 표의 정본(모든 산출물이 같이 쓴다)
 
 HERE = Path(__file__).resolve().parent
@@ -195,16 +195,25 @@ def collect(P: dict) -> dict:
 
     warn = T.get("approx_gap_warn", 5.0)
     gaps = []
-    # 공표치 기준 오차가 판정의 기준이다. 종가↔VWAP 환산 차는 내부 자료끼리의 값이라 따로 적는다.
+    # 네이버 시장값 기준 차이가 판정의 기준이다. 종가↔VWAP 환산 차는 내부 자료끼리의 값이라 따로 적는다.
     kt = T.get("krx_truth") or {}
     if kt.get("status") == "ok":
         for m, row in (kt.get("markets") or {}).items():
             if row.get("hot"):
-                gaps.append({"market": m, "pct": row["total_pct"], "label": "공표 시장값과 오차 큼"})
+                gaps.append({"market": m, "pct": row["total_pct"], "label": truth_gap_label(kt)})
     for m in [MARKET, *(P.get("markets") or [])]:
         g = ((T.get("market") or {}).get(m) or {}).get("approx_gap")
         if g and g.get("pct") is not None and g["pct"] > warn:
             gaps.append({"market": m, "pct": g["pct"], "label": "종가·VWAP 환산 차 큼"})
+
+    # 드문 표지라 이름을 다 적는다 — 화면 첫 줄과 같은 글자(flow_view.block_items).
+    bs = T.get("block_suspects") or {}
+    blocks = []
+    if bs.get("status") == "ok":
+        for m in P.get("markets") or []:
+            names = (bs.get("markets") or {}).get(m) or []
+            if names:
+                blocks.append({"market": m, "names": [f"{x['name']} 분봉 밖 {rhu(x['off_pct'], 0):.0f}%" for x in names]})
 
     C = P.get("change")
     change = {"prev_date": None, "window": 20, "top_n": 5, "actors": [],
@@ -253,7 +262,7 @@ def collect(P: dict) -> dict:
         "prev_date": DC.get("prev_date"), "flip_min_share": DC.get("flip_min_share"),
         "net": [{"actor": a, "ko": ko, "v": _fact(net.get(a))[0], "pct": _fact(net.get(a))[1]}
                 for a, ko in NET_ACTORS],
-        "dominant": dom, "returns": rets, "approx_gap": gaps,
+        "dominant": dom, "returns": rets, "approx_gap": gaps, "blocks": blocks,
         "sectors": sectors, "pct_hi": PCT_HI, "pct_lo": PCT_LO,
         "streak": streak, "revision": revision,
         "change": change, "final_diff": final, "excluded": list(EXCLUDED_SECTORS),
@@ -333,7 +342,7 @@ def conc_lines(F: dict) -> list[str]:
         n = len(r["top"])
         rest = " · ".join(f"{x['ko']} {amt(x['v'])}" for x in r["rest"])
         out.append(f"{r['sector']} 거래대금 시장의 {rhu(r['market_share_pct']):.0f}% · 상위{n} {'·'.join(r['top'])} "
-                   f"{rhu(r['top_share_pct']):.0f}% · {n}종목 제외 {rest}")
+                   f"{rhu(r['top_share_pct']):.0f}% · {n}종목 제외[억] {rest}")
     return out
 
 
@@ -394,6 +403,8 @@ def body_text(F: dict, extreme_cap: int = EXTREME_CAPS[0], streak: str = "full",
     dl = detail_line(F)
     if dl:
         L.append("- " + dl)
+    for b in F["blocks"]:
+        L.append(f"- 대량 체결 의심 — 정의 차이({b['market']}): {' · '.join(b['names'])}")
     for g in F["approx_gap"]:
         L.append(f"- {g['label']}({g['market']} {rhu(g['pct'], 1):.1f}%)")
     L += [f"- {ln}" for ln in conc_lines(F)]
@@ -535,8 +546,10 @@ def card_html(F: dict, extreme_cap: int = CARD_LADDER[0][0], streak: str = CARD_
     if fd is not None:
         notes.append(f"잠정→확정 비교 없음: {fd['reason']}" if fd["reason"] else
                      f"잠정→확정 변경: {fd['n_changed']:,}칸 / {fd['n_cells']:,}칸(±{fd['tol']}억 초과)")
-    gaps = "".join(f'<span class="chip warn">⚠ {_e(g["label"])} {_e(g["market"])} {rhu(g["pct"], 1):.1f}%</span>'
-                   for g in F["approx_gap"])
+    gaps = "".join(f'<span class="chip warn">⚠ 대량 체결 의심 — 정의 차이({_e(b["market"])}): {_e(" · ".join(b["names"]))}</span>'
+                   for b in F["blocks"])
+    gaps += "".join(f'<span class="chip warn">⚠ {_e(g["label"])} {_e(g["market"])} {rhu(g["pct"], 1):.1f}%</span>'
+                    for g in F["approx_gap"])
     fill = {
         "CARD_W": str(CARD_W), "CARD_H": str(CARD_H),
         "DATE": _e(day_label(F["asof"])), "STATUS": _e(F["status"]),
