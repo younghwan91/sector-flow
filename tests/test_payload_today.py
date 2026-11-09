@@ -502,7 +502,9 @@ def test_market_context_puts_index_and_gap_inside_today(P, monkeypatch):
     Q = json.loads(json.dumps(P))
     monkeypatch.setattr(sf, "krx_index_block", lambda con, dates, mk: {"거래소": {"ret": {"1": 1.0}}})
     monkeypatch.setattr(sf, "approx_gap", lambda con, df, asof, mk: {"코스닥": {"pct": 6.0}})
+    monkeypatch.setattr(sf, "block_suspects", lambda con, df, asof, mk: {"status": "skip", "reason": "x"})
     sf.market_context(None, None, Q)
+    assert Q["today"]["block_suspects"] == {"status": "skip", "reason": "x"}
     assert Q["today"]["krx_index"] == {"거래소": {"ret": {"1": 1.0}}}
     assert Q["today"]["market"]["코스닥"]["approx_gap"] == {"pct": 6.0}
     assert Q["today"]["market"]["거래소"]["approx_gap"] is None

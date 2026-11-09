@@ -2612,8 +2612,31 @@ def test_gap_chip_appears_only_above_the_threshold(data):
     d = json.loads(json.dumps(data))
     d["today"]["market"]["코스닥"]["approx_gap"]["pct"] = 6.1
     d["today"]["market"]["거래소"]["approx_gap"]["pct"] = 5.0
-    assert _gap_chips(d, ["전체", "거래소", "코스닥"]) == ["금액 근사 오차 큼(코스닥 6.1%)"]
-    assert "금액 근사 오차 큼(코스닥 6.1%)" in "\n".join(banner_lines(State(d), 160))
+    assert _gap_chips(d, ["전체", "거래소", "코스닥"]) == ["종가·VWAP 환산 차 큼(코스닥 6.1%)"]
+    assert "종가·VWAP 환산 차 큼(코스닥 6.1%)" in "\n".join(banner_lines(State(d), 160))
+
+
+def test_gap_chips_follow_the_published_error_and_block_suspects(data):
+    """칩의 판정은 공표치 기준(krx_truth.hot) — 내부 VWAP 차가 작아도 뜬다. 대조 건너뜀·대량 체결 의심도 첫 화면에 드러난다.
+
+    웹 칩과 같은 글자다(tests/test_report_pages.py).
+    """
+    from sectorflow.tui.flow_view import _gap_chips, block_names
+    d = json.loads(json.dumps(data))
+    T = d["today"]
+    T["krx_truth"] = {"status": "ok", "markets": {"거래소": {"total_pct": 7.14, "hot": True}, "코스닥": {"total_pct": 4.0, "hot": False}}}
+    T["block_suspects"] = {"status": "ok", "markets": {"거래소": [
+        {"name": "SK", "off_pct": 91.8}, {"name": "B", "off_pct": 60.0}, {"name": "C", "off_pct": 55.4}, {"name": "D", "off_pct": 55.0}],
+        "코스닥": []}}
+    chips = _gap_chips(d, ["전체", "거래소", "코스닥"])
+    assert "공표 시장값과 오차 큼(거래소 7.1%)" in chips
+    assert not any("오차 큼(코스닥" in c for c in chips)
+    assert "대량 체결 의심 — 근사 오차 큼(거래소: SK 분봉 밖 92%·B 분봉 밖 60%·C 분봉 밖 55% 외 1종목)" in chips
+    assert block_names([{"name": "SK", "off_pct": 91.8}]) == "SK 분봉 밖 92%"
+    T["krx_truth"] = {"status": "skip", "reason": "망"}
+    assert "공표치 대조 건너뜀" in _gap_chips(d, ["거래소"])
+    T["block_suspects"] = {"status": "skip", "reason": "분봉 표(minute_bars)가 없다"}
+    assert not any("대량 체결" in c for c in _gap_chips(d, ["거래소"]))
 
 
 def test_final_diff_line_and_help_list(data):

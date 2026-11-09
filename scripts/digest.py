@@ -178,10 +178,16 @@ def collect(P: dict) -> dict:
 
     warn = T.get("approx_gap_warn", 5.0)
     gaps = []
+    # 공표치 기준 오차가 판정의 기준이다. 종가↔VWAP 환산 차는 내부 자료끼리의 값이라 따로 적는다.
+    kt = T.get("krx_truth") or {}
+    if kt.get("status") == "ok":
+        for m, row in (kt.get("markets") or {}).items():
+            if row.get("hot"):
+                gaps.append({"market": m, "pct": row["total_pct"], "label": "공표 시장값과 오차 큼"})
     for m in [MARKET, *(P.get("markets") or [])]:
         g = ((T.get("market") or {}).get(m) or {}).get("approx_gap")
         if g and g.get("pct") is not None and g["pct"] > warn:
-            gaps.append({"market": m, "pct": g["pct"]})
+            gaps.append({"market": m, "pct": g["pct"], "label": "종가·VWAP 환산 차 큼"})
 
     C = P.get("change")
     change = {"prev_date": None, "window": 20, "top_n": 5, "actors": [],
@@ -328,7 +334,7 @@ def body_text(F: dict, extreme_cap: int = EXTREME_CAPS[0], streak: str = "full")
     L += ["", f"시장 순매수[억] · {F['market']}(거래소+코스닥) · 괄호는 1년 일별 %ile",
           "- " + " · ".join(f"{n['ko']} {amt(n['v'])}{pct_tag(n['pct'])}" for n in F["net"])]
     for g in F["approx_gap"]:
-        L.append(f"- 금액 근사 오차 큼({g['market']} {g['pct']:.1f}%)")
+        L.append(f"- {g['label']}({g['market']} {g['pct']:.1f}%)")
     L += ["", "1일 수익률 — KRX 지수(정규장 15:30) | 자체 바구니(~20시 통합 종가)"]
     for r in F["returns"]:
         L.append(f"- {r['market']}: {r['index_name'] or '지수 없음'} {ret_str(r['index']['1'])}"
@@ -468,7 +474,7 @@ def card_html(F: dict, extreme_cap: int = CARD_LADDER[0][0], streak: str = CARD_
     if fd is not None:
         notes.append(f"잠정→확정 비교 없음: {fd['reason']}" if fd["reason"] else
                      f"잠정→확정 변경: {fd['n_changed']:,}칸 / {fd['n_cells']:,}칸(±{fd['tol']}억 초과)")
-    gaps = "".join(f'<span class="chip warn">⚠ 금액 근사 오차 큼 {_e(g["market"])} {g["pct"]:.1f}%</span>'
+    gaps = "".join(f'<span class="chip warn">⚠ {_e(g["label"])} {_e(g["market"])} {g["pct"]:.1f}%</span>'
                    for g in F["approx_gap"])
     fill = {
         "CARD_W": str(CARD_W), "CARD_H": str(CARD_H),

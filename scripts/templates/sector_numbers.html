@@ -166,9 +166,10 @@ details.explore .xnote{margin:0; padding:10px 15px; font-size:11.5px; color:var(
     <p><b>수익률의 시각.</b> 2026-09-14 부터 일별 종가가 KRX 애프터마켓(16:00~20:00)까지 포함한 통합값이다. <b>확정</b> 리포트의 하루 수익률은 전일 20:00 → 당일 20:00 이고, <b>잠정</b> 리포트(18:10)의 마지막 날은 전일 20:00 → 당일 <b>수집 시각</b>(애프터마켓 진행 중) 스냅숏이라 확정 때 바뀐다. 정규장(15:30) 종가가 아니므로 KRX 지수(정규장)와 같은 날 크게 갈릴 수 있다 — 맨 위 "오늘" 패널은 둘을 나란히 적는다.</p>
     <p><b>마감·잠정 / 마감·확정.</b> 잠정 = 17시 수집 창 뒤 그날 잠정값으로 만든 리포트. 확정 = 다음날 아침 확정치(daily_finalize)를 확인하고 다시 만든 리포트. 잠정 리포트의 "오늘" 패널은 최근 확정일들의 잠정→확정 수정 폭(1일 섹터 칸 |확정−잠정|÷|확정| 중앙값, 부호 뒤집힘 수 — (시장, 주체) 안에서 Σ|확정값| 의 2% 이상인 칸만)을 적고, %ile 극단 목록에 (잠정) 표지를 단다.</p>
     <p><b>오늘 %ile</b> = 그날 순매수가 오늘 포함 최근 1년(260거래일) <b>일별</b> 값 중 몇 등[0~100], 동률은 중간순위 — 0(또는 미보고)인 날이 75% 를 넘는 줄은 —. 표시는 반올림(0.5 는 위로 — 터미널 화면과 같은 규칙). <b>최대 순매매 주체</b> = 그날 시장 |순매수| 가 가장 큰 주체 — 기관·투신+연기금이 아니면 그 주체의 상위·하위 3 과 극단을 덧붙인다. 섹터 옆 [ ] 는 그 주체의 그날 상위 종목이다.</p>
-    <p><b>왜 네이버·KRX 의 주체별 순매수 금액과 다른가.</b> DB 는 주체별 순매수 <b>수량</b>만 준다 — 이 페이지의 금액은 수량 × 그날 종가 근사이고, 참값(체결가 합)에 가까운 것은 VWAP 환산이다. <b>금액 근사 오차</b> = 그날 Σ|4주체 순매수 수량|×종가 와 ×VWAP(거래대금÷거래량)의 차이 ÷ VWAP 쪽 — 시장 합계는 종목 간 오차가 상쇄되지만 섹터 칸은 덜 상쇄된다. 시장이나 섹터 칸(그 시장의 2% 이상 섹터 중 최대)이 5% 를 넘으면 칩을 띄운다.</p>
+    <p><b>왜 네이버의 시장 순매수와 다른가.</b> 48거래일 실측(<span class="num">docs/validation</span>)에서 시장 합계와 네이버 시장값의 차이(일별 Σ|오차|÷Σ|공표|)는 거래소 중앙 5.7%·5% 초과 28일, 코스닥 중앙 5.5%·28일이었다. 거래소의 주원인은 <b>유니버스</b>다 — 수급 자료(<span class="num">supply_demand</span>)에 우선주·리츠 등 139코드가 없어 이 페이지의 시장 합계에서 빠진다(삼성전자우 하나를 더하면 중앙 2.1%). 큰 날의 원인은 <b>분봉 밖 대량 체결</b>이다 — 2026-09-14 무렵부터 이런 체결은 네이버 <b>시장값</b>에 없는 것으로 읽힌다(뒤 22건 중 22건, 앞 6건 중 0건, 까닭은 미확인). 같은 체결이 네이버 <b>종목값</b>에는 있으니 이 페이지 값이 틀린 것이 아니라 네이버 안에서 시장값과 종목값이 갈린 것이다. <b>환산</b>은 그다음이다 — 종가를 VWAP 로 바꾸면 차이가 거래소 7%, 코스닥 47% 준다. 코스닥의 나머지는 설명하지 못했다. KRX 원표와는 대조하지 못했다(익명 조회 막힘).</p>
+    <p><b>공표 시장값과 오차 큼</b> = 개인·외국인·기관의 Σ|오차| ÷ Σ|공표| 가 5% 초과인 시장(네이버 시장값 기준, 내부 대조 전용 — 약관 미확인이라 공표 수치는 싣지 않는다). <b>대량 체결 의심</b> = 그날 거래량의 50% 이상이 분봉 밖이고 최대 주체 금액이 시장 Σ|주체| 의 1% 이상인 종목 — 시간외 대량매매라는 것은 추정이다. 큰 건은 잠정 리포트에 없고 확정에서 들어왔다. <b>종가·VWAP 환산 차</b> = Σ|4주체 수량|×종가 와 ×VWAP(거래대금÷거래량)의 차이 — 내부 자료끼리의 값이라 실제 오차가 아니다(48일 최대 3.12%).</p>
     <p><b>(미분류)</b> = 벤더 마스터(<span class="num">stocks.sector</span>)에 섹터가 빈 종목. 은행 넷(기업은행·카카오뱅크·케이뱅크·제주은행)은 KRX 업종(금융)으로 덮었다(<span class="num">sectorflow/sector_override.py</span>). 남은 수는 "오늘" 패널에 적는다.</p>
-    <p><b>순매수 금액은 종가 환산 근사다</b> — DB 는 수량만 준다. 참값은 VWAP 가중이다.</p>
+    <p><b>순매수 금액은 종가 환산 근사다</b> — DB 는 수량만 준다. 참값은 주체별 체결가 합이고 VWAP 환산도 근사다.</p>
     <p><b>0 은 "관망"이 아니라 "0 또는 미보고"</b>다. <b>종목</b> 열은 그 (시장,섹터)에서 <b>이 구간에 거래된</b> 종목 수 — 벤더 마스터(<span class="num">stocks</span>)에는 수급 보고가 두 달 전에 끊긴 이름이 남아 있어, 그걸 세면 표의 수가 실제보다 많아진다.</p>
     <p><b>종목이 10개 미만인 섹터는 회색으로 죽였고 G 순위 산정에서도 뺐으며, 어떤 열로 정렬해도 맨 아래에 둔다</b>(분모가 작아 가속이 쉽게 튄다). 벤더 분류(<span class="num">stocks.sector</span>)가 좁아 부동산 3 · 출판/매체복제 2 · 제조 8 처럼 사실상 단일종목인 라벨이 있다 — 부동산은 자이에스앤디가 시총의 80%다. 부동산업 회사들은 실제로 <b>금융</b>(한국토지신탁·한국자산신탁·리츠)과 <b>건설</b>(HDC현대산업개발·동원개발 등)에 흩어져 있다. 그런 행의 x·ẍ·G 는 섹터가 아니라 개별 종목 이야기다.</p>
     <p><b>투신+연기금 5일 · 창</b> = 그 섹터 종목들의 투신+연기금 순매수 합 — 최근 5일과 이 창. 기관 안에서 방향성이 있는 둘이다. 금액이라 앞날 검정을 하지 않았다 — [측정] · ÷시총 기준으로만 검정(S1).</p>
@@ -190,7 +191,7 @@ let win = WINS.includes(20) ? 20 : WINS[0], mkt = "전체";
 let sortKey = "accel", sortDir = -1;
 const EXP_KEYS = new Set(["G","exp","x","P","xdot","xddot"]);
 /** 증거 수준 — TUI(`flow_view.EVIDENCE`)와 **같은 표**다. 검사가 둘을 대조한다. */
-const EV={"accel":"[앞날 증거 없음]","trust":"[측정]","inst":"[앞날 증거 없음]","forgn":"[앞날 증거 없음]","indiv":"[측정]","etc":"[측정]","x":"[≈섹터 20일 반전: x]","G":"[판정 불가: G]","exp":"[측정]","U":"[측정]","P":"[측정]","xdot":"[측정]","xddot":"[측정]","ret":"[측정]","tv":"[측정]","cap":"[측정]","n_all":"[측정]","pct":"[측정]","gap":"[측정]","krx":"[측정]","streak":"[측정]"};
+const EV={"accel":"[앞날 증거 없음]","trust":"[측정]","inst":"[앞날 증거 없음]","forgn":"[앞날 증거 없음]","indiv":"[측정]","etc":"[측정]","x":"[≈섹터 20일 반전: x]","G":"[판정 불가: G]","exp":"[측정]","U":"[측정]","P":"[측정]","xdot":"[측정]","xddot":"[측정]","ret":"[측정]","tv":"[측정]","cap":"[측정]","n_all":"[측정]","pct":"[측정]","gap":"[측정]","krx":"[측정]","block":"[측정]","streak":"[측정]"};
 /** 표지가 말하는 **검정 범위** — (주체, 값의 종류)별로 검정한 창 길이(거래일). `share` = 순매수 ÷ 섹터 시총(가속),
  *  `amt` = 순매수 금액(임펄스). 검정은 전부 `전체` 시장·10종목 미만 섹터 제외: 기관 가속 20일·기관 임펄스 20일(Q3d),
  *  외국인 20일·기관 60일(÷ 섹터 시총만, S2·S3). TUI `flow_view.EV_TESTED`·뷰어 `EV_TESTED` 와 **같은 표**다(검사가 대조).
@@ -199,6 +200,8 @@ const EV_TESTED={"inst":{"share":[20,60],"amt":[20]},"forgn":{"share":[20]}};
 const EV_TESTED_SCORE={"x":[20],"G":[20]};
 const EV_MARKET="전체", MARKET_NOTE="[측정] · 전체 시장만 검정", EV_TRUST_NOTE="[측정] · ÷시총 기준으로만 검정(S1)";
 const ONE_DAY_BLANK=new Set(["accel","x","xddot","xdot","P","G","exp","U"]);
+/** 대량 체결 의심 목록 한 줄 — TUI `flow_view.block_names` 와 같은 글자. */
+function blockNames(L){ return L.slice(0,3).map(x=>x.name+" 분봉 밖 "+RHU(x.off_pct,0).toFixed(0)+"%").join("·")+(L.length>3?" 외 "+(L.length-3)+"종목":""); }
 function scopeNote(days){ return "[측정] · 앞날 검정은 "+days.join("·")+"일만"; }
 /** 이 표의 열 → 증거 키·주체. 이 표의 금액 열은 그 주체의 것이고 가속은 기관이다. */
 const COL_EV={"inst":["inst","inst"],"accel":["accel","inst"],"forgn":["forgn","forgn"],"trust5":["trust"],"trustw":["trust"]};
@@ -343,24 +346,35 @@ function renderToday(){
     p.append(a,document.createTextNode(" "),b); c1.append(p); });   // 두 덩어리 사이에 줄바꿈 자리 — 폰(390px)에서 KRX 쪽이 다음 줄로
   c1.append(el("div","tnote","두 값은 세션이 달라(정규장 15:30 vs "+(CLOSED?"애프터마켓 포함 20:00":"수집 시각")+") 같은 날 크게 갈릴 수 있다 — 아래 설명. 증거 "+EV.krx));
   g.append(c1);
-  // 2. 시장 순매수 4주체 + 1년%ile, 금액 근사 오차 칩, (미분류), 잠정 수정 폭
+  // 2. 시장 순매수 4주체 + 1년%ile, 공표치 오차·대량 체결·환산 차 칩, (미분류), 잠정 수정 폭
   const M=((T.market||{})[mkt]||{}).net||{};
   const c2=card("오늘 "+mkt+" 순매수 [억(1년%ile)]");
   c2.id="t-net";
   c2.append(tline("", ACT4.map(([k,ko])=>[ko,(M[k]||{}).v,(M[k]||{}).pct])));
+  // 공표치 대조 — 칩의 판정 기준. 공표 수치는 페이로드에 없고 오차만 있다. 없으면 침묵(기능이 꺼진 리포트).
+  const KT=T.krx_truth;
+  if(KT&&KT.status==="ok"){ const kg=r=>(!r||r.gap_pct==null?"—":RHU(r.gap_pct,1).toFixed(1)+"%")+(r&&r.flip?" 부호 반대":"");
+    (mkt==="전체"?mk:[mkt]).forEach(m=>{ const g=(KT.markets||{})[m]; if(!g) return;
+      if(g.hot){ const w=el("span","chip warn","⚠ 공표 시장값과 오차 큼("+m+" "+RHU(g.total_pct,1).toFixed(1)+"%)");
+        w.title="개인·외국인·기관 Σ|오차|÷Σ|공표| — 아래 설명"; c2.append(w); }
+      c2.append(el("div","tnote","공표 시장값 대비 오차("+m+"): 합계 "+(g.total_pct==null?"—":RHU(g.total_pct,1).toFixed(1)+"%")
+        +[["inst","기관"],["forgn","외국인"],["indiv","개인"],["etc","기타법인"]].filter(([k])=>g[k]).map(([k,ko])=>" · "+ko+" "+kg(g[k])).join("")
+        +" ("+(KT.label||"내부 대조용")+")")); }); }
+  else if(KT){ const w=el("span","chip warn","⚠ 공표치 대조 건너뜀"); c2.append(w);
+    c2.append(el("div","tnote","공표치 대조: 건너뜀 — "+(KT.reason||"이유 없음"))); }
+  // 대량 체결 의심 — 분모 게이트를 통과한 종목만 producer 가 싣는다(sector_flow.block_suspects).
+  const BS=T.block_suspects;
+  if(BS&&BS.status==="ok") (mkt==="전체"?mk:[mkt]).forEach(m=>{ const L=(BS.markets||{})[m]||[]; if(!L.length) return;
+    const w=el("span","chip warn","⚠ 대량 체결 의심 — 근사 오차 큼("+m+": "+blockNames(L)+") "+EV.block);
+    w.title="거래량의 50% 이상이 분봉 밖 + 최대 주체 금액이 시장 Σ|주체| 의 1% 이상 — 시간외 대량매매라는 것은 추정이다"; c2.append(w); });
+  if(BS&&BS.status==="ok"&&BS.unjudged) c2.append(el("div","tnote","대량 체결 판정 못 한 종목 "+BS.unjudged+"개(분봉 없음)"));
+  else if(BS&&BS.status==="skip") c2.append(el("div","tnote","대량 체결 판정: 건너뜀 — "+(BS.reason||"이유 없음")));
   const warn=T.approx_gap_warn??5;
   (mkt==="전체"?["전체",...mk]:mk).forEach(m=>{ const gp=((T.market||{})[m]||{}).approx_gap; if(!gp||gp.pct==null) return;
-    if(gp.pct>warn){ const w=el("span","chip warn","⚠ 금액 근사 오차 큼("+m+" "+RHU(gp.pct,1).toFixed(1)+"%)");
-      w.title="종가 환산 vs VWAP 환산 차이 — 아래 설명"; c2.append(w); }
+    if(gp.pct>warn){ const w=el("span","chip warn","⚠ 종가·VWAP 환산 차 큼("+m+" "+RHU(gp.pct,1).toFixed(1)+"%)");
+      w.title="종가 환산 vs VWAP 환산 차이(내부 자료끼리) — 실제 오차가 아니다, 아래 설명"; c2.append(w); }
     const sm=gp.sector_max;
-    if(sm&&sm.pct!=null&&sm.pct>warn&&m!=="전체"){ c2.append(el("span","chip warn","⚠ 금액 근사 오차: "+m+" 섹터 최대 "+sm.sector+" "+RHU(sm.pct,1).toFixed(1)+"%")); } });
-  // KRX 공식 거래대금 대조(선택, D1-m2) — 수량×종가 근사를 공식 공표치에 댄 상대 오차. 없으면 침묵(기능이 꺼진 리포트).
-  const KT=T.krx_truth;
-  if(KT&&KT.status==="ok"){ const kg=v=>v==null?"—":RHU(v,1).toFixed(1)+"%";
-    (mkt==="전체"?mk:[mkt]).forEach(m=>{ const g=(KT.markets||{})[m]; if(!g) return;
-      c2.append(el("div","tnote","공식 거래대금 대비 근사 오차("+m+"): 기관 "+kg((g.inst||{}).gap_pct)+" · 외국인 "+kg((g.forgn||{}).gap_pct)
-        +" · 개인 "+kg((g.indiv||{}).gap_pct)+" · 기타법인 "+kg((g.etc||{}).gap_pct)+" (KRX 공표치, 내부 검증용)")); }); }
-  else if(KT){ c2.append(el("div","tnote","KRX 공식 거래대금 대조: 건너뜀 — "+(KT.reason||"이유 없음"))); }
+    if(sm&&sm.pct!=null&&sm.pct>warn&&m!=="전체"){ c2.append(el("span","chip warn","⚠ 종가·VWAP 환산 차: "+m+" 섹터 최대 "+sm.sector+" "+RHU(sm.pct,1).toFixed(1)+"%")); } });
   const unc=mk.reduce((a,m)=>a+(+(((D.n_by_sector||{})[m]||{})["(미분류)"])||0),0);
   if(unc) c2.append(el("div","tnote","※ (미분류) "+unc+"종목 — 벤더 마스터에 섹터가 빈 종목이다(섹터가 아니다). 은행 넷은 금융으로 덮었다."));
   const RS=D.revision_stats;

@@ -2754,11 +2754,11 @@ replace = "      [].forEach(r=>ul.append("
 
 [[mutation]]
 id = "web-gap-chip-always"
-why = "웹 금액 근사 오차 칩이 문턱과 무관하게 뜬다"
+why = "웹 종가·VWAP 환산 차 칩이 문턱과 무관하게 뜬다"
 guards = ["tests/test_report_pages.py::test_numbers_gap_chip_only_above_threshold"]
 file = "scripts/templates/sector_numbers.html"
-find = "    if(gp.pct>warn){ const w=el(\"span\",\"chip warn\",\"⚠ 금액 근사 오차 큼(\"+m+\" \"+RHU(gp.pct,1).toFixed(1)+\"%)\");"
-replace = "    if(true){ const w=el(\"span\",\"chip warn\",\"⚠ 금액 근사 오차 큼(\"+m+\" \"+RHU(gp.pct,1).toFixed(1)+\"%)\");"
+find = "    if(gp.pct>warn){ const w=el(\"span\",\"chip warn\",\"⚠ 종가·VWAP 환산 차 큼(\"+m+\" \"+RHU(gp.pct,1).toFixed(1)+\"%)\");"
+replace = "    if(true){ const w=el(\"span\",\"chip warn\",\"⚠ 종가·VWAP 환산 차 큼(\"+m+\" \"+RHU(gp.pct,1).toFixed(1)+\"%)\");"
 
 [[mutation]]
 id = "viewer-stock-list-drops-trust-pension"
@@ -4980,8 +4980,8 @@ id = "external-skip-streak-never-warns"
 why = "외부 참값 대조가 며칠째 SKIP 해도 아무 말이 없다 — 예전 그대로 조용히 건너뛴다"
 guards = ["tests/test_web_render.py::test_third_consecutive_external_truth_skip_warns_but_does_not_fail"]
 file = "scripts/verify_report.py"
-find = "    if streak >= VF_SKIP_WARN:"
-replace = "    if False:"
+find = "    if streak >= VF_SKIP_WARN:\n        warn(\"F\", msg,"
+replace = "    if False:\n        warn(\"F\", msg,"
 
 [[mutation]]
 id = "external-skip-streak-is-a-failure"
@@ -5004,7 +5004,7 @@ id = "external-skip-streak-ignores-a-run-day"
 why = "대조를 한 날에서 멈추지 않아 띄엄띄엄한 SKIP 을 연속으로 센다"
 guards = ["tests/test_web_render.py::test_external_truth_skip_streak_counts_back_through_sibling_reports"]
 file = "scripts/verify_report.py"
-find = "        elif \"외부 참값:\" in text:\n            break"
+find = "        elif done_mark in text:\n            break"
 replace = "        elif False:\n            break"
 
 [[mutation]]
@@ -5020,8 +5020,8 @@ id = "freshness-misses-skip-streak-warn"
 why = "전 거래일 VERIFY 의 연속 SKIP 경고를 신선도 점검이 못 본다 — 경고가 VERIFY.txt 안에만 남는다"
 guards = ["tests/test_freshness_check.py::test_previous_day_external_truth_skip_streak_warns_and_a_single_skip_is_a_note"]
 file = "scripts/freshness_check.py"
-find = "    if hit:\n        return WARN,"
-replace = "    if False:\n        return WARN,"
+find = "    if hit:\n        return WARN, [f\"⚠️ [외부 참값]"
+replace = "    if False:\n        return WARN, [f\"⚠️ [외부 참값]"
 
 [[mutation]]
 id = "freshness-warns-on-a-single-skip"
@@ -5620,8 +5620,8 @@ id = "krx-truth-official-stays-in-won"
 why = "공표치(원)를 억으로 안 나누면 오차가 전부 ~100% 로 적힌다 — 근사가 멀쩡해도 늘 경고다"
 guards = ["tests/test_krx_truth.py::test_fetch_official_converts_won_to_eok_and_keeps_raw_rows"]
 file = "scripts/krx_truth.py"
-find = "        out[\"markets\"][m] = {a: round(_actor_won(rows, a) / EOK, 2) for a in ACTOR_ROWS}"
-replace = "        out[\"markets\"][m] = {a: round(_actor_won(rows, a), 2) for a in ACTOR_ROWS}"
+find = "        out[\"markets\"][m] = {a: round(_actor_won(rows, a) / EOK, 2) for a in actors}"
+replace = "        out[\"markets\"][m] = {a: round(_actor_won(rows, a), 2) for a in actors}"
 
 [[mutation]]
 id = "krx-truth-foreign-drops-other-foreigners"
@@ -5636,24 +5636,24 @@ id = "krx-truth-gap-relative-to-approx"
 why = "오차의 분모를 근사값으로 잡으면 근사가 부풀수록 오차가 작아 보인다 — 분모는 공식 공표치다"
 guards = ["tests/test_krx_truth.py::test_compare_gap_is_relative_to_the_official_value"]
 file = "scripts/krx_truth.py"
-find = "                      \"gap_pct\": round(abs(v - o) / abs(o) * 100.0, 2) if gated else None}"
-replace = "                      \"gap_pct\": round(abs(v - o) / abs(v) * 100.0, 2) if gated else None}"
+find = "            row[a] = {\"gap_pct\": round(abs(v - o) / abs(o) * 100.0, 2) if big else None,"
+replace = "            row[a] = {\"gap_pct\": round(abs(v - o) / abs(v) * 100.0, 2) if big else None,"
 
 [[mutation]]
 id = "krx-truth-no-denominator-gate"
 why = "0 근처 순매수(코스닥 기타법인 수십억)에 % 를 내면 수십 % 오차가 뜬다 — 분모 게이트(CLAUDE.md 비율 열 규칙)"
 guards = ["tests/test_krx_truth.py::test_compare_gates_small_official_amounts_to_none"]
 file = "scripts/krx_truth.py"
-find = "            gated = tv is not None and abs(o) >= GAP_MIN_TV_SHARE * tv and o != 0"
-replace = "            gated = o != 0"
+find = "            big = gate is not None and abs(o) >= gate and o != 0"
+replace = "            big = o != 0"
 
 [[mutation]]
 id = "krx-truth-always-on"
 why = "옵트인 검사를 빼면 모든 리포트에 skip 블록이 붙는다 — 선택 기능이 기본 화면·검증 출력을 바꾼다"
 guards = ["tests/test_krx_truth.py::test_attach_is_silent_when_not_opted_in"]
 file = "scripts/krx_truth.py"
-find = "    if not want_fetch and not (cache and os.path.isfile(cache)):\n        return None                              # 선택 기능 — 안 켰으면 흔적도 없다"
-replace = "    if False:\n        return None                              # 선택 기능 — 안 켰으면 흔적도 없다"
+find = "    if not want_fetch and not (cache and os.path.isfile(cache)):\n        return None                              # 켜지 않았으면 흔적도 없다"
+replace = "    if False:\n        return None                              # 켜지 않았으면 흔적도 없다"
 
 [[mutation]]
 id = "krx-truth-cache-ignored"
@@ -5708,8 +5708,8 @@ id = "krx-truth-skip-counted-as-failure"
 why = "망·로그인 장벽 skip 을 실패로 세면 KRX 가 막힌 날마다 VERIFY_FAILED 가 쌓인다"
 guards = ["tests/test_krx_truth.py::test_verifier_skip_block_is_a_note_not_a_failure"]
 file = "scripts/verify_report.py"
-find = "    if isinstance(kt, dict) and kt.get(\"status\") != \"ok\":\n        print(f\"       SKIP KRX 공식 거래대금 대조 — {kt.get('reason') or '이유 없음'}\")\n        return"
-replace = "    if isinstance(kt, dict) and kt.get(\"status\") != \"ok\":\n        print(f\"       SKIP KRX 공식 거래대금 대조 — {kt.get('reason') or '이유 없음'}\")"
+find = "        _vt_krx_skip(P, folder, kt.get(\"reason\") or \"이유 없음\")\n        return"
+replace = "        _vt_krx_skip(P, folder, kt.get(\"reason\") or \"이유 없음\")"
 
 [[mutation]]
 id = "krx-truth-verifier-nags-when-feature-off"
@@ -5732,8 +5732,8 @@ id = "krx-truth-help-hides-the-gate"
 why = "도움말이 게이트 칸(—)에 0% 를 적으면 '오차 없음' 으로 읽힌다 — 결측과 0 이 섞인다"
 guards = ["tests/test_krx_truth.py::test_help_tail_lists_the_measured_gaps_per_market"]
 file = "src/sectorflow/tui/flow_view.py"
-find = "        v = (row or {}).get(\"gap_pct\")\n        return \"—\" if v is None else f\"{rhu(v, 1):.1f}%\""
-replace = "        v = (row or {}).get(\"gap_pct\")\n        return f\"{rhu(v or 0, 1):.1f}%\""
+find = "        return (\"—\" if v is None else f\"{rhu(v, 1):.1f}%\") + (\" 부호 반대\" if (row or {}).get(\"flip\") else \"\")"
+replace = "        return (f\"{rhu(v or 0, 1):.1f}%\") + (\" 부호 반대\" if (row or {}).get(\"flip\") else \"\")"
 
 [[mutation]]
 id = "krx-truth-help-tail-dropped"
@@ -5753,19 +5753,19 @@ replace = "    pass"
 
 [[mutation]]
 id = "web-today-hides-krx-truth"
-why = "웹 오늘 패널이 공식 대조 줄을 안 그리면 측정한 오차가 브라우저에서 안 보인다"
+why = "웹 오늘 패널이 공표치 대조 줄을 안 그리면 측정한 오차가 브라우저에서 안 보인다"
 guards = ["tests/test_report_pages.py::test_numbers_today_panel_shows_the_official_gap_line"]
 file = "scripts/templates/sector_numbers.html"
-find = "  if(KT&&KT.status===\"ok\"){ const kg=v=>v==null?\"—\":RHU(v,1).toFixed(1)+\"%\";"
-replace = "  if(false){ const kg=v=>v==null?\"—\":RHU(v,1).toFixed(1)+\"%\";"
+find = "  if(KT&&KT.status===\"ok\"){ const kg=r=>"
+replace = "  if(false){ const kg=r=>"
 
 [[mutation]]
 id = "web-today-silent-krx-truth-skip"
 why = "건너뛴 날 웹이 침묵하면 빈 자리가 고장인지 꺼짐인지 못 가른다 — SKIP 은 이유와 함께 보인다"
 guards = ["tests/test_report_pages.py::test_numbers_today_panel_names_the_krx_truth_skip_reason"]
 file = "scripts/templates/sector_numbers.html"
-find = "  else if(KT){ c2.append(el(\"div\",\"tnote\",\"KRX 공식 거래대금 대조: 건너뜀 — \"+(KT.reason||\"이유 없음\"))); }"
-replace = "  else if(false){ c2.append(el(\"div\",\"tnote\",\"KRX 공식 거래대금 대조: 건너뜀 — \"+(KT.reason||\"이유 없음\"))); }"
+find = "  else if(KT){ const w=el(\"span\",\"chip warn\",\"⚠ 공표치 대조 건너뜀\");"
+replace = "  else if(false){ const w=el(\"span\",\"chip warn\",\"⚠ 공표치 대조 건너뜀\");"
 
 # ── 운영 사건 원장(events.jsonl) — 쓰기·회전·통계·백필·SLO ───────────────────────
 
@@ -7814,3 +7814,286 @@ guards = ["tests/test_validation_fixes.py::test_cap_to_index_threshold_sits_abov
 file = "scripts/verify_report.py"
 find = "VF_CAP_INDEX_JUMP = 3.0"
 replace = "VF_CAP_INDEX_JUMP = 5.0"
+
+# ── 공표 시장값 대조 — 네이버 소스·합계 판정·누출·연속 SKIP·대량 체결 의심 (4회차 D1) ──
+
+[[mutation]]
+id = "naver-zero-looks-published"
+why = "휴장·공표 전 네이버는 값을 전부 0 으로 준다 — 믿으면 오차가 ~100% 로 적혀 늘 칩이 뜬다"
+guards = ["tests/test_krx_truth.py::test_parse_naver_refuses_another_day_all_zero_and_format_drift"]
+file = "scripts/krx_truth.py"
+find = "    if not any(rows.values()):"
+replace = "    if False:"
+
+[[mutation]]
+id = "naver-other-day-accepted"
+why = "다른 날 값을 그날 공표치로 대조한다 — 오차가 전부 틀린다"
+guards = ["tests/test_krx_truth.py::test_parse_naver_refuses_another_day_all_zero_and_format_drift"]
+file = "scripts/krx_truth.py"
+find = "    if biz != date.replace(\"-\", \"\"):"
+replace = "    if False:"
+
+[[mutation]]
+id = "naver-sign-prefix-breaks-parse"
+why = "네이버 값은 +·쉼표가 붙은 억이다 — 쉼표를 안 벗기면 첫 호출이 죽는다"
+guards = ["tests/test_krx_truth.py::test_parse_naver_reads_signed_comma_eok_as_won_rows"]
+file = "scripts/krx_truth.py"
+find = "    return float(str(s).replace(\",\", \"\").replace(\"+\", \"\").strip())"
+replace = "    return float(str(s).replace(\"+\", \"\").strip())"
+
+[[mutation]]
+id = "naver-no-retry"
+why = "망 오류 한 번에 SKIP — 재시도 1회 약속이 깨진다"
+guards = ["tests/test_krx_truth.py::test_fetch_naver_retries_a_network_error_once_then_gives_up"]
+file = "scripts/krx_truth.py"
+find = "    for attempt in range(2):"
+replace = "    for attempt in range(1):"
+
+[[mutation]]
+id = "naver-retries-client-error"
+why = "4xx 까지 다시 묻는다 — 거부당한 요청을 반복한다"
+guards = ["tests/test_krx_truth.py::test_fetch_naver_does_not_retry_a_client_error"]
+file = "scripts/krx_truth.py"
+find = "            if e.code < 500:"
+replace = "            if False:"
+
+[[mutation]]
+id = "naver-ua-carries-an-email"
+why = "User-Agent 에 개인 이메일을 넣는다"
+guards = ["tests/test_krx_truth.py::test_fetch_naver_retries_a_network_error_once_then_gives_up"]
+file = "scripts/krx_truth.py"
+find = "USER_AGENT = \"sector-flow-internal-verification\""
+replace = "USER_AGENT = \"sector-flow-internal-verification me@example.com\""
+
+[[mutation]]
+id = "truth-default-source-krx"
+why = "기본 소스가 막힌 KRX 면 크론이 날마다 SKIP 이다"
+guards = ["tests/test_krx_truth.py::test_default_source_is_naver_without_the_etc_actor"]
+file = "scripts/krx_truth.py"
+find = "source=env.get(\"KR_QUANT_KRX_TRUTH_SOURCE\") or \"naver\")"
+replace = "source=env.get(\"KR_QUANT_KRX_TRUTH_SOURCE\") or \"krx\")"
+
+[[mutation]]
+id = "truth-published-leaks-to-payload"
+why = "공표 수치가 페이로드로 가면 화면·웹으로 재배포된다(약관 미확인)"
+guards = ["tests/test_krx_truth.py::test_compare_never_puts_published_values_in_the_payload_block"]
+file = "scripts/krx_truth.py"
+find = "            row[a] = {\"gap_pct\": round(abs(v - o) / abs(o) * 100.0, 2) if big else None,"
+replace = "            row[a] = {\"official\": o, \"gap_pct\": round(abs(v - o) / abs(o) * 100.0, 2) if big else None,"
+
+[[mutation]]
+id = "truth-total-gated-to-nothing"
+why = "시장 합계가 빠지면 주체 게이트에 숨은 큰 오차(10-29 꼴)를 칩이 못 본다"
+guards = ["tests/test_krx_truth.py::test_compare_total_catches_a_big_error_the_actor_gate_hides"]
+file = "scripts/krx_truth.py"
+find = "        total = round(err / den * 100.0, 2) if gate is not None and den and den >= gate else None"
+replace = "        total = None"
+
+[[mutation]]
+id = "truth-chip-always-hot"
+why = "칩이 문턱과 무관하게 뜬다 — 늘 뜨는 경고는 경고가 아니다"
+guards = ["tests/test_krx_truth.py::test_compare_hot_only_above_the_threshold"]
+file = "scripts/krx_truth.py"
+find = "        row[\"hot\"] = bool(total is not None and total > KRX_GAP_WARN)"
+replace = "        row[\"hot\"] = True"
+
+[[mutation]]
+id = "truth-flip-without-gate"
+why = "0 근처 두 값의 부호 차이까지 부호 반대로 적는다"
+guards = ["tests/test_krx_truth.py::test_compare_marks_a_sign_flip_with_a_denominator_gate"]
+file = "scripts/krx_truth.py"
+find = "                      \"flip\": bool(gate is not None and o * v < 0 and max(abs(o), abs(v)) >= gate)}"
+replace = "                      \"flip\": bool(o * v < 0)}"
+
+[[mutation]]
+id = "truth-never-refreshes"
+why = "저녁 값을 확정 리포트에 그대로 쓴다 — 다음날 다시 받지 않는다"
+guards = ["tests/test_krx_truth.py::test_attach_refreshes_an_evening_cache_once_for_the_next_morning_build"]
+file = "scripts/krx_truth.py"
+find = "    refresh = official is not None and want_fetch and _stale(official, date, now or _now_kst())"
+replace = "    refresh = False"
+
+[[mutation]]
+id = "truth-refresh-every-build"
+why = "캐시가 다음날 받은 값이어도 다시 받는다 — 기준일당 2회 상한이 깨진다"
+guards = ["tests/test_krx_truth.py::test_attach_keeps_the_cache_when_it_was_fetched_after_the_base_date"]
+file = "scripts/krx_truth.py"
+find = "    return str(cached.get(\"fetched_at\") or \"\")[:10] <= date < now[:10]"
+replace = "    return True"
+
+[[mutation]]
+id = "truth-refresh-on-the-same-day"
+why = "같은 날 저녁 재빌드마다 다시 받는다"
+guards = ["tests/test_krx_truth.py::test_attach_keeps_the_same_evening_cache_on_the_same_day"]
+file = "scripts/krx_truth.py"
+find = "    return str(cached.get(\"fetched_at\") or \"\")[:10] <= date < now[:10]"
+replace = "    return str(cached.get(\"fetched_at\") or \"\")[:10] <= date"
+
+[[mutation]]
+id = "truth-refresh-failure-drops-cache"
+why = "다시 받기 실패가 멀쩡한 저녁 값을 SKIP 으로 지운다"
+guards = ["tests/test_krx_truth.py::test_attach_falls_back_to_the_cache_when_the_refresh_fails"]
+file = "scripts/krx_truth.py"
+find = "            reason = str(e)                      # 다시 받기 실패면 official 은 캐시 그대로다"
+replace = "            official, reason = None, str(e)"
+
+[[mutation]]
+id = "truth-sidecar-served"
+why = "공표 수치 사이드카를 웹서버 목록에 넣으면 재배포다"
+guards = ["tests/test_krx_truth.py::test_sidecar_is_not_served_by_the_web_server"]
+file = "scripts/serve_reports.py"
+find = "    \"REBUILT.txt\": \"text/plain; charset=utf-8\","
+replace = "    \"REBUILT.txt\": \"text/plain; charset=utf-8\",\n    \"krx_truth.json\": \"application/json\","
+
+[[mutation]]
+id = "truth-skip-streak-never-warns"
+why = "연속 SKIP 을 안 세면 대조가 며칠째 죽어도 아무도 모른다"
+guards = ["tests/test_krx_truth.py::test_verifier_counts_consecutive_skips_and_warns_on_the_third"]
+file = "scripts/verify_report.py"
+find = "    if streak >= VF_SKIP_WARN:\n        warn(\"T\", msg,"
+replace = "    if False:\n        warn(\"T\", msg,"
+
+[[mutation]]
+id = "truth-leak-unchecked"
+why = "공표 수치가 블록에 새도 검증기가 초록이다"
+guards = ["tests/test_krx_truth.py::test_verifier_fails_when_published_values_leak_into_the_payload"]
+file = "scripts/verify_report.py"
+find = "        if leak or any(k in kt for k in VT_KRX_LEAK_KEYS + (\"markets_raw\",)):"
+replace = "        if False:"
+
+[[mutation]]
+id = "truth-verifier-ignores-total"
+why = "합계 오차(칩의 근거)를 틀리게 적어도 초록이다"
+guards = ["tests/test_krx_truth.py::test_verifier_recomputes_the_market_total_and_the_chip_decision"]
+file = "scripts/verify_report.py"
+find = "            if (t is None) != (total is None) or (total is not None and abs(t - total) > 0.011):"
+replace = "            if False:"
+
+[[mutation]]
+id = "truth-verifier-ignores-chip"
+why = "칩 판정이 합계와 달라도 초록이다"
+guards = ["tests/test_krx_truth.py::test_verifier_recomputes_the_market_total_and_the_chip_decision"]
+file = "scripts/verify_report.py"
+find = "            if bool(got_m.get(\"hot\")) != bool(total is not None and total > VT_KRX_WARN):"
+replace = "            if False:"
+
+[[mutation]]
+id = "truth-verifier-ignores-flip"
+why = "부호 반대 표지가 틀려도 초록이다"
+guards = ["tests/test_krx_truth.py::test_verifier_recomputes_the_market_total_and_the_chip_decision"]
+file = "scripts/verify_report.py"
+find = "                if bool(got.get(\"flip\")) != flip:"
+replace = "                if False:"
+
+[[mutation]]
+id = "truth-verifier-zeroes-absent-actor"
+why = "네이버엔 기타법인 행이 없다 — 0 으로 대조하면 매일 빨개진다"
+guards = ["tests/test_krx_truth.py::test_verifier_accepts_a_naver_sidecar_without_the_etc_row"]
+file = "scripts/verify_report.py"
+find = "                if not any(x in rows for x in names):\n                    continue"
+replace = "                if False:\n                    continue"
+
+[[mutation]]
+id = "freshness-misses-published-streak"
+why = "신선도 점검이 공표치 연속 SKIP 경고를 안 본다"
+guards = ["tests/test_freshness_check.py::test_previous_day_published_skip_streak_warns_and_a_single_skip_is_a_note"]
+file = "scripts/freshness_check.py"
+find = "    hit = next((ln.strip() for ln in text.splitlines() if \"[WARN]\" in ln and PUB_SKIP_STREAK_MARK in ln), None)"
+replace = "    hit = None"
+
+[[mutation]]
+id = "freshness-published-mark-drifts"
+why = "표지 글이 verify_report 와 어긋나면 경고가 조용히 죽는다"
+guards = ["tests/test_freshness_check.py::test_published_marks_match_the_verifier"]
+file = "scripts/freshness_check.py"
+find = "PUB_SKIP_STREAK_MARK = \"공표치 대조 연속 SKIP\""
+replace = "PUB_SKIP_STREAK_MARK = \"공표치 연속 SKIP\""
+
+[[mutation]]
+id = "freshness-main-skips-published"
+why = "점검 함수를 main 이 안 부르면 75 가 안 나간다"
+guards = ["tests/test_freshness_check.py::test_cron_path_flags_a_previous_day_published_truth_skip_streak"]
+file = "scripts/freshness_check.py"
+find = "            trc, tlines = check_published_truth(Path(a.root), prev)"
+replace = "            trc, tlines = 0, []"
+
+[[mutation]]
+id = "cron-truth-off"
+why = "크론에서 안 켜면 대조가 조용히 안 돈다"
+guards = ["tests/test_daily_report_flow.py::test_every_daily_report_cron_line_turns_on_the_published_truth_check"]
+file = "deploy/crontab.simnode"
+find = "10 18,19 * * 1-5 mkdir -p /home/young/git/sector-flow/reports && KR_QUANT_KRX_TRUTH=1 "
+replace = "10 18,19 * * 1-5 mkdir -p /home/young/git/sector-flow/reports && "
+
+[[mutation]]
+id = "block-ignores-off-book-share"
+why = "분봉 밖 몫을 안 보면 순매수가 큰 종목이 전부 대량 체결이 된다"
+guards = ["tests/test_krx_truth.py::test_block_suspects_needs_both_off_book_share_and_the_amount_gate"]
+file = "scripts/sector_flow.py"
+find = "            if off >= BLOCK_OFF_MIN:"
+replace = "            if True:"
+
+[[mutation]]
+id = "block-no-amount-gate"
+why = "금액 게이트가 없으면 시장 합계에 안 닿는 소액 종목이 칩을 띄운다"
+guards = ["tests/test_krx_truth.py::test_block_suspects_needs_both_off_book_share_and_the_amount_gate"]
+file = "scripts/sector_flow.py"
+find = "            if abs(amt) < BLOCK_SHARE_MIN * den:"
+replace = "            if False:"
+
+[[mutation]]
+id = "block-partial-minutes-judged"
+why = "분봉이 덜 모인 저녁에 전 종목이 대량 체결로 뜬다"
+guards = ["tests/test_krx_truth.py::test_block_suspects_skips_when_it_cannot_judge"]
+file = "scripts/sector_flow.py"
+find = "    if cover < BLOCK_MIN_COVER:"
+replace = "    if False:"
+
+[[mutation]]
+id = "block-verifier-trusts-the-list"
+why = "목록을 틀리게 적어도 F 층이 초록이다"
+guards = ["tests/test_krx_truth.py::test_verifier_rebuilds_the_block_list_from_the_db"]
+file = "scripts/verify_report.py"
+find = "        if exp != have:\n            bad.append(f\"{m} 빠짐"
+replace = "        if False:\n            bad.append(f\"{m} 빠짐"
+
+[[mutation]]
+id = "block-verifier-skip-always-passes"
+why = "표·분봉이 있는데 ok 대신 skip 이어도 통과한다 / 표가 없는데 ok 여도 통과한다"
+guards = ["tests/test_krx_truth.py::test_verifier_block_list_is_quiet_on_old_reports_and_accepts_a_real_skip"]
+file = "scripts/verify_report.py"
+find = "        chk(\"F\", \"대량 체결 의심 = DB 재계산(분봉 없음·미완이면 skip)\", got.get(\"status\") == \"skip\","
+replace = "        chk(\"F\", \"대량 체결 의심 = DB 재계산(분봉 없음·미완이면 skip)\", True,"
+
+[[mutation]]
+id = "web-published-chip-always"
+why = "웹 공표치 오차 칩이 hot 과 무관하게 뜬다"
+guards = ["tests/test_report_pages.py::test_numbers_today_panel_shows_the_official_gap_line"]
+file = "scripts/templates/sector_numbers.html"
+find = "      if(g.hot){ const w=el(\"span\",\"chip warn\",\"⚠ 공표 시장값과 오차 큼(\""
+replace = "      if(true){ const w=el(\"span\",\"chip warn\",\"⚠ 공표 시장값과 오차 큼(\""
+
+[[mutation]]
+id = "web-block-chip-dropped"
+why = "웹이 대량 체결 의심을 안 그린다"
+guards = ["tests/test_report_pages.py::test_numbers_block_suspect_chip_names_the_stock_with_evidence"]
+file = "scripts/templates/sector_numbers.html"
+find = "    const w=el(\"span\",\"chip warn\",\"⚠ 대량 체결 의심 — 근사 오차 큼(\"+m+\": \"+blockNames(L)+\") \"+EV.block);\n"
+replace = "    return; const w=el(\"span\",\"chip warn\",\"⚠ 대량 체결 의심 — 근사 오차 큼(\"+m+\": \"+blockNames(L)+\") \"+EV.block);\n"
+
+[[mutation]]
+id = "tui-published-chip-always"
+why = "화면 공표치 오차 칩이 hot 과 무관하게 뜬다"
+guards = ["tests/test_tui_flow_view.py::test_gap_chips_follow_the_published_error_and_block_suspects"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "            if row.get(\"hot\"):\n                out.append(f\"공표 시장값과"
+replace = "            if True:\n                out.append(f\"공표 시장값과"
+
+[[mutation]]
+id = "digest-published-chip-always"
+why = "다이제스트 공표치 오차 줄이 hot 과 무관하게 나온다"
+guards = ["tests/test_digest.py::test_published_error_chip_follows_krx_truth_hot"]
+file = "scripts/digest.py"
+find = "            if row.get(\"hot\"):"
+replace = "            if True:"
+

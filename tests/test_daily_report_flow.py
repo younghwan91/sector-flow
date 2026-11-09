@@ -329,6 +329,14 @@ def _cron_lines() -> list[str]:
     return [x for x in text.splitlines() if x.strip() and not x.startswith("#")]
 
 
+def test_every_daily_report_cron_line_turns_on_the_published_truth_check():
+    """크론 줄에서 켜지 않으면 대조가 조용히 안 돈다 — 칩이 공표치로 판정하지 못하고 SKIP 조차 안 남는다."""
+    lines = [ln for ln in _cron_lines() if "scripts/daily_report.sh" in ln]
+    assert len(lines) >= 3
+    for ln in lines:
+        assert "KR_QUANT_KRX_TRUTH=1 " in ln, ln
+
+
 def test_every_report_cron_line_makes_the_log_dir_and_wraps():
     """새 clone 엔 ``reports/`` 가 없다 — ``>> reports/cron.log`` 가 스크립트보다 먼저 터진다."""
     lines = _cron_lines()

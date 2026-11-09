@@ -5,6 +5,7 @@ DB 는 읽기 전용 세션으로만 연다.
 
 | 폴더 | 재현하는 것 | 결과 문서 | 정의 |
 |---|---|---|---|
+| [`market_total/`](market_total/) | 시장 합계 ↔ 네이버 시장값 오차 분해(유니버스·대량 체결·VWAP), 내부 대조 전용 | `2026-11-09-market-total-vs-published.md` | 정본, 리포트 코드 import 없음 |
 | [`q3cd/`](q3cd/) | Q3c 추정 안정성, **Q3d 앞날 순위 IC 재검** (+ 첫 실행 `--variant v1`) | `2026-11-08-results.md` | 정본(고친 정의). v1 은 옛 정의 — 재현용 |
 | [`usefulness/`](usefulness/) | 수급 정보 쓸모 12칸 발견·확인, 리뷰 재계산 | `2026-11-08-usefulness-results.md` | 정본(고친 정의) |
 | [`q1_data/`](q1_data/) | Q1 게시 payload ↔ 원자료, 결함 2·3 크기 | `2026-11-08-results.md` | 첫 검증 — 재현용 |

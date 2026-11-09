@@ -1277,7 +1277,7 @@ def final_diff_text(P: dict, top: int = 15) -> str:
 #: 2026-09-14 이후 애프터마켓(~20:00)까지 포함한 통합 종가라, 같은 날 둘이 갈린다(11-06: 거래소 자체 바구니
 #: −4.37% vs KOSPI −6.02%. 정규장 종가로 다시 재면 0.01%p 안에서 맞는다).
 KRX_INDEX = (("거래소", "001", "코스피"), ("코스닥", "101", "코스닥"))
-#: 금액 근사 오차 칩을 띄우는 문턱(%).
+#: 종가·VWAP 환산 차 칩을 띄우는 문턱(%).
 APPROX_GAP_WARN = 5.0
 _QTY_COLS = ("individual", "foreign_", "institution", "etc_corp")
 
@@ -1312,9 +1312,11 @@ def krx_index_block(con, dates: list[str], markets: list[str]) -> dict:
 
 
 def approx_gap(con, df: pd.DataFrame, asof: str, markets: list[str]) -> dict:
-    """시장별 **순매수 금액 근사 오차**[%] — 종가 환산과 VWAP 환산의 차이(D1 검토 M4).
+    """시장별 **종가·VWAP 환산 차**[%] — 내부 자료끼리의 대조다(D1 검토 M4). 실제 오차가 아니다.
 
-    순매수 금액은 수량 × 그날 종가로 복원한다(``load``). 참값에 가까운 것은 그날 VWAP 환산이다. 그날
+    공표치 기준 오차는 ``krx_truth`` 가 잰다 — 48일 실측에서 이 값은 최대 3.12% 인데 공표치 기준 거래소
+    오차는 중앙 5.7% 였다(``docs/validation/2026-11-09-market-total-vs-published.md``). 순매수 금액은
+    수량 × 그날 종가로 복원한다(``load``). 그날
     종목 i 의 4주체 |순매수 수량| 합을 :math:`n_i` 라 할 때
 
     ``gap = |Σ n_i·close_i − Σ n_i·vwap_i| / Σ n_i·vwap_i × 100``,  ``vwap_i = trade_value(백만원)·1e6 / volume``
@@ -1377,14 +1379,89 @@ def _sector_gap_max(cov: pd.DataFrame, market_vwap: float) -> "dict | None":
     return best
 
 
+#: 대량 체결 의심 — 그날 거래량 중 분봉에 없는 몫의 문턱.
+BLOCK_OFF_MIN = 0.5
+#: 분모 게이트 — 그 종목 최대 주체 금액이 시장 Σ|개인·외국인·기관 순매수| 의 이 몫 이상일 때만 띄운다.
+BLOCK_SHARE_MIN = 0.01
+#: 분봉 수집 완료 게이트 — 분봉이 있는 종목의 (분봉 합 ÷ 거래량) 중앙이 이 미만이면 판정하지 않는다.
+BLOCK_MIN_COVER = 0.95
+
+
+def _minute_volume(con, asof: str) -> "dict[str, float] | None":
+    """그날 종목별 분봉 거래량 합. ``minute_bars`` 표가 없는 DB(테스트 픽스처·BYO)는 ``None``."""
+    pg = _is_pg(con)
+    exists = pd.read_sql_query(
+        "SELECT to_regclass('public.minute_bars') IS NOT NULL AS ok" if pg else
+        "SELECT count(*) AS ok FROM sqlite_master WHERE type='table' AND name='minute_bars'", con)
+    if not bool(exists["ok"].iloc[0]):
+        return None
+    ph = "%s" if pg else "?"
+    nxt = (datetime.fromisoformat(asof) + timedelta(days=1)).date().isoformat()
+    q = pd.read_sql_query(
+        f"SELECT code, SUM(volume) AS vm FROM minute_bars WHERE ts >= {ph} AND ts < {ph} GROUP BY code",
+        con, params=[asof, nxt])
+    return {r.code: float(r.vm) for r in q.itertuples() if r.vm is not None}
+
+
+def block_suspects(con, df: pd.DataFrame, asof: str, markets: list[str]) -> dict:
+    """시장별 **대량 체결 의심** 종목 — 시장 합계가 공표치와 크게 갈린 날의 원인 후보(측정, 2026-11-09).
+
+    ``off = max(0, volume − Σ분봉 volume) / volume`` 이 :data:`BLOCK_OFF_MIN` 이상이고 최대 주체 금액
+    ``max_a |q_a|·P`` 가 시장 ``Σ_a |Σ q_a·P|`` 의 :data:`BLOCK_SHARE_MIN` 이상인 종목(a = 개인·외국인·기관).
+    분봉 밖 거래량이 시간외 대량매매라는 것은 **추정**이다 — 체결 유형 자료가 없다. 분봉이 없는 종목은 판정하지
+    않고(``unjudged`` = 금액 게이트는 넘었는데 분봉이 없어 판정 못 한 종목 수), 표가 없거나 수집이 덜 끝난 날은
+    ``status: skip`` 으로 이유를 적는다(0 건과 모름을 가른다). 같은 체결이 네이버 종목 값에는 있다 — 리포트 값이 틀렸다는
+    표지가 아니라 시장값과 정의가 갈릴 수 있다는 표지다.
+    문서 ``docs/validation/2026-11-09-market-total-vs-published.md`` 의 정의와 같다.
+    """
+    minutes = _minute_volume(con, asof)
+    if minutes is None:
+        return {"status": "skip", "reason": "분봉 표(minute_bars)가 없다"}
+    if not minutes:
+        return {"status": "skip", "reason": "그날 분봉이 없다"}
+    ph = "%s" if _is_pg(con) else "?"
+    bars = pd.read_sql_query(f"SELECT code, volume, source FROM daily_bars WHERE date = {ph}", con, params=[asof])
+    bars = (bars.assign(_k=(bars["source"] != "kiwoom").astype(int))
+                .sort_values(["code", "_k"]).drop_duplicates("code"))
+    volume = {r.code: float(r.volume) for r in bars.itertuples() if r.volume and float(r.volume) > 0}
+    ratios = [minutes[c] / v for c, v in volume.items() if c in minutes]
+    cover = float(pd.Series(ratios).median()) if ratios else 0.0
+    if cover < BLOCK_MIN_COVER:
+        return {"status": "skip", "reason": f"분봉 수집이 덜 끝났다(분봉 합÷거래량 중앙 {cover * 100:.0f}%)"}
+    day = df[df["date"] == asof]
+    out: dict = {m: [] for m in markets}
+    unjudged = 0
+    for m in markets:
+        sub = day[day["market"] == m]
+        amts = {a: sub[a].astype(float).fillna(0.0) for a in ("indiv", "forgn", "inst")}
+        den = sum(abs(float(v.sum())) for v in amts.values())
+        if not den:
+            continue
+        for i, r in enumerate(sub.itertuples()):
+            actor, amt = max(((a, float(x.iloc[i])) for a, x in amts.items()), key=lambda kv: abs(kv[1]))
+            if abs(amt) < BLOCK_SHARE_MIN * den:
+                continue
+            v, vm = volume.get(r.code), minutes.get(r.code)
+            if v is None or vm is None:
+                unjudged += 1
+                continue
+            off = max(0.0, v - vm) / v
+            if off >= BLOCK_OFF_MIN:
+                out[m].append({"code": r.code, "name": r.name, "off_pct": round(off * 100.0, 1),
+                               "actor": actor, "amt": round(amt, 1)})
+        out[m].sort(key=lambda x: (-abs(x["amt"]), x["code"]))
+    return {"status": "ok", "off_min": BLOCK_OFF_MIN, "share_min": BLOCK_SHARE_MIN, "unjudged": unjudged, "markets": out}
+
+
 def market_context(con, df: pd.DataFrame, P: dict) -> None:
-    """``today`` 에 KRX 지수(정규장)와 시장별 금액 근사 오차를 붙인다 — 제자리 수정."""
+    """``today`` 에 KRX 지수(정규장)·시장별 금액 근사 오차·대량 체결 의심을 붙인다 — 제자리 수정."""
     T = P["today"]
     T["krx_index"] = krx_index_block(con, P["dates"], P["markets"])
     T["approx_gap_warn"] = APPROX_GAP_WARN
     gaps = approx_gap(con, df, P["dates"][-1], P["markets"])
     for mkey, M in T["market"].items():
         M["approx_gap"] = gaps.get(mkey)
+    T["block_suspects"] = block_suspects(con, df, P["dates"][-1], P["markets"])
 
 
 #: 설치본(wheel)에는 일부러 없는 옆 스크립트 — 내부 검증 전용이고 목적지가 data.krx.co.kr 이라 BYO 설계 §4.2 허용 목록 밖이다.
@@ -1393,7 +1470,7 @@ KRX_TRUTH_SCRIPT = "krx_truth.py"
 
 def _attach_krx_truth(payload: dict, build_dir: "str | None", root: "str | None",
                       path: "str | None" = None) -> None:
-    """KRX 공식 거래대금 대조(선택 기능) — 어떤 실패도 리포트를 깨지 않는다.
+    """공표 시장값 대조(선택 기능) — 어떤 실패도 리포트를 깨지 않는다.
 
     ``attach`` 안의 실패는 그쪽이 skip 블록으로 바꾼다. 여기는 그 앞, **모듈을 읽는 단계**의 보호다. ``scripts/`` 는
     패키지가 아니라 importlib 로 읽는다. 파일이 없으면(설치본) 꺼진 것과 같고, 못 읽으면 skip 블록을 남긴다.
@@ -1401,7 +1478,7 @@ def _attach_krx_truth(payload: dict, build_dir: "str | None", root: "str | None"
     p = path or os.path.join(os.path.dirname(os.path.abspath(__file__)), KRX_TRUTH_SCRIPT)
     if not os.path.isfile(p):
         if os.environ.get("KR_QUANT_KRX_TRUTH") == "1":
-            print(f"⚠️ [KRX 공식 대조] {KRX_TRUTH_SCRIPT} 가 없는 설치본이라 건너뛴다", file=sys.stderr)
+            print(f"⚠️ [공표치 대조] {KRX_TRUTH_SCRIPT} 가 없는 설치본이라 건너뛴다", file=sys.stderr)
         return
     import importlib.util  # noqa: PLC0415
     try:
@@ -1411,7 +1488,7 @@ def _attach_krx_truth(payload: dict, build_dir: "str | None", root: "str | None"
     except Exception as e:  # noqa: BLE001 — 선택 기능의 버그가 본 리포트를 죽이면 안 된다
         if isinstance(payload.get("today"), dict):
             payload["today"]["krx_truth"] = {"status": "skip", "reason": f"모듈 로드 실패: {e!r}"}
-        print(f"⚠️ [KRX 공식 대조] 내부 오류 — 모듈 로드 실패 {e!r}. 리포트는 그대로 만든다", file=sys.stderr)
+        print(f"⚠️ [공표치 대조] 내부 오류 — 모듈 로드 실패 {e!r}. 리포트는 그대로 만든다", file=sys.stderr)
         return
     mod.attach(payload, build_dir, root)
 
@@ -1490,7 +1567,7 @@ def main():
                 with open(os.path.join(here, "final_diff.json"), "w", encoding="utf-8") as f:
                     json.dump(payload["final_diff"], f, ensure_ascii=False)
     payload["revision_stats"] = revision_stats(payload, root)
-    # KRX 공식 거래대금 대조(선택, D1-m2) — 같은 기준일 캐시(krx_truth.json)가 있거나
+    # 공표 시장값 대조(선택, D1-m2) — 같은 기준일 캐시(krx_truth.json)가 있거나
     # KR_QUANT_KRX_TRUTH=1 일 때만. 실패·버그는 skip 블록이 된다 — 리포트를 깨지 않는다.
     _attach_krx_truth(payload,
                       os.path.dirname(os.path.abspath(a.json or a.html)) if (a.json or a.html) else None,
