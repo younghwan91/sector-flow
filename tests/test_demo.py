@@ -19,6 +19,7 @@ from sectorflow import demo
 from sectorflow.basis import DEMO_MARK, DEMO_NOTICE
 from sectorflow.storage import connect
 from sectorflow.tui import flow_app, ledger_view
+from sectorflow.tui import flow_view
 from sectorflow.tui.flow_view import State, banner_lines, header_lines
 from sectorflow.wording import page_hits
 
@@ -43,6 +44,62 @@ def test_demo_report_passes_the_same_verifier_as_a_real_report(built):
                        cwd=REPO, env=env, capture_output=True, text=True, timeout=600)
     assert p.returncode == 0, p.stdout[-3000:] + p.stderr[-2000:]
     assert "실패 0건" in p.stdout
+
+
+def _number_cuts(monkeypatch) -> list[str]:
+    """`pad` 가 숫자 안에서 자른 자리를 모은다 — `+4,552억` 이 `+4,5` 로 보이면 다른 값이다. 출력은 폭에 맞으니 자르기 전에 본다."""
+    cuts: list[str] = []
+    real = flow_view.pad
+
+    def spy(text, width, right=False):
+        kept = real(text, width).rstrip(" ")
+        rest = text[len(kept):] if text.startswith(kept) else ""
+        if rest and re.search(r"[\d+\-−,.]$", kept) and re.match(r"[\d,.%억조]", rest):
+            cuts.append(f"폭 {width}: {text}")
+        return real(text, width, right)
+    monkeypatch.setattr(flow_view, "pad", spy)
+    monkeypatch.setattr(ledger_view, "pad", spy)
+    return cuts
+
+
+def test_no_screen_cuts_a_number_mid_digit(built, monkeypatch):
+    """전 화면 — 숫자를 자릿수 중간에서 자르지 않는다. 도움말은 80칸 이상을 약속한다(좁으면 글이 잘린다는 것을 화면이 안다)."""
+    d, ld = flow_app.load(str(built["dir"])), ledger_view.load(str(built["dir"]))
+    cuts = _number_cuts(monkeypatch)
+    for w in (60, 70, 80, 100, 140):
+        st = State(d)
+        flow_view.banner_lines(st, w)
+        if w >= 80:
+            flow_view.help_lines(w, 0, 10_000, flow_view.help_entries(st))
+        for mi in range(len(st.markets)):
+            for ai in range(len(flow_view.ACTORS)):
+                for win in ("1", "20", "120"):
+                    st = State(d)
+                    st.mi, st.ai = mi, ai
+                    st.goto_window(win)
+                    flow_view.header_lines(st, w)
+                    flow_view.table_lines(st, w, 40)
+                    for row in range(min(3, len(st.rows()))):
+                        st.row = row
+                        flow_view.detail_lines(st, w)
+                    st.drill = True
+                    flow_view.names_lines(st, w)
+                    flow_view.detail_lines(st, w)
+        st = State(d)
+        st.toggle_explore()
+        flow_view.table_lines(st, w, 40)
+        flow_view.all_lines(st, w)
+        if w >= 80:                 # 원장의 표는 71칸 밑에서 그리지 않고, 한계·동시성 글은 80칸을 약속한다
+            ledger_view.render_text(ledger_view.Model(ld), w)
+    assert not cuts, f"{len(cuts)}곳, 처음: {cuts[:5]}"
+
+
+def test_detail_panel_drops_whole_items_with_a_count_at_80_cols(built):
+    """80칸 하단 패널 — 잘린 금액 대신 온전한 항목과 `외 N`. 합성 데모의 건설 3종목이 80칸에 안 든다."""
+    st = State(flow_app.load(str(built["dir"])))
+    lines = "\n".join(ln for r in range(len(st.rows())) for ln in (setattr(st, "row", r), flow_view.detail_lines(st, 80))[1])
+    assert " 외 1" in lines or " 외 2" in lines
+    assert not re.search(r"[+\-−][\d,]*\s*$", lines, re.M), "줄 끝이 단위 없는 숫자다"
 
 
 def test_demo_has_no_real_name_or_code(built):
@@ -77,7 +134,7 @@ def test_demo_shows_every_mark_a_customer_can_meet(built):
     assert T["krx_truth"]["markets"]["거래소"]["hot"] and not T["krx_truth"]["markets"]["코스닥"]["hot"]
     assert any(any(rows.values()) for rows in T["day_change"]["flips"].values()), "부호 바뀜 줄이 비었다"
     text = "\n".join(banner_lines(State(d), 160))
-    for mark in ("대량 체결 의심", "네이버 시장값과 차이 큼", "거래대금 집중", "잠정→확정 변경", "마감·확정", "들어옴", "대량 체결 판정 못 한"):
+    for mark in ("분봉 밖 거래 큼", "네이버 시장값과 차이 큼", "거래대금 집중", "잠정→확정 변경", "마감·확정", "들어옴", "분봉 밖 판정 못 한"):
         assert mark in text, mark
 
 
@@ -121,7 +178,7 @@ def test_inquiry_attachment_quotes_the_current_screens(built):
     doc = shots.ATTACHMENT.read_text("utf-8")
     assert shots.attachment_blocks(doc) == shots.attachment_screens(str(built["dir"])), (
         "첨부 A 가 지금 화면과 다르다 — uv run python scripts/demo_shots.py --attachment")
-    for mark in ("기관 세부", "오늘 달라진 것", "부호가 바뀐 섹터", "대량 체결 의심", "거래대금 집중", "네이버 시장값과 차이 큼", "[합성 데모]"):
+    for mark in ("기관 세부", "오늘 달라진 것", "부호가 바뀐 섹터", "분봉 밖 거래 큼", "거래대금 집중", "네이버 시장값과 차이 큼", "[합성 데모]"):
         assert mark in shots.attachment_blocks(doc)[0], mark
 
 

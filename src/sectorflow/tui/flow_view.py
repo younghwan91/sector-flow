@@ -1138,8 +1138,8 @@ def _items_line(prefix: str, items: list[str], width: int, empty: str = "없음"
 def _fold_items(prefix: str, items: list[str], width: int, indent: str = "   ", empty: str = "없음") -> list[str]:
     """``prefix`` 뒤에 항목을 잇되 넘치면 **항목 경계에서 다음 줄로** 접는다 — :func:`_items_line` 과 달리 빼지 않는다.
 
-    첫 항목이 머리말 옆에 안 들어가면 머리말을 따로 한 줄에 둔다. 그래도 한 항목이 폭을 넘으면 그 항목은 잘린다
-    (`pad` 는 숫자 경계를 모른다) — 호출하는 쪽이 짧은 꼴을 고른다(:func:`_streak_lines`).
+    첫 항목이 머리말 옆에 안 들어가면 머리말을 따로 한 줄에 둔다. 그래도 한 항목이 폭을 넘으면 그 항목을 **공백에서**
+    접는다 — `pad` 로 자르면 `누적 +2.6조(100)` 이 `(10` 이 된다(다른 숫자다).
     """
     if not items:
         return [pad(prefix + empty, width)]
@@ -1149,12 +1149,24 @@ def _fold_items(prefix: str, items: list[str], width: int, indent: str = "   ", 
         cur = indent
     for it in items:
         if sep and cell_len(cur + sep + it) > width:
-            lines.append(pad(cur, width))
+            lines += _wrap_words(cur, width, indent)
             cur, sep = indent, ""
         cur += sep + it
         sep = " · "
-    lines.append(pad(cur, width))
-    return lines
+    return lines + _wrap_words(cur, width, indent)
+
+
+def _wrap_words(text: str, width: int, indent: str) -> list[str]:
+    """폭을 넘는 한 줄을 공백에서 접는다. 공백 없는 한 낱말이 폭을 넘을 때만 `pad` 가 자른다."""
+    out = []
+    while cell_len(text) > width:
+        cut = next((i for i in range(len(text) - 1, len(indent), -1)
+                    if text[i] == " " and cell_len(text[:i]) <= width and text[:i].strip()), None)
+        if cut is None:
+            break
+        out.append(pad(text[:cut], width))
+        text = indent + text[cut + 1:]
+    return out + [pad(text, width)]
 
 
 def reversal_flags(st: State) -> list[tuple[str, float, float]]:
@@ -1232,9 +1244,9 @@ def _ctx_lines(d: dict, markets: list[str], width: int) -> list[str]:
 
 
 def _gap_chips(d: dict, markets: list[str]) -> list[str]:
-    """금액 경고 항목 — 대량 체결 의심(드물다)·네이버 시장값 차이·종가↔VWAP 환산 차 순. 없으면 빈 목록.
+    """금액 경고 항목 — 분봉 밖 거래 큼(09-14~ 36일 중 16일)·네이버 시장값 차이·종가↔VWAP 환산 차 순. 없으면 빈 목록.
 
-    순서: 5% 문턱이 거래소 중앙값(5.7%) 바로 아래라 네이버 칩은 48일 중 28일 뜬다. 드문 쪽을 먼저 둬야 밀려나지 않는다.
+    순서: 5% 문턱이 거래소 중앙값(5.7%) 바로 아래라 네이버 칩은 48일 중 28일 뜬다. 덜 잦은 쪽을 먼저 둬야 밀려나지 않는다.
     대량 체결은 종목마다 한 항목이다 — 호출하는 쪽이 :func:`_fold_items` 로 접어 **이름을 다 보인다**.
     `네이버 시장값과 차이 큼(거래소 7.1%)` 은 ``today.krx_truth`` 의 시장 합계 판정(``hot``)이고, 대조를 건너뛴
     리포트는 `네이버 대조 건너뜀` 으로 드러낸다. 종가↔VWAP 는 내부 자료끼리의 차이라 실제 오차가 아니다 —
@@ -1247,7 +1259,7 @@ def _gap_chips(d: dict, markets: list[str]) -> list[str]:
         for m in markets:
             names = block_items((bs.get("markets") or {}).get(m) or [])
             if names:
-                out += [f"대량 체결 의심 — 정의 차이({m}): {names[0]}", *names[1:]]
+                out += [f"분봉 밖 거래 큼({m}): {names[0]}", *names[1:]]
     kt = T.get("krx_truth")
     if kt and kt.get("status") != "ok":
         out.append("네이버 대조 건너뜀")
@@ -1270,7 +1282,7 @@ def _gap_chips(d: dict, markets: list[str]) -> list[str]:
 
 
 def block_items(names: list[dict]) -> list[str]:
-    """대량 체결 의심 종목 항목 — `SK 분봉 밖 92%`. 웹 ``blockNames`` 와 같은 글자(그쪽은 ` · ` 로 잇는다)."""
+    """분봉 밖 거래 큼 종목 항목 — `SK 분봉 밖 92%`. 웹 ``blockNames`` 와 같은 글자(그쪽은 ` · ` 로 잇는다)."""
     return [f"{x['name']} 분봉 밖 {rhu(x['off_pct'], 0):.0f}%" for x in names]
 
 
@@ -1278,9 +1290,9 @@ def block_note(d: dict) -> "str | None":
     """대량 체결을 판정 못 한 몫 — 0 건과 모름을 가른다. 웹 오늘 패널의 주석과 같은 글자. 판정을 다 했거나 옛 리포트면 None."""
     bs = (d.get("today") or {}).get("block_suspects") or {}
     if bs.get("status") == "ok":
-        return f"대량 체결 판정 못 한 종목 {bs['unjudged']}개(분봉 없음)" if bs.get("unjudged") else None
+        return f"분봉 밖 판정 못 한 종목 {bs['unjudged']}개(분봉 없음)" if bs.get("unjudged") else None
     if bs.get("status") == "skip":
-        return f"대량 체결 판정: 건너뜀 — {bs.get('reason') or '이유 없음'}"
+        return f"분봉 밖 판정: 건너뜀 — {bs.get('reason') or '이유 없음'}"
     return None
 
 
@@ -2510,8 +2522,8 @@ def detail_lines(st: State, width: int) -> list[str]:
             return f" {label}: —"
         # 정렬이 **금액** 순이므로 금액을 보여준다. 시총대비(%p)를 보이면
         # 표시값과 순서가 어긋나 보인다(현대 +1.34%p 가 대우 +1.40%p 위에 오는 식).
-        parts = [f"{t['name']} {fmt_amt(t['flow'])}억" for t in arr[:3]]
-        return f" {label}: " + " · ".join(parts)
+        # 항목 경계에서 자른다 — `pad` 로 자르면 80칸에서 `+4,552억` 이 `+4,5` 가 된다(다른 숫자다).
+        return _items_line(f" {label}: ", [f"{t['name']} {fmt_amt(t['flow'])}억" for t in arr[:3]], width)
     n = (r.get("top") or {}).get("n", 0)
     # 미실현·포텐셜은 여기 안 적는다. 미실현은 **표에 이미 숫자로 있고**
     # (`Col("미실현[%p]", …, _num("x", 1))`), 이 줄은 그것이 발산 막대였던
@@ -2764,7 +2776,7 @@ EVIDENCE = {
     "exp": B_MEAS, "U": B_MEAS, "P": B_MEAS, "xdot": B_MEAS, "xddot": B_MEAS,
     "ret": B_MEAS, "pct": B_MEAS, "spark": B_MEAS, "tv": B_MEAS, "cap": B_MEAS,
     "n_all": B_MEAS,
-    # 오늘(첫 화면·웹 '오늘' 패널) — 금액 근사 오차·대량 체결 의심과 KRX 지수(정규장) 수익률은 잰 값이다.
+    # 오늘(첫 화면·웹 '오늘' 패널) — 금액 근사 오차·분봉 밖 거래 큼과 KRX 지수(정규장) 수익률은 잰 값이다.
     "gap": B_MEAS, "krx": B_MEAS, "block": B_MEAS,
     # 연속 순매매(1일 순매수 부호가 같은 날 수) — 센 값이다. 앞날 관계는 검정하지 않았다.
     "streak": B_MEAS,
@@ -3079,17 +3091,19 @@ HELP = [
     ("금액 오차", "시장 합계는 네이버 시장값과 다르다. 48거래일 실측 일별 중앙:"),
     ("", "        거래소 5.7%·코스닥 5.5%, 5% 초과 각 28일. 거래소 주원인은 수급"),
     ("", "        자료에 우선주·리츠 139코드가 없는 것(삼성전자우 하나로 2.1%). 큰"),
-    ("", "        날은 분봉 밖 대량 체결 — 09-14 무렵부터 네이버 시장값엔 없고"),
-    ("", "        종목값엔 있다(까닭 미확인). 이 화면 값이 틀린 것이 아니라 정의가"),
-    ("", "        갈린 것이다. 종가→VWAP 는 거래소 7%·코스닥 47% 줄인다."),
+    ("", "        날은 분봉 밖 거래로 읽힌다 — 09-14 무렵부터 네이버 시장값엔 없는"),
+    ("", "        것으로 읽힌다(뒤 22/22·앞 0/6, 대조군 16~36%, 사후 경계, 까닭 모름)."),
+    ("", "        수량은 대조한 범위(10-12 까지) 종목값과 같지만 금액은 따로 틀릴 수"),
+    ("", "        있다. 값의 오류가 아니라 정의 차이일 수 있다. 종가→VWAP 는 그 후보를"),
+    ("", "        뺀 기준 거래소 7%·코스닥 47% 줄인다(코스닥은 안 빼면 42%)."),
     ("네이버 대조", "기본 꺼짐. 켠 리포트만 네이버 시장값(KRX 원표 미대조)에 시장 합"),
     ("", "        계를 대 차이를 잰다. 합계 5% 초과면 '네이버 시장값과 차이 큼' 칩."),
     ("", "        네이버 수치는 화면에 없다(약관 미확인, 내부 대조 전용). 측정값은"),
     ("", "        이 도움말 맨 끝 절. 못 받으면 '네이버 대조 건너뜀'. 꺼지면 다 없다."),
-    ("대량 체결", "거래량의 50% 이상이 분봉 밖이고 최대 주체 금액이 시장 Σ|주체|"),
-    ("", "        의 1% 이상인 종목. 시간외 대량매매라는 것은 추정이다. 이 화면 값이"),
-    ("", "        틀린 것이 아니라 시장값과 정의가 갈린 것이다(같은 체결이 네이버"),
-    ("", "        종목값엔 있다). 큰 건이 18시 잠정에 없던 것은 6개 시장-일에서만"),
+    ("분봉 밖", "거래량의 50% 이상이 분봉 밖이고 최대 주체 금액이 시장 Σ|주체|"),
+    ("", "        의 1% 이상인 종목. 시간외 대량매매라는 것은 추정이다. 시장값과의"),
+    ("", "        차이는 정의 차이일 수 있으나 09-14 전 후보는 아니었다(위 금액 오차)."),
+    ("", "        큰 건이 18시 잠정에 없던 것은 6개 시장-일에서만"),
     ("", "        확인했다. 분봉 없는 종목은 판정 못 하고 그 수를 첫 화면에 적는다."),
     ("", "        종목명은 첫 화면 ⚠ 줄에 다 있다. [측정]"),
     ("환산 차", "Σ|4주체 수량|×종가와 ×VWAP 의 차이 — 내부 자료끼리의 값이라 실제"),
