@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import copy
 import importlib.util
+import inspect
 import json
 import os
 import re
@@ -617,6 +618,9 @@ def test_trim_ladders_end_with_counts_only_and_no_streak():
 def test_card_defaults_are_the_first_rung():
     F, _t, pages = dg.build(fixture_payload())
     assert dg.card_html(F) == pages[0]
+    # 픽스처의 극단 목록이 짧으면 칸이 달라도 글이 같다 — 기본값 자체를 맞댄다.
+    params = list(inspect.signature(dg.card_html).parameters.values())[1:]
+    assert tuple(q.default for q in params) == dg.CARD_LADDER[0]
 
 
 def test_card_missing_net_value_draws_no_bar():

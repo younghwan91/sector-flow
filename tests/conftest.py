@@ -21,7 +21,8 @@ from pathlib import Path
 
 import pytest
 
-from scripts.memcap import cap_memory
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # pythonpath 설정이 없는 프로젝트에서 돌아도 같은 상한을 읽는다
+from scripts.memcap import cap_memory  # noqa: E402
 
 LIMIT_ENV = "SECTOR_FLOW_PYTEST_LIMIT_S"
 #: 세션 상한(초) — 평소의 네 배쯤. 샌드박스·바쁜 머신을 빨갛게 만들 값이 아니라 멈춘 잡을 끝내는 값이다.

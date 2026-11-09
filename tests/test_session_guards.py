@@ -14,6 +14,8 @@ REPO = Path(__file__).resolve().parent.parent
 def _project(tmp_path: Path, body: str) -> Path:
     (tmp_path / "tests").mkdir()
     shutil.copy(REPO / "tests" / "conftest.py", tmp_path / "tests" / "conftest.py")
+    (tmp_path / "scripts").mkdir(exist_ok=True)
+    shutil.copy(REPO / "scripts" / "memcap.py", tmp_path / "scripts" / "memcap.py")
     (tmp_path / "pyproject.toml").write_text('[tool.pytest.ini_options]\ntestpaths = ["tests"]\n'
                                              '[tool.coverage.run]\nsource = ["."]\n', "utf-8")
     (tmp_path / "tests" / "test_x.py").write_text(body, "utf-8")
