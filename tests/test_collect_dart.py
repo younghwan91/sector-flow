@@ -408,3 +408,13 @@ def test_two_points_moved_to_the_same_day_keep_one():
     pts = [("2026-03-31", 18_907_130), ("2026-06-30", 18_907_130)]
     got = D.align_to_listing(pts, [("2026-11-08", 18_907_000)], MERGER)
     assert [r[0] for r in got] == ["2026-07-03"] and got[0][2] == "dart_moved"
+
+
+@pytest.mark.parametrize("events", [
+    [("2026-01-05", "16", 400.0)],                 # 주식수 이벤트지만 구간 밖(점 앞)
+    [("2026-12-01", "16", 400.0)],                 # 구간 밖(다음 실측 뒤)
+    [("2026-07-03", "4", 400.0)],                  # 구간 안이지만 주식수 이벤트가 아니다
+])
+def test_only_a_share_event_inside_the_gap_moves_a_point(events):
+    pts = [("2026-06-30", 18_907_130)]
+    assert D.align_to_listing(pts, [("2026-11-08", 18_907_000)], events) == [("2026-06-30", 18_907_130, "dart")]

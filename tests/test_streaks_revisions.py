@@ -576,3 +576,12 @@ def test_web_today_panel_says_the_same_streaks_and_revision_line_as_the_terminal
 def test_the_web_layer_catches_a_streak_or_revision_line_that_drifts_from_the_terminal(P, tmp_path, patch):
     Q, D = _numbers(P)
     assert "W/'오늘' 패널 연속 순매매·잠정 수정 폭 = TUI 첫 화면 글자" in _w_page(tmp_path, Q, D, patch)
+
+
+def test_stock_drivers_stop_at_exactly_the_cut_of_the_sum():
+    """주도주 정의를 손으로 센 값과 — 누적이 80% 에 **닿으면** 멈추고(50+30), 79.6% 면 한 종목 더 간다."""
+    def w1(**inst):
+        return {c: ("거래소", "보험", c, {"inst": v}) for c, v in inst.items()}
+    assert sf._stock_drivers(w1(A=50.0, B=30.0, C=15.0, D=5.0)) == {"A", "B"}
+    assert sf._stock_drivers(w1(A=49.6, B=30.0, C=15.4, D=5.0)) == {"A", "B", "C"}
+    assert sf._stock_drivers(w1(A=0.0, B=0.0)) == set()

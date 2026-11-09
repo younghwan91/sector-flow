@@ -574,6 +574,39 @@ def test_trim_ladders_end_with_counts_only_and_no_streak():
     assert re.search(r"상단: \d+곳 <span", pages[-1]) and "연속" not in pages[-1]
 
 
+def test_card_defaults_are_the_first_rung():
+    F, _t, pages = dg.build(fixture_payload())
+    assert dg.card_html(F) == pages[0]
+
+
+def test_card_missing_net_value_draws_no_bar():
+    """값이 없는 주체는 막대 없이 '—' 다 — 폭이 0 이 아니면 없는 값이 숫자처럼 보인다."""
+    P = fixture_payload()
+    P["today"]["market"]["전체"]["net"]["etc"] = {"v": None, "pct": None}
+    page = dg.build(P)[2][0]
+    row = page.split('<div class="net-row">')[4]
+    assert "width:0.00%" in row and ">—<" in row
+
+
+def test_empty_extreme_list_says_none_in_words():
+    assert dg._capped([], 3) == "없음" and dg._capped([], 0) == "없음"
+    assert dg._capped(["가", "나", "다"], 2) == "가 · 나 외 1" and dg._capped(["가", "나"], 0) == "2곳"
+    P = fixture_payload()
+    for r in P["today"]["sectors"]["전체"].values():
+        for a in ("inst", "invpen", "forgn"):
+            r[a]["pct"] = 50.0
+    _F, text, pages = dg.build(P)
+    assert "상단: 없음 / 하단: 없음" in text and "상단: 없음" in pages[0] and "None" not in pages[0]
+
+
+def test_reference_day_comes_from_today_then_from_the_report_dates():
+    P = fixture_payload()
+    P["today"]["date"], P["dates"] = "2026-11-06", ["2026-11-05", "2026-11-07"]
+    assert dg.collect(P)["asof"] == "2026-11-06"
+    del P["today"]["date"]
+    assert dg.collect(P)["asof"] == "2026-11-07"
+
+
 # ── PNG 경로 — 브라우저 없이 `main` 의 사다리·실패 처리를 돈다(찍는 함수만 바꿔 끼운다). 실제 찍기는 위 Playwright 검사.
 
 def _png_dir(tmp_path: Path) -> Path:

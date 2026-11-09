@@ -8001,3 +8001,122 @@ guards = ["tests/test_mutation_sample.py::test_memory_limit_turns_a_runaway_muta
 file = "scripts/mutation_sample.py"
 find = """    resource.setrlimit(resource.RLIMIT_AS, (MEM_LIMIT, MEM_LIMIT))"""
 replace = """    pass"""
+
+# ── 표본 2(시드 8)의 진짜 생존 ──
+[[mutation]]
+id = "card-default-rung-drifts"
+why = "card_html 기본값이 사다리 첫 칸과 어긋난다"
+guards = ["tests/test_digest.py::test_card_defaults_are_the_first_rung"]
+file = "scripts/digest.py"
+find = """extreme_cap: int = CARD_LADDER[0][0], streak"""
+replace = """extreme_cap: int = CARD_LADDER[1][0], streak"""
+
+[[mutation]]
+id = "card-missing-net-draws-a-bar"
+why = "값이 없는 주체에 막대가 그려진다"
+guards = ["tests/test_digest.py::test_card_missing_net_value_draws_no_bar"]
+file = "scripts/digest.py"
+find = """        w = 0.0 if v is None else abs(v) / vmax * 50.0"""
+replace = """        w = 1.0 if v is None else abs(v) / vmax * 50.0"""
+
+[[mutation]]
+id = "empty-extreme-list-prints-none"
+why = "글·카드에 파이썬 None 이 찍힌다"
+guards = ["tests/test_digest.py::test_empty_extreme_list_says_none_in_words"]
+file = "scripts/digest.py"
+find = """    if not xs:
+        return "없음""""
+replace = """    if not xs:
+        return None"""
+
+[[mutation]]
+id = "digest-asof-ignores-today-date"
+why = "기준일을 today 가 아니라 날짜 목록 끝에서 읽는다"
+guards = ["tests/test_digest.py::test_reference_day_comes_from_today_then_from_the_report_dates"]
+file = "scripts/digest.py"
+find = """asof = T.get("date") or (P.get("dates") or [None])[-1]"""
+replace = """asof = T.get("date") and (P.get("dates") or [None])[-1]"""
+
+[[mutation]]
+id = "verify-cell-without-record-prints-none"
+why = "검증 기록이 없는 날 칸이 빈다"
+guards = ["tests/test_trust_page.py::test_day_without_a_verify_record_says_so"]
+file = "scripts/trust_page.py"
+find = """    v = day["verify"]
+    if v is None:
+        return '<span class="dim">기록 없음</span>'"""
+replace = """    v = day["verify"]
+    if v is None:
+        return None"""
+
+[[mutation]]
+id = "state-cell-commit-reads-unknown"
+why = "재구성 칸이 커밋 대신 '?' 를 적는다"
+guards = ["tests/test_trust_page.py::test_rebuilt_commit_is_shown_short_or_as_unknown"]
+file = "scripts/trust_page.py"
+find = """        commit = (day["rebuilt"].get("commit") or "?")[:12]"""
+replace = """        commit = (day["rebuilt"].get("commit") and "?")[:12]"""
+
+[[mutation]]
+id = "errata-commit-length-drifts"
+why = "정정 목록의 커밋 글자가 표와 갈린다"
+guards = ["tests/test_trust_page.py::test_rebuilt_commit_is_shown_short_or_as_unknown"]
+file = "scripts/trust_page.py"
+find = """            commit = (d["rebuilt"].get("commit") or "?")[:12]"""
+replace = """            commit = (d["rebuilt"].get("commit") or "?")[:13]"""
+
+[[mutation]]
+id = "git-info-returns-none-on-success"
+why = "사전등록 커밋 시각이 전부 빠진다"
+guards = ["tests/test_trust_page.py::test_git_info_reads_a_real_commit_and_shrugs_at_a_missing_one"]
+file = "scripts/trust_page.py"
+find = """    if out.returncode != 0 or not out.stdout.strip():"""
+replace = """    if out.returncode == 0 or not out.stdout.strip():"""
+
+[[mutation]]
+id = "dart-moves-on-any-event-or-any-time"
+why = "구간 밖이나 주식수와 무관한 이벤트로 점을 옮겨 시총이 배수로 틀린다"
+guards = ["tests/test_collect_dart.py::test_only_a_share_event_inside_the_gap_moves_a_point"]
+file = "src/sectorflow/collect/dart.py"
+find = """if d < e <= qd and _share_event(tp, rt))"""
+replace = """if d < e <= qd or _share_event(tp, rt))"""
+
+[[mutation]]
+id = "producer-driver-cut-excludes-the-boundary"
+why = "누적이 문턱에 딱 닿아도 한 종목 더 간다 — 정의와 어긋난다"
+guards = ["tests/test_streaks_revisions.py::test_stock_drivers_stop_at_exactly_the_cut_of_the_sum"]
+file = "scripts/sector_flow.py"
+find = """            if cum >= STOCK_DIFF_CUT / 100.0 * tot:"""
+replace = """            if cum > STOCK_DIFF_CUT / 100.0 * tot:"""
+
+[[mutation]]
+id = "producer-driver-cut-denominator-drifts"
+why = "문턱 분모가 움직여 일찍 멈춘다"
+guards = ["tests/test_streaks_revisions.py::test_stock_drivers_stop_at_exactly_the_cut_of_the_sum"]
+file = "scripts/sector_flow.py"
+find = """            if cum >= STOCK_DIFF_CUT / 100.0 * tot:"""
+replace = """            if cum >= STOCK_DIFF_CUT / 101.0 * tot:"""
+
+[[mutation]]
+id = "verifier-top3-skips-the-minimum-size"
+why = "6종목 섹터를 상위 3 유지에서 뺀다 — 문턱은 '6 미만' 이다"
+guards = ["tests/test_verifier_depth.py::test_stock_layer_recount_matches_hand_numbers"]
+file = "scripts/verify_report.py"
+find = """if ms in dropped or len(rn) < VT_STK_MIN or len(ro) < VT_STK_MIN:"""
+replace = """if ms in dropped or len(rn) <= VT_STK_MIN or len(ro) < VT_STK_MIN:"""
+
+[[mutation]]
+id = "verifier-gate-total-subtracts"
+why = "게이트 합이 음수가 되어 작은 칸이 다 들어온다"
+guards = ["tests/test_verifier_depth.py::test_stock_layer_recount_matches_hand_numbers"]
+file = "scripts/verify_report.py"
+find = "tot[(m, s, a)] = tot.get((m, s, a), 0.0) + abs(w.get(a) or 0.0)"
+replace = "tot[(m, s, a)] = tot.get((m, s, a), 0.0) - abs(w.get(a) or 0.0)"
+
+[[mutation]]
+id = "verifier-viewer-expect-fills-missing-cell"
+why = "없는 칸을 1억으로 메워 뷰어 대조가 틀린 값을 기대한다"
+guards = ["tests/test_verifier_depth.py::test_viewer_expect_treats_a_sector_missing_from_one_market_as_zero"]
+file = "scripts/verify_report.py"
+find = """.get(k, [0.0] * nd)[i0:i1 + 1]) for mk in mks)"""
+replace = """.get(k, [1.0] * nd)[i0:i1 + 1]) for mk in mks)"""

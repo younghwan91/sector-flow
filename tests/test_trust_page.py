@@ -448,3 +448,29 @@ def test_folder_errata_lists_a_final_only_when_a_sector_cell_moved():
         return {"date": "2026-11-05", "rebuilt": None, "final": {"kind": "diff", "sector": (n, 240), "market": None}}
     assert tp.folder_errata([day(0)]) == []
     assert [e["detail"] for e in tp.folder_errata([day(1)])] == ["섹터 칸 1개 변경"]
+
+
+def test_day_without_a_verify_record_says_so():
+    assert "기록 없음" in tp.verify_cell({"verify": None, "date": "2026-11-05", "verify_status": "unknown"})
+
+
+def test_rebuilt_commit_is_shown_short_or_as_unknown(page):
+    """재구성 커밋은 앞 12자리로 — 표와 정정 목록이 같은 글자이고, 기록이 없으면 '?' 다."""
+    assert "나중 코드(abcdef012345)" in _row(page, "2026-11-06")
+    def day(commit):
+        return {"date": "2026-11-06", "final": None, "rebuilt": {"commit": commit, "finalize": "verified"}}
+    assert tp.folder_errata([day("abcdef0123456789")])[0]["detail"] == "commit abcdef012345 · finalize verified"
+    assert tp.folder_errata([day(None)])[0]["detail"] == "commit ? · finalize verified"
+
+
+def test_git_info_reads_a_real_commit_and_shrugs_at_a_missing_one(tmp_path):
+    env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1", "GIT_AUTHOR_NAME": "t",
+           "GIT_AUTHOR_EMAIL": "t@example.com", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.com",
+           "GIT_AUTHOR_DATE": "2026-01-02T03:04:00+09:00", "GIT_COMMITTER_DATE": "2026-01-02T03:04:00+09:00"}
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True, env=env)
+    subprocess.run(["git", "-C", str(tmp_path), "commit", "-q", "--allow-empty", "-m", "x"], check=True, env=env)
+    sha = subprocess.run(["git", "-C", str(tmp_path), "rev-parse", "HEAD"], capture_output=True, text=True,
+                         env=env).stdout.strip()
+    got = tp.git_info(sha, str(tmp_path))
+    assert got is not None and got[0] == "2026-01-02 03:04" and isinstance(got[1], int)
+    assert tp.git_info("deadbeef" * 5, str(tmp_path)) is None
