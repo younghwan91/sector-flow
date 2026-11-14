@@ -3231,17 +3231,14 @@ def _vt_rarity_check(P: dict) -> None:
             for s in secs:
                 for i, v in enumerate(_vt_series(P, mks, s, a) or []):
                     tot[i] += v
-            if not isinstance(got, list) or len(got) != lb or got[-1] != f.get("v"):
-                bad_s.append(f"{mk}/{a} 길이 {None if not isinstance(got, list) else len(got)} 끝 "
-                             f"{got[-1] if got else None} vs net {f.get('v')}")
+            if not isinstance(got, list) or len(got) != lb:
+                bad_s.append(f"{mk}/{a} 길이 {None if not isinstance(got, list) else len(got)} vs {lb}")
                 continue
-            # 시장 배열은 종목에서 바로 모은 값 — 섹터 배열(소수 2자리) 합과 섹터 수만큼 여유.
+            # 시장 배열은 종목에서 바로 모은 값 — 섹터 배열(소수 2자리) 합과 섹터 수만큼 여유. 끝 값(=net.v)과 그 %ile 은
+            # 위의 시장 합계 검사가 같은 섹터 합에 댄다 — 여기서 또 보면 그 검사가 죽어도 모른다(변이 verify-market-*-blind).
             off = [i for i, (x, y) in enumerate(zip(got, tot[-lb:])) if abs(x - y) > 0.006 * len(secs) + 0.011]
             if off:
                 bad_s.append(f"{mk}/{a} {len(off)}일이 섹터 합과 다름(첫 {P['dates'][n - lb + off[0]]})")
-            p = _vt_pct(got)
-            if (p is None) != (f.get("pct") is None) or (p is not None and abs(p - f["pct"]) > 0.051):
-                bad_r.append(f"{mk}/{a} %ile {f.get('pct')} vs {p}")
             w = _vt_rarity(got)
             cnt += 1
             if any(f.get(k) != w[k] for k in ("rank", "n", "last_more")):
@@ -3261,8 +3258,8 @@ def _vt_rarity_check(P: dict) -> None:
                 ser = _vt_series(P, mks, s, a)
                 if (ser is None) != (a not in rows[s]) or (ser is not None and rows[s][a] != ser[-k:]):
                     bad_rc.append(f"{mk}/{s}/{a}")
-    chk("T", "오늘 한 장 — 시장 일별 배열 = 섹터 합(1년)·끝 = 시장 합계", not bad_s, "; ".join(bad_s[:2]))
-    chk("T", "오늘 한 장 — 시장 %ile·같은 방향 순위·더 큰 날 거리 재계산", not bad_r and cnt > 0,
+    chk("T", "오늘 한 장 — 시장 일별 배열 = 섹터 합(1년)", not bad_s, "; ".join(bad_s[:2]))
+    chk("T", "오늘 한 장 — 시장 같은 방향 순위·더 큰 날 거리 재계산", not bad_r and cnt > 0,
         f"{cnt}칸  " + "; ".join(bad_r[:2]))
     chk("T", "오늘 한 장 — 섹터 최근 20일 일별 배열 = 일별 배열 끝", not bad_rc, "; ".join(bad_rc[:2]))
 

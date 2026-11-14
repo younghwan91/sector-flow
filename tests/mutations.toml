@@ -12377,8 +12377,8 @@ id = "oneday-verifier-rank-blind"
 why = "검증기가 순위·더 큰 날을 다시 세고도 결과를 버린다"
 guards = ["tests/test_oneday.py::test_verifier_catches_a_wrong_rank_distance_series_count_or_recent_day"]
 file = "scripts/verify_report.py"
-find = "    chk(\"T\", \"오늘 한 장 — 시장 %ile·같은 방향 순위·더 큰 날 거리 재계산\", not bad_r and cnt > 0,"
-replace = "    chk(\"T\", \"오늘 한 장 — 시장 %ile·같은 방향 순위·더 큰 날 거리 재계산\", True,"
+find = "    chk(\"T\", \"오늘 한 장 — 시장 같은 방향 순위·더 큰 날 거리 재계산\", not bad_r and cnt > 0,"
+replace = "    chk(\"T\", \"오늘 한 장 — 시장 같은 방향 순위·더 큰 날 거리 재계산\", True,"
 
 [[mutation]]
 id = "oneday-verifier-series-blind"
