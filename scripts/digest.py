@@ -47,6 +47,7 @@ from datetime import date
 from pathlib import Path
 
 from sectorflow.basis import DATA_BASIS_SHORT, NOT_TESTED_NOTE, ret_label, rhu, status_label, truth_gap_label
+from sectorflow.summary import summary_texts
 from sectorflow.wording import BANNED, banned_hits  # noqa: F401 — 금칙어 표의 정본(모든 산출물이 같이 쓴다)
 
 HERE = Path(__file__).resolve().parent
@@ -69,8 +70,9 @@ TOP_N = 3
 PCT_HI, PCT_LO = 95, 5
 #: 목록에서 빼는 묶음 — 섹터가 아니다.
 EXCLUDED_SECTORS = ("(미분류)",)
-#: 글 길이 상한(문자 수, 줄바꿈 포함) — 뉴스레터 한 화면. 기관 세부·부호 바뀜·거래대금 집중이 들어와 1200 에서 올렸다.
-MAX_CHARS = 1500
+#: 글 길이 상한(문자 수, 줄바꿈 포함) — 뉴스레터 한 화면. 기관 세부·부호 바뀜·거래대금 집중이 들어와 1200 에서 올렸고,
+#: 맨 위 '한눈에' 요약(화면 '오늘 한 장' 과 같은 문장, 넉 줄 ≈ 400자)이 들어와 1500 에서 올렸다.
+MAX_CHARS = 1900
 #: 길이가 넘치면 극단 목록을 이 개수까지 차례로 줄인다(0 = 개수만). 그래도 넘치면 만들지 않는다.
 EXTREME_CAPS = (4, 2, 1, 0)
 #: 카드 크기(px) — 인스타그램 세로·텔레그램 미리보기 비율 4:5.
@@ -266,6 +268,8 @@ def collect(P: dict) -> dict:
         "sectors": sectors, "pct_hi": PCT_HI, "pct_lo": PCT_LO,
         "streak": streak, "revision": revision,
         "change": change, "final_diff": final, "excluded": list(EXCLUDED_SECTORS),
+        # 맨 위 요약 — 웹 '오늘 한 장'·TUI 첫 화면과 같은 문장(``sectorflow.summary``). 관심 섹터 줄은 웹에만 있다.
+        "summary": summary_texts(P, MARKET, list(P.get("markets") or [])) or [],
     }
 
 
@@ -398,6 +402,8 @@ def body_text(F: dict, extreme_cap: int = EXTREME_CAPS[0], streak: str = "full",
         rl = revision_line(F)
         if rl:
             L.append(rl)
+    if F.get("summary"):
+        L += ["", f"{F['market']} 한눈에 — 센 값이다(점수·판정 없음)"] + [f"- {t}" for t in F["summary"]]
     L += ["", f"시장 순매수[억] · {F['market']}(거래소+코스닥) · 괄호는 1년 일별 %ile",
           "- " + " · ".join(f"{n['ko']} {amt(n['v'])}{pct_tag(n['pct'])}" for n in F["net"])]
     dl = detail_line(F)

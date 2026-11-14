@@ -433,6 +433,12 @@ TODAY_ACTORS = (("inst", "기관"), ("invtrt", "투신"), ("penfnd_etc", "연기
 MARKET_ACTORS = ("inst", "forgn", "indiv", "etc", "fnnc_invt", "invtrt", "penfnd_etc", "invpen")
 #: 시장 맥락 수익률의 구간(거래일).
 MARKET_RET_WINDOWS = (1, 20)
+#: 시장 일별 순매수 배열(``today.market[시장].series``)과 순위·더 큰 날(:func:`day_rarity`)을 싣는 주체 —
+#: 웹 '오늘 한 장' 의 4주체 띠와 그 아래 투신+연기금 줄. 되돌아보기(:data:`TODAY_LOOKBACK`)만큼만 싣는다.
+STRIP_ACTORS = ("inst", "forgn", "indiv", "etc", "invpen")
+#: 섹터를 누르면 보이는 최근 일별 순매수(``today.recent``) — 20일 누적 작은 선의 재료. 날 수와 주체.
+RECENT_DAYS = 20
+RECENT_ACTORS = ("inst", "invpen", "forgn")
 #: 직전 리포트 대비 — 이 구간 순매수 순위와 상위 몇 섹터의 들고 남.
 CHANGE_WINDOW = 20
 CHANGE_ACTORS = ("inst", "invpen")
@@ -502,6 +508,23 @@ def _fact(ser: list[float]) -> dict:
     return {"v": round(ser[-1], 2), "pct": None if p is None else round(p, 1)}
 
 
+def day_rarity(ser: list[float]) -> dict:
+    """마지막 날 값이 되돌아보기 안에서 **같은 방향으로 몇 번째**이고, 그보다 큰 날이 마지막으로 며칠 전인가.
+
+    ``rank`` = 1 + (같은 방향으로 오늘보다 큰 날 수) — 순매수면 오늘보다 많이 산 날, 순매도면 오늘보다 많이 판 날.
+    ``last_more`` = 그런 날 가운데 가장 가까운 날까지의 거래일 수, 없으면 ``None``(되돌아보기 안 최대).
+    ``n`` = 되돌아보기 길이. :func:`day_pct` 와 같은 분모 게이트 — 백분위가 없거나 오늘이 0 이면 ``rank`` 도 없다.
+    %ile 을 다른 말로 옮긴 것이다 — 앞날을 말하지 않는다(정의 ``docs/formulas.md``).
+    """
+    n = min(TODAY_LOOKBACK, len(ser))
+    s = ser[-n:]
+    if n < 2 or not s[-1] or day_pct(ser) is None:
+        return {"rank": None, "n": n, "last_more": None}
+    cur = s[-1]
+    more = [i for i in range(n - 1) if (s[i] > cur if cur > 0 else s[i] < cur)]
+    return {"rank": len(more) + 1, "n": n, "last_more": (n - 1 - more[-1]) if more else None}
+
+
 def _market_daily(df: pd.DataFrame, dates: list[str], markets: list[str]) -> dict:
     """시장 단위 일별 순매수와 자체 바구니 수익률 — **종목에서 바로** 모은다(섹터 배열을 거치지 않는다).
 
@@ -562,8 +585,12 @@ def today_block(P: dict, mkt: dict) -> dict:
         secs[mkey] = rows
 
     market: dict = {}
+    lb = min(len(dates), TODAY_LOOKBACK)
     for mkey, d in mkt.items():
-        net = {a: _fact([round(v, 2) for v in d["flows"][a]]) for a in MARKET_ACTORS}
+        sers = {a: [round(v, 2) for v in d["flows"][a]] for a in MARKET_ACTORS}
+        net = {a: _fact(sers[a]) for a in MARKET_ACTORS}
+        for a in STRIP_ACTORS:
+            net[a].update(day_rarity(sers[a]))
         ret = {}
         for w in MARKET_RET_WINDOWS:
             span = d["ret"][-w:] if w <= len(dates) else []
@@ -574,7 +601,18 @@ def today_block(P: dict, mkt: dict) -> dict:
             for r in span:                       # 가중치가 0 인 날은 0% — sector_numbers.agg 와 같다
                 acc *= 1.0 + (r or 0.0) / 100.0
             ret[str(w)] = round((acc - 1.0) * 100.0, 3)
-        market[mkey] = {"net": net, "tv": round(d["flows"]["tv"][-1], 2), "ret": ret}
+        market[mkey] = {"net": net, "tv": round(d["flows"]["tv"][-1], 2), "ret": ret,
+                        "series": {a: sers[a][-lb:] for a in STRIP_ACTORS}}
+
+    recent: dict = {}
+    k = min(len(dates), RECENT_DAYS)
+    for mkey, mks in _mkeys(P):
+        for s in P["sectors"]:
+            if not _present(P, mks, s):
+                continue
+            row = {a: ser[-k:] for a in RECENT_ACTORS if (ser := _series(P, mks, s, a)) is not None}
+            if row:
+                recent.setdefault(mkey, {})[s] = row
 
     return {
         "date": dates[-1],
@@ -583,6 +621,7 @@ def today_block(P: dict, mkt: dict) -> dict:
         "actors": {a: ko for a, ko in TODAY_ACTORS},
         "sectors": secs,
         "market": market,
+        "recent": {"days": k, "dates": dates[-k:], "actors": list(RECENT_ACTORS), "sectors": recent},
     }
 
 
@@ -609,11 +648,12 @@ def _members(P: dict, mks: list[str], sec: str) -> int:
 
 
 def streak_fact(ser: list[float], gross: list[float], lookback: int = TODAY_LOOKBACK) -> dict:
-    """마지막 날까지 1일 순매수 부호가 같은 날 수와 그 누적, 그 길이의 1년 백분위.
+    """마지막 날까지 1일 순매수 부호가 같은 날 수와 그 누적, 그 길이의 1년 백분위, 1년 안 같은 길이 횟수.
 
     ``sign`` 은 +1(순매수)·−1(순매도)·0(≈0 날 — 연속 없음). 백분위는 되돌아보기 안의 **날마다의 연속 길이**
     (부호 무관, ≈0 날은 0) 분포에서 오늘 길이의 midrank(:func:`day_pct` 와 같은 정의)다. 페이로드 첫날보다
-    앞은 모르므로 첫 며칠의 길이는 짧게 잡힌다.
+    앞은 모르므로 첫 며칠의 길이는 짧게 잡힌다. ``times`` = 되돌아보기 안에서 **같은 방향** 연속이 오늘 길이에
+    닿은 날 수(오늘 포함) — "1년 중 같은 방향 k일 이상 연속 N번".
     """
     sig = [0 if not g or abs(v) < STREAK_EPS_SHARE * g else (1 if v > 0 else -1) for v, g in zip(ser, gross)]
     runs: list[int] = []
@@ -621,14 +661,16 @@ def streak_fact(ser: list[float], gross: list[float], lookback: int = TODAY_LOOK
         runs.append(0 if s == 0 else runs[-1] + 1 if i and sig[i - 1] == s else 1)
     k = runs[-1] if runs else 0
     n = min(len(runs), lookback)
-    pct = None
+    pct = times = None
     if k and n >= 2:
         win = runs[-n:]
         below = sum(1 for r in win if r < k)
         ties = sum(1 for r in win if r == k)
         pct = round(100.0 * (below + (ties - 1) / 2.0) / (n - 1), 1)
+        # 같은 방향 연속이 이 길이에 닿은 날 수 — 연속 하나는 길이 k 를 한 번만 지난다(오늘 포함).
+        times = sum(1 for r, g in zip(win, sig[-n:]) if r == k and g == sig[-1])
     return {"sign": sig[-1] if sig else 0, "days": k,
-            "sum": round(sum(ser[len(ser) - k:]), 2) if k else 0.0, "pct": pct}
+            "sum": round(sum(ser[len(ser) - k:]), 2) if k else 0.0, "pct": pct, "times": times}
 
 
 def streak_block(P: dict) -> dict:

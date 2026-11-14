@@ -195,6 +195,11 @@ tr.thin td{color:var(--ink-3)}
 /* 폰에서 누적 추이 눈금 — svg 를 실제 픽셀 폭으로 그리므로 글자가 줄지 않는다. */
 @media (max-width:640px){.tk{font-size:11px}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+/* 오늘 한눈에 — 수치표 '오늘 한 장'·TUI 첫 화면·다이제스트와 같은 문장(sectorflow.summary). */
+#v-sum ul{margin:0; padding:10px 17px 4px 34px; font-size:14px; line-height:1.6}
+#v-sum li{overflow-wrap:anywhere}
+#v-sum li b{font-weight:600}
+#v-sum .vnote{padding:4px 17px 12px; font-size:12px; color:var(--ink-2)}
 </style>
 
 <div class="wrap">
@@ -211,6 +216,12 @@ tr.thin td{color:var(--ink-3)}
     <div class="subline"><span>추천 없음 — 누가 어디서 사고팔았나의 관측이다. 섹터 20·60일 수급 지표는 앞날 검정함 — 증거 없음(<a href="../latest/trust.html#validation">검증·품질</a>). 1일 값·1년 %ile 은 앞날 검정 안 함.</span></div>
     <nav class="links" aria-label="다른 화면"><a href="numbers.html">수치표 →</a><a href="../latest/trust.html">검증·품질 →</a><a href="../">기준일 목록 →</a></nav>
   </header>
+
+  <section class="panel" id="v-sum" aria-labelledby="v-sum-t">
+    <h2 id="v-sum-t">오늘 한눈에<small>센 값이다(점수·판정 없음) · 시장은 아래 시장 단추를 따른다 · <a href="numbers.html#oneday">수치표 '오늘 한 장' →</a></small></h2>
+    <ul id="v-sum-l"></ul>
+    <div class="vnote" id="v-sum-n"></div>
+  </section>
 
   <div class="bar">
     <div class="grp"><span class="lab">구간</span><div class="seg" id="seg-preset" role="group" aria-label="구간 프리셋"></div></div>
@@ -618,7 +629,52 @@ function renderLine(order){
 
 /* ---------- ranking ---------- */
 let lastOrder=[];
+/* ---------- 오늘 한눈에 — `sectorflow.summary.summary_items` 와 같은 규칙(수치표 `summaryItems` 와 같은 글자, 검증기 W 층이 대조) ---------- */
+const VS_NOT_SAID="1일 순매수·1년 %ile·연속 일수는 앞날 수익률과의 관계를 검정하지 않았다(앞날 검정 안 함) — 이 숫자로 방향을 읽을 근거가 없다. 섹터 20·60일 수급 지표는 검정했고 관계가 확인되지 않았다 — 방향 단서가 아니다.";
+const VS_ACT4=[["inst","기관"],["forgn","외국인"],["indiv","개인"],["etc","기타법인"]];
+const VS_HEAT=[["inst","기관"],["invpen","투신+연기금"],["forgn","외국인"],["indiv","개인"]];
+const vsBig=v=>v==null?"—":(Math.abs(RHU(v))>=1e4?sgn(v)+Math.abs(RHU(v/1e4,1)).toFixed(1)+"조":amt(v)+"억");
+const vsA=v=>v==null?"—":amt(v);
+const vsP=p=>p==null?"—":String(RHU(p));
+const vsBand=p=>p==null?"":RHU(p)>=95?"평소 범위 밖(위)":RHU(p)<=5?"평소 범위 밖(아래)":"평소 범위 안";
+const vsExt=p=>p!=null&&(RHU(p)>=95||RHU(p)<=5);
+const vsSide=v=>(v||0)>=0?"순매수":"순매도";
+const vsMore=n=>n>3?" 외 "+(n-3):"";
+function vsItems(m){
+  const T=D.today; if(!T||!T.sectors) return null;
+  const out=[], net=((T.market||{})[m]||{}).net||{}, mk=m==="전체"?D.markets:[m];
+  let dm=null; VS_ACT4.forEach(([k,ko])=>{ const v=(net[k]||{}).v; if(v==null) return; const t=[Math.abs(v),k,ko];
+    if(!dm||t[0]>dm[0]||(t[0]===dm[0]&&t[1]>dm[1])) dm=t; });
+  if(dm){ const f=net[dm[1]], b=vsBand(f.pct);
+    const r=f.rank==null?"":f.n+"일 중 "+f.rank+"번째로 큰 "+vsSide(f.v)+(f.last_more==null?"":" · 더 많이 "+(f.v>0?"산":"판")+" 날은 "+f.last_more+"거래일 전");
+    out.push(["dom",dm[2]+" "+vsBig(f.v)+" "+vsSide(f.v)," — 오늘 가장 큰 주체. 1년 %ile "+vsP(f.pct)+(b?" · "+b:"")+(r?" · "+r:"")]); }
+  const SK=(((T.streaks||{}).market||{})[m])||{}; let best=null;
+  VS_HEAT.forEach(([a,ko])=>{ const f=SK[a]; if(f&&f.days&&(!best||f.days>best[2].days)) best=[a,ko,f]; });
+  if(best&&best[2].days>=2){ const f=best[2], n=(T.streaks||{}).lookback||T.lookback;
+    out.push(["streak",best[1]+" "+f.days+"일 연속 "+(f.sign>0?"순매수":"순매도"),
+      " (누적 "+vsBig(f.sum)+")"+(f.times!=null?" — "+n+"일 중 같은 방향 "+f.days+"일 이상 연속 "+f.times+"번(오늘 포함)":"")]); }
+  const S=(T.sectors||{})[m]||{}, cells=[]; let total=0;
+  const mem=s=>mk.reduce((a,k)=>a+(+(((D.n_by_sector||{})[k]||{})[s])||0),0);
+  Object.keys(S).sort().forEach(s=>{ if(s==="(미분류)"||mem(s)<10) return;
+    VS_HEAT.forEach(([a,ko],i)=>{ const f=S[s][a]; if(!f||f.pct==null) return; total++;
+      if(vsExt(f.pct)) cells.push({g:Math.abs(f.pct-50),s,i,ko,f}); }); });
+  cells.sort((x,y)=>(y.g-x.g)||(x.s<y.s?-1:x.s>y.s?1:0)||(x.i-y.i));
+  out.push(["ext","평소 범위(1년 %ile 5~95) 밖 "+cells.length+"칸/"+total+"칸",
+    cells.length?": "+cells.slice(0,3).map(c=>c.s+" "+c.ko+" "+vsA(c.f.v)+"억("+vsP(c.f.pct)+")").join(" · ")+vsMore(cells.length):" — 없음"]);
+  const DC=T.day_change||{};
+  if(DC.prev_date){ const fl=((DC.flips||{})[m]||{}).inst||[];
+    out.push(["flip","어제("+DC.prev_date.slice(5)+")와 기관 부호가 바뀐 섹터 "+fl.length+"곳",
+      fl.length?": "+fl.slice(0,3).map(x=>x.sector+" "+vsA(x.prev)+"→"+vsA(x.now)).join(" · ")+vsMore(fl.length):""]); }
+  return out;
+}
+function renderSummary(){
+  const box=document.getElementById("v-sum"), ul=document.getElementById("v-sum-l"), items=vsItems(market);
+  ul.replaceChildren(); box.hidden=!items;
+  (items||[]).forEach(([k,h,t])=>{ const li=el("li"); li.dataset.key=k; li.append(el("b",null,h),document.createTextNode(t)); ul.append(li); });
+  document.getElementById("v-sum-n").textContent="이 요약이 말하지 않는 것 — "+VS_NOT_SAID+" 평소 범위 안·밖 = 1년 %ile(5~95)을 말로 옮긴 것, 판정 아님.";
+}
 function render(){
+  renderSummary();
   ["seg-market","seg-actor","seg-metric","seg-preset"].forEach(id=>document.getElementById(id)._sync());
   selFrom.value=String(i0); selTo.value=String(i1);
   const label=ACTORS.find(a=>a[0]===actor)[1];

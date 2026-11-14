@@ -274,9 +274,10 @@ def shoot(report: Path, out: Path) -> None:
                 _quantize(out / name)
             page.close()
             numbers = (report / "numbers.html").as_uri()
-            # 표지 [합성 데모] 는 쪽 맨 위 띠다 — 맨 위부터 찍어 어느 그림에도 보이게. 폰은 '달라진 것' 까지.
-            for name, w, h, dpr, sel in (("web-today.png", 1440, 900, 1, "#today"),
-                                         ("web-today-mobile.png", 390, 844, 2, "#t-change")):
+            # 표지 [합성 데모] 는 쪽 맨 위 띠다 — 맨 위부터 찍어 어느 그림에도 보이게. '오늘 한 장' 을 데스크톱은 섹터×주체 칸까지,
+            # 폰은 요약 문장과 시장 4주체까지.
+            for name, w, h, dpr, sel in (("web-today.png", 1440, 900, 1, "#a-heat"),
+                                         ("web-today-mobile.png", 390, 844, 2, "#a-mkt")):
                 ctx = browser.new_context(viewport={"width": w, "height": h}, device_scale_factor=dpr)
                 ctx.route("http*://**", lambda r: r.fulfill(status=200, body="", content_type="text/css"))
                 pg = ctx.new_page()

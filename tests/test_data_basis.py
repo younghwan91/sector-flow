@@ -71,13 +71,14 @@ def test_first_screen_states_the_data_basis_right_under_the_title(width):
 
 
 def test_numbers_today_panel_header_carries_the_short_basis_chip():
-    """웹 '오늘' 패널 머리(제목·시장 단추 줄)에 짧은 자료 범위 칩 — 자리표시로, 글을 직접 적지 않고.
+    """웹 맨 위 '오늘 한 장' 머리(제목·시장 단추 줄)에 짧은 자료 범위 칩 — 자리표시로, 글을 직접 적지 않고.
+    예전 '오늘' 패널은 접힌 세부 숫자가 됐다 — 칩은 접지 않은 맨 위에 있어야 펼치지 않고도 보인다.
 
-    주입: 칩을 빼거나 패널 밖(notes)으로 옮기면 실패한다.
+    주입: 칩을 빼거나 맨 위 밖(notes·접힌 세부)으로 옮기면 실패한다.
     """
     from sectorflow.basis import BASIS_SHORT_SLOT, DATA_BASIS_SHORT
 
     html = (TEMPLATES / "sector_numbers.html").read_text("utf-8")
     assert html.count(BASIS_SHORT_SLOT) == 1 and DATA_BASIS_SHORT not in html
-    head = html[html.index('<section class="panel today"'):html.index('<div class="tgrid"')]
-    assert 'class="thead"' in head and BASIS_SHORT_SLOT in head, "칩이 '오늘' 패널 머리에 없다"
+    head = html[html.index('<section class="oneday"'):html.index('id="a-sum"')]
+    assert 'class="ahead"' in head and BASIS_SHORT_SLOT in head, "칩이 '오늘 한 장' 머리에 없다"
