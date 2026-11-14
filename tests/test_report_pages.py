@@ -289,6 +289,62 @@ def test_numbers_page_defaults_to_flow_and_hides_g_behind_the_exploration_label(
     assert html.index('id="tbl"') < html.index('id="ctbl"'), "종합 G 표가 수급 표보다 위에 있다"
 
 
+def test_numbers_lower_tables_are_folded_closed_below_the_one_day_block():
+    """수치표가 길었다(1440폭 4.8화면) — '오늘 한 장' 아래의 구간 단추·섹터 표·탐색·설명은 **지우지 않고** 닫힌 칸 하나에 접는다.
+    접힌 칸은 무엇이 들었는지 한 줄로 말하고, '오늘 한 장' 은 어느 칸에도 접히지 않는다.
+
+    주입: 칸을 `open` 으로 두거나 섹터 표·설명을 칸 밖으로 빼면 실패한다.
+    """
+    html = (REPO / "scripts" / "templates" / "sector_numbers.html").read_text("utf-8")
+    m = re.search(r'<details class="fold" id="fold-table"([^>]*)>\s*<summary>([^<]+)</summary>(.*)</details>\s*</div>\s*<script>',
+                  html, re.S)
+    assert m, "섹터 표 접는 칸이 없다"
+    assert "open" not in m.group(1), "섹터 표 칸이 처음부터 열려 있다 — 페이지가 다시 길어진다"
+    assert m.group(2).startswith("섹터별 표 — ") and "설명" in m.group(2), m.group(2)
+    for k in ('id="seg-win"', 'id="main-table"', 'id="tbl"', 'id="explore"', 'id="ctbl"', 'id="notes"'):
+        assert html.count(k) == 1 and k in m.group(3), f"{k} 가 접는 칸 밖에 있다(또는 사라졌다)"
+    head = html[:html.index('<details class="fold" id="fold-today"')]
+    assert 'id="oneday"' in head and "<details" not in head[head.index('id="oneday"'):], "'오늘 한 장' 이 접힌 칸 안에 있다"
+
+
+@node
+def test_numbers_anchor_into_a_closed_fold_opens_it(tmp_path):
+    """접힌 칸 안을 가리키는 앵커(`#main-table`·`#notes`, 세부 숫자 안의 '섹터 표' 링크)는 바깥 칸부터 다 펼친다 —
+    닫힌 칸 안은 높이가 0 이라 브라우저가 그 자리로 못 간다. 칸 밖 앵커는 아무것도 펼치지 않는다.
+
+    주입: 펼치기를 빼거나 처음 열 때·hashchange 에 부르지 않으면 실패한다.
+    """
+    html = (REPO / "scripts" / "templates" / "sector_numbers.html").read_text("utf-8")
+    fn = re.search(r"function openTo\(id, scroll\)\{.*?\n\}", html, re.S)
+    hid = re.search(r"const hashId=.*?;\n", html)
+    assert fn and hid, "openTo·hashId 가 없다"
+    assert 'addEventListener("hashchange",()=>openTo(hashId(LOC.hash),true))' in html
+    assert "if(LOC.hash) openTo(hashId(LOC.hash),true);" in html, "처음 열 때 주소의 #id 를 따르지 않는다"
+    assert "openTo(hashId(a.getAttribute(\"href\")),false)" in html, "쪽 안 링크가 접힌 칸을 펼치지 않는다"
+    js = fn.group(0) + "\n" + hid.group(0) + r"""
+function D(id, parent, isDetails){ const e={id, open:false, parentElement:parent||null, isD:!!isDetails, scrolled:0,
+  closest(sel){ for(let x=this; x; x=x.parentElement) if(sel==="details"&&x.isD) return x; return null; },
+  scrollIntoView(){ this.scrolled++; } }; return e; }
+const body=D("body"), outer=D("fold-table", body, true), inner=D("explore", outer, true), deep=D("ctbl", inner), top=D("oneday", body);
+const ids={ctbl:deep, oneday:top, "fold-table":outer, explore:inner};
+const document={getElementById:id=>ids[id]||null};
+const r1=openTo(hashId("#ctbl"), true), s1=[outer.open, inner.open, deep.scrolled];
+const r2=openTo("ctbl", false);
+outer.open=false; inner.open=false;
+const r3=openTo("oneday", true), s3=[outer.open, inner.open, top.scrolled];
+const r4=openTo("없는 것", true);
+console.log(JSON.stringify({r1, s1, r2, r3, s3, r4, dec: hashId("#%EC%84%A4")}));
+"""
+    (tmp_path / "t.js").write_text(js, "utf-8")
+    p = subprocess.run(["node", str(tmp_path / "t.js")], capture_output=True, text=True, timeout=30)
+    assert p.returncode == 0, p.stderr[-800:]
+    got = json.loads(p.stdout)
+    assert got["r1"] is True and got["s1"] == [True, True, 1], got
+    assert got["r2"] is False, "이미 열린 칸을 '펼쳤다' 고 한다"
+    assert got["r3"] is False and got["s3"] == [False, False, 1], "칸 밖 앵커가 칸을 펼쳤다"
+    assert got["r4"] is False and got["dec"] == "설"
+
+
 @pytest.mark.parametrize("tpl", ["sector_numbers.html", "sector_flow.html"])
 def test_pages_carry_no_stale_or_timing_language(tpl):
     """낡은 상관값·타이밍 은유·"미반응" 지표가 다시 들어오지 않는다."""

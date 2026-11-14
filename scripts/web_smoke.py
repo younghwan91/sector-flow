@@ -8,6 +8,7 @@ numbers.html·viewer.html 은 늘, 검증·품질(trust.html)은 폴더에 있�
 * 문서가 가로로 넘치지 않는가 — ``documentElement.scrollWidth > innerWidth``. 본표(``.tw``)는 제 안에서 옆으로 미는
   것이 의도라 문서 폭만 본다(폰 390 에서 페이지 전체가 밀리면 결함이다).
 * numbers.html 맨 위 '오늘 한 장'(``#oneday``)이 보이고 요약 문장이 있는가(예전 '오늘' 패널은 그 아래 접힌 세부 숫자다).
+* numbers.html 이 접힌 채 :data:`MAX_SCREENS` 화면 안인가 — 요약을 얹고도 길어져(1440폭 4.8화면) 섹터 표·설명을 접었다.
 * 합성 데모 폴더면 쪽 안의 상대 링크가 다 열리는가 — 면책 문구의 근거 링크가 404 였다.
 
 외부 글꼴(fonts.googleapis.com) 요청은 빈 응답으로 막는다 — 네트워크 사정이 콘솔 오류로 섞이지 않게.
@@ -44,6 +45,9 @@ LIST_PAGE = "index.html"
 DEMO_MARKER = "DEMO.txt"
 #: 넘침 여유[px] — 소수 픽셀 반올림.
 OVERFLOW_SLACK = 1
+#: numbers.html 길이 상한(문서 높이 ÷ 창 높이, 접힌 칸은 닫힌 채) — 폭별. 2026-11-13 실데이터 2.86·5.33, 데모 2.38·4.66.
+#: 넘으면 접은 칸이 열렸거나 첫 화면('오늘 한 장')이 길어진 것이다.
+MAX_SCREENS = {1440: 3.0, 390: 6.0}
 
 _MEASURE = """() => {
   const t = document.getElementById("oneday");
@@ -52,7 +56,8 @@ _MEASURE = """() => {
     today = {w: r.width, h: r.height, top: r.top + window.scrollY, display: cs.display, visibility: cs.visibility,
              cards: document.querySelectorAll("#a-sum li").length}; }
   const links = [...document.querySelectorAll("a[href]")].map(a => a.getAttribute("href"));
-  return {scroll_w: document.documentElement.scrollWidth, inner_w: window.innerWidth, today, links};
+  return {scroll_w: document.documentElement.scrollWidth, inner_w: window.innerWidth,
+          scroll_h: document.documentElement.scrollHeight, inner_h: window.innerHeight, today, links};
 }"""
 
 
@@ -72,6 +77,10 @@ def judge(page: str, width: int, facts: dict) -> list[str]:
             out.append(f"{tag} '오늘 한 장' 이 안 보인다({t})")
         elif not t.get("cards"):
             out.append(f"{tag} '오늘 한 장' 이 비었다(요약 문장 0)")
+        cap = MAX_SCREENS.get(width)
+        if cap and facts.get("scroll_h") and facts.get("inner_h") and facts["scroll_h"] / facts["inner_h"] > cap:
+            out.append(f"{tag} 길이 {facts['scroll_h'] / facts['inner_h']:.2f}화면 > 상한 {cap} — "
+                       "접힌 칸(세부 숫자·섹터 표)이 열렸거나 '오늘 한 장' 이 길어졌다")
     return out
 
 

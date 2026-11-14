@@ -32,7 +32,7 @@ CLEAN = {"console": [], "errors": [], "scroll_w": 390, "inner_w": 390,
 
 
 def test_judge_flags_console_errors_page_overflow_and_a_missing_today_panel():
-    """주입: 판정에서 콘솔 오류·가로 넘침·'오늘' 패널 중 하나를 빼면 실패한다."""
+    """주입: 판정에서 콘솔 오류·가로 넘침·'오늘' 패널·수치표 길이 중 하나를 빼면 실패한다."""
     assert WS.judge("numbers.html", 390, CLEAN) == []
     assert WS.judge("viewer.html", 390, dict(CLEAN, today=None)) == []        # 뷰어에는 '오늘' 패널이 없다
     assert any("콘솔 오류" in x for x in WS.judge("numbers.html", 390, dict(CLEAN, console=["boom"])))
@@ -44,6 +44,11 @@ def test_judge_flags_console_errors_page_overflow_and_a_missing_today_panel():
     assert any("안 보인다" in x for x in WS.judge("numbers.html", 390, dict(CLEAN, today=hidden)))
     empty = dict(CLEAN["today"], cards=0)
     assert any("비었다" in x for x in WS.judge("numbers.html", 390, dict(CLEAN, today=empty)))
+    # 길이 — 접힌 채 폭별 상한 안. 뷰어는 재지 않는다(수치표만 접었다).
+    assert WS.judge("numbers.html", 390, dict(CLEAN, scroll_h=844 * 6, inner_h=844)) == []
+    assert any("길이 6.01화면" in x for x in WS.judge("numbers.html", 390, dict(CLEAN, scroll_h=5073, inner_h=844)))
+    assert any("상한 3.0" in x for x in WS.judge("numbers.html", 1440, dict(CLEAN, scroll_h=2800, inner_h=900)))
+    assert WS.judge("viewer.html", 1440, dict(CLEAN, today=None, scroll_h=9000, inner_h=900)) == []
 
 
 def _pages(tmp: Path) -> Path:

@@ -2375,6 +2375,44 @@ find = "let sortKey = \"accel\", sortDir = -1, focusSort = null, focusBtn = null
 replace = "let sortKey = \"G\", sortDir = -1, focusSort = null, focusBtn = null;"
 
 [[mutation]]
+id = "numbers-table-fold-open"
+why = "섹터 표 칸이 처음부터 열린다 — 수치표가 다시 4.8화면(1440폭)으로 길어진다"
+guards = ["tests/test_report_pages.py::test_numbers_lower_tables_are_folded_closed_below_the_one_day_block"]
+file = "scripts/templates/sector_numbers.html"
+find = "<details class=\"fold\" id=\"fold-table\">"
+replace = "<details class=\"fold\" id=\"fold-table\" open>"
+
+[[mutation]]
+id = "numbers-notes-out-of-fold"
+why = "설명이 접는 칸 밖(맨 아래)으로 나온다 — 폰에서 설명만 1,600px 이다"
+guards = ["tests/test_report_pages.py::test_numbers_lower_tables_are_folded_closed_below_the_one_day_block"]
+file = "scripts/templates/sector_numbers.html"
+find = """  </div>
+  </div>
+  </details>
+</div>"""
+replace = """  </div>
+  </details>
+  </div>
+</div>"""
+
+[[mutation]]
+id = "numbers-fold-anchor-stays-closed"
+why = "접힌 칸 안을 가리키는 앵커(#main-table·#notes)가 칸을 안 펼친다 — 닫힌 칸 안은 높이 0 이라 링크가 아무 데도 안 간다"
+guards = ["tests/test_report_pages.py::test_numbers_anchor_into_a_closed_fold_opens_it"]
+file = "scripts/templates/sector_numbers.html"
+find = "if(!d.open){ d.open=true; opened=true; }"
+replace = "if(!d.open){ opened=true; }"
+
+[[mutation]]
+id = "numbers-hash-ignored-on-load"
+why = "주소에 #notes 를 달고 열어도 접힌 칸이 닫힌 채다(크롬 밖의 브라우저)"
+guards = ["tests/test_report_pages.py::test_numbers_anchor_into_a_closed_fold_opens_it"]
+file = "scripts/templates/sector_numbers.html"
+find = "  if(LOC.hash) openTo(hashId(LOC.hash),true); }"
+replace = "  }"
+
+[[mutation]]
 id = "viewer-resid-metric-back"
 why = "뷰어에 \"미반응\" 기준이 돌아온다 — 많이 빠진 순을 신호처럼 이름 붙인다"
 guards = ["tests/test_report_pages.py::test_pages_carry_no_stale_or_timing_language"]
@@ -5028,6 +5066,14 @@ guards = ["tests/test_web_smoke.py::test_judge_flags_console_errors_page_overflo
 file = "scripts/web_smoke.py"
 find = "    if facts.get(\"scroll_w\", 0) > facts.get(\"inner_w\", 0) + OVERFLOW_SLACK:"
 replace = "    if False:"
+
+[[mutation]]
+id = "web-smoke-ignores-page-length"
+why = "수치표가 접힌 칸이 열린 채 4.8화면(1440폭)으로 길어져도 스모크가 초록이다"
+guards = ["tests/test_web_smoke.py::test_judge_flags_console_errors_page_overflow_and_a_missing_today_panel"]
+file = "scripts/web_smoke.py"
+find = "        if cap and facts.get(\"scroll_h\") and facts.get(\"inner_h\")"
+replace = "        if False and facts.get(\"scroll_h\") and facts.get(\"inner_h\")"
 
 [[mutation]]
 id = "web-smoke-ignores-console-errors"
