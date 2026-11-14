@@ -214,7 +214,7 @@ details.tview table{min-width:0; font-size:12px}
   .axisrow>span:first-child,.axisrow>span:last-child{display:none} .axisrow .ax{grid-column:1 / -1}
   .srow .tx{text-align:right}
   .brow,.brow.wide{grid-template-columns:7em minmax(0,1fr)} .brow .tx{grid-column:1 / -1; padding-left:7em}
-  .brow.wide .nm{grid-column:1 / -1}
+  .brow.wide .nm,.brow.wide .btrack{grid-column:1 / -1} .brow.wide .tx{padding-left:0}
   .sm3{grid-template-columns:1fr}
   .so div{grid-template-columns:1fr; gap:0}
   ul.lead{font-size:14.5px}
@@ -637,7 +637,7 @@ function drill(s){
       let acc=0; const cum=x.map(v=>acc+=v); cell.append(el("div","cap",ko+" "+n+"일 누적 "+BIG(cum[cum.length-1])));
       cell.append(spark(cum,(T.recent||{}).dates||[],ko)); box.append(cell); });
     d.append(box); }
-  soWhat(d,[["읽는 법","순매수 상위 5·하위 5 종목("+(KO[aAct]||aAct)+"). 섹터 합은 이 종목들 말고도 "+st.length+"종목의 합이다. 누적 선은 섹터마다 세로 눈금이 다르다."],
+  soWhat(d,[["읽는 법","순매수 상위 5·하위 5 종목("+(KO[aAct]||aAct)+"). 섹터 합은 그날 값이 있는 "+st.length+"종목 전부의 합이다. 누적 선은 섹터마다 세로 눈금이 다르다."],
     ["과거 비슷한 날 뒤에는","종목 1일 순매수는 앞날 검정 안 함. 누적 선: "+TREND_NOTE]]);
   return d;
 }
