@@ -2375,6 +2375,44 @@ find = "let sortKey = \"accel\", sortDir = -1, focusSort = null, focusBtn = null
 replace = "let sortKey = \"G\", sortDir = -1, focusSort = null, focusBtn = null;"
 
 [[mutation]]
+id = "numbers-table-fold-open"
+why = "섹터 표 칸이 처음부터 열린다 — 수치표가 다시 4.8화면(1440폭)으로 길어진다"
+guards = ["tests/test_report_pages.py::test_numbers_lower_tables_are_folded_closed_below_the_one_day_block"]
+file = "scripts/templates/sector_numbers.html"
+find = "<details class=\"fold\" id=\"fold-table\">"
+replace = "<details class=\"fold\" id=\"fold-table\" open>"
+
+[[mutation]]
+id = "numbers-notes-out-of-fold"
+why = "설명이 접는 칸 밖(맨 아래)으로 나온다 — 폰에서 설명만 1,600px 이다"
+guards = ["tests/test_report_pages.py::test_numbers_lower_tables_are_folded_closed_below_the_one_day_block"]
+file = "scripts/templates/sector_numbers.html"
+find = """  </div>
+  </div>
+  </details>
+</div>"""
+replace = """  </div>
+  </details>
+  </div>
+</div>"""
+
+[[mutation]]
+id = "numbers-fold-anchor-stays-closed"
+why = "접힌 칸 안을 가리키는 앵커(#main-table·#notes)가 칸을 안 펼친다 — 닫힌 칸 안은 높이 0 이라 링크가 아무 데도 안 간다"
+guards = ["tests/test_report_pages.py::test_numbers_anchor_into_a_closed_fold_opens_it"]
+file = "scripts/templates/sector_numbers.html"
+find = "if(!d.open){ d.open=true; opened=true; }"
+replace = "if(!d.open){ opened=true; }"
+
+[[mutation]]
+id = "numbers-hash-ignored-on-load"
+why = "주소에 #notes 를 달고 열어도 접힌 칸이 닫힌 채다(크롬 밖의 브라우저)"
+guards = ["tests/test_report_pages.py::test_numbers_anchor_into_a_closed_fold_opens_it"]
+file = "scripts/templates/sector_numbers.html"
+find = "  if(LOC.hash) openTo(hashId(LOC.hash),true); }"
+replace = "  }"
+
+[[mutation]]
 id = "viewer-resid-metric-back"
 why = "뷰어에 \"미반응\" 기준이 돌아온다 — 많이 빠진 순을 신호처럼 이름 붙인다"
 guards = ["tests/test_report_pages.py::test_pages_carry_no_stale_or_timing_language"]
@@ -5030,6 +5068,14 @@ find = "    if facts.get(\"scroll_w\", 0) > facts.get(\"inner_w\", 0) + OVERFLOW
 replace = "    if False:"
 
 [[mutation]]
+id = "web-smoke-ignores-page-length"
+why = "수치표가 접힌 칸이 열린 채 4.8화면(1440폭)으로 길어져도 스모크가 초록이다"
+guards = ["tests/test_web_smoke.py::test_judge_flags_console_errors_page_overflow_and_a_missing_today_panel"]
+file = "scripts/web_smoke.py"
+find = "        if cap and facts.get(\"scroll_h\") and facts.get(\"inner_h\")"
+replace = "        if False and facts.get(\"scroll_h\") and facts.get(\"inner_h\")"
+
+[[mutation]]
 id = "web-smoke-ignores-console-errors"
 why = "브라우저 콘솔 오류가 나도 스모크가 초록이다"
 guards = ["tests/test_web_smoke.py::test_judge_flags_console_errors_page_overflow_and_a_missing_today_panel"]
@@ -6873,6 +6919,31 @@ find = "CARD_W, CARD_H = 1080, 1350"
 replace = "CARD_W, CARD_H = 1080, 1080"
 
 [[mutation]]
+id = "digest-card-floor-keeps-sections"
+why = "카드 사다리의 마지막 판이 자료에 달린 칸(섹터·극단·연속)을 다시 안는다 — 2026-11-13 잠정 카드가 끝까지 넘쳐 PNG 가 안 나왔다"
+guards = ["tests/test_digest.py::test_card_last_rung_fits_any_day_with_room",
+          "tests/test_digest.py::test_trim_ladders_end_with_counts_only_and_no_streak"]
+file = "scripts/digest.py"
+find = "               (None, \"none\", 1, False), (None, \"none\", 0, False))"
+replace = "               (None, \"none\", 1, False), (0, \"nosector\", 1, False))"
+
+[[mutation]]
+id = "digest-card-provisional-note-grows"
+why = "잠정 카드만 지위 안내가 길어진다(수정 폭 설명을 풀어 쓴다) — 잠정과 확정의 마지막 판 높이가 갈라져 잠정만 넘친다"
+guards = ["tests/test_digest.py::test_card_last_rung_fits_any_day_with_room"]
+file = "scripts/digest.py"
+find = "        return \"잠정치다 — 다음 거래일 새벽 확정치로 바뀔 수 있다.\" + (f\" {rl}.\" if rl else \"\")"
+replace = "        return \"잠정치다 — 다음 거래일 새벽 확정치로 바뀔 수 있다.\" + (f\" {rl}.\" if rl else \"\") + \" 수정 폭 = 최근 확정일들의 섹터 칸 |확정−잠정|÷|확정| 중앙값, 부호 뒤집힘 = (시장, 주체) 안에서 Σ|확정값| 의 2% 이상인 칸만 센 것, 상위3 유지 = 잠정 상위 3 섹터가 확정에서도 상위 3 인 몫이다. 18:10 잠정 리포트는 그날 수집 시각의 스냅숏이다.\""
+
+[[mutation]]
+id = "digest-card-summary-cut"
+why = "카드가 요약 문장을 하나만 싣는다 — 웹 '오늘 한 장' 과 카드가 다른 말을 한다"
+guards = ["tests/test_digest.py::test_card_leads_with_the_summary_sentences_on_every_rung"]
+file = "scripts/digest.py"
+find = "for h, t in (F.get(\"summary_items\") or [])[:CARD_SUMMARY_N])"
+replace = "for h, t in (F.get(\"summary_items\") or [])[:1])"
+
+[[mutation]]
 id = "digest-overflow-unchecked"
 why = "넘친 카드를 그대로 찍는다 — 면책 꼬리가 잘린 PNG 가 나갔다(scrollHeight 는 overflow:hidden 카드에서 늘 카드 높이다)"
 guards = ["tests/test_digest.py::test_content_past_card_edge_is_overflow",
@@ -6982,8 +7053,8 @@ id = "digest-revision-honesty-dropped"
 why = "잠정 다이제스트에서 잠정→확정 수정 폭 줄을 뺀다 — 독자가 잠정치의 흔들림 크기를 모른 채 읽는다"
 guards = ["tests/test_digest.py::test_provisional_and_final_wording"]
 file = "scripts/digest.py"
-find = "        rl = revision_line(F)"
-replace = "        rl = None"
+find = "        L.append(\"잠정치다 — 다음 거래일 새벽 확정치로 바뀔 수 있다.\")\n        rl = revision_line(F)"
+replace = "        L.append(\"잠정치다 — 다음 거래일 새벽 확정치로 바뀔 수 있다.\")\n        rl = None"
 
 [[mutation]]
 id = "digest-streak-trimmed-first"
@@ -10334,8 +10405,8 @@ why = "확정 카드에 '잠정치다' 가 붙고 잠정 카드에서 빠진다"
 guards = ["tests/test_digest.py::test_card_says_provisional_only_on_a_provisional_card",
           "tests/test_artifact_contracts.py::test_digest_on_the_final_payload_drops_the_provisional_label"]
 file = "scripts/digest.py"
-find = "    if not F[\"closed\"]:\n        notes.append(\"잠정치다"
-replace = "    if F[\"closed\"]:\n        notes.append(\"잠정치다"
+find = "    if not F[\"closed\"]:\n        rl = revision_line(F)\n        return \"잠정치다"
+replace = "    if F[\"closed\"]:\n        rl = revision_line(F)\n        return \"잠정치다"
 
 [[mutation]]
 id = "card-footer-hidden"
@@ -10414,8 +10485,8 @@ id = "card-ladder-last-rung-keeps-names"
 why = "카드 마지막 판이 이름을 남겨 끝까지 넘칠 수 있다"
 guards = ["tests/test_digest.py::test_trim_ladders_end_with_counts_only_and_no_streak"]
 file = "scripts/digest.py"
-find = "(0, \"none\", 2, False), (0, \"none\", 1, False))"
-replace = "(0, \"none\", 2, False), (1, \"none\", 1, False))"
+find = "(None, \"none\", 1, False), (None, \"none\", 0, False))"
+replace = "(None, \"none\", 1, False), (1, \"none\", 0, False))"
 
 [[mutation]]
 id = "png-overflow-does-not-try-the-next-rung"
@@ -10920,8 +10991,8 @@ id = "card-default-rung-drifts"
 why = "card_html 기본값이 사다리 첫 칸과 어긋난다"
 guards = ["tests/test_digest.py::test_card_defaults_are_the_first_rung"]
 file = "scripts/digest.py"
-find = """extreme_cap: int = CARD_LADDER[0][0], streak"""
-replace = """extreme_cap: int = CARD_LADDER[1][0], streak"""
+find = """extreme_cap: "int | None" = CARD_LADDER[0][0], streak"""
+replace = """extreme_cap: "int | None" = CARD_LADDER[2][0], streak"""
 
 [[mutation]]
 id = "card-missing-net-draws-a-bar"
@@ -11041,10 +11112,10 @@ guards = ["tests/test_digest.py::test_streak_line_keeps_the_sector_only_on_the_f
 file = "scripts/digest.py"
 find = """streak_line(F, with_sector=streak == "full")
     if sl:
-        notes.append(sl)"""
+        notes.append(f"<p>{_e(sl)}</p>")"""
 replace = """streak_line(F, with_sector=streak != "full")
     if sl:
-        notes.append(sl)"""
+        notes.append(f"<p>{_e(sl)}</p>")"""
 
 [[mutation]]
 id = "no-comparison-default-top-n-drifts"

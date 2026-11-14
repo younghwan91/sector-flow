@@ -547,6 +547,198 @@ def test_digest_refuses_to_rewrite_a_published_folder(tmp_path):
     assert (out / "digest.md").exists() and keep.read_text("utf-8") == "어제 판"
 
 
+# ── 카드 높이 — 브라우저 없이 어림한다(CI·변이 하네스에는 Chromium 이 없다) ─────────────────────────────
+#
+# 2026-11-13 잠정 리포트의 카드는 사다리 끝까지 줄여도 1350px 을 넘쳐 PNG 가 안 나왔다(main 에서도). 원인은 사다리의 마지막
+# 판이 크기가 자료에 달린 칸(주체마다 극단·부호 바뀜 줄, 섹터 상·하위, 집중·연속 줄)을 다 안고 있었던 것이다 — 확정 카드도
+# 마지막 판에서 0px 여유로 겨우 들었고, 잠정 안내가 한 줄 더 길어 넘쳤다. 아래 모형은 카드 CSS 를 옮긴 **위쪽 어림**이다
+# (글자 폭: 한글·전각 1em, 공백 0.3em, 그 밖 0.6em, 굵은 글 ×1.06, 줄바꿈 여유 ×1.03). Chromium 이 있으면
+# :func:`test_card_height_model_never_underestimates_chromium` 가 모형이 실측보다 작지 않은지 본다.
+
+def _em(s: str, bold: bool = False) -> float:
+    import unicodedata
+    w = sum(1.0 if unicodedata.east_asian_width(c) in "WF" or c == "—" else 0.3 if c == " " else 0.6 for c in s)
+    return w * (1.06 if bold else 1.0)
+
+
+def _rows(s: str, font: float, box: float, bold: bool = False) -> int:
+    import math
+    return max(1, math.ceil(_em(s, bold) * font * 1.03 / box))
+
+
+#: 카드 안쪽 폭(1080 − 좌우 56) · 요약 칸 안쪽 폭(왼쪽 띠 6 + 16) · 칸 제목(h2 35 + 아래 6) · 꼬리(고정 글 4줄).
+_CW, _SW, _H2, _FOOT = dg.CARD_W - 112, dg.CARD_W - 112 - 22, 41, 145
+
+
+def _card_est_px(F: dict, rung: tuple) -> float:
+    """카드 내용 높이의 위쪽 어림[px] — ``digest_card.html`` 의 CSS 와 :func:`digest.card_html` 의 칸 순서를 옮겼다."""
+    cap, streak, rank_n, with_change = rung
+    blocks = [106]                                                              # 머리(제목·날짜·지위 칩·자료 범위)
+    items = (F.get("summary_items") or [])[:dg.CARD_SUMMARY_N]
+    if items:
+        blocks.append(_H2 + sum(_rows(h + t, 22, _SW, True) * 28.6 + 2 for h, t in items)
+                      + _rows("이 요약이 말하지 않는 것 — " + dg.NOT_SAID_SHORT, 18, _SW) * 23.4 + 4)
+    blocks.append(_H2 + 4 * 32 + (33 if dg.detail_line(F) else 0))             # 시장 순매수 막대
+    blocks.append(_H2 + 19 + 46 * len(F["returns"]))                           # 수익률 표
+    if rank_n:
+        blocks.append(_H2 + 103 + 56 * rank_n)                                  # 섹터 상·하위(이름은 한 줄로 자른다)
+    if cap is not None:
+        lines = [f"{s['ko']} 상단: {dg._capped([dg._ext_item(t) for t in s['hi']], cap)} / "
+                 f"하단: {dg._capped([dg._ext_item(t) for t in s['lo']], cap)}" for s in F["sectors"]]
+        if F["prev_date"]:
+            lines += [dg.flip_head(F)] + [f"{s['ko']} {dg._capped(dg._flip_items(s), cap)}" for s in F["sectors"]]
+        blocks.append(_H2 + sum(_rows(x, 20, _CW) * 26.4 for x in lines))
+    if with_change:
+        C = F["change"]
+        lines = ([f"{a['ko']} {dg.change_phrase(a, C['top_n'])}" for a in C["actors"]] if C["prev_date"]
+                 else [f"비교 없음 — {C['reason']}"])
+        blocks.append(_H2 + sum(_rows(x, 20, _CW) * 26.4 for x in lines))
+    notes = 0.0
+    st = dg.status_note(F)
+    if st:
+        notes += _rows(st, 19, _CW, True) * 24.7
+    warns = [f"⚠ 분봉 밖 거래 큼({b['market']}): {' · '.join(b['names'])}" for b in F["blocks"]]
+    warns += [f"⚠ {g['label']} {g['market']} 00.0%" for g in F["approx_gap"]]
+    if warns:                                                                   # 칩(테두리·안쪽 여백 ≈ 공백 8칸)이 줄을 채운다
+        notes += _rows(" ".join(warns) + " " * 8 * len(warns), 19, _CW, True) * 36.7
+    gn = dg.gap_note(F)
+    if gn:
+        notes += _rows(gn, 19, _CW) * 24.7
+    if rank_n >= 2:
+        notes += sum(_rows(x, 19, _CW) * 24.7 for x in dg.conc_lines(F))
+    sl = None if streak == "none" else dg.streak_line(F, with_sector=streak == "full")
+    if sl:
+        notes += _rows(sl, 19, _CW) * 24.7
+    if notes:
+        blocks.append(notes)
+    blocks.append(_FOOT)
+    return 32 + sum(blocks) + 12 * (len(blocks) - 1) + 24                       # 위·아래 안쪽 여백, 칸 사이 12
+
+
+def _worst_card_payload(*, final: bool = False, name_len: int = 12) -> dict:
+    """카드가 가장 길어지는 날 — 긴 섹터 이름 30개(극단 많음), 기관 세부, 부호 바뀜·연속·집중 셋, 두 시장 분봉 밖 거래 넷씩,
+    세 시장 환산 차·두 시장 네이버 차, 잠정이면 수정 폭 줄까지. 마지막 판이 이것도 담아야 한다.
+    (글은 이 날 길이 상한을 넘어 안 만들어진다 — ``name_len=4`` 면 글도 든다.)"""
+    P = _long_payload(name_len=name_len, n=30)
+    if final:
+        P["final"] = True
+        P["final_diff"] = {"n_changed": 12345, "n_cells": 123456, "tol": 0.05, "changed": [], "market_totals": []}
+    T = P["today"]
+    T["market"]["전체"]["net"] = dict(T["market"]["전체"]["net"], fnnc_invt={"v": -12345.0, "pct": 1.0})
+    names = list(T["sectors"]["전체"])
+    P["n_by_sector"] = {m: {s: 40 for s in names} for m in ("거래소", "코스닥")}
+    for m in ("전체", "거래소", "코스닥"):
+        T["market"][m]["approx_gap"] = {"pct": 12.34}
+    T["krx_truth"] = {"status": "ok", "markets": {m: {"total_pct": 17.5, "hot": True} for m in ("거래소", "코스닥")}}
+    T["block_suspects"] = {"status": "ok", "markets": {m: [{"name": f"{'긴이름종목' * 2}{i}", "off_pct": 99.0}
+                                                         for i in range(4)] for m in ("거래소", "코스닥")}}
+    T["concentration"] = {"markets": {"전체": [
+        {"sector": s, "market_share_pct": 44.4, "top": [{"name": f"{'대형종목' * 2}{i}"} for i in range(3)],
+         "top_share_pct": 77.7, "rest": {"inst": -12345.0, "invpen": 6789.0, "forgn": -23456.0}} for s in names[:3]]}}
+    flips = [{"sector": s, "prev": -12345.0, "now": 23456.0} for s in names[:8]]
+    T["day_change"] = {"prev_date": "2026-11-05", "flip_min_share": 0.02,
+                       "flips": {"전체": {"inst": flips, "invpen": flips, "forgn": flips}}}
+    T["streaks"]["market"]["전체"]["invpen"] = {"sign": 1, "days": 12, "sum": 123456.0, "pct": 99.0, "times": 3}
+    return P
+
+
+def test_card_last_rung_fits_any_day_with_room():
+    """사다리의 마지막 판은 가장 긴 날(잠정·확정 모두)에도 카드 안에 든다 — 위쪽 어림이 카드 높이 안.
+
+    2026-11-13 잠정 카드가 끝까지 넘친 회귀(마지막 판이 자료에 달린 칸을 안고 1350px 에 붙어 있었다).
+    주입: 마지막 판에 섹터·극단 칸을 되살리면 실패한다.
+    """
+    for final in (False, True):
+        F = dg.collect(_worst_card_payload(final=final))
+        est = _card_est_px(F, dg.CARD_LADDER[-1])
+        assert est <= dg.CARD_H, f"{'확정' if final else '잠정'} 마지막 판 어림 {est:.0f}px — 카드 {dg.CARD_H}px 를 넘칠 수 있다"
+        assert F["blocks"] and F["approx_gap"] and F["summary_items"] and dg.status_note(F), "픽스처가 긴 날이 아니다"
+    # 잠정·확정의 마지막 판 차이는 지위 줄 하나뿐이다 — 잠정 안내가 길어져 한쪽만 넘치는 일이 없게.
+    prov, fin = (_card_est_px(dg.collect(_worst_card_payload(final=f)), dg.CARD_LADDER[-1]) for f in (False, True))
+    assert abs(prov - fin) <= 2 * 24.7, (prov, fin)
+
+
+def test_card_height_model_never_underestimates_chromium(tmp_path):
+    """어림 모형이 실측(Chromium)보다 작지 않고 너무 크지도 않다 — 모든 판, 잠정·확정·긴 날."""
+    # mutation-exempt: Chromium(Playwright)이 있을 때만 돈다 — CI·변이 하네스에는 없어 건너뛴다(모형의 정직성 검사)
+    pytest.importorskip("playwright")
+    from playwright.sync_api import sync_playwright
+    js = """() => { document.querySelector('footer').style.marginTop = '0';
+      const pb = parseFloat(getComputedStyle(document.body).paddingBottom) || 0; let b = 0;
+      for (const el of document.body.querySelectorAll('*')) { const q = el.getBoundingClientRect();
+        if (q.width === 0 && q.height === 0) continue; b = Math.max(b, q.bottom); }
+      return b + pb; }"""
+    cases = [fixture_payload(), fixture_payload(final=True), _long_payload(name_len=6),
+             _worst_card_payload(), _worst_card_payload(final=True)]
+    try:
+        with sync_playwright() as p:
+            try:
+                br = p.chromium.launch()
+            except Exception:
+                exe = dg._cached_chromium()
+                if not exe:
+                    raise
+                br = p.chromium.launch(executable_path=exe)
+            page = br.new_page(viewport={"width": dg.CARD_W, "height": dg.CARD_H})
+            off = []
+            for P in cases:
+                F = dg.collect(P)
+                for rung in dg.CARD_LADDER:
+                    (tmp_path / "c.html").write_text(dg.card_html(F, *rung), "utf-8")
+                    page.goto((tmp_path / "c.html").as_uri())
+                    page.evaluate(dg.FONTS_READY_JS)
+                    off.append((_card_est_px(F, rung) - page.evaluate(js), rung))
+            br.close()
+    except Exception as e:                                   # pragma: no cover — 브라우저 사정
+        pytest.skip(f"Chromium 을 못 띄웠다: {e}")
+    assert min(d for d, _r in off) >= 0, [x for x in off if x[0] < 0][:3]
+    assert max(d for d, _r in off) <= 160, max(off)
+
+
+def test_worst_day_provisional_card_is_shot(tmp_path):
+    """가장 긴 날의 잠정 리포트도 카드 PNG 가 나온다(사다리 어딘가에서) — 2026-11-13 은 끝까지 넘쳤다."""
+    # mutation-exempt: Chromium(Playwright)이 있을 때만 돈다 — 위 어림 검사(test_card_last_rung_fits_any_day_with_room)가 변이로 지킨다
+    pytest.importorskip("playwright")
+    P = _worst_card_payload(name_len=4)
+    T = P["today"]                       # 글(길이 상한 1900자)이 들 만큼만 덜어 낸다 — 카드는 여전히 넘쳐 사다리를 탄다
+    T["block_suspects"]["markets"]["코스닥"] = []
+    T["block_suspects"]["markets"]["거래소"] = T["block_suspects"]["markets"]["거래소"][:2]
+    T["concentration"]["markets"]["전체"] = T["concentration"]["markets"]["전체"][:1]
+    for a in ("inst", "invpen", "forgn"):
+        T["day_change"]["flips"]["전체"][a] = T["day_change"]["flips"]["전체"][a][:2]
+    assert _card_est_px(dg.collect(P), dg.CARD_LADDER[0]) > dg.CARD_H + 200, "첫 판이 넘치는 날이 아니다"
+    (tmp_path / "payload.json").write_text(json.dumps(P, ensure_ascii=False), encoding="utf-8")
+    try:
+        rc = dg.main(["--dir", str(tmp_path), "--png", "require"])
+    except Exception as e:                                   # pragma: no cover
+        pytest.skip(f"Chromium 을 못 띄웠다: {e}")
+    assert rc == 0 and _png_size(tmp_path / "digest.png") == (dg.CARD_W, dg.CARD_H)
+
+
+def test_card_leads_with_the_summary_sentences_on_every_rung():
+    """카드 맨 위 '한눈에' 는 웹 '오늘 한 장'·TUI 첫 화면과 같은 문장의 앞 셋이고, 어느 판에서도 줄지 않는다.
+    '이 요약이 말하지 않는 것' 짧은 줄이 늘 붙는다.
+
+    주입: 카드가 요약을 빼거나 다른 문장을 적으면 실패한다.
+    """
+    from sectorflow import summary as S
+    P = _worst_card_payload()
+    F = dg.collect(P)
+    pages = [dg.card_html(F, *rung) for rung in dg.CARD_LADDER]
+    want = S.summary_texts(P, "전체", P["markets"])[:dg.CARD_SUMMARY_N]
+    assert len(want) == dg.CARD_SUMMARY_N
+    for page in pages:
+        sec = re.search(r'<section class="sum">(.*?)</section>', page, re.S)
+        assert sec, "카드에 '한눈에' 가 없다"
+        got = [re.sub(r"<[^>]+>", "", li) for li in re.findall(r"<li>(.*?)</li>", sec.group(1))]
+        assert [dg.html.unescape(x) for x in got] == want
+        assert f"이 요약이 말하지 않는 것</b> — {S.NOT_SAID_SHORT}" in dg.html.unescape(sec.group(1))
+        assert page.index('class="sum"') < page.index("시장 순매수[억]"), "요약이 카드 맨 위에 없다"
+    # 짧은 꼴도 긴 꼴과 같은 두 사실을 말한다 — 앞날 검정 안 함 · 검정했고 관계 확인 안 됨.
+    assert "앞날 검정 안 함" in S.NOT_SAID_SHORT and "검정했고 관계" in S.NOT_SAID_SHORT
+    assert "앞날 검정 안 함" in S.NOT_SAID and "검정했고 관계" in S.NOT_SAID
+
+
 def test_card_says_provisional_only_on_a_provisional_card():
     """카드 표지가 값의 지위와 같다 — 뒤집혀도 글(md) 검사는 초록이었다(카드 노트는 따로 만든다)."""
     _F, _t, prov = dg.build(fixture_payload())
@@ -638,7 +830,12 @@ def test_trim_ladders_end_with_counts_only_and_no_streak():
 
     pages = [dg.card_html(F, *rung) for rung in dg.CARD_LADDER]
     assert all(a > b for a, b in zip(map(len, pages), map(len, pages[1:]))), [len(p) for p in pages]
-    assert re.search(r"상단: \d+곳 <span", pages[-1]) and "연속 순매매" not in pages[-1]
+    # 카드의 마지막 판은 크기가 자료에 달린 칸(섹터·극단·변동·연속·집중)을 하나도 갖지 않는다 — 요약·지위·꼬리는 남는다.
+    last = pages[-1]
+    for gone in ("오늘 섹터 순매수", "상단(≥95)", "상위5 변동", "연속 순매매", "거래대금 시장의"):
+        assert gone not in last, gone
+    for kept in ("한눈에", "이 요약이 말하지 않는 것", "시장 순매수", "KRX 지수", "잠정치다", dg.SOURCE):
+        assert kept in last, kept
 
 
 def test_card_defaults_are_the_first_rung():
@@ -728,7 +925,7 @@ def test_png_ladder_shoots_the_next_smaller_card_after_an_overflow(tmp_path, mon
     assert (tmp_path / "digest.png").read_bytes() == b"png"
     assert json.loads((tmp_path / "digest.json").read_text("utf-8"))["png"] == "digest.png"
     err = capsys.readouterr().err
-    assert "극단 목록 1개·연속 줄 nosector" in err and "극단 목록 0개·연속 줄 none" in err
+    assert "극단 칸 없음·연속 줄 nosector" in err and "연속 줄 none·섹터 칸 없음" in err
 
 
 def test_png_gives_up_when_every_rung_overflows(tmp_path, monkeypatch):

@@ -47,7 +47,7 @@ from datetime import date
 from pathlib import Path
 
 from sectorflow.basis import DATA_BASIS_SHORT, NOT_TESTED_NOTE, ret_label, rhu, status_label, truth_gap_label
-from sectorflow.summary import summary_texts
+from sectorflow.summary import NOT_SAID_SHORT, summary_items
 from sectorflow.wording import BANNED, banned_hits  # noqa: F401 — 금칙어 표의 정본(모든 산출물이 같이 쓴다)
 
 HERE = Path(__file__).resolve().parent
@@ -77,10 +77,16 @@ MAX_CHARS = 1900
 EXTREME_CAPS = (4, 2, 1, 0)
 #: 카드 크기(px) — 인스타그램 세로·텔레그램 미리보기 비율 4:5.
 CARD_W, CARD_H = 1080, 1350
+#: 카드 맨 위 '한눈에' 에 싣는 요약 문장 수 — 웹 '오늘 한 장'·TUI 첫 화면과 같은 문장의 앞 셋(가장 큰 주체 → 가장 긴 연속 →
+#: 평소 범위 밖 칸, 연속이 없는 날은 어제와 바뀐 섹터까지). 어느 판에서도 줄이지 않는다 — 카드가 답하는 "그래서 뭐?" 다.
+CARD_SUMMARY_N = 3
 #: 카드가 넘치면 (극단 목록 개수, 연속 줄 꼴, 섹터 상·하위 개수, 20일 변동 줄) 순으로 줄여 다시 찍는다 — 글의
-#: :data:`TRIM_LADDER` 와 같은 원리. 면책 글자를 폰에서 읽히게 키운 만큼 뒤 칸이 일찍 빠진다.
-CARD_LADDER = ((3, "full", 3, True), (2, "full", 2, True), (2, "full", 2, False), (1, "nosector", 2, False),
-               (0, "none", 2, False), (0, "none", 1, False))
+#: :data:`TRIM_LADDER` 와 같은 원리. 극단 목록 ``None`` 은 그 칸을 통째로 뺀다(요약의 '평소 범위 밖' 줄이 같은 사실을 말한다),
+#: 상·하위 ``0`` 은 섹터 칸을 뺀다(거래대금 집중 줄은 상·하위 2 이상에서만). **마지막 판은 크기가 자료에 달린 칸을 하나도 갖지 않는다** — 머리·요약·
+#: 시장 순매수·수익률·값의 지위·경고·꼬리만 남아 어느 날이든 카드 안에 든다. 예전 마지막 판은 극단·부호 바뀜 줄(주체마다)과
+#: 집중·잠정 안내를 다 안고 1350px 에 딱 붙어 있어, 잠정 리포트(안내가 한 줄 더 길다)에서는 늘 넘쳐 카드를 못 찍었다(2026-11-13).
+CARD_LADDER = ((2, "full", 3, True), (2, "full", 2, False), (None, "nosector", 2, False), (None, "none", 2, False),
+               (None, "none", 1, False), (None, "none", 0, False))
 
 #: 고정 꼬리 — 금칙어 검사에서 빠지는 유일한 글. 바꾸면 테스트가 정확한 문자열로 잡는다.
 DISCLAIMER = ("이 글은 수급 사실 요약이며 투자 판단·추천이 아니다. "
@@ -239,6 +245,8 @@ def collect(P: dict) -> dict:
             streak = {"actor": dom, "ko": KO[dom], "market": mkt_f,
                       "sector": sec, "sector_fact": sec_f}
 
+    items = [(h, t) for _k, h, t in summary_items(P, MARKET, list(P.get("markets") or [])) or []]
+
     revision = None
     if not P.get("final") and not P.get("finalize_unverified"):
         R = P.get("revision_stats")
@@ -269,7 +277,9 @@ def collect(P: dict) -> dict:
         "streak": streak, "revision": revision,
         "change": change, "final_diff": final, "excluded": list(EXCLUDED_SECTORS),
         # 맨 위 요약 — 웹 '오늘 한 장'·TUI 첫 화면과 같은 문장(``sectorflow.summary``). 관심 섹터 줄은 웹에만 있다.
-        "summary": summary_texts(P, MARKET, list(P.get("markets") or [])) or [],
+        # 카드는 굵은 머리와 나머지를 갈라 적는다(``summary_items`` 의 (머리, 나머지) — 글은 둘을 이은 한 줄).
+        "summary": [h + t for h, t in items],
+        "summary_items": [[h, t] for h, t in items],
     }
 
 
@@ -506,9 +516,25 @@ def gap_note(F: dict) -> "str | None":
     return " ".join(parts) or None
 
 
-def card_html(F: dict, extreme_cap: int = CARD_LADDER[0][0], streak: str = CARD_LADDER[0][1],
-              rank_n: int = TOP_N, with_change: bool = True) -> str:
-    """카드 HTML — 값은 여기서 박아 넣는다(스크립트 없음). 템플릿의 ``__KEY__`` 를 다 채워야 한다."""
+def status_note(F: dict) -> "str | None":
+    """값의 지위 한 줄 — 잠정이면 바뀔 수 있다는 말과 최근 수정 폭, 확정이면 잠정→확정에서 바뀐 칸 수. 카드 어느 판에도 남는다."""
+    if not F["closed"]:
+        rl = revision_line(F)
+        return "잠정치다 — 다음 거래일 새벽 확정치로 바뀔 수 있다." + (f" {rl}." if rl else "")
+    fd = F["final_diff"]
+    if fd is None:
+        return None
+    return (f"잠정→확정 비교 없음: {fd['reason']}" if fd["reason"] else
+            f"잠정→확정 변경: {fd['n_changed']:,}칸 / {fd['n_cells']:,}칸(±{fd['tol']}억 초과)")
+
+
+def card_html(F: dict, extreme_cap: "int | None" = CARD_LADDER[0][0], streak: str = CARD_LADDER[0][1],
+              rank_n: int = CARD_LADDER[0][2], with_change: bool = CARD_LADDER[0][3]) -> str:
+    """카드 HTML — 값은 여기서 박아 넣는다(스크립트 없음). 템플릿의 ``__KEY__`` 를 다 채워야 한다.
+
+    ``extreme_cap`` None = 극단·부호 바뀜 칸을 뺀다, ``rank_n`` 0 = 섹터 상·하위 칸을 뺀다, 1 이하면 거래대금 집중 줄도
+    뺀다(:data:`CARD_LADDER`).
+    """
     vmax = max((abs(n["v"]) for n in F["net"] if n["v"] is not None), default=0.0) or 1.0
     net_rows = []
     for n in F["net"]:
@@ -526,63 +552,77 @@ def card_html(F: dict, extreme_cap: int = CARD_LADDER[0][0], streak: str = CARD_
             f'<tr><th>{_e(r["market"])}</th><td>{_e(r["index_name"] or "지수 없음")}</td>'
             f'<td class="num">{_e(ret_str(r["index"]["1"]))}</td><td class="num">{_e(ret_str(r["index"]["20"]))}</td>'
             f'<td class="num">{_e(ret_str(r["basket"]["1"]))}</td><td class="num">{_e(ret_str(r["basket"]["20"]))}</td></tr>')
-    cols = []
     dl = detail_line(F)
     detail_row = f'<p class="detail">{_e(dl)}</p>' if dl else ""
-    for s in F["sectors"]:
-        def li(rows):
-            return "".join(
-                f'<li><i class="dot {_sign(v)}"></i><span class="sn">{_e(n)}</span>'
-                f'<span class="sv">{_e(amt(v))}</span><span class="sp">{_e(pct_tag(p))}</span></li>'
-                for n, v, p in rows) or "<li>없음</li>"
-        tag = '<em class="dom">최대 순매매 주체</em>' if s["dominant"] else ""
-        cols.append(f'<div class="col"><h3>{_e(s["ko"])}{tag}</h3><h4>상위 {rank_n}</h4><ol>{li(s["top"][:rank_n])}</ol>'
-                    f'<h4>하위 {rank_n}</h4><ol>{li(s["bottom"][:rank_n])}</ol></div>')
-    ext = []
-    for s in F["sectors"]:
-        hi = _capped([_ext_item(t) for t in s["hi"]], extreme_cap)
-        lo = _capped([_ext_item(t) for t in s["lo"]], extreme_cap)
-        ext.append(f'<li><b>{_e(s["ko"])}</b> 상단: {_e(hi)} <span class="sep">/</span> 하단: {_e(lo)}</li>')
-    if F["prev_date"]:
-        ext.append(f'<li class="fh">{_e(flip_head(F))}</li>')
+    summary = "".join(f"<li><b>{_e(h)}</b>{_e(t)}</li>" for h, t in (F.get("summary_items") or [])[:CARD_SUMMARY_N])
+    sum_sec = (f'<section class="sum"><h2>한눈에 · {_e(F["market"])}<small>센 값이다(점수·판정 없음) · 웹 수치표 \'오늘 한 장\'과 같은 문장</small></h2>'
+               f'<ul class="sum">{summary}</ul><p class="notsaid"><b>이 요약이 말하지 않는 것</b> — {_e(NOT_SAID_SHORT)}</p></section>'
+               if summary else "")
+
+    sector_sec = ""
+    if rank_n:
+        cols = []
         for s in F["sectors"]:
-            ext.append(f'<li><b>{_e(s["ko"])}</b> {_e(_capped(_flip_items(s), extreme_cap))}</li>')
-    C = F["change"]
-    if C["prev_date"]:
-        chg_head = f'{C["window"]}일 순매수 상위{C["top_n"]} 변동 · {C["window"]}일 누적 기준 · {C["prev_date"][5:]} 리포트 대비'
-        chg = "".join(f'<li><b>{_e(a["ko"])}</b> {_e(change_phrase(a, C["top_n"]))}</li>' for a in C["actors"])
-    else:
-        chg_head = f'{C["window"]}일 순매수 상위{C["top_n"]} 변동 · {C["window"]}일 누적 기준'
-        chg = f"<li>비교 없음 — {_e(C['reason'])}</li>"
-    if not with_change:
-        chg_head, chg = "", ""
-    fd = F["final_diff"]
-    notes = list(conc_lines(F))
-    sl = None if streak == "none" else streak_line(F, with_sector=streak == "full")
-    if sl:
-        notes.append(sl)
-    if not F["closed"]:
-        notes.append("잠정치다 — 다음 거래일 새벽 확정치로 바뀔 수 있다."
-                     + (f" {revision_line(F)}." if revision_line(F) else ""))
-    if fd is not None:
-        notes.append(f"잠정→확정 비교 없음: {fd['reason']}" if fd["reason"] else
-                     f"잠정→확정 변경: {fd['n_changed']:,}칸 / {fd['n_cells']:,}칸(±{fd['tol']}억 초과)")
+            def li(rows):
+                return "".join(
+                    f'<li><i class="dot {_sign(v)}"></i><span class="sn">{_e(n)}</span>'
+                    f'<span class="sv">{_e(amt(v))}</span><span class="sp">{_e(pct_tag(p))}</span></li>'
+                    for n, v, p in rows) or "<li>없음</li>"
+            tag = '<em class="dom">최대 순매매 주체</em>' if s["dominant"] else ""
+            cols.append(f'<div class="col"><h3>{_e(s["ko"])}{tag}</h3><h4>상위 {rank_n}</h4><ol>{li(s["top"][:rank_n])}</ol>'
+                        f'<h4>하위 {rank_n}</h4><ol>{li(s["bottom"][:rank_n])}</ol></div>')
+        sector_sec = f'<section><h2>오늘 섹터 순매수[억(1년%ile)]</h2><div class="cols">{"".join(cols)}</div></section>'
+
+    ext_sec = ""
+    if extreme_cap is not None:
+        ext = []
+        for s in F["sectors"]:
+            hi = _capped([_ext_item(t) for t in s["hi"]], extreme_cap)
+            lo = _capped([_ext_item(t) for t in s["lo"]], extreme_cap)
+            ext.append(f'<li><b>{_e(s["ko"])}</b> 상단: {_e(hi)} <span class="sep">/</span> 하단: {_e(lo)}</li>')
+        if F["prev_date"]:
+            ext.append(f'<li class="fh">{_e(flip_head(F))}</li>')
+            for s in F["sectors"]:
+                ext.append(f'<li><b>{_e(s["ko"])}</b> {_e(_capped(_flip_items(s), extreme_cap))}</li>')
+        ext_sec = (f'<section><h2>1년%ile 상단(≥{F["pct_hi"]})·하단(≤{F["pct_lo"]})<small>오늘 값이 1년 일별 분포의 어디인가 · '
+                   f'신규·N일째 = 그 극단에 며칠째</small></h2><ul class="facts">{"".join(ext)}</ul></section>')
+
+    chg_sec = ""
+    if with_change:
+        C = F["change"]
+        if C["prev_date"]:
+            chg_head = f'{C["window"]}일 순매수 상위{C["top_n"]} 변동 · {C["window"]}일 누적 기준 · {C["prev_date"][5:]} 리포트 대비'
+            chg = "".join(f'<li><b>{_e(a["ko"])}</b> {_e(change_phrase(a, C["top_n"]))}</li>' for a in C["actors"])
+        else:
+            chg_head = f'{C["window"]}일 순매수 상위{C["top_n"]} 변동 · {C["window"]}일 누적 기준'
+            chg = f"<li>비교 없음 — {_e(C['reason'])}</li>"
+        chg_sec = f'<section><h2>{_e(chg_head)}</h2><ul class="facts">{chg}</ul></section>'
+
+    # 값의 지위와 경고는 어느 판에도 남는다 — 크기가 정해져 있다(경고는 시장마다 한 줄, 뜻 풀이는 고정 글).
+    notes = []
+    st = status_note(F)
+    if st:
+        notes.append(f'<p class="status">{_e(st)}</p>')
+    warns = [f"⚠ 분봉 밖 거래 큼({b['market']}): {' · '.join(b['names'])}" for b in F["blocks"]]
+    warns += [f"⚠ {g['label']} {g['market']} {rhu(g['pct'], 1):.1f}%" for g in F["approx_gap"]]
+    if warns:
+        notes.append('<p class="warns">' + "".join(f'<span class="chip warn">{_e(w)}</span>' for w in warns) + "</p>")
     gn = gap_note(F)
     if gn:
-        notes.append(gn)
-    gaps = "".join(f'<span class="chip warn">⚠ 분봉 밖 거래 큼({_e(b["market"])}): {_e(" · ".join(b["names"]))}</span>'
-                   for b in F["blocks"])
-    gaps += "".join(f'<span class="chip warn">⚠ {_e(g["label"])} {_e(g["market"])} {rhu(g["pct"], 1):.1f}%</span>'
-                    for g in F["approx_gap"])
+        notes.append(f"<p>{_e(gn)}</p>")
+    if rank_n >= 2:                 # 섹터 상·하위가 하나로 줄면 집중 줄도 뺀다(두 줄 남짓 — 섹터 칸을 하나라도 남기려고)
+        notes += [f"<p>{_e(ln)}</p>" for ln in conc_lines(F)]
+    sl = None if streak == "none" else streak_line(F, with_sector=streak == "full")
+    if sl:
+        notes.append(f"<p>{_e(sl)}</p>")
     fill = {
         "CARD_W": str(CARD_W), "CARD_H": str(CARD_H),
         "DATE": _e(day_label(F["asof"])), "STATUS": _e(F["status"]),
         "STATUS_CLASS": "final" if F["final"] else "prov",
-        "MARKET": _e(F["market"]), "NET_ROWS": "".join(net_rows) + detail_row, "GAPS": gaps,
+        "MARKET": _e(F["market"]), "NET_ROWS": "".join(net_rows) + detail_row,
         "BASIS": _e(F["basis"]), "RET_LABEL": _e(F["ret_label_short"]),
-        "RET_ROWS": "".join(ret_rows), "SECTOR_COLS": "".join(cols),
-        "PCT_HI": str(F["pct_hi"]), "PCT_LO": str(F["pct_lo"]), "EXTREMES": "".join(ext), "CHANGE_SEC": (f'<section><h2>{_e(chg_head)}</h2><ul class="facts">{chg}</ul></section>' if with_change else ""),
-        "NOTES": "".join(f"<p>{_e(n)}</p>" for n in notes),
+        "RET_ROWS": "".join(ret_rows), "SUMMARY_SEC": sum_sec, "SECTOR_SEC": sector_sec,
+        "EXTREMES_SEC": ext_sec, "CHANGE_SEC": chg_sec, "NOTES": "".join(notes),
         "DISCLAIMER": _e(DISCLAIMER), "SOURCE": _e(SOURCE),
     }
     out = TEMPLATE.read_text("utf-8")
@@ -592,6 +632,13 @@ def card_html(F: dict, extreme_cap: int = CARD_LADDER[0][0], streak: str = CARD_
     if left:
         raise DigestError(f"카드 템플릿에 못 채운 자리 {sorted(set(left))}")
     return out
+
+
+def rung_label(rung: tuple) -> str:
+    """판 하나를 사람 말로 — 줄여 다시 찍을 때 stderr 에 적는다."""
+    cap, st, rn, ch = rung
+    return (("극단 칸 없음" if cap is None else f"극단 목록 {cap}개") + f"·연속 줄 {st}·"
+            + (f"상하위 {rn}" if rn else "섹터 칸 없음") + ("" if ch else "·변동 줄 없음"))
 
 
 def card_visible_text(page: str) -> str:
@@ -737,9 +784,7 @@ def main(argv: "list[str] | None" = None) -> int:
                 except CardOverflow as e:
                     if i == len(pages) - 1:
                         raise
-                    cap, st, rn, ch = CARD_LADDER[i + 1]
-                    print(f"[digest] {e} — 극단 목록 {cap}개·연속 줄 {st}·상하위 {rn}"
-                          f"{'' if ch else '·변동 줄 없음'} 으로 줄여 다시 찍는다", file=sys.stderr)
+                    print(f"[digest] {e} — {rung_label(CARD_LADDER[i + 1])} 으로 줄여 다시 찍는다", file=sys.stderr)
             png = "digest.png"
         except ImportError:
             if a.png == "require":

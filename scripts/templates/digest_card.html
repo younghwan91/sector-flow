@@ -5,6 +5,7 @@
 <title>오늘의 수급 · __DATE__</title>
 <!--
   scripts/digest.py 가 밑줄 두 겹으로 감싼 자리를 채우고 Playwright Chromium 이 __CARD_W__×__CARD_H__ 로 찍는다.
+  맨 위 '한눈에' 는 웹 '오늘 한 장' 과 같은 요약 문장이다. 섹터·극단·변동 칸은 넘치면 빠진다(digest.CARD_LADDER) — 값의 지위·경고·꼬리는 늘 남는다.
   외부 자원 없음(글꼴은 시스템 것) — 찍을 때 네트워크를 막는다. 스크립트 없음.
   색: 순매수 = 빨강(#e34948), 순매도 = 파랑(#2a78d6) — 국내 시세 관례. 부호는 숫자(+/−)가 같이 말한다(색만으로 말하지 않는다).
   dataviz 검증기: 두 색 모두 대비 3:1 이상, CVD ΔE 21.6.
@@ -28,7 +29,7 @@
   .chip { display: inline-block; font-size: 22px; font-weight: 700; padding: 2px 10px; border-radius: 6px; }
   .chip.final { background: var(--ink); color: var(--surface); }
   .chip.prov { border: 2px solid var(--ink-2); color: var(--ink-2); }
-  .chip.warn { border: 2px solid var(--warn); color: var(--warn); margin-left: 8px; }
+  .chip.warn { border: 2px solid var(--warn); color: var(--warn); font-size: 19px; margin: 0 8px 4px 0; }
   h2 { font-size: 24px; font-weight: 700; color: var(--ink-2); margin-bottom: 6px; }
   h2 small { font-weight: 400; font-size: 20px; color: var(--ink-3); margin-left: 8px; }
   .net-row { display: grid; grid-template-columns: 120px 1fr 150px 70px; align-items: center; height: 32px; font-size: 25px; }
@@ -58,6 +59,12 @@
   ul.facts b { margin-right: 6px; }
   .sep { color: var(--ink-3); }
   .notes p { font-size: 19px; color: var(--ink-2); line-height: 1.3; }
+  .notes p.status { color: var(--ink); font-weight: 700; }
+  section.sum { border-left: 6px solid var(--ink); padding-left: 16px; }
+  ul.sum { list-style: none; font-size: 22px; line-height: 1.3; }
+  ul.sum li { margin-bottom: 2px; }
+  ul.sum b { font-weight: 800; }
+  .notsaid { font-size: 18px; color: var(--ink-2); line-height: 1.3; margin-top: 4px; }
   .basis { font-size: 18px; color: var(--ink-2); margin-top: 4px; }
   .detail { font-size: 20px; color: var(--ink-2); margin-top: 4px; }
   ul.facts li.fh { color: var(--ink-2); font-weight: 700; margin-top: 4px; }
@@ -67,8 +74,10 @@
 <body>
 <header>
   <h1>오늘의 수급</h1>
-  <div class="meta"><span class="date">__DATE__</span> <span class="chip __STATUS_CLASS__">__STATUS__</span>__GAPS__<div class="basis">__BASIS__</div></div>
+  <div class="meta"><span class="date">__DATE__</span> <span class="chip __STATUS_CLASS__">__STATUS__</span><div class="basis">__BASIS__</div></div>
 </header>
+
+__SUMMARY_SEC__
 
 <section>
   <h2>시장 순매수[억] · __MARKET__(거래소+코스닥)<small>괄호는 1년 일별 %ile · 빨강 = 순매수 · 파랑 = 순매도</small></h2>
@@ -83,15 +92,9 @@
   </table>
 </section>
 
-<section>
-  <h2>오늘 섹터 순매수[억(1년%ile)]</h2>
-  <div class="cols">__SECTOR_COLS__</div>
-</section>
+__SECTOR_SEC__
 
-<section>
-  <h2>1년%ile 상단(≥__PCT_HI__)·하단(≤__PCT_LO__)<small>오늘 값이 1년 일별 분포의 어디인가 · 신규·N일째 = 그 극단에 며칠째</small></h2>
-  <ul class="facts">__EXTREMES__</ul>
-</section>
+__EXTREMES_SEC__
 
 __CHANGE_SEC__
 
