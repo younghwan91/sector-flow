@@ -103,6 +103,11 @@ EXPECTED = """\
 잠정치다 — 다음 거래일 새벽 확정치로 바뀔 수 있다.
 최근 7일 잠정→확정: 섹터 칸 중앙 4%, 부호 뒤집힘 14회, 상위3 유지 89%
 
+전체 한눈에 — 센 값이다(점수·판정 없음)
+- 외국인 -4,201억 순매도 — 오늘 가장 큰 주체. 1년 %ile 6 · 평소 범위 안
+- 외국인 7일 연속 순매도 (누적 -4.1조)
+- 평소 범위(1년 %ile 5~95) 밖 0칸/0칸 — 없음
+
 시장 순매수[억] · 전체(거래소+코스닥) · 괄호는 1년 일별 %ile
 - 기관 +2,500(88) · 외국인 -4,201(6) · 개인 +1,500(70) · 기타법인 +200(51)
 - 종가·VWAP 환산 차 큼(코스닥 6.2%)
@@ -204,19 +209,19 @@ def _long_payload(name_len: int, n: int = 30) -> dict:
 def test_text_fits_char_limit_and_trims_extremes_first():
     """긴 날에는 극단 목록부터 줄여 상한 안에 넣는다 — 상위·하위 3 과 시장 줄은 그대로다.
     다 줄여도 넘치면 만들지 않는다(잘린 글을 내지 않는다)."""
-    P = _long_payload(name_len=6)
+    P = _long_payload(name_len=12)
     full4 = dg.body_text(dg.collect(P), dg.EXTREME_CAPS[0]) + "\n\n" + dg.FOOTER + "\n"
     assert len(full4) > dg.MAX_CHARS, "픽스처가 상한을 안 넘는다 — 줄이기를 시험하지 못한다"
     _F, text, _ = dg.build(P)
     assert len(text) <= dg.MAX_CHARS
     assert text.endswith(dg.FOOTER + "\n")
-    assert "상위: 가가가가가가00 +1,000(99)" in text
+    assert "상위: 가가가가가가가가가가가가00 +1,000(99)" in text
     assert "곳" in text or " 외 " in text
     # 극단을 줄여서 들어가는 날은 연속 줄이 산다 — 연속을 먼저 떨어뜨리면 여기서 잡힌다(TRIM_LADDER 순서).
-    _F, mid, _ = dg.build(_long_payload(name_len=20, n=30))
+    _F, mid, _ = dg.build(_long_payload(name_len=40, n=30))
     assert len(mid) <= dg.MAX_CHARS and "곳" in mid and "연속 순매매" in mid
     with pytest.raises(dg.DigestError, match="상한"):
-        dg.build(_long_payload(name_len=120))
+        dg.build(_long_payload(name_len=200))
     _F, text, _ = dg.build(fixture_payload(final=True))
     assert len(text) <= dg.MAX_CHARS
 
@@ -628,7 +633,8 @@ def test_trim_ladders_end_with_counts_only_and_no_streak():
     for body in bodies[first_counts:]:                         # 개수만 남은 칸들 — 한 번 개수로 내려가면 이름이 돌아오지 않는다
         ext = next(ln for ln in body.splitlines() if ln.startswith("- 기관") and "상단:" in ln)
         assert re.search(r"상단: \d+곳 / 하단: \d+곳", ext), ext
-    assert "연속" in bodies[0] and "연속" not in bodies[-1]
+    # 맨 위 요약의 'N일 연속 순매도' 는 남는다 — 줄이는 것은 아래 '연속 순매매' 줄이다.
+    assert "연속 순매매" in bodies[0] and "연속 순매매" not in bodies[-1]
 
     pages = [dg.card_html(F, *rung) for rung in dg.CARD_LADDER]
     assert all(a > b for a, b in zip(map(len, pages), map(len, pages[1:]))), [len(p) for p in pages]

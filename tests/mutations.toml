@@ -5039,8 +5039,9 @@ replace = "    out = []"
 
 [[mutation]]
 id = "web-smoke-ignores-today-panel"
-why = "'오늘' 패널이 안 그려져도(스크립트가 중간에 죽어도) 스모크가 초록이다"
-guards = ["tests/test_web_smoke.py::test_judge_flags_console_errors_page_overflow_and_a_missing_today_panel"]
+why = "'오늘 한 장' 이 안 그려져도(스크립트가 중간에 죽어도) 스모크가 초록이다"
+guards = ["tests/test_web_smoke.py::test_judge_flags_console_errors_page_overflow_and_a_missing_today_panel",
+          "tests/test_web_smoke.py::test_smoke_exit_codes_and_the_chromium_fallback"]
 file = "scripts/web_smoke.py"
 find = "    if page == \"numbers.html\":"
 replace = "    if False:"
@@ -12338,3 +12339,179 @@ why = "3.11 전체 pytest 를 합친 트리의 gate 로 옮겼다 — ci-plan-ga
 [[removed]]
 id = "harness-direct-budget-scales-by-shards"
 why = "예산에 샤드 수를 곱하는 코드 자체를 지웠다 — --budget-min 은 어느 범위에서든 그 실행 전체의 예산이다"
+
+[[mutation]]
+id = "oneday-rarity-counts-both-sides"
+why = "같은 방향만 세지 않으면 '260일 중 N번째로 큰 순매도' 가 순매수 날까지 센다"
+guards = ["tests/test_oneday.py::test_rarity_counts_same_side_bigger_days_and_the_nearest_one", "tests/test_oneday.py::test_payload_carries_the_market_series_ranks_and_recent_days"]
+file = "scripts/sector_flow.py"
+find = "    more = [i for i in range(n - 1) if (s[i] > cur if cur > 0 else s[i] < cur)]"
+replace = "    more = [i for i in range(n - 1) if s[i] > cur]"
+
+[[mutation]]
+id = "oneday-rarity-oldest-bigger-day"
+why = "'더 큰 날은 며칠 전' 이 가장 가까운 날이 아니라 가장 먼 날을 적는다"
+guards = ["tests/test_oneday.py::test_rarity_counts_same_side_bigger_days_and_the_nearest_one"]
+file = "scripts/sector_flow.py"
+find = "(n - 1 - more[-1]) if more else None"
+replace = "(n - 1 - more[0]) if more else None"
+
+[[mutation]]
+id = "oneday-streak-times-ignores-side"
+why = "같은 길이 횟수가 반대 방향 연속까지 센다 — '같은 방향 N번' 이 부풀린다"
+guards = ["tests/test_oneday.py::test_streak_times_counts_same_side_runs_that_reached_today_length"]
+file = "scripts/sector_flow.py"
+find = "if r == k and g == sig[-1])"
+replace = "if r == k)"
+
+[[mutation]]
+id = "oneday-streak-times-dropped"
+why = "연속 횟수가 페이로드에서 빠지면 요약의 '같은 방향 N일 이상 M번' 이 사라진다"
+guards = ["tests/test_oneday.py::test_streak_times_counts_same_side_runs_that_reached_today_length", "tests/test_streaks_revisions.py::test_streak_counts_same_sign_days_and_a_near_zero_day_breaks_it", "tests/test_streaks_revisions.py::test_streak_block_skips_thin_and_unclassified_sectors_and_breaks_ties_by_amount"]
+file = "scripts/sector_flow.py"
+find = "\"sum\": round(sum(ser[len(ser) - k:]), 2) if k else 0.0, \"pct\": pct, \"times\": times}"
+replace = "\"sum\": round(sum(ser[len(ser) - k:]), 2) if k else 0.0, \"pct\": pct}"
+
+[[mutation]]
+id = "oneday-verifier-rank-blind"
+why = "검증기가 순위·더 큰 날을 다시 세고도 결과를 버린다"
+guards = ["tests/test_oneday.py::test_verifier_catches_a_wrong_rank_distance_series_count_or_recent_day"]
+file = "scripts/verify_report.py"
+find = "    chk(\"T\", \"오늘 한 장 — 시장 같은 방향 순위·더 큰 날 거리 재계산\", not bad_r and cnt > 0,"
+replace = "    chk(\"T\", \"오늘 한 장 — 시장 같은 방향 순위·더 큰 날 거리 재계산\", True,"
+
+[[mutation]]
+id = "oneday-verifier-series-blind"
+why = "시장 일별 배열이 섹터 합과 달라도(띠가 다른 1년을 그린다) 검증기가 못 본다"
+guards = ["tests/test_oneday.py::test_verifier_catches_a_wrong_rank_distance_series_count_or_recent_day"]
+file = "scripts/verify_report.py"
+find = "            off = [i for i, (x, y) in enumerate(zip(got, tot[-lb:])) if abs(x - y) > 0.006 * len(secs) + 0.011]"
+replace = "            off = []"
+
+[[mutation]]
+id = "oneday-verifier-recent-blind"
+why = "섹터 최근 20일 배열(누적 선)이 틀려도 검증기가 못 본다"
+guards = ["tests/test_oneday.py::test_verifier_catches_a_wrong_rank_distance_series_count_or_recent_day"]
+file = "scripts/verify_report.py"
+find = "                if (ser is None) != (a not in rows[s]) or (ser is not None and rows[s][a] != ser[-k:]):"
+replace = "                if False:"
+
+[[mutation]]
+id = "oneday-verifier-times-blind"
+why = "같은 길이 횟수가 틀려도 검증기가 연속 칸을 초록으로 둔다"
+guards = ["tests/test_oneday.py::test_verifier_catches_a_wrong_rank_distance_series_count_or_recent_day"]
+file = "scripts/verify_report.py"
+find = "                and got.get(\"times\") == want[\"times\"])"
+replace = "                )"
+
+[[mutation]]
+id = "oneday-summary-band-edge"
+why = "보이는 정수 95 를 '평소 범위 안' 이라 적는다 — 화면 숫자와 말이 갈린다"
+guards = ["tests/test_oneday.py::test_summary_sentences_say_who_how_much_what_is_unusual_and_what_changed"]
+file = "src/sectorflow/summary.py"
+find = "return \"평소 범위 밖(위)\" if q >= PCT_HI else"
+replace = "return \"평소 범위 밖(위)\" if q > PCT_HI else"
+
+[[mutation]]
+id = "oneday-summary-counts-thin"
+why = "10종목 미만 섹터를 '평소 범위 밖 N칸' 에 세면 한두 종목이 칸 수를 정한다"
+guards = ["tests/test_oneday.py::test_summary_sentences_say_who_how_much_what_is_unusual_and_what_changed"]
+file = "src/sectorflow/summary.py"
+find = "        if thin(d, markets, s):\n            continue\n"
+replace = ""
+
+[[mutation]]
+id = "oneday-not-said-drifts"
+why = "'이 요약이 말하지 않는 것' 이 출구마다 달라진다"
+guards = ["tests/test_oneday.py::test_web_pages_carry_the_same_not_said_line_and_trend_badge"]
+file = "src/sectorflow/summary.py"
+find = "\"이 숫자로 방향을 읽을 근거가 없다. 섹터 20·60일 수급 지표는 검정했고 관계가 확인되지 않았다 — 방향 단서가 아니다.\")"
+replace = "\"이 숫자로 방향을 읽을 근거가 없다.\")"
+
+[[mutation]]
+id = "oneday-trend-badge-measured"
+why = "섹터 20일 누적 선에 [측정] 을 달면 검정한 지표를 검정 안 한 것처럼 적는다"
+guards = ["tests/test_oneday.py::test_web_pages_carry_the_same_not_said_line_and_trend_badge"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "    \"trend\": B_NONE,"
+replace = "    \"trend\": B_MEAS,"
+
+[[mutation]]
+id = "oneday-tui-drops-summary"
+why = "TUI 첫 화면에서 요약이 빠지면 웹·다이제스트와 다른 이야기를 먼저 한다"
+guards = ["tests/test_oneday.py::test_terminal_first_screen_leads_with_the_summary_sentences"]
+file = "src/sectorflow/tui/flow_view.py"
+find = "    lines += summary_lines(st, width)\n"
+replace = ""
+
+[[mutation]]
+id = "oneday-digest-drops-summary"
+why = "다이제스트 맨 위 요약이 빠진다"
+guards = ["tests/test_oneday.py::test_digest_leads_with_the_same_summary_sentences"]
+file = "scripts/digest.py"
+find = "    if F.get(\"summary\"):"
+replace = "    if False:"
+
+[[mutation]]
+id = "oneday-web-summary-drops-band"
+why = "웹 요약 문장이 '평소 범위' 말을 빼먹는다 — TUI·다이제스트와 다른 문장"
+guards = ["tests/test_oneday.py::test_web_layer_is_green_on_the_one_day_page"]
+file = "scripts/templates/sector_numbers.html"
+find = "+(b?\" · \"+b:\"\")+(r?\" · \"+r:\"\")]); }"
+replace = "+(r?\" · \"+r:\"\")]); }"
+
+[[mutation]]
+id = "oneday-web-heat-numbers-everywhere"
+why = "섹터×주체 칸 전부에 숫자를 적는다 — 범위 밖 칸만 숫자라는 범례와 다르다"
+guards = ["tests/test_oneday.py::test_web_layer_is_green_on_the_one_day_page"]
+file = "scripts/templates/sector_numbers.html"
+find = "if(isExt(f.pct)){ cell.textContent=PS(f.pct);"
+replace = "if(f.pct!=null){ cell.textContent=PS(f.pct);"
+
+[[mutation]]
+id = "oneday-web-strip-unit"
+why = "시장 띠 글자가 다른 꼴(억 없이)로 적힌다"
+guards = ["tests/test_oneday.py::test_web_layer_is_green_on_the_one_day_page"]
+file = "scripts/templates/sector_numbers.html"
+find = "const b=band(f.pct), l1=BIG(f.v)+\" · 1년 %ile \"+PS(f.pct)"
+replace = "const b=band(f.pct), l1=A(f.v)+\" · 1년 %ile \"+PS(f.pct)"
+
+[[mutation]]
+id = "oneday-web-streak-unit"
+why = "연속 막대의 누적이 다른 꼴로 적힌다"
+guards = ["tests/test_oneday.py::test_web_layer_is_green_on_the_one_day_page"]
+file = "scripts/templates/sector_numbers.html"
+find = "\" · 누적 \"+BIG(f.sum)+(f.days>=2"
+replace = "\" · 누적 \"+A(f.sum)+(f.days>=2"
+
+[[mutation]]
+id = "oneday-viewer-counts-thin"
+why = "뷰어 요약이 10종목 미만 섹터까지 센다 — 수치표·TUI 와 칸 수가 갈린다"
+guards = ["tests/test_oneday.py::test_web_layer_catches_a_viewer_summary_that_counts_thin_sectors"]
+file = "scripts/templates/sector_flow.html"
+find = "if(s===\"(미분류)\"||mem(s)<10) return;"
+replace = "if(s===\"(미분류)\") return;"
+
+[[mutation]]
+id = "oneday-watch-not-saved"
+why = "관심 섹터를 골라도 이 브라우저에 남지 않는다"
+guards = ["tests/test_oneday.py::test_watch_line_lives_only_in_the_browser"]
+file = "scripts/templates/sector_numbers.html"
+find = "try{ localStorage.setItem(WATCH_KEY,JSON.stringify(watch)); }catch(e){}"
+replace = "try{ }catch(e){}"
+
+[[mutation]]
+id = "oneday-w-summary-check-blind"
+why = "W 층이 요약 문장을 대조하고도 결과를 버린다"
+guards = ["tests/test_oneday.py::test_web_layer_catches_a_one_day_page_that_says_something_else"]
+file = "scripts/verify_report.py"
+find = "    chk(\"W\", \"'오늘 한 장' 요약 문장 = sectorflow.summary(TUI 첫 화면·다이제스트와 같은 문장)\", not bad_s,"
+replace = "    chk(\"W\", \"'오늘 한 장' 요약 문장 = sectorflow.summary(TUI 첫 화면·다이제스트와 같은 문장)\", True,"
+
+[[mutation]]
+id = "oneday-w-heat-check-blind"
+why = "W 층이 칸 숫자를 대조하고도 결과를 버린다"
+guards = ["tests/test_oneday.py::test_web_layer_catches_a_one_day_page_that_says_something_else"]
+file = "scripts/verify_report.py"
+find = "    chk(\"W\", \"'오늘 한 장' 섹터×주체 칸 — 평소 범위 밖 칸에만 %ile 숫자\", not bad_h,"
+replace = "    chk(\"W\", \"'오늘 한 장' 섹터×주체 칸 — 평소 범위 밖 칸에만 %ile 숫자\", True,"

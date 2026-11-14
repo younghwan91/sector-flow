@@ -64,11 +64,12 @@ def test_streak_counts_same_sign_days_and_a_near_zero_day_breaks_it():
     """≈0 날(목록 Σ|값| 의 1% 미만)은 사는 날도 파는 날도 아니다 — 연속을 끊는다. 백분위는 날마다의 연속 길이 분포."""
     g = [100.0] * 7
     f = sf.streak_fact([5.0, -3.0, -4.0, -0.5, -2.0, -6.0, -7.0], g)
-    assert f == {"sign": -1, "days": 3, "sum": -15.0, "pct": 100.0}
+    assert f == {"sign": -1, "days": 3, "sum": -15.0, "pct": 100.0, "times": 1}
     # 길이 분포 [1,1,2,0,1,2] 에서 2 는 아래 4개·동률 2개(자기 포함) → midrank 100·(4 + 0.5)/5
     f2 = sf.streak_fact([5.0, -3.0, -4.0, -0.5, -2.0, -6.0], g[:6])
     assert f2["days"] == 2 and f2["pct"] == pytest.approx(90.0)
-    assert sf.streak_fact([5.0, 5.0, 0.2], [100.0] * 3) == {"sign": 0, "days": 0, "sum": 0.0, "pct": None}
+    assert f2["times"] == 2, "같은 방향(순매도) 연속이 길이 2 에 닿은 것은 셋째 날과 오늘 — 두 번"
+    assert sf.streak_fact([5.0, 5.0, 0.2], [100.0] * 3) == {"sign": 0, "days": 0, "sum": 0.0, "pct": None, "times": None}
     assert sf.streak_fact([5.0, 5.0], [0.0, 0.0])["days"] == 0, "목록이 비면(Σ|값|=0) 부호가 없다"
 
 
@@ -93,7 +94,7 @@ def test_streak_block_skips_thin_and_unclassified_sectors_and_breaks_ties_by_amo
     assert S["longest"]["거래소"]["inst"] == "B"
     assert S["longest"]["거래소"]["forgn"] is None, "연속이 없으면 최장도 없다"
     # 시장 합계는 그 시장 모든 섹터(얇은 섹터·미분류 포함)의 합이다: [5, 15, −13, 15, 15, 16].
-    assert S["market"]["거래소"]["inst"] == {"sign": 1, "days": 3, "sum": 46.0, "pct": 100.0}
+    assert S["market"]["거래소"]["inst"] == {"sign": 1, "days": 3, "sum": 46.0, "pct": 100.0, "times": 1}
 
 
 def _streak_days(Q):

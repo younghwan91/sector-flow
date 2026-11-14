@@ -7,7 +7,7 @@ numbers.html·viewer.html 은 늘, 검증·품질(trust.html)은 폴더에 있�
 * 콘솔 오류·페이지 예외가 없는가.
 * 문서가 가로로 넘치지 않는가 — ``documentElement.scrollWidth > innerWidth``. 본표(``.tw``)는 제 안에서 옆으로 미는
   것이 의도라 문서 폭만 본다(폰 390 에서 페이지 전체가 밀리면 결함이다).
-* numbers.html 의 '오늘' 패널(``#today``)이 보이고 비어 있지 않은가.
+* numbers.html 맨 위 '오늘 한 장'(``#oneday``)이 보이고 요약 문장이 있는가(예전 '오늘' 패널은 그 아래 접힌 세부 숫자다).
 * 합성 데모 폴더면 쪽 안의 상대 링크가 다 열리는가 — 면책 문구의 근거 링크가 404 였다.
 
 외부 글꼴(fonts.googleapis.com) 요청은 빈 응답으로 막는다 — 네트워크 사정이 콘솔 오류로 섞이지 않게.
@@ -46,11 +46,11 @@ DEMO_MARKER = "DEMO.txt"
 OVERFLOW_SLACK = 1
 
 _MEASURE = """() => {
-  const t = document.getElementById("today"), g = document.getElementById("t-grid");
+  const t = document.getElementById("oneday");
   let today = null;
   if (t) { const r = t.getBoundingClientRect(), cs = getComputedStyle(t);
     today = {w: r.width, h: r.height, top: r.top + window.scrollY, display: cs.display, visibility: cs.visibility,
-             cards: g ? g.children.length : 0}; }
+             cards: document.querySelectorAll("#a-sum li").length}; }
   const links = [...document.querySelectorAll("a[href]")].map(a => a.getAttribute("href"));
   return {scroll_w: document.documentElement.scrollWidth, inner_w: window.innerWidth, today, links};
 }"""
@@ -67,11 +67,11 @@ def judge(page: str, width: int, facts: dict) -> list[str]:
     if page == "numbers.html":
         t = facts.get("today")
         if not t:
-            out.append(f"{tag} '오늘' 패널(#today)이 없다")
+            out.append(f"{tag} '오늘 한 장'(#oneday)이 없다")
         elif t.get("display") == "none" or t.get("visibility") == "hidden" or not t.get("w") or not t.get("h"):
-            out.append(f"{tag} '오늘' 패널이 안 보인다({t})")
+            out.append(f"{tag} '오늘 한 장' 이 안 보인다({t})")
         elif not t.get("cards"):
-            out.append(f"{tag} '오늘' 패널이 비었다(#t-grid 카드 0)")
+            out.append(f"{tag} '오늘 한 장' 이 비었다(요약 문장 0)")
     return out
 
 

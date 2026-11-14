@@ -229,7 +229,7 @@ def test_smoke_exit_codes_and_the_chromium_fallback(tmp_path, monkeypatch, capsy
     _fake(monkeypatch, _FakePW())
     assert WS.main(["--dir", folder]) == 0
     _fake(monkeypatch, _FakePW(facts={("numbers.html", 1440): dict(CLEAN, today=None)}))
-    assert WS.main(["--dir", folder]) == 1 and "'오늘' 패널(#today)이 없다" in capsys.readouterr().out
+    assert WS.main(["--dir", folder]) == 1 and "'오늘 한 장'(#oneday)이 없다" in capsys.readouterr().out
 
     exe = tmp_path / "chrome"
     exe.write_text("")

@@ -14,6 +14,7 @@ import unicodedata
 from collections import namedtuple
 from datetime import date
 
+from sectorflow import summary as SUMMARY
 from sectorflow.basis import (  # noqa: F401 — RET_LABEL* 는 이 모듈 이름으로도 읽힌다(검사·앱)
     BASIS_HELP, DATA_BASIS_SHORT, DEMO_MARK, NOT_TESTED_NOTE, RET_LABEL, RET_LABEL_PROV, RET_LABEL_PROV_SHORT, RET_LABEL_SHORT,
     ret_label, rhu, status_label, truth_gap_label,
@@ -1958,6 +1959,20 @@ def basis_line(width: int, elapsed: str = "") -> str:
                                       f" {DATA_BASIS_SHORT}"]), width)
 
 
+def summary_lines(st: State, width: int) -> list[str]:
+    """첫 화면 맨 위 사실 요약 — 웹 '오늘 한 장'·다이제스트와 **같은 문장**(``sectorflow.summary``). 관심 섹터 줄은 웹에만 있다."""
+    mk = st.market
+    items = SUMMARY.summary_texts(st.d, mk, [mk] if mk != "전체" else st.markets[1:])
+    if not items:
+        return []
+    out = [pad(_first_fitting(width, [f" 오늘 {mk} 한눈에 — 센 값이다(점수·판정 없음, 앞날 검정 안 함):", f" 오늘 {mk} 한눈에:"]),
+               width)]
+    for t in items:
+        out += _wrap_words(" · " + t, width, "   ")
+    out.append(pad("", width))
+    return out
+
+
 def banner_lines(st: State, width: int) -> list[str]:
     """시작 배너 — 표를 그리기 전에 뜨는 **사실 요약**("오늘의 수급"). `o` 로 다시 연다.
 
@@ -1972,6 +1987,7 @@ def banner_lines(st: State, width: int) -> list[str]:
     d = st.d
     # 합성 데모의 기준일은 고정이다 — 'N일 전' 은 뜻이 없고 그림이 날마다 달라진다.
     lines = [_banner_title(d, width), basis_line(width, "" if d.get("demo") else elapsed_note(d.get("asof", "")))]
+    lines += summary_lines(st, width)
     lines += _banner_today(st, width) if st.has_today else _banner_20d(st, width)
     lines.append(pad("", width))
     ko = ACTORS[st.ai][1]
@@ -2794,6 +2810,9 @@ EVIDENCE = {
     "day": B_MEAS, "conc": B_MEAS,
     # 수치표 '기관 순매수 상위 3' — 종목 금액이다.
     "drv": B_MEAS,
+    # 웹 '오늘 한 장' 섹터 상세의 20거래일 누적 선(기관·투신+연기금·외국인) — 섹터 20일 수급은 검정했고 증거 없음
+    # (전체 시장·10종목 이상, docs/validation/). 방향 단서가 아니다.
+    "trend": B_NONE,
 }
 
 #: 도움말 열 이름 → (증거 표지, 한 줄 근거). 섹터 표 절.
