@@ -659,8 +659,8 @@ def test_card_last_rung_fits_any_day_with_room():
 
 
 def test_card_height_model_never_underestimates_chromium(tmp_path):
-    """어림 모형이 실측(Chromium)보다 작지 않고 너무 크지도 않다 — 모든 판, 잠정·확정·긴 날.
-    # mutation-exempt: Chromium(Playwright)이 있을 때만 돈다 — CI·변이 하네스에는 없어 건너뛴다(모형의 정직성 검사)."""
+    """어림 모형이 실측(Chromium)보다 작지 않고 너무 크지도 않다 — 모든 판, 잠정·확정·긴 날."""
+    # mutation-exempt: Chromium(Playwright)이 있을 때만 돈다 — CI·변이 하네스에는 없어 건너뛴다(모형의 정직성 검사)
     pytest.importorskip("playwright")
     from playwright.sync_api import sync_playwright
     js = """() => { document.querySelector('footer').style.marginTop = '0';
@@ -696,8 +696,8 @@ def test_card_height_model_never_underestimates_chromium(tmp_path):
 
 
 def test_worst_day_provisional_card_is_shot(tmp_path):
-    """가장 긴 날의 잠정 리포트도 카드 PNG 가 나온다(사다리 어딘가에서) — 2026-11-13 은 끝까지 넘쳤다.
-    # mutation-exempt: Chromium(Playwright)이 있을 때만 돈다 — 위 어림 검사가 변이로 지킨다."""
+    """가장 긴 날의 잠정 리포트도 카드 PNG 가 나온다(사다리 어딘가에서) — 2026-11-13 은 끝까지 넘쳤다."""
+    # mutation-exempt: Chromium(Playwright)이 있을 때만 돈다 — 위 어림 검사(test_card_last_rung_fits_any_day_with_room)가 변이로 지킨다
     pytest.importorskip("playwright")
     P = _worst_card_payload(name_len=4)
     T = P["today"]                       # 글(길이 상한 1900자)이 들 만큼만 덜어 낸다 — 카드는 여전히 넘쳐 사다리를 탄다
