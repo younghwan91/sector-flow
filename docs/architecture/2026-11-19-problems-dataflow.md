@@ -1,7 +1,8 @@
 # 리포트 한 번 짓기 데이터 흐름 — 추적 중 찾은 문제
 
 기준: `67fa2a5` (main). 코드는 읽기만 했고 DB 는 열지 않았다. 실데이터 근거는 `/home/young/git/sector-flow/reports/2026-11-10 … 2026-11-18` 의 이미 게시된 파일(`payload.json`·`digest.json`·`digest.md`·`cron.log`)을 읽어 확인했다.
-그림: `docs/architecture/report-build-dataflow.html`.
+그림: `docs/architecture/report-build-dataflow.html`(그림은 `f0f3f1f` 로 다시 그렸다 — 아래 근거의 줄 번호는 `67fa2a5` 기준이다).
+처리 결과(`f0f3f1f` 기준)는 항목마다 **처리** 줄에 적었다.
 
 | # | 심각도 | 한 줄 |
 |---|---|---|
@@ -21,6 +22,8 @@
 ---
 
 ## P1 · MAJOR — 극단 문턱 규칙이 둘이다(날값 대 보이는 정수)
+
+**처리** 해결 — PR #43. 판정을 `sectorflow.basis.pct_side`(보이는 정수) 하나로 모았다. `_extremes`·`day_change`·summary·digest·TUI 가 그것을 쓰고, 웹 JS 사본(`extSide`·`vsExtSide`)은 W·T·X 층이 맞춘다(`basis.py:52-73`).
 
 **근거**
 - 날값(소수 1자리 `pct`) `≥ 95` 로 비교하는 곳:
@@ -42,6 +45,8 @@
 
 ## P2 · MAJOR — digest·trust 는 검증 뒤에 지어지고 아무도 검사하지 않는다
 
+**처리** 해결 — PR #43. 다이제스트를 지은 뒤 검증기 X 층(`--layers X`, `VERIFY_DIGEST.txt`)이 글을 payload·화면과 맞추고, 걸리면 글·카드를 빼고 게시한다(`daily_report.sh:398-409`). digest 의 순위·극단·가장 큰 주체는 `sectorflow.summary` 를 import 한다. trust.html 은 여전히 검증기 밖이다.
+
 **근거**
 - 순서: `verify_report.py` 가 `scripts/daily_report.sh:328-340` 에서 돌고, 그 뒤에 digest(`:354`)와 trust_page(`:399-403`)가 돈다.
 - `scripts/verify_report.py` 에는 `digest` 라는 글자가 없다. 층 목록은 `:5158-5169`(A·A3·B·C·D·E·G·H·T·W·F)뿐이다.
@@ -52,6 +57,8 @@
 **고칠 방향.** digest 를 verify 앞으로 옮기고(검증 실패면 지우는 것은 그대로 둔다), verify 에 `digest.json` 의 사실을 payload 와 `sectorflow.summary` 로 다시 세어 맞추는 층(예: `X`)을 넣는다. 또는 digest 뒤에 그 층만 다시 돌린다. digest 가 다시 정하는 규칙은 summary/basis 의 함수를 import 하게 바꿔 두 벌을 없앤다. 새 검사에는 변이도 같이 넣는다.
 
 ## P3 · MAJOR — 알림 통로가 비어 있다(운영 단일 실패점)
+
+**처리** 사용자 몫 — `~/git/quant-airflow/.env` 에 `ALERT_WEBHOOK_URL=`·`HEARTBEAT_URL=` 을 채운다. 코드 쪽은 PR #42 가 알림 통로가 없는 날 하트비트를 보내지 않게 했다(운영 7번).
 
 **근거**
 - `reports/cron.log:4224-4225`(2026-11-18 20:30)에 "ALERT_WEBHOOK_URL 이 비었다 — 경고·오류가 로그에만 남고 아무에게도 안 간다", "HEARTBEAT_URL 없음 — 외부 감시가 꺼져 있다" 가 찍혔다. 같은 경고가 로그에 8번 있고, 첫 번째는 `:3730` 이다.
@@ -64,6 +71,8 @@
 
 ## P4 · MINOR — 평소 빌드는 sector_flow.py 를 관문을 통과한 기준일에 묶지 않는다
 
+**처리** 해결 — PR #42. `sector_flow.py`·`verify_report.py` 에 언제나 `--asof "$ASOF"` 를 넘긴다(`daily_report.sh:350-354`).
+
 **근거**
 - 셸이 `ASOF = max(date)` 를 읽고(`scripts/daily_report.sh:104-116`) 관문은 그 날을 본다(`:257`).
 - `--asof` 는 재구성일 때만 넘긴다(`:315-321`). 평소 빌드의 `load()` 는 `recent_dates(con, days)` 로 최신일을 **다시** 고른다(`scripts/sector_flow.py:84`).
@@ -74,6 +83,8 @@
 **고칠 방향.** 언제나 `sector_flow.py --asof "$ASOF"` 와 `verify_report.py --asof "$ASOF"` 를 넘긴다. `load` 는 이미 `dates[-1] != asof` 면 멈춘다(`sector_flow.py:88-89`). 확정 의미를 붙이는 `--rebuilt`·`--final` 은 지금처럼 따로 둔다.
 
 ## P5 · MINOR — 시총이 없는 섹터: 뷰어는 0, 수치표는 결측
+
+**처리** 해결 — PR #43. 뷰어 `shareOf` 가 시총이 없으면 `null` 을 내 `—`·맨 아래로 간다(`sector_flow.html:409-411`). 검증기의 뷰어 기대값도 `—` 다.
 
 **근거**
 - 뷰어: `scripts/templates/sector_flow.html:409-411` `windowVal` 과 `:429` `accelOf` 는 `c ? t/c*100 : 0` 이다.
@@ -87,6 +98,8 @@
 
 ## P6 · MINOR — '가장 큰 주체' 동률 규칙이 두 가지다
 
+**처리** 해결 — PR #43. digest 가 `summary.dominant` 를 import 해 쓴다(`digest.py:136`).
+
 **근거**
 - `src/sectorflow/summary.py:100-103` 과 `src/sectorflow/tui/flow_view.py:1551-1556` 은 `max((|v|, key))` 를 쓴다. 동률이면 키 문자열이 큰 쪽이다.
 - `scripts/digest.py:133-139` 는 `(|v|, -index)` 를 쓴다. 동률이면 `NET_ACTORS` 에서 앞선 쪽이다.
@@ -98,6 +111,8 @@
 
 ## P7 · MINOR — 분류·유니버스는 지금의 `stocks`(재구성의 앞날 읽기)
 
+**처리** 보류 — `stocks` 이력(SCD)은 quant-airflow 쪽 일이고, 재구성의 한계로 `REBUILT.txt` 에 적혀 있다.
+
 **근거** `scripts/sector_flow.py:101-102`(`SELECT code, name, sector, market FROM stocks` 와 inner join), `scripts/completeness_gate.py:72`. 문서화돼 있다: `sector_flow.py:78-83`, `daily_report.sh:391`(REBUILT.txt 의 "묶지 못한 것").
 
 **실패 장면.** 지난 기준일을 재구성하면 그 뒤에 마스터에서 빠진 종목(폐지 등)의 수급이 섹터 합계·종목 목록에서 사라진다(생존 편향). 그 뒤의 섹터 재분류도 소급해서 적용된다. 재구성 리포트와 그날 저녁 게시본의 섹터 합계가 데이터 수정이 아니라 분류 때문에 달라진다.
@@ -105,6 +120,8 @@
 **고칠 방향.** 단기: 재구성할 때 `.archive/` 의 원본 payload `names[code].sector/market` 이 있으면 그것을 우선한다. 장기: quant-airflow 에 `stocks` 이력(SCD)을 두고 as-of 로 읽는다.
 
 ## P8 · MINOR — 화면이 읽지 않는 `iret`, 반대로 말하는 주석
+
+**처리** 해결 — PR #43. 주석을 '자체 바구니' 로 고쳤고, `iret` 커버리지는 실패가 아니라 경고다(`verify_report.py:678-684`). `iret` 내장은 그대로다.
 
 **근거**
 - `iret` 는 `index_returns` 가 짓고(`scripts/sector_flow.py:1957-1961`) payload 에 실린다(`:401`). 2026-11-18 기준 94.8KB, 2.7% 다.
@@ -118,6 +135,8 @@
 
 ## P9 · MINOR — payload 크기: `names` 가 절반이 넘고 세 벌 실린다
 
+**처리** 보류 — 주석은 PR #43 에서 실측(1.94MB·56%)으로 고쳤다. 열 지향·한 벌로 줄이는 것은 `perf` 변경이라 리포트 바이트 동일 확인과 함께 따로 한다.
+
 **근거**
 - 2026-11-18 `payload.json` 은 3,493,303B 이고, 그중 `names` 가 1,941,226B(55.6%)다(2,646종목 × 5창 × 8값, 키가 반복된다).
 - 주석은 "≈ 200KB"·"크기는 미미하다" 라고 적는다(`scripts/sector_flow.py:325-327`, `:349`).
@@ -128,6 +147,8 @@
 **고칠 방향.** 주석을 실측으로 고친다. `names.win` 을 열 지향 배열(창별 `[codes], [inst], …`)로 바꾸면 키 반복이 빠진다. 또는 `names.json` 하나로 두고 두 HTML 이 같이 읽게 한다. 다만 `perf` 변경이라 리포트가 바이트 동일한지 확인해야 한다.
 
 ## P10 · MINOR(잠재) — '얇은 섹터' 종목 수가 두 가지
+
+**처리** 보류 — 지금 0건인 잠재 결함이다. 하루 단위 블록의 종목 수 기준은 그대로다.
 
 **근거**
 - 260일 동안 한 번이라도 거래된 종목 수 `n_by_sector` 로 자르는 곳: `streak_block`·`day_change_block`·`concentration_block`(`scripts/sector_flow.py:646-647`, `697`, `770`, `806`), 요약 칸 수(`src/sectorflow/summary.py:106-111`).

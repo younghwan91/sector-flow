@@ -3,14 +3,14 @@
   "diagram_type": "dataflow",
   "meta": {
     "title": "sector-flow 리포트 한 번 짓기 — 데이터 흐름",
-    "output": ".archify/dataflow-report-build-20261119-023409/report-build-dataflow.html",
+    "output": ".archify/dataflow-report-build-20261119-064631/report-build-dataflow.html",
     "locale": "ko",
     "quality_profile": "showcase",
     "repository": {
       "url": "https://github.com/younghwan91/sector-flow.git",
       "provider": "github",
       "link_mode": "web",
-      "revision": "67fa2a5f9db70da2750fbcff814695630116a2ab"
+      "revision": "f0f3f1ff8ae6416793553306c16af5aadbcb9cdd"
     },
     "legend": {
       "entries": {
@@ -55,8 +55,8 @@
       "sources": [
         {
           "path": "scripts/sector_flow.py",
-          "line": 101,
-          "end_line": 105,
+          "line": 100,
+          "end_line": 104,
           "label": "stocks 지금 마스터 inner join"
         },
         {
@@ -84,8 +84,8 @@
         },
         {
           "path": "scripts/sector_flow.py",
-          "line": 91,
-          "end_line": 99,
+          "line": 90,
+          "end_line": 98,
           "label": "kiwoom 소스·기관 세부 열"
         }
       ]
@@ -101,8 +101,8 @@
       "sources": [
         {
           "path": "scripts/sector_flow.py",
-          "line": 130,
-          "end_line": 156,
+          "line": 129,
+          "end_line": 155,
           "label": "adjusted_returns 종가 비"
         }
       ]
@@ -118,14 +118,14 @@
       "sources": [
         {
           "path": "scripts/sector_flow.py",
-          "line": 1751,
-          "end_line": 1761,
+          "line": 1749,
+          "end_line": 1759,
           "label": "approx_gap VWAP=trade_value·1e6/vol"
         },
         {
           "path": "scripts/sector_flow.py",
-          "line": 1812,
-          "end_line": 1825,
+          "line": 1810,
+          "end_line": 1823,
           "label": "_minute_volume 그날 분봉"
         },
         {
@@ -143,19 +143,25 @@
       "row": 4,
       "label": "sector_index",
       "sublabel": "업종·KRX 지수",
-      "tag": "정규장 15:30",
+      "tag": "정규장 · iret 은 경고만",
       "sources": [
         {
           "path": "scripts/sector_flow.py",
-          "line": 174,
-          "end_line": 214,
+          "line": 173,
+          "end_line": 213,
           "label": "index_returns → iret"
         },
         {
           "path": "scripts/sector_flow.py",
-          "line": 1707,
-          "end_line": 1733,
+          "line": 1705,
+          "end_line": 1731,
           "label": "krx_index_block 1·20일"
+        },
+        {
+          "path": "scripts/verify_report.py",
+          "line": 674,
+          "end_line": 684,
+          "label": "iret 커버리지는 경고"
         }
       ]
     },
@@ -176,8 +182,8 @@
         },
         {
           "path": "scripts/daily_report.sh",
-          "line": 219,
-          "end_line": 240,
+          "line": 245,
+          "end_line": 265,
           "label": "KR_QUANT_FINAL 분기"
         }
       ]
@@ -218,19 +224,25 @@
       "row": 2,
       "label": "load() 억 환산",
       "sublabel": "수량×종가÷1e8",
-      "tag": "종가 근사",
+      "tag": "≤ 관문 기준일",
       "sources": [
         {
           "path": "scripts/sector_flow.py",
-          "line": 77,
-          "end_line": 116,
+          "line": 76,
+          "end_line": 115,
           "label": "load: 수량×close/EOK"
         },
         {
           "path": "scripts/sector_flow.py",
-          "line": 159,
-          "end_line": 171,
+          "line": 158,
+          "end_line": 170,
           "label": "attach_daily_cap cap_lag"
+        },
+        {
+          "path": "scripts/daily_report.sh",
+          "line": 348,
+          "end_line": 366,
+          "label": "언제나 --asof"
         }
       ]
     },
@@ -241,19 +253,25 @@
       "row": 3,
       "label": "완전성 관문",
       "sublabel": "종목·시총 ≥97%",
-      "tag": "미완이면 75",
+      "tag": "미완이면 75 · GATE.txt",
       "sources": [
         {
           "path": "scripts/completeness_gate.py",
           "line": 1,
-          "end_line": 25,
-          "label": "관문 규칙"
+          "end_line": 30,
+          "label": "관문 규칙·수집 행 수"
         },
         {
           "path": "scripts/daily_report.sh",
-          "line": 253,
-          "end_line": 293,
+          "line": 292,
+          "end_line": 332,
           "label": "만들기 전에 본다"
+        },
+        {
+          "path": "scripts/daily_report.sh",
+          "line": 267,
+          "end_line": 279,
+          "label": "저녁 재시도: 행 수 다시 잼"
         }
       ]
     },
@@ -268,20 +286,20 @@
       "sources": [
         {
           "path": "scripts/sector_flow.py",
-          "line": 1878,
-          "end_line": 1886,
+          "line": 1876,
+          "end_line": 1884,
           "label": "market_context"
         },
         {
           "path": "scripts/sector_flow.py",
-          "line": 1736,
-          "end_line": 1784,
+          "line": 1734,
+          "end_line": 1782,
           "label": "approx_gap"
         },
         {
           "path": "scripts/sector_flow.py",
-          "line": 1828,
-          "end_line": 1875,
+          "line": 1826,
+          "end_line": 1873,
           "label": "block_suspects"
         }
       ]
@@ -297,21 +315,21 @@
       "sources": [
         {
           "path": "scripts/sector_flow.py",
-          "line": 860,
-          "end_line": 877,
+          "line": 854,
+          "end_line": 871,
           "label": "_read_report"
         },
         {
           "path": "scripts/sector_flow.py",
-          "line": 1453,
-          "end_line": 1474,
+          "line": 1451,
+          "end_line": 1472,
           "label": "_final_cells final_diff.json"
         },
         {
           "path": "scripts/daily_report.sh",
-          "line": 407,
-          "end_line": 421,
-          "label": "바꿔 끼우기(옛 폴더 제거)"
+          "line": 462,
+          "end_line": 508,
+          "label": "걸린 판 비켜 두기·바꿔 끼우기"
         }
       ]
     },
@@ -326,20 +344,20 @@
       "sources": [
         {
           "path": "scripts/sector_flow.py",
-          "line": 896,
-          "end_line": 954,
+          "line": 890,
+          "end_line": 948,
           "label": "change_block·final_diff_block"
         },
         {
           "path": "scripts/sector_flow.py",
-          "line": 1576,
-          "end_line": 1657,
+          "line": 1574,
+          "end_line": 1655,
           "label": "revision_stats 20 확정일"
         },
         {
           "path": "scripts/sector_flow.py",
-          "line": 1970,
-          "end_line": 1991,
+          "line": 1968,
+          "end_line": 1989,
           "label": "main: --final 일 때만 final_diff"
         }
       ]
@@ -355,14 +373,14 @@
       "sources": [
         {
           "path": "scripts/sector_flow.py",
-          "line": 280,
-          "end_line": 413,
+          "line": 279,
+          "end_line": 414,
           "label": "flows/detail/ret/retw/cap/names"
         },
         {
           "path": "scripts/sector_flow.py",
-          "line": 217,
-          "end_line": 277,
+          "line": 216,
+          "end_line": 276,
           "label": "sector_cap·cap_by_month"
         }
       ]
@@ -374,25 +392,25 @@
       "row": 3,
       "label": "today 블록",
       "sublabel": "1년 %ile·연속",
-      "tag": "사실만",
+      "tag": "극단 = pct_side 하나",
       "sources": [
         {
           "path": "scripts/sector_flow.py",
-          "line": 488,
-          "end_line": 625,
+          "line": 489,
+          "end_line": 626,
           "label": "day_pct·today_block"
         },
         {
           "path": "scripts/sector_flow.py",
-          "line": 650,
-          "end_line": 777,
-          "label": "streak_block·day_change_block"
+          "line": 651,
+          "end_line": 771,
+          "label": "streak·day_change"
         },
         {
-          "path": "scripts/sector_flow.py",
-          "line": 793,
-          "end_line": 829,
-          "label": "concentration_block"
+          "path": "src/sectorflow/basis.py",
+          "line": 52,
+          "end_line": 73,
+          "label": "pct_side 보이는 정수"
         }
       ]
     },
@@ -413,14 +431,14 @@
         },
         {
           "path": "scripts/sector_flow.py",
-          "line": 1893,
-          "end_line": 1915,
+          "line": 1891,
+          "end_line": 1913,
           "label": "_attach_krx_truth"
         },
         {
           "path": "deploy/crontab.simnode",
-          "line": 23,
-          "end_line": 29,
+          "line": 24,
+          "end_line": 30,
           "label": "크론은 켜지 않는다"
         }
       ]
@@ -429,7 +447,7 @@
       "id": "numbersBuild",
       "type": "backend",
       "stage": 3,
-      "row": 1,
+      "row": 0,
       "label": "sector_numbers.py",
       "sublabel": "가속·%ile·x·G",
       "tag": "두 번째 집계",
@@ -458,21 +476,21 @@
       "id": "payloadJson",
       "type": "database",
       "stage": 3,
-      "row": 2,
+      "row": 1,
       "label": "payload.json",
       "sublabel": "3.5MB · names 56%",
       "tag": "정본",
       "sources": [
         {
           "path": "scripts/daily_report.sh",
-          "line": 321,
-          "end_line": 323,
+          "line": 364,
+          "end_line": 366,
           "label": "payload 한 번 → 세 산출"
         },
         {
           "path": "scripts/sector_flow.py",
-          "line": 2020,
-          "end_line": 2025,
+          "line": 2018,
+          "end_line": 2023,
           "label": "json.dump"
         }
       ]
@@ -481,57 +499,80 @@
       "id": "verifyReport",
       "type": "security",
       "stage": 3,
-      "row": 3,
+      "row": 2,
       "label": "verify_report.py",
       "sublabel": "VERIFY·CLAIMS",
-      "tag": "실패해도 게시",
+      "tag": "걸린 재빌드는 .rejected",
       "sources": [
         {
           "path": "scripts/daily_report.sh",
-          "line": 325,
-          "end_line": 340,
+          "line": 368,
+          "end_line": 383,
           "label": "VERIFY.txt·VERIFY_FAILED 띠"
         },
         {
           "path": "scripts/verify_report.py",
-          "line": 5120,
-          "end_line": 5179,
+          "line": 5304,
+          "end_line": 5364,
           "label": "층 실행 순서"
         },
         {
           "path": "scripts/verify_report.py",
-          "line": 5101,
-          "end_line": 5117,
+          "line": 5285,
+          "end_line": 5301,
           "label": "CLAIMS.txt"
         }
       ]
     },
     {
-      "id": "sideOutputs",
+      "id": "digestBuild",
       "type": "backend",
       "stage": 3,
-      "row": 4,
-      "label": "digest·trust",
-      "sublabel": "digest·trust.html",
-      "tag": "검증기 밖",
+      "row": 3,
+      "label": "digest.py",
+      "sublabel": "summary 값 그대로",
+      "tag": "md·카드",
       "sources": [
         {
           "path": "scripts/digest.py",
-          "line": 741,
-          "end_line": 805,
-          "label": "digest main: VERIFY_FAILED 면 거부"
+          "line": 720,
+          "end_line": 784,
+          "label": "main: VERIFY_FAILED 면 거부"
         },
         {
-          "path": "scripts/trust_page.py",
-          "line": 216,
-          "end_line": 222,
-          "label": "trust: VERIFY·CLAIMS·FINAL 읽기"
+          "path": "scripts/digest.py",
+          "line": 125,
+          "end_line": 136,
+          "label": "summary.dominant 그대로"
         },
         {
           "path": "scripts/daily_report.sh",
-          "line": 350,
-          "end_line": 403,
-          "label": "검증 뒤 부속 단계"
+          "line": 393,
+          "end_line": 397,
+          "label": "검증 뒤 다이제스트"
+        }
+      ]
+    },
+    {
+      "id": "verifyDigest",
+      "type": "security",
+      "stage": 3,
+      "row": 4,
+      "label": "X 층 대조",
+      "sublabel": "글 = payload·화면?",
+      "tag": "걸리면 글 빼기",
+      "sources": [
+        {
+          "path": "scripts/daily_report.sh",
+          "line": 398,
+          "end_line": 409,
+          "label": "--layers X · VERIFY_DIGEST.txt"
+        },
+        {
+          "path": "scripts/verify_report.py",
+          "line": 5147,
+          "end_line": 5265,
+          "label": "digest_mismatches·layer_x"
         }
       ]
     },
@@ -570,13 +611,20 @@
         {
           "path": "scripts/templates/sector_numbers.html",
           "line": 314,
+          "end_line": 314,
           "label": "const D = __DATA__"
         },
         {
           "path": "scripts/templates/sector_numbers.html",
-          "line": 863,
-          "end_line": 869,
-          "label": "≥95 목록: 날값 비교"
+          "line": 405,
+          "end_line": 407,
+          "label": "extSide 보이는 정수"
+        },
+        {
+          "path": "scripts/templates/sector_numbers.html",
+          "line": 865,
+          "end_line": 871,
+          "label": "≥95·≤5 목록"
         }
       ]
     },
@@ -591,15 +639,44 @@
       "sources": [
         {
           "path": "scripts/sector_flow.py",
-          "line": 1941,
-          "end_line": 1951,
+          "line": 1939,
+          "end_line": 1949,
           "label": "--from-json 렌더"
         },
         {
           "path": "scripts/templates/sector_flow.html",
           "line": 393,
-          "end_line": 429,
-          "label": "capOf·retOf·accelOf"
+          "end_line": 432,
+          "label": "capOf·shareOf 결측·accelOf"
+        },
+        {
+          "path": "scripts/templates/sector_flow.html",
+          "line": 642,
+          "end_line": 644,
+          "label": "극단 판정 사본"
+        }
+      ]
+    },
+    {
+      "id": "trustPage",
+      "type": "frontend",
+      "stage": 4,
+      "row": 3,
+      "label": "trust.html",
+      "sublabel": "trust_page.py",
+      "tag": "검증기 밖",
+      "sources": [
+        {
+          "path": "scripts/trust_page.py",
+          "line": 216,
+          "end_line": 222,
+          "label": "VERIFY·CLAIMS·FINAL 읽기"
+        },
+        {
+          "path": "scripts/daily_report.sh",
+          "line": 452,
+          "end_line": 458,
+          "label": "표시 파일을 다 쓴 뒤"
         }
       ]
     },
@@ -607,7 +684,7 @@
       "id": "webServer",
       "type": "cloud",
       "stage": 4,
-      "row": 3,
+      "row": 4,
       "label": "serve_reports.py",
       "sublabel": "허용 목록·gzip",
       "tag": "/latest",
@@ -769,13 +846,6 @@
       "variant": "security"
     },
     {
-      "id": "verifyToSide",
-      "from": "verifyReport",
-      "to": "sideOutputs",
-      "label": "실패면 digest 없음",
-      "variant": "security"
-    },
-    {
       "id": "viewerToWeb",
       "from": "viewerHtml",
       "to": "webServer",
@@ -788,10 +858,37 @@
       "label": "수치표"
     },
     {
-      "id": "sideToWeb",
-      "from": "sideOutputs",
+      "id": "verifyToDigest",
+      "from": "verifyReport",
+      "to": "digestBuild",
+      "label": "실패면 digest 없음",
+      "variant": "security"
+    },
+    {
+      "id": "digestToX",
+      "from": "digestBuild",
+      "to": "verifyDigest",
+      "label": "digest.json·md",
+      "variant": "security"
+    },
+    {
+      "id": "xToWeb",
+      "from": "verifyDigest",
       "to": "webServer",
-      "label": "digest·trust"
+      "label": "통과한 글만",
+      "variant": "security"
+    },
+    {
+      "id": "verifyToTrust",
+      "from": "verifyReport",
+      "to": "trustPage",
+      "label": "VERIFY·CLAIMS"
+    },
+    {
+      "id": "trustToWeb",
+      "from": "trustPage",
+      "to": "webServer",
+      "label": "검증·품질"
     }
   ],
   "cards": [
@@ -799,30 +896,30 @@
       "dot": "amber",
       "title": "잠정과 확정이 갈리는 곳",
       "items": [
-        "18:10·19:10 은 그날 잠정 수급으로 짓는다. payload 의 finalized 는 17시 시계만 보고 확정을 뜻하지 않는다(sector_flow.py:67-74).",
-        "화~토 08:20·10:20 은 finalize_done.py 가 Airflow daily_finalize 성공을 확인했을 때만 --final 로 다시 짓고 FINAL.txt 를 남긴다(daily_report.sh:219-240, 361-369).",
-        "final_diff 는 바꿔 끼울 같은 기준일 잠정 payload 와 1·5일 칸을 견준다 → final_diff.json·FINAL.txt(sector_flow.py:937-954, 1983-1990).",
-        "revision_stats 는 기준일 앞 최근 20 확정일의 final_diff.json(없으면 .revision_seed)에서 잠정→확정 수정 폭을 센다(sector_flow.py:1576-1657).",
-        "change 는 직전 거래일 폴더의 그때 게시본을 읽는다 — 잠정이었을 수 있어 prev_final 을 같이 싣는다(sector_flow.py:896-934)."
+        "18:10·19:10 은 그날 잠정 수급으로 짓는다. payload 의 finalized 는 17시 시계만 보고 확정을 뜻하지 않는다(sector_flow.py:66-73).",
+        "화~토 08:20·10:20 은 finalize_done.py 가 Airflow daily_finalize 성공을 확인했을 때만 --final 로 다시 짓고 FINAL.txt 를 남긴다(daily_report.sh:245-265, 416-424).",
+        "final_diff 는 바꿔 끼울 같은 기준일 잠정 payload 와 1·5일 칸을 견준다 → final_diff.json·FINAL.txt(sector_flow.py:931-948, 1981-1988).",
+        "revision_stats 는 기준일 앞 최근 20 확정일의 final_diff.json(없으면 .revision_seed)에서 잠정→확정 수정 폭을 센다(sector_flow.py:1574-1655).",
+        "change 는 직전 거래일 폴더의 그때 게시본을 읽는다 — 잠정이었을 수 있어 prev_final 을 같이 싣는다(sector_flow.py:890-928)."
       ]
     },
     {
       "dot": "rose",
       "title": "같은 수를 두 번 계산하는 곳",
       "items": [
-        "구간 섹터 수익률·가속: sector_numbers.agg(파이썬)와 viewer.html retOf/accelOf(JS)가 따로 센다. 시총이 없으면 수치표는 결측, 뷰어는 0 이다(sector_numbers.py:170, sector_flow.html:409-429).",
-        "시장 합계 순매수: today.market 은 종목에서 바로(_market_daily), 연속(streaks)은 섹터 배열 합으로 센다(sector_flow.py:528-554, 676-705) — 반올림만 다르다.",
-        "오늘 한 장 요약 문장: summary.py 와 웹 두 장의 JS 사본 — verify W 층이 그려진 글자를 맞춘다.",
-        "1년 %ile 극단 문턱이 둘이다: 날값 ≥95(웹·TUI·_extremes) 대 보이는 정수 ≥95(day_change·summary·digest). 2026-11-18 은 다이제스트에만 '출판/매체복제 95' 가 있다."
+        "구간 섹터 수익률·가속: sector_numbers.agg(파이썬)와 viewer.html retOf/accelOf(JS)가 따로 센다. 시총이 없으면 둘 다 결측(—)이다(sector_numbers.py:169-170, sector_flow.html:409-411).",
+        "시장 합계 순매수: today.market 은 종목에서 바로(_market_daily), 연속(streaks)은 섹터 배열 합으로 센다(sector_flow.py:529-555, 677-706) — 반올림만 다르다.",
+        "오늘 한 장 요약 문장: summary.py 와 웹 두 장의 JS 사본 — verify W 층이 그려진 글자를 맞춘다. 다이제스트는 summary 를 import 해 같은 값을 쓴다.",
+        "1년 %ile 극단 판정은 basis.pct_side(보이는 정수) 한 곳이다. 웹 JS 사본 extSide·vsExtSide 는 W·T·X 층이 맞춘다."
       ]
     },
     {
       "dot": "cyan",
       "title": "단위",
       "items": [
-        "supply_demand 주체 열은 순매매 수량이다 → × 원 종가 ÷ 1e8 = 억(load, sector_flow.py:110-114). VWAP 가 아니라 종가 근사다.",
+        "supply_demand 주체 열은 순매매 수량이다 → × 원 종가 ÷ 1e8 = 억(load, sector_flow.py:109-113). VWAP 가 아니라 종가 근사다.",
         "tv(거래대금)도 acc_trde_qty × 종가 ÷ 1e8 이다 — daily_bars.trade_value 를 쓰지 않는다.",
-        "daily_bars.trade_value(백만원)는 ×1e6 으로 VWAP 를 만들 때만 쓴다(approx_gap, sector_flow.py:1761). 단위 띠는 verify B 층이 본다.",
+        "daily_bars.trade_value(백만원)는 ×1e6 으로 VWAP 를 만들 때만 쓴다(approx_gap, sector_flow.py:1759). 단위 띠는 verify B 층이 본다.",
         "시총은 원 종가 × 그 시점 주식수(분할·병합 재계산), 수정주가 daily_bars 는 쓰지 않는다(storage.py:372-466)."
       ]
     },
@@ -830,10 +927,10 @@
       "dot": "slate",
       "title": "검증 밖·선택 경로",
       "items": [
-        "verify_report 는 payload·numbers.html·viewer.html 을 본다. digest·trust 는 그 뒤에 지어져 검증기를 거치지 않는다(daily_report.sh:325-403).",
-        "검증에 걸려도 게시하고 latest 를 옮긴다 — 두 HTML 에 ⚠ 띠, digest 는 만들지 않는다(daily_report.sh:331-336, 434-438).",
+        "verify_report 는 payload·numbers.html·viewer.html 을 본다. 다이제스트는 그 뒤에 짓고 X 층이 따로 맞춘다 — 걸리면 글·카드를 빼고 게시한다(daily_report.sh:398-409). trust.html 은 검증기를 거치지 않는다.",
+        "새 판이 검증에 걸렸는데 게시본은 통과본이면 게시본·latest 를 두고 새 판을 .rejected 로 비켜 둔다(daily_report.sh:462-471). 아니면 게시하고 두 HTML 에 ⚠ 띠, digest 는 만들지 않는다.",
         "krx_truth.py 는 크론에서 꺼져 있다. 켜지면 오차 % 만 today.krx_truth 에 싣고 공표 수치는 krx_truth.json 사이드카에만 둔다.",
-        "payload.iret(업종지수 수익률)은 화면이 읽지 않는다 — 검증기 커버리지 검사만 읽는다. sw-ledger 는 payload.json 을 직접 읽는다(이 그림은 sw-flow 경로만 선으로 그렸다)."
+        "payload.iret(업종지수 수익률)은 화면이 읽지 않는다 — 커버리지가 모자라면 실패가 아니라 경고다(verify_report.py:678-684). sw-ledger 는 payload.json 을 직접 읽는다(이 그림은 sw-flow 경로만 선으로 그렸다)."
       ]
     }
   ]
