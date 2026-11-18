@@ -11,12 +11,21 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PORT="${SECTOR_FLOW_PORT:-8765}"
 HOST="${SECTOR_FLOW_HOST:-$(tailscale ip -4 2>/dev/null | head -n 1)}"
 mkdir -p "$REPO/reports"
+LOCK="$REPO/reports/.serve.lock"
+# 기동 실패 연속 횟수(serve_reports.soft_fail) — 서버가 떠 있고 건강하면 지운다(아래). 안 지우면 며칠에 걸친 띄엄띄엄한
+# 순간 실패가 쌓여 12번째에 "한 시간째" 알림이 나갔다.
+MISSES="$REPO/reports/.serve.misses"
 if [ -z "$HOST" ]; then
+  # 서버가 이미 떠 있으면(잠금이 잡혀 있다) 주소 조회의 순간 실패(tailscaled 재시작 등)일 뿐 기동 실패가 아니다 — 세지 않는다.
+  # 오래 이어져 서버가 실제로 안 보이면 20:30 신선도 점검의 프로브 공백(60분)이 잡는다.
+  if command -v flock >/dev/null 2>&1 && ! flock -n "$LOCK" true; then
+    echo "[$(date '+%F %T')] Tailscale 주소를 못 읽었다 — 서버는 떠 있다(잠금), 이번 주기는 건너뛴다"
+    exit 0
+  fi
   # 부팅 직후엔 흔하다 — 0 으로 끝내되, 한 시간 넘게 이어지면 한 번 알린다(1).
   exec python3 "$REPO/scripts/serve_reports.py" --root "$REPO/reports" \
     --soft-fail "Tailscale 주소가 없다(SECTOR_FLOW_HOST 로 지정 가능)"
 fi
-LOCK="$REPO/reports/.serve.lock"
 # **떠 있는데 대답이 없으면 죽이고 다시 띄운다.** 잠금만 보면 프로세스가 살아 있는 한 0 으로 끝나, 서버가
 # 멈춘(스레드 고갈·디스크 대기) 채로 며칠이 가도 아무도 모른다. 잠금이 잡혀 있으면 /healthz 를 5초 안에
 # 묻고, 대답이 없으면 서버가 적어 둔 pid(.serve.pid)를 끝낸다 — TERM, 5초 뒤에도 살아 있으면 KILL.
@@ -41,7 +50,7 @@ if ! flock -n "$LOCK" true; then
     sf_event_append "$REPO/reports" "{\"ts\":\"$(date -u +%FT%TZ)\",\"event\":\"probe\",\"status\":$_PS,\"ok\":$([ "$CODE" = "200" ] && echo true || echo false)}"
   fi
   if [ "$CODE" = "200" ]; then
-    rm -f "$RESTARTS"
+    rm -f "$RESTARTS" "$MISSES"
     exit 0
   fi
   if [[ "$CODE" =~ ^[1-9][0-9][0-9]$ ]]; then

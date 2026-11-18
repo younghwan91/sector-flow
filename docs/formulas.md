@@ -50,7 +50,7 @@
 | `sw-flow` (`flow_view.py`) | `numbers.html` 의 JSON 을 읽어 섹터 표·종목 목록·전 종목 화면을 그린다. 주체 투영·종목 파생량·종목 선정은 여기서 낸다 | 터미널 |
 | `sw-ledger` (`ledger_view.py`) | `payload.json` 을 직접 읽는다(`sector_numbers` 를 거치지 않는다). 원장·전개·동시성·한계 | 터미널 |
 
-출처 — `scripts/sector_numbers.py:294`(`build`), `src/sectorflow/tui/ledger_view.py:121`(`load`), `scripts/daily_report.sh:321-323`.
+출처 — `scripts/sector_numbers.py:294`(`build`), `src/sectorflow/tui/ledger_view.py:121`(`load`), `scripts/daily_report.sh:364-366`.
 두 앱은 같은 폴더를 본다. 같은 (시장, 섹터, 구간)에 대해 두 화면이 다른 수를 말하면 정의가 갈린 것이지 데이터가 다른 것이 아니다.
 
 ### 0.2 기호
@@ -173,7 +173,7 @@ $V$ 는 통합 세션 VWAP 다. 5% 를 넘으면 화면·웹이 `종가·VWAP �
 $P^{adj}$ 는 `daily_bars_adjusted.close`, "직전" 은 그 종목의 바로 앞 조정 종가 행이다. 분할·병합은 그 표에서 백조정돼 있다.
 
 - **그날 조정 종가가 없으면 $r=$ NaN** 이다 — 0 으로 채우지 않는다. 완전성 관문이 기준일 조정 종가 커버리지 97% 를
-  요구한다(`scripts/completeness_gate.py:51`(`MIN_COVERAGE`)).
+  요구한다(`scripts/completeness_gate.py:56`(`MIN_COVERAGE`)).
 - 예전엔 `supply_demand.flu_rt / 100` 을 썼다. 2026-09-14 부터 `flu_rt` 의 분자는 애프터마켓 포함 종가, 기준가는 전일 정규장
   종가라 이어 곱할 수 없다(20일 섹터 수익률 차 중앙 1.9%p, 최대 8.9%p).
 - **세션.** 2026-09-14 부터 `daily_bars(_adjusted)` 의 종가는 KRX 애프터마켓(16:00~20:00) 포함 통합값이다(quant-airflow
@@ -953,9 +953,9 @@ KRX 주체(기타외국인 등)의 순매수 추정치에 결측과 식 (1)의 �
 |---|---|---|
 | `장중·미확정` | 기준일이 오늘이고 KST 17시 전 | `_finalized` `scripts/sector_flow.py:67-74`, `FINALIZED_KST_HOUR = 17` `scripts/sector_flow.py:58` |
 | `마감·잠정` | 수집 창이 지났다(시계만 본다). 당일 수급은 잠정치다 | `src/sectorflow/tui/flow_view.py:2029-2038`(`status_chip`) |
-| `마감·확정` | 화~토 08:20 확정 모드가 `daily_finalize`(`finalize_both`·`rebuild_adjusted`) 성공을 확인하고 확정치로 다시 만든 리포트. 페이로드에 `final: true`, 폴더에 `FINAL.txt` | `scripts/daily_report.sh:183-240`(`FINAL_OK`), `scripts/daily_report.sh:361-396`, `scripts/finalize_done.py:100-148`(`def finalize_done`), `scripts/sector_flow.py:1973-1975` |
-| `⚠ 검증 실패(VERIFY_FAILED.txt)` | 저장 직후 자기 검증에 걸렸다. 게시는 하고 다음 크론이 다시 만든다 | `report_warnings` `src/sectorflow/tui/flow_view.py:2040-2058`, `scripts/daily_report.sh:327-349`(`VERIFY_RC`) |
-| `⚠ MM-DD 수집 미완` | 더 뒤 기준일 폴더에 `INCOMPLETE.txt` — 완전성 관문이 막아 `latest` 가 전날에 머문다 | `src/sectorflow/tui/flow_view.py:2056-2057`, `scripts/daily_report.sh:256-292`(`GATE_RC`) |
+| `마감·확정` | 화~토 08:20 확정 모드가 `daily_finalize`(`finalize_both`·`rebuild_adjusted`) 성공을 확인하고 확정치로 다시 만든 리포트. 페이로드에 `final: true`, 폴더에 `FINAL.txt` | `scripts/daily_report.sh:209-266`(`FINAL_OK`), `scripts/daily_report.sh:404-439`, `scripts/finalize_done.py:100-148`(`def finalize_done`), `scripts/sector_flow.py:1973-1975` |
+| `⚠ 검증 실패(VERIFY_FAILED.txt)` | 저장 직후 자기 검증에 걸렸다. 게시는 하고 다음 크론이 다시 만든다 — 다만 같은 기준일에 검증을 통과한 게시본이 있으면 바꿔 끼우지 않고 걸린 판을 `.rejected/` 에 비켜 둔다(1 로 알림) | `report_warnings` `src/sectorflow/tui/flow_view.py:2040-2058`, `scripts/daily_report.sh:370-392`(`VERIFY_RC`) |
+| `⚠ MM-DD 수집 미완` | 더 뒤 기준일 폴더에 `INCOMPLETE.txt` — 완전성 관문이 막아 `latest` 가 전날에 머문다 | `src/sectorflow/tui/flow_view.py:2056-2057`, `scripts/daily_report.sh:295-331`(`GATE_RC`) |
 | `⚠ N일 지난 리포트` | 기준일이 달력 4일 이상 지났다 | `STALE_DAYS = 4` `src/sectorflow/tui/flow_view.py:2063`, `staleness_warning` `src/sectorflow/tui/flow_view.py:2076-2082` |
 
 잠정 리포트의 G 는 확정치에서 자주 바뀐다(지표 검증 Q3a: 게시본과 확정치의 G 순위가 크게 갈린 날 37%). 가속 순위는 ρ 0.999 로 안정적이다.

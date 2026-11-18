@@ -13,6 +13,9 @@ daily_report.sh 는 **제가 돈 날**만 알린다. 크론 줄이 빠졌거나,
   못 가르니 75, 달력이 휴장이라는데 수급이 들어왔으면 달력이 틀린 것이라 75.
 * 오늘 latest 가 자기 검증에 걸린 채다(``VERIFY_FAILED.txt``) → **75(경고)**. 전 거래일 확정본도 같다. 걸렸어도 게시는 되므로
   "latest 가 오늘이다" 만 보면 OK·하트비트가 나갔다.
+* 오늘 리포트를 만든 뒤 수집이 더 들어왔다(:func:`check_late_fill` — 게시본 ``GATE.txt`` 의 수집 행 수 줄이 지금 DB 와 다르다)
+  → **75(경고)**. 관문은 97% 에서 통과하고 19:10 재시도가 이 줄로 한 번 더 다시 만드는데, 그 뒤에도 바뀌었으면 게시본은 덜 찬
+  수집으로 만든 것이다.
 * 전 거래일 폴더에 ``FINAL.txt``(또는 재구성 표시 ``REBUILT.txt``)가 없다 → **75(경고)**. 그날 아침 08:20 확정 모드가
   안 돌았거나 확정을 확인 못 한 채 지나갔다. 다음 거래일 수집이 들어오면 08:20 은 그 날을 다시 안 보므로 그날 저녁에 알린다.
 * 전 거래일 확정 검증(``VERIFY.txt``)이 외부 참값(정규장 종가 바구니 ≈ KRX 지수) 대조를 **연달아 3번** 건너뛰었다(``[WARN]``
@@ -26,8 +29,10 @@ daily_report.sh 는 **제가 돈 날**만 알린다. 크론 줄이 빠졌거나,
   401·404 는 폐기됐거나 틀린 주소다. 주말·DB 실패여도 본다. 주소는 어디에도 찍지 않는다.
 * 하트비트(죽은 사람 스위치) — ``HEARTBEAT_URL``(웹훅과 같은 방식으로 읽는다)이 있으면 **리포트·수급·확정 점검이 0 인 날에**
   GET 한 번. 외부 감시(healthchecks.io 등)가 정해진 시각에 이 핑을 못 받으면 알린다 — 이 머신·크론·알림 통로가 통째로 죽은 날도
-  잡힌다. 웹훅과는 따로다: 웹훅이 **없어도** 보낸다(하트비트만 쓰는 설정). 다만 웹훅이 **있는데 죽었으면** 안 보낸다 —
-  그날은 경고가 아무에게도 안 가니 외부 감시가 유일한 통로다. 없으면 한 줄 적고 넘어간다(주소만 넣으면 동작한다).
+  잡힌다. 알림 통로가 없는 날도 안 보낸다 — 웹훅이 **있는데 죽었거나**, ``alert.sh`` 가 없거나, 웹훅이 **비었으면** 그날 경고는
+  아무에게도 안 가니 외부 감시가 유일한 통로다. 웹훅 없이 하트비트만 쓰는 설정은 ``SECTOR_FLOW_HEARTBEAT_ONLY=1``(웹훅과 같은
+  곳에서 읽는다)로 **밝혀야** 빈 웹훅을 정상으로 본다 — 예전엔 빈 웹훅을 늘 하트비트 전용으로 봐, ``ALERT_WEBHOOK_URL=`` 줄이
+  실수로 지워진 날에도 핑이 나가 외부 감시는 초록이었다. ``HEARTBEAT_URL`` 이 없으면 한 줄 적고 넘어간다(주소만 넣으면 동작한다).
   핑 실패는 종료코드를 바꾸지 않는다 — 그 알림은 외부 감시의 몫이다.
 
 여러 개가 겹치면 더 심한 쪽(1 > 75 > 0)으로 끝난다. DB 접속 실패는 1.
@@ -69,6 +74,8 @@ _UA = "sector-flow-freshness/1"   # Discord(Cloudflare)는 urllib 기본 UA 를 
 #: 지금 환경(.env 가 섞였다)이 아니라 그 사본을 본다 — alert.sh 는 .env 를 불러온 환경에서 돌지 않는다.
 CRON_ENV_MARK = "SF_CRON_ENV"
 CRON_ENV_PREFIX = "SF_CRON_"
+#: completeness_gate.FILL_MARK 와 **같은 글**이어야 한다(tests/test_freshness_check.py 가 맞춘다) — 무거운 모듈이라 여기서 import 하지 않는다.
+FILL_MARK = "수집 행 수"
 
 
 def worse(a: int, b: int) -> int:
@@ -127,6 +134,37 @@ def judge(root: Path, today: str, rows_today: int, *, market_open: bool | None =
     return rc, out
 
 
+def fill_recorded(root: Path, day: str) -> str | None:
+    """그 기준일 게시본의 ``GATE.txt`` 에 남은 수집 행 수 줄(관문이 본 것). 없으면 None."""
+    try:
+        text = (root / day / "GATE.txt").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    return next((ln.strip() for ln in text.splitlines() if ln.startswith(FILL_MARK + " ")), None)
+
+
+def check_late_fill(root: Path, today: str, fill_now: str | None) -> tuple[int, list[str]]:
+    """오늘 latest 를 만든 뒤 수집이 더 들어왔나 — 관문이 본 수집 행 수(``GATE.txt``)와 지금(``fill_now``)이 다르면 75."""
+    was = fill_recorded(root, today)
+    if latest_date(root) != today or not was or not fill_now or was == fill_now.strip():
+        return 0, []
+    return WARN, [f"⚠️ [수집] 오늘({today}) 리포트를 만든 뒤 수집이 더 들어왔다({was.split(': ', 1)[-1]} → "
+                  f"{fill_now.strip().split(': ', 1)[-1]}) — 게시본은 그 전 수집으로 만든 것이다(관문은 97% 에서 통과한다). "
+                  "수집이 끝났으면 손으로: scripts/daily_report.sh(이 줄이 달라졌으면 다시 만든다). 아니면 다음날 08:20 확정이 다시 만든다."]
+
+
+def fill_now_line(db: str, day: str) -> str | None:
+    """지금 DB 의 수집 행 수 줄(completeness_gate.fill_line). 그날 GATE.txt 가 없으면 묻지 않는다 — 못 재면 None."""
+    from sectorflow.storage import connect  # noqa: PLC0415 — 순수 판정 시험은 DB 없이 돈다
+    import completeness_gate  # noqa: PLC0415 — pandas 를 끌어온다
+
+    con = connect(db)
+    try:
+        return completeness_gate.fill_line(con, day)
+    finally:
+        con.close()
+
+
 def check_prev_final(root: Path, prev: str | None) -> tuple[int, list[str]]:
     """전 거래일이 확정치로 다시 만들어졌나(``FINAL.txt``).
 
@@ -141,7 +179,11 @@ def check_prev_final(root: Path, prev: str | None) -> tuple[int, list[str]]:
             return WARN, [f"⚠️ [확정] 전 거래일({prev}) 확정 리포트가 자기 검증에 걸렸다 — {d / 'VERIFY_FAILED.txt'} 를 보라. "
                           f"고친 뒤: KR_QUANT_ASOF={prev} scripts/daily_report.sh"]
         return 0, [f"[확정] 전 거래일({prev}) 확정 리포트 있음"]
-    if (d / "REBUILT.txt").is_file():
+    kept = sorted((root / ".rejected").glob(f"{prev}.*"))
+    if (d / "numbers.html").is_file() and kept:
+        state = (f"확정 판이 검증에 걸려 게시하지 않았다 — 통과한 잠정 리포트가 그대로 latest 다. 걸린 판: {kept[-1] / 'VERIFY_FAILED.txt'} "
+                 f"(고친 뒤 KR_QUANT_ASOF={prev} scripts/daily_report.sh)")
+    elif (d / "REBUILT.txt").is_file():
         state = "재구성은 했지만 확정치를 확인하지 못했다(REBUILT.txt 의 finalize 줄)"
     elif (d / "numbers.html").is_file():
         state = "잠정 리포트만 있다"
@@ -505,7 +547,15 @@ def main(argv: list[str] | None = None) -> int:
             rc, lines = judge(root, today, n, market_open=market_open)
             # 전 거래일은 달력이 정한다 — DB 의 마지막 수급일로 물으면 수집이 통째로 빠진 날이 "전 거래일" 에서 사라진다.
             prev = krx_calendar.prev_trading_day(today) or db_prev
-            for xrc, xlines in (check_prev_final(root, prev), check_external_truth(root, prev),
+            fill_now, fill_note = None, []
+            if fill_recorded(root, today):
+                try:
+                    fill_now = fill_now_line(a.db or os.environ.get("KR_QUANT_DB") or str(db_default()), today)
+                except Exception as e:  # noqa: BLE001 — 재지 못하면 이 점검만 빠진다(위 DB 점검은 이미 했다)
+                    fill_note = [f"[수집] 오늘 수집 행 수를 못 쟀다({type(e).__name__}) — 게시 뒤 수집 점검을 건너뛴다"]
+            lines += fill_note
+            for xrc, xlines in (check_late_fill(root, today, fill_now),
+                                check_prev_final(root, prev), check_external_truth(root, prev),
                                 check_published_truth(root, prev), check_slo(root, prev),
                                 check_ledger_today(root, today, now), check_probes(root, now),
                                 check_calendar(today)):
@@ -514,23 +564,33 @@ def main(argv: list[str] | None = None) -> int:
     # 알림 통로는 무슨 일이 있어도 본다 — 위가 실패한 날일수록 알림이 가야 한다.
     alert_sh = alert_sh_path(os.environ)
     webhook = ""
-    if os.access(alert_sh, os.X_OK):
+    has_alert_sh = os.access(alert_sh, os.X_OK)
+    if has_alert_sh:
         webhook = alert_value("ALERT_WEBHOOK_URL", os.environ, alert_sh)
         wrc, wlines = check_webhook(webhook)
     else:
         wrc, wlines = WARN, [f"⚠️ [알림 통로] alert.sh 가 없다({alert_sh}) — cron_run.sh 가 모든 알림을 로그에만 남긴다."]
     rc = worse(rc, wrc)
     lines += wlines
-    # 하트비트는 웹훅과 따로 — 웹훅이 없어도(하트비트만 쓰는 설정) 데이터 점검이 깨끗하면 보낸다. 웹훅이 **있는데 죽은**
-    # 날은 안 보낸다: 그 경고가 죽은 웹훅으로 가 아무도 못 보니, 핑이 비는 것이 유일한 신호다.
-    dead_hook = bool(webhook) and wrc != 0
+    # 하트비트 — 데이터 점검이 깨끗하고 **알림 통로가 있을 때만** 보낸다. 웹훅이 있는데 죽었거나, alert.sh 가 없거나, 웹훅이
+    # 비었으면 그날 경고가 아무에게도 안 가니 핑이 비는 것이 유일한 신호다. 빈 웹훅은 하트비트 전용이라고 밝힌 설정
+    # (SECTOR_FLOW_HEARTBEAT_ONLY=1)에서만 정상이다 — 밝히지 않은 빈 웹훅은 지워진 줄과 구별되지 않는다.
+    hb_only = alert_value("SECTOR_FLOW_HEARTBEAT_ONLY", os.environ, alert_sh) == "1"
+    if bool(webhook) and wrc != 0:
+        no_channel = "알림 웹훅이 죽어 있다"
+    elif not has_alert_sh:
+        no_channel = "alert.sh 가 없어 알림이 아무에게도 안 간다"
+    elif not webhook and not hb_only:
+        no_channel = "알림 웹훅이 비었다(하트비트만 쓰려면 SECTOR_FLOW_HEARTBEAT_ONLY=1)"
+    else:
+        no_channel = ""
     # 이 점검의 판정도 원장에 한 줄. 여기서 못 쓰면 오늘 사건은 다 비었을 수 있다 — 75 로 알리고 하트비트도 안 보낸다.
     if not ops_ledger.append_event(root, {"ts": ops_ledger.utc_now_iso(), "event": "freshness",
                                           "today": today, "rc": rc}):
         rc, data_rc = worse(rc, WARN), worse(data_rc, WARN)
         lines.append("⚠️ [원장] 이 점검의 판정을 원장에 못 썼다 — 운영 사건이 비고 있다. df -h, ls -l reports/events.jsonl* 을 보라(docs/runbook.md).")
-    lines += heartbeat(alert_value("HEARTBEAT_URL", os.environ, alert_sh), data_rc == 0 and not dead_hook,
-                       why="알림 웹훅이 죽어 있다" if data_rc == 0 else "점검이 깨끗하지 않다")
+    lines += heartbeat(alert_value("HEARTBEAT_URL", os.environ, alert_sh), data_rc == 0 and not no_channel,
+                       why=no_channel if data_rc == 0 else "점검이 깨끗하지 않다")
     # 배포 지연은 데이터 점검이 아니다 — 하트비트를 막지 않고 종료코드만 올린다(운영 reports/ 를 볼 때만).
     if root.resolve() == (REPO / "reports").resolve():
         drc, dlines = check_deploy(REPO, now.astimezone(timezone.utc))
