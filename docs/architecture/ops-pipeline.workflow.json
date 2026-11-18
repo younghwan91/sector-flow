@@ -5,12 +5,12 @@
     "title": "sector-flow 운영 프로세스 — 크론에서 게시·감시·웹까지",
     "locale": "ko",
     "quality_profile": "showcase",
-    "output": ".archify/workflow-ops-pipeline-20261119-023528/ops-pipeline.html",
+    "output": ".archify/workflow-ops-pipeline-20261119-064631/ops-pipeline.html",
     "repository": {
       "url": "https://github.com/younghwan91/sector-flow.git",
       "provider": "github",
       "link_mode": "web",
-      "revision": "67fa2a5f9db70da2750fbcff814695630116a2ab"
+      "revision": "f0f3f1ff8ae6416793553306c16af5aadbcb9cdd"
     }
   },
   "lanes": [
@@ -59,7 +59,7 @@
       "id": "building",
       "label": "BUILD = <기준일>.building.$$",
       "lane": "build",
-      "fromCol": 2,
+      "fromCol": 1,
       "toCol": 5,
       "variant": "dashed"
     }
@@ -84,14 +84,14 @@
       "sources": [
         {
           "path": "deploy/crontab.simnode",
-          "line": 28,
-          "end_line": 30,
+          "line": 29,
+          "end_line": 31,
           "label": "크론 3줄"
         },
         {
           "path": "deploy/crontab.simnode",
           "line": 5,
-          "end_line": 18,
+          "end_line": 19,
           "label": "재시도 설계"
         }
       ]
@@ -149,18 +149,24 @@
       "type": "security",
       "label": "flock -n",
       "sublabel": ".report.lock",
-      "tag": "TERM 트랩 → 143",
+      "tag": "잠근 뒤 끊긴 .building·.replaced 청소",
       "sources": [
         {
           "path": "scripts/daily_report.sh",
-          "line": 72,
-          "end_line": 86,
+          "line": 79,
+          "end_line": 96,
           "label": "트랩·잠금"
         },
         {
           "path": "scripts/daily_report.sh",
-          "line": 56,
-          "end_line": 65,
+          "line": 97,
+          "end_line": 112,
+          "label": "남은 폴더 청소"
+        },
+        {
+          "path": "scripts/daily_report.sh",
+          "line": 63,
+          "end_line": 72,
           "label": "_bounded"
         }
       ]
@@ -176,8 +182,8 @@
       "sources": [
         {
           "path": "scripts/daily_report.sh",
-          "line": 102,
-          "end_line": 135,
+          "line": 121,
+          "end_line": 161,
           "label": "기준일 조회"
         }
       ]
@@ -193,17 +199,24 @@
       "sources": [
         {
           "path": "scripts/daily_report.sh",
-          "line": 219,
-          "end_line": 225,
+          "line": 245,
+          "end_line": 251,
           "label": "이미 확정"
         },
         {
           "path": "scripts/daily_report.sh",
-          "line": 241,
-          "end_line": 251,
+          "line": 267,
+          "end_line": 279,
+          "label": "게시 뒤 수집 재확인"
+        },
+        {
+          "path": "scripts/daily_report.sh",
+          "line": 280,
+          "end_line": 290,
           "label": "이미 있음"
         }
-      ]
+      ],
+      "tag": "오늘이면 GATE.txt 수집 행 수 다시 잼"
     },
     {
       "id": "finalize",
@@ -217,8 +230,8 @@
       "sources": [
         {
           "path": "scripts/daily_report.sh",
-          "line": 226,
-          "end_line": 240,
+          "line": 252,
+          "end_line": 265,
           "label": "확정 모드 분기"
         },
         {
@@ -236,19 +249,25 @@
       "type": "security",
       "label": "완전성 관문",
       "sublabel": "시장별 ≥97%",
-      "tag": "직전 5일 중앙값",
+      "tag": "직전 5일 중앙값 · 행 수 줄",
       "sources": [
         {
           "path": "scripts/daily_report.sh",
-          "line": 253,
-          "end_line": 293,
+          "line": 292,
+          "end_line": 332,
           "label": "관문 호출"
         },
         {
           "path": "scripts/completeness_gate.py",
-          "line": 93,
-          "end_line": 141,
+          "line": 100,
+          "end_line": 129,
           "label": "판정"
+        },
+        {
+          "path": "scripts/completeness_gate.py",
+          "line": 132,
+          "end_line": 173,
+          "label": "수집 행 수 줄"
         }
       ]
     },
@@ -263,8 +282,8 @@
       "sources": [
         {
           "path": "scripts/daily_report.sh",
-          "line": 82,
-          "end_line": 86
+          "line": 92,
+          "end_line": 96
         }
       ]
     },
@@ -279,8 +298,8 @@
       "sources": [
         {
           "path": "scripts/daily_report.sh",
-          "line": 118,
-          "end_line": 134
+          "line": 144,
+          "end_line": 160
         }
       ]
     },
@@ -295,13 +314,13 @@
       "sources": [
         {
           "path": "scripts/daily_report.sh",
-          "line": 221,
-          "end_line": 225
+          "line": 247,
+          "end_line": 251
         },
         {
           "path": "scripts/daily_report.sh",
-          "line": 243,
-          "end_line": 250
+          "line": 280,
+          "end_line": 290
         }
       ]
     },
@@ -316,13 +335,13 @@
       "sources": [
         {
           "path": "scripts/daily_report.sh",
-          "line": 230,
-          "end_line": 235
+          "line": 256,
+          "end_line": 261
         },
         {
           "path": "deploy/crontab.simnode",
-          "line": 17,
-          "end_line": 18
+          "line": 18,
+          "end_line": 19
         }
       ]
     },
@@ -338,8 +357,8 @@
       "sources": [
         {
           "path": "scripts/daily_report.sh",
-          "line": 259,
-          "end_line": 292
+          "line": 298,
+          "end_line": 326
         }
       ]
     },
@@ -350,13 +369,19 @@
       "type": "backend",
       "label": "sector_flow.py",
       "sublabel": "payload → viewer·numbers",
-      "tag": "--final 이면 확정",
+      "tag": "언제나 --asof · GATE.txt",
       "sources": [
         {
           "path": "scripts/daily_report.sh",
-          "line": 295,
-          "end_line": 323,
-          "label": "옆에 짓기"
+          "line": 334,
+          "end_line": 347,
+          "label": "옆에 짓기·GATE.txt"
+        },
+        {
+          "path": "scripts/daily_report.sh",
+          "line": 348,
+          "end_line": 366,
+          "label": "--asof 로 묶기"
         }
       ]
     },
@@ -371,14 +396,14 @@
       "sources": [
         {
           "path": "scripts/daily_report.sh",
-          "line": 325,
-          "end_line": 345,
+          "line": 368,
+          "end_line": 388,
           "label": "검증"
         },
         {
           "path": "scripts/verify_report.py",
-          "line": 5120,
-          "end_line": 5178,
+          "line": 5304,
+          "end_line": 5364,
           "label": "검증 main"
         }
       ]
@@ -393,29 +418,66 @@
       "sources": [
         {
           "path": "scripts/daily_report.sh",
-          "line": 350,
-          "end_line": 359
+          "line": 393,
+          "end_line": 397,
+          "label": "다이제스트"
+        },
+        {
+          "path": "scripts/digest.py",
+          "line": 720,
+          "end_line": 784,
+          "label": "digest main"
+        }
+      ],
+      "tag": "실패 판이면 거부"
+    },
+    {
+      "id": "digest_x",
+      "lane": "build",
+      "col": 2,
+      "type": "security",
+      "label": "X 층 대조",
+      "sublabel": "VERIFY_DIGEST.txt",
+      "tag": "걸리면 글·카드 빼고 게시",
+      "sources": [
+        {
+          "path": "scripts/daily_report.sh",
+          "line": 398,
+          "end_line": 409,
+          "label": "X 층 호출"
+        },
+        {
+          "path": "scripts/verify_report.py",
+          "line": 5147,
+          "end_line": 5265,
+          "label": "digest_mismatches·layer_x"
         }
       ]
     },
     {
       "id": "trust",
       "lane": "build",
-      "col": 2,
+      "col": 1,
       "type": "backend",
       "label": "FINAL.txt → trust",
       "sublabel": "trust.html · 상한 5분",
       "sources": [
         {
           "path": "scripts/daily_report.sh",
-          "line": 361,
-          "end_line": 369,
+          "line": 416,
+          "end_line": 424,
           "label": "FINAL.txt"
         },
         {
           "path": "scripts/daily_report.sh",
-          "line": 397,
-          "end_line": 406,
+          "line": 425,
+          "end_line": 451,
+          "label": "REBUILT.txt"
+        },
+        {
+          "path": "scripts/daily_report.sh",
+          "line": 452,
+          "end_line": 461,
           "label": "trust"
         }
       ]
@@ -423,23 +485,23 @@
     {
       "id": "swap",
       "lane": "build",
-      "col": 1,
+      "col": 0,
       "type": "database",
-      "label": "바꿔 끼우기",
-      "sublabel": "mv 두 번 · ln -sfn latest",
-      "tag": "옛 폴더 rm -rf",
+      "label": "게시 판정·바꿔 끼우기",
+      "sublabel": "시그널 무시 · mv -T latest",
+      "tag": "걸린 새 판은 .rejected",
       "sources": [
         {
           "path": "scripts/daily_report.sh",
-          "line": 407,
-          "end_line": 421,
-          "label": "mv"
+          "line": 462,
+          "end_line": 472,
+          "label": "걸린 새 판 비켜 두기"
         },
         {
           "path": "scripts/daily_report.sh",
-          "line": 434,
-          "end_line": 438,
-          "label": "latest"
+          "line": 473,
+          "end_line": 509,
+          "label": "바꿔 끼우기·latest"
         }
       ]
     },
@@ -454,8 +516,8 @@
       "sources": [
         {
           "path": "scripts/daily_report.sh",
-          "line": 422,
-          "end_line": 440
+          "line": 518,
+          "end_line": 531
         }
       ]
     },
@@ -470,8 +532,8 @@
       "sources": [
         {
           "path": "scripts/daily_report.sh",
-          "line": 441,
-          "end_line": 455
+          "line": 532,
+          "end_line": 546
         }
       ]
     },
@@ -481,13 +543,41 @@
       "col": 2,
       "type": "security",
       "icon": "failure",
-      "label": "rc 1 · 검증 실패",
-      "sublabel": "그래도 latest · 다음 크론",
+      "label": "rc 1 · 검증 실패 게시",
+      "sublabel": "게시본도 실패·첫 판 · 다음 크론",
       "sources": [
         {
           "path": "scripts/daily_report.sh",
-          "line": 448,
-          "end_line": 458
+          "line": 539,
+          "end_line": 541
+        },
+        {
+          "path": "scripts/daily_report.sh",
+          "line": 547,
+          "end_line": 549
+        }
+      ]
+    },
+    {
+      "id": "x_rejected",
+      "lane": "build_exit",
+      "col": 3,
+      "type": "security",
+      "icon": "failure",
+      "label": "rc 1 · 걸린 판 비켜 둠",
+      "sublabel": "게시본·latest 그대로",
+      "tag": ".rejected/<기준일>.<시각>",
+      "sources": [
+        {
+          "path": "scripts/daily_report.sh",
+          "line": 462,
+          "end_line": 471
+        },
+        {
+          "path": "scripts/daily_report.sh",
+          "line": 19,
+          "end_line": 24,
+          "label": "설계"
         }
       ]
     },
@@ -502,8 +592,8 @@
       "sources": [
         {
           "path": "deploy/crontab.simnode",
-          "line": 32,
-          "end_line": 37
+          "line": 33,
+          "end_line": 39
         },
         {
           "path": "scripts/freshness_check.sh",
@@ -518,19 +608,25 @@
       "col": 1,
       "type": "security",
       "label": "freshness_check.py",
-      "sublabel": "latest=오늘? 전날 FINAL?",
+      "sublabel": "latest·늦은 수집·전날 FINAL",
       "tag": "1 오류 · 75 경고",
       "sources": [
         {
           "path": "scripts/freshness_check.py",
-          "line": 87,
-          "end_line": 127,
+          "line": 94,
+          "end_line": 134,
           "label": "judge"
         },
         {
           "path": "scripts/freshness_check.py",
-          "line": 483,
-          "end_line": 512,
+          "line": 137,
+          "end_line": 165,
+          "label": "게시 뒤 수집"
+        },
+        {
+          "path": "scripts/freshness_check.py",
+          "line": 525,
+          "end_line": 562,
           "label": "main"
         }
       ]
@@ -541,17 +637,17 @@
       "col": 2,
       "type": "security",
       "label": "알림 통로 점검",
-      "sublabel": "웹훅 GET 200?",
+      "sublabel": "alert.sh·웹훅 GET 200?",
       "sources": [
         {
           "path": "scripts/freshness_check.py",
-          "line": 513,
-          "end_line": 525
+          "line": 563,
+          "end_line": 574
         },
         {
           "path": "scripts/freshness_check.py",
-          "line": 414,
-          "end_line": 433
+          "line": 456,
+          "end_line": 475
         }
       ]
     },
@@ -565,15 +661,16 @@
       "sources": [
         {
           "path": "scripts/freshness_check.py",
-          "line": 526,
-          "end_line": 533
+          "line": 575,
+          "end_line": 593
         },
         {
           "path": "scripts/freshness_check.py",
-          "line": 436,
-          "end_line": 447
+          "line": 478,
+          "end_line": 487
         }
-      ]
+      ],
+      "tag": "통로 없으면 안 보냄"
     },
     {
       "id": "deploy",
@@ -607,16 +704,24 @@
       "sources": [
         {
           "path": "scripts/freshness_check.py",
-          "line": 245,
-          "end_line": 285,
+          "line": 287,
+          "end_line": 326,
           "label": "배포 지연 점검"
         },
         {
           "path": "docs/runbook.md",
-          "line": 61,
-          "end_line": 63
+          "line": 64,
+          "end_line": 66,
+          "label": "hold·손 배포"
+        },
+        {
+          "path": "CLAUDE.md",
+          "line": 26,
+          "end_line": 26,
+          "label": "손 배포는 잠금 잡고"
         }
-      ]
+      ],
+      "tag": "손 pull 은 flock .report.lock"
     },
     {
       "id": "install",
@@ -644,8 +749,8 @@
       "sources": [
         {
           "path": "deploy/crontab.simnode",
-          "line": 39,
-          "end_line": 43
+          "line": 41,
+          "end_line": 45
         }
       ]
     },
@@ -659,13 +764,15 @@
       "sources": [
         {
           "path": "scripts/serve.sh",
-          "line": 11,
-          "end_line": 56
+          "line": 38,
+          "end_line": 55,
+          "label": "healthz 200 → 횟수 비움"
         },
         {
           "path": "scripts/serve.sh",
-          "line": 78,
-          "end_line": 82
+          "line": 87,
+          "end_line": 91,
+          "label": "기동"
         }
       ]
     },
@@ -705,15 +812,16 @@
       "sources": [
         {
           "path": "scripts/serve.sh",
-          "line": 14,
-          "end_line": 18
+          "line": 15,
+          "end_line": 28
         },
         {
           "path": "scripts/serve_reports.py",
           "line": 269,
           "end_line": 284
         }
-      ]
+      ],
+      "tag": "healthz 200 이면 비움"
     },
     {
       "id": "restart",
@@ -726,8 +834,8 @@
       "sources": [
         {
           "path": "scripts/serve.sh",
-          "line": 57,
-          "end_line": 77
+          "line": 56,
+          "end_line": 86
         }
       ]
     }
@@ -779,7 +887,7 @@
       "id": "e_to_gate",
       "from": "skip_chk",
       "to": "gate",
-      "label": "없음·검증실패·FORCE",
+      "label": "없음·실패·FORCE·늦은 수집",
       "variant": "default",
       "role": "branch",
       "route": "up-channel"
@@ -855,8 +963,15 @@
       "variant": "emphasis"
     },
     {
-      "id": "e_trust",
+      "id": "e_digest_x",
       "from": "digest",
+      "to": "digest_x",
+      "label": "글 있으면",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e_trust",
+      "from": "digest_x",
       "to": "trust",
       "variant": "emphasis"
     },
@@ -885,7 +1000,15 @@
       "id": "e_x_vfail",
       "from": "swap",
       "to": "x_vfail",
-      "label": "1",
+      "label": "1 · 게시",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "id": "e_x_rejected",
+      "from": "swap",
+      "to": "x_rejected",
+      "label": "걸림·게시본 통과",
       "variant": "security",
       "role": "error"
     },
@@ -905,7 +1028,7 @@
       "id": "e_hb",
       "from": "hook",
       "to": "hb",
-      "label": "데이터 0",
+      "label": "데이터 0·통로 있음",
       "variant": "dashed"
     },
     {
@@ -947,7 +1070,7 @@
       "id": "e_soft",
       "from": "serve_sh",
       "to": "soft",
-      "label": "IP 없음",
+      "label": "IP 없음·잠금 빔",
       "variant": "security",
       "role": "error"
     },
@@ -957,8 +1080,7 @@
       "to": "restart",
       "label": "503·무응답",
       "variant": "security",
-      "role": "error",
-      "route": "drop"
+      "role": "error"
     }
   ],
   "cards": [
@@ -967,9 +1089,9 @@
       "title": "종료코드 → 알림 (cron_run.sh)",
       "items": [
         "0: 알림 없음 · 원장 events.jsonl 에 job 줄만",
-        "75: warn — 겹침 · 오늘 수집 미완 · 확정 미확인 · 부속 실패",
-        "124: error — 크론 timeout 40m 이 끊음 (TERM 트랩은 143 을 원장에)",
-        "1/그 밖: error — DB · 지난날 미완 · 검증 실패(게시됨)",
+        "75: warn — 겹침 · 오늘 수집 미완 · 확정 미확인 · 부속 실패(다이제스트 X 층 포함)",
+        "124: error — 크론 timeout 40m 이 끊음 (TERM 은 바꿔 끼우기가 끝난 뒤 143 으로)",
+        "1/그 밖: error — DB · 지난날 미완 · 검증 실패 게시 · 걸린 재빌드를 .rejected 로 비켜 둠",
         "137: serve 재시작 연속 1·12회째만 알림"
       ]
     },
@@ -977,9 +1099,10 @@
       "dot": "cyan",
       "title": "재시도 사다리 (같은 기준일)",
       "items": [
-        "18:10 잠정 → 19:10 재시도 (이미 있으면 0 으로 건너뜀)",
+        "18:10 잠정 → 19:10 재시도. 이미 있으면 GATE.txt 의 수집 행 수를 다시 재서 같으면 0, 늘었으면 다시 짓는다",
         "다음날 08:20 FINAL=1 → 10:20 재시도 (FINAL.txt 있으면 0)",
-        "그 뒤 자동 재시도 없음 — 20:30 freshness 가 1/75 로 알림",
+        "20:30 freshness 는 다시 짓지 않고 알린다 — 오늘 latest 없음 1, 게시 뒤 수집이 늘었음·전날 미확정 75",
+        "검증에 걸린 재빌드는 통과한 게시본을 밀어내지 않는다 — .rejected 에 남기고 1",
         "기준일이 넘어가면 재구성(KR_QUANT_ASOF)만 남는다"
       ]
     },
@@ -988,17 +1111,18 @@
       "title": "상한 · 잠금",
       "items": [
         "크론 timeout -k 2m 40m · 웹 없음 · 감시 10m",
-        "digest·trust 는 _bounded 5분 (자기 프로세스 그룹)",
+        "digest·X 층·trust 는 _bounded 5분 (자기 프로세스 그룹)",
         "DB 접속 10초 · 문장 10분 (storage.connect), 관문 120초",
-        "flock 은 daily_report 만 — 배포·감시·웹과는 안 겹친다고 가정"
+        "바꿔 끼우기~latest 는 시그널을 무시하는 서브셸, latest 는 옆 링크를 mv -T 로 갈아 끼운다",
+        "flock .report.lock 은 daily_report 와 손 배포 pull 이 같이 잡는다 — 감시·웹과는 안 겹친다고 가정"
       ]
     },
     {
       "dot": "violet",
       "title": "추적하며 찾은 문제",
       "items": [
-        "PROBLEMS-workflow.md 에 MAJOR 2 · MINOR 6",
-        "예: 검증 실패 재빌드가 통과본을 지움 · 19:10 뒤 저녁 재시도 없음"
+        "2026-11-19-problems-ops.md 에 MAJOR 2 · MINOR 6 — 항목마다 처리 결과(PR #42 해결·보류)",
+        "남은 것: 19:10 뒤 저녁 재시도 시각 없음 · 부속 실패만 다시 만드는 길 없음"
       ]
     }
   ]
