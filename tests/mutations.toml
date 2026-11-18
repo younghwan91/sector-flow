@@ -12766,3 +12766,11 @@ guards = ["tests/test_rebuild_history.py::test_a_rebuild_kept_aside_is_a_verify_
 file = "scripts/rebuild_history.py"
 find = '''            folder = Path(kept.group(1))'''
 replace = '''            pass'''
+
+[[mutation]]
+id = "fresh-fill-mark-drifts-from-the-gate"
+why = "신선도 점검의 수집 행 수 머리가 관문과 어긋나면 GATE.txt 의 줄을 못 찾아 게시 뒤 수집 점검이 조용히 꺼진다"
+guards = ["tests/test_freshness_check.py::test_fill_mark_matches_the_gate"]
+file = "scripts/freshness_check.py"
+find = '''FILL_MARK = "수집 행 수"'''
+replace = '''FILL_MARK = "수집 행수"'''
