@@ -1,0 +1,1005 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "sector-flow 운영 프로세스 — 크론에서 게시·감시·웹까지",
+    "locale": "ko",
+    "quality_profile": "showcase",
+    "output": ".archify/workflow-ops-pipeline-20261119-023528/ops-pipeline.html",
+    "repository": {
+      "url": "https://github.com/younghwan91/sector-flow.git",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "67fa2a5f9db70da2750fbcff814695630116a2ab"
+    }
+  },
+  "lanes": [
+    {
+      "id": "cron",
+      "label": "크론 · 래퍼"
+    },
+    {
+      "id": "pre",
+      "label": "daily_report.sh 사전 판단"
+    },
+    {
+      "id": "pre_exit",
+      "label": "사전 종료 (latest 그대로)",
+      "variant": "exception"
+    },
+    {
+      "id": "build",
+      "label": "옆에 짓고 바꿔 끼우기"
+    },
+    {
+      "id": "build_exit",
+      "label": "게시 뒤 종료코드",
+      "variant": "exception"
+    },
+    {
+      "id": "watch",
+      "label": "신선도 감시 (평일 20:30)"
+    },
+    {
+      "id": "deploy",
+      "label": "배포 (매일 07:50)"
+    },
+    {
+      "id": "web",
+      "label": "웹 서비스 (5분마다)"
+    },
+    {
+      "id": "web_exit",
+      "label": "웹 실패 · 재기동",
+      "variant": "exception"
+    }
+  ],
+  "groups": [
+    {
+      "id": "building",
+      "label": "BUILD = <기준일>.building.$$",
+      "lane": "build",
+      "fromCol": 2,
+      "toCol": 5,
+      "variant": "dashed"
+    }
+  ],
+  "mainPath": [
+    "lock",
+    "asof",
+    "skip_chk",
+    "finalize",
+    "gate"
+  ],
+  "nodes": [
+    {
+      "id": "cron_report",
+      "lane": "cron",
+      "col": 0,
+      "type": "external",
+      "icon": "clock",
+      "label": "리포트 크론",
+      "sublabel": "평일 18:10·19:10",
+      "tag": "화~토 08:20·10:20 FINAL=1",
+      "sources": [
+        {
+          "path": "deploy/crontab.simnode",
+          "line": 28,
+          "end_line": 30,
+          "label": "크론 3줄"
+        },
+        {
+          "path": "deploy/crontab.simnode",
+          "line": 5,
+          "end_line": 18,
+          "label": "재시도 설계"
+        }
+      ]
+    },
+    {
+      "id": "cron_run",
+      "lane": "cron",
+      "col": 1,
+      "type": "backend",
+      "label": "cron_run.sh",
+      "sublabel": "tee 꼬리 · rc 그대로",
+      "tag": "원장 job 줄",
+      "sources": [
+        {
+          "path": "scripts/cron_run.sh",
+          "line": 57,
+          "end_line": 66,
+          "label": "실행·원장"
+        },
+        {
+          "path": "scripts/cron_run.sh",
+          "line": 29,
+          "end_line": 38,
+          "label": "로그 회전"
+        }
+      ]
+    },
+    {
+      "id": "alert",
+      "lane": "cron",
+      "col": 2,
+      "type": "messagebus",
+      "label": "alert.sh",
+      "sublabel": "75 warn · 124/그 밖 error",
+      "tag": "137 은 1·12회째만",
+      "sources": [
+        {
+          "path": "scripts/cron_run.sh",
+          "line": 68,
+          "end_line": 99,
+          "label": "rc → 알림"
+        },
+        {
+          "path": "scripts/cron_run.sh",
+          "line": 17,
+          "end_line": 17,
+          "label": "quant-airflow 경로"
+        }
+      ]
+    },
+    {
+      "id": "lock",
+      "lane": "pre",
+      "col": 1,
+      "type": "security",
+      "label": "flock -n",
+      "sublabel": ".report.lock",
+      "tag": "TERM 트랩 → 143",
+      "sources": [
+        {
+          "path": "scripts/daily_report.sh",
+          "line": 72,
+          "end_line": 86,
+          "label": "트랩·잠금"
+        },
+        {
+          "path": "scripts/daily_report.sh",
+          "line": 56,
+          "end_line": 65,
+          "label": "_bounded"
+        }
+      ]
+    },
+    {
+      "id": "asof",
+      "lane": "pre",
+      "col": 2,
+      "type": "backend",
+      "label": "ASOF = max(date)",
+      "sublabel": "supply_demand",
+      "tag": "폴더 = 기준일",
+      "sources": [
+        {
+          "path": "scripts/daily_report.sh",
+          "line": 102,
+          "end_line": 135,
+          "label": "기준일 조회"
+        }
+      ]
+    },
+    {
+      "id": "skip_chk",
+      "lane": "pre",
+      "col": 3,
+      "type": "backend",
+      "icon": "decision",
+      "label": "이미 있나?",
+      "sublabel": "numbers·FINAL·VERIFY_FAILED",
+      "sources": [
+        {
+          "path": "scripts/daily_report.sh",
+          "line": 219,
+          "end_line": 225,
+          "label": "이미 확정"
+        },
+        {
+          "path": "scripts/daily_report.sh",
+          "line": 241,
+          "end_line": 251,
+          "label": "이미 있음"
+        }
+      ]
+    },
+    {
+      "id": "finalize",
+      "lane": "pre",
+      "col": 4,
+      "type": "security",
+      "icon": "decision",
+      "label": "finalize_done.py",
+      "sublabel": "Airflow 로그 · 창 3일",
+      "tag": "실패율 ≤1%",
+      "sources": [
+        {
+          "path": "scripts/daily_report.sh",
+          "line": 226,
+          "end_line": 240,
+          "label": "확정 모드 분기"
+        },
+        {
+          "path": "scripts/finalize_done.py",
+          "line": 100,
+          "end_line": 148,
+          "label": "확정 판정"
+        }
+      ]
+    },
+    {
+      "id": "gate",
+      "lane": "pre",
+      "col": 5,
+      "type": "security",
+      "label": "완전성 관문",
+      "sublabel": "시장별 ≥97%",
+      "tag": "직전 5일 중앙값",
+      "sources": [
+        {
+          "path": "scripts/daily_report.sh",
+          "line": 253,
+          "end_line": 293,
+          "label": "관문 호출"
+        },
+        {
+          "path": "scripts/completeness_gate.py",
+          "line": 93,
+          "end_line": 141,
+          "label": "판정"
+        }
+      ]
+    },
+    {
+      "id": "x_locked",
+      "lane": "pre_exit",
+      "col": 1,
+      "type": "security",
+      "icon": "waiting",
+      "label": "rc 75 · 겹침",
+      "sublabel": "다음 크론이 다시",
+      "sources": [
+        {
+          "path": "scripts/daily_report.sh",
+          "line": 82,
+          "end_line": 86
+        }
+      ]
+    },
+    {
+      "id": "x_db",
+      "lane": "pre_exit",
+      "col": 2,
+      "type": "security",
+      "icon": "failure",
+      "label": "rc 1 · DB",
+      "sublabel": "못 읽음 · 빈 표",
+      "sources": [
+        {
+          "path": "scripts/daily_report.sh",
+          "line": 118,
+          "end_line": 134
+        }
+      ]
+    },
+    {
+      "id": "x_skip",
+      "lane": "pre_exit",
+      "col": 3,
+      "type": "security",
+      "icon": "stop",
+      "label": "rc 0 · 건너뜀",
+      "sublabel": "이미 있음 · 이미 확정",
+      "sources": [
+        {
+          "path": "scripts/daily_report.sh",
+          "line": 221,
+          "end_line": 225
+        },
+        {
+          "path": "scripts/daily_report.sh",
+          "line": 243,
+          "end_line": 250
+        }
+      ]
+    },
+    {
+      "id": "x_unconf",
+      "lane": "pre_exit",
+      "col": 4,
+      "type": "security",
+      "icon": "waiting",
+      "label": "rc 75 · 확정 미확인",
+      "sublabel": "잠정 유지 · 10:20 재시도",
+      "sources": [
+        {
+          "path": "scripts/daily_report.sh",
+          "line": 230,
+          "end_line": 235
+        },
+        {
+          "path": "deploy/crontab.simnode",
+          "line": 17,
+          "end_line": 18
+        }
+      ]
+    },
+    {
+      "id": "x_incomplete",
+      "lane": "pre_exit",
+      "col": 5,
+      "type": "security",
+      "icon": "waiting",
+      "label": "수집 미완",
+      "sublabel": "오늘 75 · 지난날 1",
+      "tag": "INCOMPLETE.txt",
+      "sources": [
+        {
+          "path": "scripts/daily_report.sh",
+          "line": 259,
+          "end_line": 292
+        }
+      ]
+    },
+    {
+      "id": "payload",
+      "lane": "build",
+      "col": 5,
+      "type": "backend",
+      "label": "sector_flow.py",
+      "sublabel": "payload → viewer·numbers",
+      "tag": "--final 이면 확정",
+      "sources": [
+        {
+          "path": "scripts/daily_report.sh",
+          "line": 295,
+          "end_line": 323,
+          "label": "옆에 짓기"
+        }
+      ]
+    },
+    {
+      "id": "verify",
+      "lane": "build",
+      "col": 4,
+      "type": "security",
+      "label": "verify_report.py",
+      "sublabel": "VERIFY.txt · CLAIMS.txt",
+      "tag": "실패 → ⚠ 배너",
+      "sources": [
+        {
+          "path": "scripts/daily_report.sh",
+          "line": 325,
+          "end_line": 345,
+          "label": "검증"
+        },
+        {
+          "path": "scripts/verify_report.py",
+          "line": 5120,
+          "end_line": 5178,
+          "label": "검증 main"
+        }
+      ]
+    },
+    {
+      "id": "digest",
+      "lane": "build",
+      "col": 3,
+      "type": "backend",
+      "label": "digest.py",
+      "sublabel": "md·png · 상한 5분",
+      "sources": [
+        {
+          "path": "scripts/daily_report.sh",
+          "line": 350,
+          "end_line": 359
+        }
+      ]
+    },
+    {
+      "id": "trust",
+      "lane": "build",
+      "col": 2,
+      "type": "backend",
+      "label": "FINAL.txt → trust",
+      "sublabel": "trust.html · 상한 5분",
+      "sources": [
+        {
+          "path": "scripts/daily_report.sh",
+          "line": 361,
+          "end_line": 369,
+          "label": "FINAL.txt"
+        },
+        {
+          "path": "scripts/daily_report.sh",
+          "line": 397,
+          "end_line": 406,
+          "label": "trust"
+        }
+      ]
+    },
+    {
+      "id": "swap",
+      "lane": "build",
+      "col": 1,
+      "type": "database",
+      "label": "바꿔 끼우기",
+      "sublabel": "mv 두 번 · ln -sfn latest",
+      "tag": "옛 폴더 rm -rf",
+      "sources": [
+        {
+          "path": "scripts/daily_report.sh",
+          "line": 407,
+          "end_line": 421,
+          "label": "mv"
+        },
+        {
+          "path": "scripts/daily_report.sh",
+          "line": 434,
+          "end_line": 438,
+          "label": "latest"
+        }
+      ]
+    },
+    {
+      "id": "x_ok",
+      "lane": "build_exit",
+      "col": 0,
+      "type": "security",
+      "icon": "success",
+      "label": "rc 0 · 게시",
+      "sublabel": "published / final",
+      "sources": [
+        {
+          "path": "scripts/daily_report.sh",
+          "line": 422,
+          "end_line": 440
+        }
+      ]
+    },
+    {
+      "id": "x_warn",
+      "lane": "build_exit",
+      "col": 1,
+      "type": "security",
+      "icon": "waiting",
+      "label": "rc 75 · 게시+경고",
+      "sublabel": "확정 미확인 · 부속 실패",
+      "sources": [
+        {
+          "path": "scripts/daily_report.sh",
+          "line": 441,
+          "end_line": 455
+        }
+      ]
+    },
+    {
+      "id": "x_vfail",
+      "lane": "build_exit",
+      "col": 2,
+      "type": "security",
+      "icon": "failure",
+      "label": "rc 1 · 검증 실패",
+      "sublabel": "그래도 latest · 다음 크론",
+      "sources": [
+        {
+          "path": "scripts/daily_report.sh",
+          "line": 448,
+          "end_line": 458
+        }
+      ]
+    },
+    {
+      "id": "cron_fresh",
+      "lane": "watch",
+      "col": 0,
+      "type": "external",
+      "icon": "clock",
+      "label": "20:30 크론",
+      "sublabel": "cron_run · 10분 상한",
+      "sources": [
+        {
+          "path": "deploy/crontab.simnode",
+          "line": 32,
+          "end_line": 37
+        },
+        {
+          "path": "scripts/freshness_check.sh",
+          "line": 9,
+          "end_line": 17
+        }
+      ]
+    },
+    {
+      "id": "fresh",
+      "lane": "watch",
+      "col": 1,
+      "type": "security",
+      "label": "freshness_check.py",
+      "sublabel": "latest=오늘? 전날 FINAL?",
+      "tag": "1 오류 · 75 경고",
+      "sources": [
+        {
+          "path": "scripts/freshness_check.py",
+          "line": 87,
+          "end_line": 127,
+          "label": "judge"
+        },
+        {
+          "path": "scripts/freshness_check.py",
+          "line": 483,
+          "end_line": 512,
+          "label": "main"
+        }
+      ]
+    },
+    {
+      "id": "hook",
+      "lane": "watch",
+      "col": 2,
+      "type": "security",
+      "label": "알림 통로 점검",
+      "sublabel": "웹훅 GET 200?",
+      "sources": [
+        {
+          "path": "scripts/freshness_check.py",
+          "line": 513,
+          "end_line": 525
+        },
+        {
+          "path": "scripts/freshness_check.py",
+          "line": 414,
+          "end_line": 433
+        }
+      ]
+    },
+    {
+      "id": "hb",
+      "lane": "watch",
+      "col": 3,
+      "type": "cloud",
+      "label": "하트비트",
+      "sublabel": "HEARTBEAT_URL GET",
+      "sources": [
+        {
+          "path": "scripts/freshness_check.py",
+          "line": 526,
+          "end_line": 533
+        },
+        {
+          "path": "scripts/freshness_check.py",
+          "line": 436,
+          "end_line": 447
+        }
+      ]
+    },
+    {
+      "id": "deploy",
+      "lane": "deploy",
+      "col": 0,
+      "type": "external",
+      "icon": "clock",
+      "label": "morning-sync",
+      "sublabel": "dotfiles 크론",
+      "sources": [
+        {
+          "path": "deploy/crontab.simnode",
+          "line": 1,
+          "end_line": 3
+        },
+        {
+          "path": "CLAUDE.md",
+          "line": 25,
+          "end_line": 26
+        }
+      ]
+    },
+    {
+      "id": "ci",
+      "lane": "deploy",
+      "col": 1,
+      "type": "security",
+      "icon": "decision",
+      "label": "pull-all --ci-gate",
+      "sublabel": "초록 ff · 아니면 hold",
+      "sources": [
+        {
+          "path": "scripts/freshness_check.py",
+          "line": 245,
+          "end_line": 285,
+          "label": "배포 지연 점검"
+        },
+        {
+          "path": "docs/runbook.md",
+          "line": 61,
+          "end_line": 63
+        }
+      ]
+    },
+    {
+      "id": "install",
+      "lane": "deploy",
+      "col": 2,
+      "type": "backend",
+      "label": "cron-install",
+      "sublabel": "crontab.simnode 설치",
+      "sources": [
+        {
+          "path": "deploy/crontab.simnode",
+          "line": 1,
+          "end_line": 3
+        }
+      ]
+    },
+    {
+      "id": "cron_web",
+      "lane": "web",
+      "col": 0,
+      "type": "external",
+      "icon": "clock",
+      "label": "*/5 크론",
+      "sublabel": "cron_run · KILL_STREAK",
+      "sources": [
+        {
+          "path": "deploy/crontab.simnode",
+          "line": 39,
+          "end_line": 43
+        }
+      ]
+    },
+    {
+      "id": "serve_sh",
+      "lane": "web",
+      "col": 1,
+      "type": "security",
+      "label": "serve.sh",
+      "sublabel": "Tailscale IP · /healthz 5초",
+      "sources": [
+        {
+          "path": "scripts/serve.sh",
+          "line": 11,
+          "end_line": 56
+        },
+        {
+          "path": "scripts/serve.sh",
+          "line": 78,
+          "end_line": 82
+        }
+      ]
+    },
+    {
+      "id": "serve_rep",
+      "lane": "web",
+      "col": 2,
+      "type": "frontend",
+      "label": "serve_reports.py",
+      "sublabel": "/latest 302 · healthz 503",
+      "sources": [
+        {
+          "path": "scripts/serve_reports.py",
+          "line": 326,
+          "end_line": 341
+        },
+        {
+          "path": "scripts/serve_reports.py",
+          "line": 386,
+          "end_line": 402
+        },
+        {
+          "path": "scripts/serve_reports.py",
+          "line": 414,
+          "end_line": 428
+        }
+      ]
+    },
+    {
+      "id": "soft",
+      "lane": "web_exit",
+      "col": 1,
+      "type": "security",
+      "icon": "waiting",
+      "label": "soft-fail",
+      "sublabel": ".serve.misses 12회째 rc 1",
+      "sources": [
+        {
+          "path": "scripts/serve.sh",
+          "line": 14,
+          "end_line": 18
+        },
+        {
+          "path": "scripts/serve_reports.py",
+          "line": 269,
+          "end_line": 284
+        }
+      ]
+    },
+    {
+      "id": "restart",
+      "lane": "web_exit",
+      "col": 2,
+      "type": "security",
+      "icon": "failure",
+      "label": "끄고 다시 띄움",
+      "sublabel": "TERM→KILL · 1·12회째 알림",
+      "sources": [
+        {
+          "path": "scripts/serve.sh",
+          "line": 57,
+          "end_line": 77
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "id": "e_cron_run",
+      "from": "cron_report",
+      "to": "cron_run",
+      "label": "timeout 40m",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e_alert",
+      "from": "cron_run",
+      "to": "alert",
+      "label": "rc≠0",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "id": "e_start",
+      "from": "cron_run",
+      "to": "lock",
+      "label": "daily_report.sh",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e_lock_ok",
+      "from": "lock",
+      "to": "asof",
+      "label": "잡음",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e_asof_ok",
+      "from": "asof",
+      "to": "skip_chk",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e_to_final",
+      "from": "skip_chk",
+      "to": "finalize",
+      "label": "FINAL 모드",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e_to_gate",
+      "from": "skip_chk",
+      "to": "gate",
+      "label": "없음·검증실패·FORCE",
+      "variant": "default",
+      "role": "branch",
+      "route": "up-channel"
+    },
+    {
+      "id": "e_final_ok",
+      "from": "finalize",
+      "to": "gate",
+      "label": "확인",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e_gate_ok",
+      "from": "gate",
+      "to": "payload",
+      "label": "통과",
+      "variant": "emphasis",
+      "route": "outside-right",
+      "fromSide": "right",
+      "toSide": "right"
+    },
+    {
+      "id": "e_x_locked",
+      "from": "lock",
+      "to": "x_locked",
+      "label": "못 잡음",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "id": "e_x_db",
+      "from": "asof",
+      "to": "x_db",
+      "label": "실패",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "id": "e_x_skip",
+      "from": "skip_chk",
+      "to": "x_skip",
+      "label": "있음",
+      "variant": "dashed",
+      "role": "branch"
+    },
+    {
+      "id": "e_x_unconf",
+      "from": "finalize",
+      "to": "x_unconf",
+      "label": "미확인",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "id": "e_x_incomplete",
+      "from": "gate",
+      "to": "x_incomplete",
+      "label": "미완",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "id": "e_verify",
+      "from": "payload",
+      "to": "verify",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e_digest",
+      "from": "verify",
+      "to": "digest",
+      "label": "실패도 계속",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e_trust",
+      "from": "digest",
+      "to": "trust",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e_swap",
+      "from": "trust",
+      "to": "swap",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e_x_ok",
+      "from": "swap",
+      "to": "x_ok",
+      "label": "0",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e_x_warn",
+      "from": "swap",
+      "to": "x_warn",
+      "label": "75",
+      "variant": "dashed",
+      "role": "branch"
+    },
+    {
+      "id": "e_x_vfail",
+      "from": "swap",
+      "to": "x_vfail",
+      "label": "1",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "id": "e_fresh",
+      "from": "cron_fresh",
+      "to": "fresh",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e_hook",
+      "from": "fresh",
+      "to": "hook",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e_hb",
+      "from": "hook",
+      "to": "hb",
+      "label": "데이터 0",
+      "variant": "dashed"
+    },
+    {
+      "id": "e_ci",
+      "from": "deploy",
+      "to": "ci",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e_install",
+      "from": "ci",
+      "to": "install",
+      "label": "ff·hold 모두",
+      "variant": "default"
+    },
+    {
+      "id": "e_redeploy",
+      "from": "ci",
+      "to": "serve_rep",
+      "label": "코드 바뀜 → 종료",
+      "variant": "dashed",
+      "role": "async",
+      "route": "drop"
+    },
+    {
+      "id": "e_web",
+      "from": "cron_web",
+      "to": "serve_sh",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e_serve",
+      "from": "serve_sh",
+      "to": "serve_rep",
+      "label": "잠금 비면 기동",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e_soft",
+      "from": "serve_sh",
+      "to": "soft",
+      "label": "IP 없음",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "id": "e_restart",
+      "from": "serve_sh",
+      "to": "restart",
+      "label": "503·무응답",
+      "variant": "security",
+      "role": "error",
+      "route": "drop"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "rose",
+      "title": "종료코드 → 알림 (cron_run.sh)",
+      "items": [
+        "0: 알림 없음 · 원장 events.jsonl 에 job 줄만",
+        "75: warn — 겹침 · 오늘 수집 미완 · 확정 미확인 · 부속 실패",
+        "124: error — 크론 timeout 40m 이 끊음 (TERM 트랩은 143 을 원장에)",
+        "1/그 밖: error — DB · 지난날 미완 · 검증 실패(게시됨)",
+        "137: serve 재시작 연속 1·12회째만 알림"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "재시도 사다리 (같은 기준일)",
+      "items": [
+        "18:10 잠정 → 19:10 재시도 (이미 있으면 0 으로 건너뜀)",
+        "다음날 08:20 FINAL=1 → 10:20 재시도 (FINAL.txt 있으면 0)",
+        "그 뒤 자동 재시도 없음 — 20:30 freshness 가 1/75 로 알림",
+        "기준일이 넘어가면 재구성(KR_QUANT_ASOF)만 남는다"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "상한 · 잠금",
+      "items": [
+        "크론 timeout -k 2m 40m · 웹 없음 · 감시 10m",
+        "digest·trust 는 _bounded 5분 (자기 프로세스 그룹)",
+        "DB 접속 10초 · 문장 10분 (storage.connect), 관문 120초",
+        "flock 은 daily_report 만 — 배포·감시·웹과는 안 겹친다고 가정"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "추적하며 찾은 문제",
+      "items": [
+        "PROBLEMS-workflow.md 에 MAJOR 2 · MINOR 6",
+        "예: 검증 실패 재빌드가 통과본을 지움 · 19:10 뒤 저녁 재시도 없음"
+      ]
+    }
+  ]
+}
