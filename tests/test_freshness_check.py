@@ -472,13 +472,23 @@ def test_cron_path_clean_day_passes_and_pings_the_heartbeat(repo, hook):
 
 
 def test_cron_path_heartbeat_works_without_a_webhook(repo, hook):
-    """하트비트만 쓰는 설정 — 웹훅이 비었다고 핑을 안 보내면 외부 감시가 매일 같은 이유로 울린다."""
+    """하트비트만 쓰는 설정 — 밝혀 두면(SECTOR_FLOW_HEARTBEAT_ONLY=1) 웹훅이 비어도 핑을 보낸다. 안 보내면 외부 감시가 매일 같은 이유로 울린다."""
+    beat, beats = hook(200, b"OK")
+    _fresh(repo)
+    _qa_env(repo, f"HEARTBEAT_URL={beat}\nSECTOR_FLOW_HEARTBEAT_ONLY=1\n")
+    p = _run(repo)
+    assert p.returncode == 75 and "ALERT_WEBHOOK_URL 이 비었다" in p.stdout, p.stdout + p.stderr
+    assert beats == ["GET"] and "[하트비트] 보냈다" in p.stdout
+
+
+def test_cron_path_empty_webhook_withholds_the_heartbeat_unless_declared(repo, hook):
+    """``ALERT_WEBHOOK_URL=`` 줄이 실수로 지워진 날 — 모든 경고가 로그에만 남는데 핑이 나가면 외부 감시도 초록이다(2026-11-19 운영 검토)."""
     beat, beats = hook(200, b"OK")
     _fresh(repo)
     _qa_env(repo, f"HEARTBEAT_URL={beat}\n")
     p = _run(repo)
-    assert p.returncode == 75 and "ALERT_WEBHOOK_URL 이 비었다" in p.stdout, p.stdout + p.stderr
-    assert beats == ["GET"] and "[하트비트] 보냈다" in p.stdout
+    assert p.returncode == 75, p.stdout + p.stderr
+    assert beats == [] and "알림 웹훅이 비었다" in p.stdout and "SECTOR_FLOW_HEARTBEAT_ONLY=1" in p.stdout
 
 
 def test_cron_path_dead_webhook_withholds_the_heartbeat(repo, hook):
@@ -492,28 +502,37 @@ def test_cron_path_dead_webhook_withholds_the_heartbeat(repo, hook):
     assert beats == [] and "알림 웹훅이 죽어 있다" in p.stdout
 
 
-@pytest.mark.parametrize(("webhook", "pinged"), [(None, True), (200, True), (404, False)])
-def test_heartbeat_follows_the_data_checks_not_the_webhook_in_process(tmp_path, hook, monkeypatch, capsys,
-                                                                      webhook, pinged):
-    """``main`` 을 직접 — 주말(데이터 점검 0)에 웹훅이 없거나 살았으면 핑, 있는데 죽었으면 안 보낸다."""
+@pytest.mark.parametrize(("webhook", "hb_only", "alert_sh", "pinged", "why"), [
+    (None, True, True, True, ""),                       # 하트비트 전용이라고 밝혔다
+    (None, False, True, False, "알림 웹훅이 비었다"),     # 밝히지 않은 빈 웹훅 = 지워진 줄과 구별 안 된다
+    (200, False, True, True, ""),
+    (404, False, True, False, "알림 웹훅이 죽어 있다"),
+    (200, True, False, False, "alert.sh 가 없어"),        # 알림 래퍼가 없으면 웹훅이 살아도 아무 데도 안 간다
+])
+def test_heartbeat_follows_the_data_checks_and_the_alert_channel_in_process(tmp_path, hook, monkeypatch, capsys,
+                                                                            webhook, hb_only, alert_sh, pinged, why):
+    """``main`` 을 직접 — 주말(데이터 점검 0)에 알림 통로가 있으면(또는 하트비트 전용이라고 밝혔으면) 핑, 없거나 죽었으면 안 보낸다."""
     beat, beats = hook(200, b"OK")
     alert = tmp_path / "qa" / "scripts" / "alert.sh"
     alert.parent.mkdir(parents=True)
-    alert.write_text("#!/bin/sh\nexit 0\n")
-    alert.chmod(alert.stat().st_mode | stat.S_IEXEC)
+    if alert_sh:
+        alert.write_text("#!/bin/sh\nexit 0\n")
+        alert.chmod(alert.stat().st_mode | stat.S_IEXEC)
     env = f"HEARTBEAT_URL={beat}\n"
     if webhook is not None:
         env += f"ALERT_WEBHOOK_URL={hook(webhook, b'{}')[0]}\n"
+    if hb_only:
+        env += "SECTOR_FLOW_HEARTBEAT_ONLY=1\n"
     (tmp_path / "qa" / ".env").write_text(env)
-    for k in ("SF_CRON_ENV", "ALERT_WEBHOOK_URL", "HEARTBEAT_URL"):
+    for k in ("SF_CRON_ENV", "ALERT_WEBHOOK_URL", "HEARTBEAT_URL", "SECTOR_FLOW_HEARTBEAT_ONLY"):
         monkeypatch.delenv(k, raising=False)
     monkeypatch.setenv("SECTOR_FLOW_ALERT", str(alert))
     rc = fc.main(["--today", "2026-11-07", "--root", str(tmp_path)])
     out = capsys.readouterr().out
-    assert rc == (0 if webhook == 200 else 75), out
+    assert rc == (0 if webhook == 200 and alert_sh else 75), out
     assert (beats == ["GET"]) == pinged, out
     if not pinged:
-        assert "알림 웹훅이 죽어 있다" in out
+        assert why in out
 
 
 def test_cron_path_dead_webhook_warns(repo, hook):
@@ -636,3 +655,62 @@ def test_published_marks_match_the_verifier():
     src = (REPO / "scripts" / "verify_report.py").read_text("utf-8")
     assert f'VT_SKIP_MARK = "{fc.PUB_SKIP_MARK}"' in src
     assert f'VT_SKIP_STREAK_MARK = "{fc.PUB_SKIP_STREAK_MARK}"' in src
+
+
+# ── 게시 뒤 수집 · 비켜 둔 확정 판 ─────────────────────────────────────────────
+
+def test_fill_mark_matches_the_gate():
+    spec = importlib.util.spec_from_file_location("completeness_gate_mark", REPO / "scripts" / "completeness_gate.py")
+    g = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(g)
+    assert fc.FILL_MARK == g.FILL_MARK, "daily_report·신선도 점검이 관문의 수집 행 수 줄을 못 찾는다"
+
+
+def test_collection_that_grew_after_todays_report_is_a_warning(tmp_path):
+    """관문은 97% 에서 통과한다 — 20:30 에도 게시 때보다 수집이 늘었으면 latest 는 덜 찬 수집으로 만든 판이다."""
+    root = _reports(tmp_path, TODAY)
+    was = f"{fc.FILL_MARK} {TODAY}: 수급 2600 · 조정 종가 2600"
+    (root / TODAY / "GATE.txt").write_text(f"완전성 관문 — 기준일 {TODAY}\n  [PASS] 거래소: 수급 1/1 · 시총 1/1\n{was}\n")
+    assert fc.check_late_fill(root, TODAY, was) == (0, [])
+    rc, lines = fc.check_late_fill(root, TODAY, f"{fc.FILL_MARK} {TODAY}: 수급 2650 · 조정 종가 2650")
+    assert rc == fc.WARN and "수집이 더 들어왔다" in lines[0] and "2600" in lines[0] and "2650" in lines[0]
+    # 게시본이 오늘 것이 아니거나(그 경고는 judge 가 한다) 기록이 없으면(옛 판) 말하지 않는다.
+    assert fc.check_late_fill(_reports(tmp_path / "b", "2026-11-05"), TODAY, "x")[0] == 0
+    (root / TODAY / "GATE.txt").unlink()
+    assert fc.check_late_fill(root, TODAY, f"{fc.FILL_MARK} {TODAY}: 수급 1 · 조정 종가 1")[0] == 0
+
+
+def test_prev_final_names_a_final_build_kept_aside(tmp_path):
+    """확정 판이 검증에 걸려 .rejected 에 비켜 뒀으면 '확정 모드가 안 돌았다' 가 아니라 그 사실과 걸린 판을 말한다."""
+    root = _reports(tmp_path, TODAY)
+    prev = root / "2026-11-05"
+    prev.mkdir()
+    (prev / "numbers.html").write_text("<잠정>")
+    kept = root / ".rejected" / "2026-11-05.20261106082500.123"
+    kept.mkdir(parents=True)
+    rc, lines = fc.check_prev_final(root, "2026-11-05")
+    assert rc == fc.WARN and "검증에 걸려 게시하지 않았다" in lines[0] and str(kept) in lines[0]
+
+
+def test_main_measures_todays_collection_against_the_published_gate_line(tmp_path, monkeypatch, capsys):
+    """``main`` 을 직접 — 오늘 게시본에 GATE.txt 가 있으면 지금 DB 의 수집 행 수를 재서 견준다(배선)."""
+    db = tmp_path / "db.sqlite"
+    con = sqlite3.connect(db)
+    con.execute("CREATE TABLE supply_demand(code TEXT, date TEXT, close REAL, institution REAL)")
+    con.execute("CREATE TABLE daily_bars_adjusted(code TEXT, date TEXT, close REAL)")
+    for i in range(10):
+        for d in ("2026-11-05", TODAY):
+            con.execute("INSERT INTO supply_demand VALUES(?,?,?,?)", (f"{i:06d}", d, 100.0, 1.0))
+            con.execute("INSERT INTO daily_bars_adjusted VALUES(?,?,?)", (f"{i:06d}", d, 100.0))
+    con.commit()
+    con.close()
+    root = _reports(tmp_path, TODAY)
+    (root / "2026-11-05").mkdir()
+    (root / "2026-11-05" / "FINAL.txt").write_text("x")
+    (root / TODAY / "GATE.txt").write_text(f"{fc.FILL_MARK} {TODAY}: 수급 8 · 조정 종가 8\n")   # 게시 때는 8행
+    for k in ("SF_CRON_ENV", "ALERT_WEBHOOK_URL", "HEARTBEAT_URL", "KR_QUANT_DB"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("SECTOR_FLOW_ALERT", str(tmp_path / "없는" / "alert.sh"))
+    rc = fc.main(["--today", TODAY, "--root", str(root), "--db", str(db)])
+    out = capsys.readouterr().out
+    assert rc == fc.WARN and "수집이 더 들어왔다(수급 8 · 조정 종가 8 → 수급 10 · 조정 종가 10)" in out, out

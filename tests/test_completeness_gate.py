@@ -217,3 +217,20 @@ def test_missing_adjusted_closes_block_the_report(tmp_path):
     ok, lines = G.evaluate(G.read_counts(con, DAYS[-1]), DAYS[-1])
     assert not ok
     assert any("조정 종가" in x for x in lines)
+
+
+def test_fill_line_counts_rows_whose_values_arrived(tmp_path, capsys):
+    """수집 행 수 줄은 관문 판정이 아니라 지문이다 — 값이 찬 수급 행·조정 종가 행. 빈 행에 값이 채워지면 바뀐다."""
+    path = _db(tmp_path / "a.db", today_kosdaq=49)
+    con = sqlite3.connect(path)
+    before = G.fill_line(con, DAYS[-1])
+    assert before == f"{G.FILL_MARK} {DAYS[-1]}: 수급 99 · 조정 종가 99"
+    con.execute("UPDATE supply_demand SET institution = NULL WHERE date = ? AND code = '000000'", (DAYS[-1],))
+    assert G.fill_line(con, DAYS[-1]) != before, "값이 빠진 행을 셌다"
+    con.close()
+    # 관문 출력의 끝줄이고(daily_report.sh 가 GATE.txt 로 남긴다), --fill-only 는 그 줄만 찍는다.
+    assert G.main(["--db", path, "--asof", DAYS[-1]]) == 0
+    out = capsys.readouterr().out.splitlines()
+    assert out[-1].startswith(G.FILL_MARK + " ") and any("[PASS]" in ln for ln in out)
+    assert G.main(["--db", path, "--asof", DAYS[-1], "--fill-only"]) == 0
+    assert capsys.readouterr().out.splitlines() == [out[-1]]
