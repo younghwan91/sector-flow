@@ -141,8 +141,15 @@ def main(argv: list[str] | None = None) -> int:
             f.seek(start)
             said = f.read()
         folder = where / d
+        # 새 판이 검증에 걸렸는데 게시본은 통과본이라 바꿔 끼우지 않았다(daily_report.sh 머리말) — 폴더는 옛 판이라 표시 파일로는
+        # 못 가른다. 출력의 그 줄과 비켜 둔 판의 경로로 가른다.
+        kept = re.search(r"새 판이 검증에 걸려 게시하지 않았다.*걸린 판: (\S+)/VERIFY_FAILED\.txt", said)
+        if kept:
+            folder = Path(kept.group(1))
         if rc == EX_HOLIDAY:
             state = "휴장"
+        elif rc != 0 and kept:
+            state = "검증 실패(게시본 유지)"
         elif rc != 0 and "수집 공백" in said:
             state = "수집 공백"
         elif rc != 0 and ("수집 미완" in said or (folder / "INCOMPLETE.txt").is_file()):

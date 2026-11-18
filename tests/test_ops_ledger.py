@@ -656,6 +656,17 @@ def test_daily_report_ledger_records_a_final_rebuild(repo):
     assert len(fin) == 1 and fin[0]["mode"] == "final" and fin[0]["final"] is True
 
 
+def test_daily_report_ledger_records_a_rejected_build_as_not_a_publication(repo):
+    """검증에 걸려 비켜 둔 판은 게시가 아니다 — published 로 적으면 SLO·정오표가 바뀌지 않은 숫자를 바뀐 것으로 센다."""
+    _seed(repo.parent / "db.sqlite", today_kosdaq=50)
+    assert _run(repo).returncode == 0
+    assert _run(repo, KR_QUANT_FORCE="1", FAKE_VERIFY_RC="1").returncode == 1
+    last = [e for e in _events(repo) if e.get("event") == "report"][-1]
+    assert last["outcome"] == "rejected" and last["verify"] == "fail" and last["rc"] == 1, last
+    assert last["payload_sha"] is None and last["final"] is False
+    assert not ol.is_publication(last)
+
+
 # mutation-exempt: 기록은 EXIT 트랩 안이고 실패는 _ledger.sh 가 삼킨다(그 변이는 test_ledger_sh_rotation 이 잡는다) —
 # 여기서는 "원장에 못 써도 리포트가 게시된다" 는 전제 자체가 깨질 때(기록을 트랩 밖 본문으로 옮기는 리팩터)를 위한 회귀다.
 def test_daily_report_ledger_never_blocks_the_report(repo):
@@ -769,6 +780,7 @@ def test_serve_probe_appends_one_event_while_the_server_is_up(repo, tmp_path):
     (shim / "curl").write_text('#!/bin/sh\nprintf "ok\\n200"\n')
     (shim / "curl").chmod(0o755)
     (repo / "reports" / ".serve.restarts").write_text("3")
+    (repo / "reports" / ".serve.misses").write_text("11")
     holder = subprocess.Popen(["flock", str(lock), "sleep", "30"])
     try:
         import time as _t
@@ -786,6 +798,33 @@ def test_serve_probe_appends_one_event_while_the_server_is_up(repo, tmp_path):
     probes = [e for e in _events(repo) if e.get("event") == "probe"]
     assert probes == [{"ts": probes[0]["ts"], "event": "probe", "status": 200, "ok": True}]
     assert not (repo / "reports" / ".serve.restarts").exists()        # 건강하면 재시작 횟수를 지운다(기존 동작)
+    assert not (repo / "reports" / ".serve.misses").exists(), "건강한데 기동 실패 횟수를 남겼다 — 띄엄띄엄한 실패가 쌓여 거짓 알림"
+
+
+def test_serve_sh_does_not_count_an_address_blip_while_the_server_is_up(repo, tmp_path):
+    """서버는 떠 있는데(잠금) tailscale ip 가 순간 실패했다 — 기동 실패로 세면 며칠에 걸친 순간 실패 12번에 '한 시간째' 알림이 나갔다."""
+    (repo / "reports").mkdir(exist_ok=True)
+    (repo / "reports" / ".serve.misses").write_text("11")
+    lock = repo / "reports" / ".serve.lock"
+    shim = tmp_path / "bin"
+    shim.mkdir()
+    (shim / "tailscale").write_text("#!/bin/sh\nexit 1\n")
+    (shim / "tailscale").chmod(0o755)
+    holder = subprocess.Popen(["flock", str(lock), "sleep", "30"])
+    try:
+        import time as _t
+        deadline = _t.monotonic() + 10
+        while subprocess.run(["flock", "-n", str(lock), "true"]).returncode == 0:
+            assert _t.monotonic() < deadline, "잠금을 못 잡았다"
+            _t.sleep(0.05)
+        env = {k: v for k, v in os.environ.items() if k != "SECTOR_FLOW_HOST"}
+        p = subprocess.run([str(repo / "scripts" / "serve.sh")], capture_output=True, text=True, timeout=30,
+                           env={**env, "PATH": f"{shim}{os.pathsep}{os.environ['PATH']}"})
+    finally:
+        holder.terminate()
+        holder.wait(timeout=10)
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert (repo / "reports" / ".serve.misses").read_text() == "11", "떠 있는 서버의 주소 조회 실패를 기동 실패로 셌다"
 
 
 def test_ledger_sh_rotation_matches_python_and_failure_is_quiet(tmp_path):

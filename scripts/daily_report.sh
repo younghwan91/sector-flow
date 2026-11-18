@@ -16,6 +16,13 @@
 # 재구성인데 그날 확정치(daily_finalize)를 확인하지 못하면 잠정으로 만들고(FINAL.txt 없음) 75 로 끝난다.
 # 몇 번을 돌려도 안전하다 — 크론이 재시도로 같은 명령을 다시 부른다.
 #
+# **검증에 걸린 새 판은 검증을 통과한 게시본을 밀어내지 못한다.** 같은 기준일을 다시 지었는데(확정 08:20·10:20,
+# KR_QUANT_FORCE, 재구성) 새 판이 검증에 걸리고 지금 게시본은 통과했으면(VERIFY_FAILED.txt 없음), 게시본과 latest 를
+# 그대로 두고 새 판은 $OUT_ROOT/.rejected/<기준일>.<시각> 에 비켜 둔 채 1 로 끝난다(알림). 예전엔 통과본을 rm -rf
+# 하고 걸린 판을 latest 로 걸어 되돌릴 길이 없었다. 표시 파일(FINAL.txt·REBUILT.txt·VERIFY_FAILED.txt)은 **그 폴더의
+# 판**을 말한다 — 걸린 확정 판의 FINAL.txt 는 .rejected 안에 있고, 게시본은 잠정 그대로라(FINAL.txt 없음) 10:20 재시도와
+# 20:30 확정 점검(75)이 평소처럼 돈다. 지금 게시본도 걸린 판이면 예전처럼 바꿔 낀다(더 나빠질 것이 없다).
+#
 # 리포트는 생성물이지 소스가 아니다 — git 추적 대상은 아니지만(.gitignore 의
 # reports/), 접근 편의를 위해 저장소 **안**(`$REPO/reports`)에 둔다.
 set -euo pipefail
@@ -74,9 +81,12 @@ trap '_dr_event $?' EXIT
 # 시그널로 끝나면 bash 는 EXIT 트랩을 돌리되 $? 가 직전 명령의 것(대개 0)이다 — 크론 timeout 이 끊은 실행이 원장에 rc:0, outcome:error
 # 로 남았다. 관례대로 128+시그널 번호로 끝내 그 값이 트랩에 가게 한다.
 # 부속 단계(_bounded)가 돌고 있으면 끊어 주고 끝난다.
-trap '_bounded_stop; exit 129' HUP
-trap '_bounded_stop; exit 130' INT
-trap '_bounded_stop; exit 143' TERM
+_signal_traps() {
+  trap '_bounded_stop; exit 129' HUP
+  trap '_bounded_stop; exit 130' INT
+  trap '_bounded_stop; exit 143' TERM
+}
+_signal_traps
 LOCK="$OUT_ROOT/.report.lock"
 exec 9>>"$LOCK"
 if ! flock -n 9; then
@@ -84,6 +94,22 @@ if ! flock -n 9; then
   EV_OUTCOME="locked"
   exit 75
 fi
+# **KILL·OOM 이 남긴 짓던 폴더 청소.** 잠금을 쥐었으니 이 루트에서 짓는 실행은 이것뿐이다 — 남은 <기준일>.building.N 은
+# 끊긴 실행의 것이다. 하루 지난 것만 지운다(.asof_err.* 와 같은 규칙). <기준일>.replaced.N 은 바꿔 끼우기 도중에 끊긴 옛 게시본이라
+# 제자리(<기준일>)가 비었으면 지우지 않고 되돌린다 — 그 폴더가 그날의 유일한 사본이다.
+STALE=""
+while IFS= read -r STALE; do
+  [ -n "$STALE" ] || continue
+  case "$STALE" in
+    *.replaced.*)
+      HOME_DIR="${STALE%.replaced.*}"
+      if [ ! -e "$HOME_DIR" ]; then
+        mv "$STALE" "$HOME_DIR" 2>/dev/null && echo "[$(date '+%F %T')] 끊긴 바꿔 끼우기의 옛 게시본을 제자리로 되돌렸다 — $HOME_DIR"
+        continue
+      fi ;;
+  esac
+  rm -rf "$STALE" 2>/dev/null && echo "[$(date '+%F %T')] 끊긴 실행이 남긴 폴더를 지웠다 — $STALE"
+done < <(find "$OUT_ROOT" -mindepth 1 -maxdepth 1 -type d \( -name '*.building.*' -o -name '*.replaced.*' \) -mtime +0 2>/dev/null)
 
 # 실패 사유는 보여 준다 — 버리면 `set -e` 때문에 아래 안내까지 못 가고 빈 알림으로 끝난다.
 # libpq 가 접속 문자열을 되읊을 수 있어 비밀번호 자리는 가린다.
@@ -238,8 +264,21 @@ elif [ -n "${KR_QUANT_FINAL:-}" ]; then
     FINAL_UNCONFIRMED=1
   fi
 fi
+# **게시 뒤 수집이 더 들어왔으면 다시 만든다.** 관문은 97% 에서 통과한다 — 18:10 에 98% 로 통과한 리포트를 19:10 이
+# "이미 있다" 며 건너뛰어 빠진 종목이 그날 저녁 내내 latest 에 남았다. 게시본의 GATE.txt 에 관문이 본 수집 행 수
+# (completeness_gate.fill_line)가 있다 — 그날 저녁(기준일 = 오늘, 확정 전) 재시도는 그 줄만 다시 재서 다르면 다시 짓는다.
+LATE_FILL=""
+if [ -z "$REBUILD" ] && [ "$ASOF" = "$TODAY" ] && [ -f "$DEST/numbers.html" ] && [ -f "$DEST/GATE.txt" ] \
+   && [ ! -f "$DEST/FINAL.txt" ]; then
+  FILL_WAS="$(grep -m 1 '^수집 행 수 ' "$DEST/GATE.txt" 2>/dev/null || true)"
+  FILL_NOW="$("${UVR[@]}" python scripts/completeness_gate.py --asof "$ASOF" --fill-only 2>/dev/null || true)"
+  if [ -n "$FILL_WAS" ] && [ -n "$FILL_NOW" ] && [ "$FILL_WAS" != "$FILL_NOW" ]; then
+    LATE_FILL=1
+    echo "[$(date '+%F %T')] $ASOF 리포트를 만든 뒤 수집이 더 들어왔다(${FILL_WAS#*: } → ${FILL_NOW#*: }) — 다시 만든다"
+  fi
+fi
 if [ -f "$DEST/numbers.html" ] && [ ! -f "$DEST/VERIFY_FAILED.txt" ] && [ -z "${KR_QUANT_FORCE:-}" ] \
-   && [ -z "$FINAL_REBUILD" ]; then
+   && [ -z "$FINAL_REBUILD" ] && [ -z "$LATE_FILL" ]; then
   echo "[$(date '+%F %T')] $ASOF 리포트가 이미 있다 — 건너뛴다(휴장일이거나 재실행)."
   # 여기서는 휴장과 수집 실패를 안 가른다(갈라 내는 것은 20:30 freshness_check 와 KRX 달력) — 지금 보는 사람에게 사실을 준다.
   if [[ "$ASOF" < "$TODAY" ]]; then
@@ -303,19 +342,23 @@ if [ -d "$DEST" ]; then
 fi
 
 mkdir -p "$BUILD"
+# 관문 출력(시장별 판정 + 수집 행 수 줄)을 판과 함께 남긴다 — 위의 저녁 재시도와 20:30 신선도 점검이 이 줄과 지금 DB 를 견준다.
+printf '%s\n' "$GATE_OUT" > "$BUILD/GATE.txt"
 echo "[$(date '+%F %T')] 생성 시작 — 기준일 $ASOF, 구간 ${DAYS}거래일"
 # 페이로드를 **한 번만** 만들고 둘 다 그걸 쓴다. 월별 시총 계산이 수 분이라
 # 예전처럼 세 번 돌리면 배치가 15분을 넘고 그만큼 실패 창이 넓어진다.
-FINAL_ARGS=()
+# 읽기는 **언제나** 관문이 본 기준일 이하로 묶는다(--asof). 안 묶으면 sector_flow.py 가 max(date) 를 다시 골라, 관문과 빌드
+# 사이에 새 거래일 행이 들어온 날(수집 중의 손 실행·늦은 확정 실행) 관문을 안 거친 그날 부분 수집이 앞 기준일 폴더에 실린다.
+# 검증도 같은 날을 기준일로 본다 — 안 그러면 그 경우를 "DB 최신일과 다르다" 로 걸어 멀쩡한 판을 버린다.
+FINAL_ARGS=(--asof "$ASOF")
+VERIFY_ARGS=(--asof "$ASOF")
 if [ -n "$FINAL_OK" ]; then
-  FINAL_ARGS=(--final)
+  FINAL_ARGS+=(--final)
   echo "[$(date '+%F %T')] 확정치로 만든다 — 제목이 '마감·확정' 이 된다"
 fi
-VERIFY_ARGS=()
 if [ -n "$REBUILD" ]; then
-  FINAL_ARGS+=(--asof "$ASOF" --rebuilt)
+  FINAL_ARGS+=(--rebuilt)
   [ "$FINALIZE_STATE" != "unverified" ] || FINAL_ARGS+=(--finalize-unverified)
-  VERIFY_ARGS=(--asof "$ASOF")
   echo "[$(date '+%F %T')] 재구성 — 지금 코드로 $ASOF 이하 데이터만 읽는다"
 fi
 "${UVR[@]}" python scripts/sector_flow.py    --days "$DAYS" --json "$BUILD/payload.json" "${FINAL_ARGS[@]}"
@@ -404,20 +447,61 @@ fi
 if [ -n "$SIDE_FAIL" ]; then
   { echo; echo "부속 산출물 실패: ${SIDE_FAIL% } — 리포트 숫자와 무관하다. 다시 만들려면 KR_QUANT_FORCE=1 scripts/daily_report.sh"; } >> "$BUILD/VERIFY.txt" 2>/dev/null || true
 fi
-if [ -d "$DEST" ]; then
-  OLD="$DEST.replaced.$$"
-  mv "$DEST" "$OLD"
-  mv "$BUILD" "$DEST"
-  if [ -n "$REBUILD" ]; then
-    mkdir -p "$OUT_ROOT/.archive"
-    mv "$OLD" "$ARCHIVED"
-    echo "[$(date '+%F %T')] 바꿔 끼웠다 — $DEST (옛 폴더: $ARCHIVED)"
+# 검증에 걸린 새 판이 검증을 통과한 게시본을 밀어내지 않는다(머리말) — 게시본·latest 를 그대로 두고 새 판은 비켜 둔다.
+if [ "$VERIFY_RC" -ne 0 ] && [ -f "$DEST/numbers.html" ] && [ ! -f "$DEST/VERIFY_FAILED.txt" ]; then
+  REJECTED="$OUT_ROOT/.rejected/$ASOF.$(date +%Y%m%d%H%M%S).$$"
+  mkdir -p "$OUT_ROOT/.rejected"
+  mv "$BUILD" "$REJECTED"
+  BUILD=""
+  EV_OUTCOME="rejected"
+  echo "[$(date '+%F %T')] ⚠️ 새 판이 검증에 걸려 게시하지 않았다 — 검증을 통과한 $DEST 와 latest 를 그대로 둔다. 걸린 판: $REJECTED/VERIFY_FAILED.txt" >&2
+  echo "    원인을 고친 뒤 같은 명령을 다시 돌린다. 걸린 판은 진단용이다 — 다 보면 지운다(rm -rf $OUT_ROOT/.rejected/$ASOF.*)." >&2
+  exit 1
+fi
+# **바꿔 끼우기부터 latest 까지는 시그널에 끊기지 않는다.** 두 mv 사이에 크론 timeout 의 TERM 이 오면 트랩이 다 지은 $BUILD 를
+# 지워 <기준일> 이 통째로 사라지고 latest 가 끊겼다(timeout 은 프로세스 그룹 전체에 보내 mv 자신도 죽는다). 그래서 이 구간은
+# 시그널을 무시하는 서브셸에서 돌리고(무시는 자식 mv 에게 물려진다), 그 사이 이 셸에 온 시그널은 적어 두었다가 다 끝난 뒤
+# 그 번호로 끝낸다. 재구성은 latest 를 뒤로 돌리지 않는다 — 지금 latest 보다 늦거나 같은 날일 때만 옮긴다. 링크는 옆에 새로
+# 만들어 rename 으로 갈아 끼운다(ln -sfn 은 지웠다 다시 만들어 그 사이 latest 가 잠깐 없다).
+CUR_LATEST="$(basename "$(readlink "$OUT_ROOT/latest" 2>/dev/null || echo none)")"
+MOVE_LATEST=""
+if [ -z "$REBUILD" ] || [ ! -d "$OUT_ROOT/$CUR_LATEST" ] || [[ ! "$ASOF" < "$CUR_LATEST" ]]; then
+  MOVE_LATEST=1
+fi
+OLD="$DEST.replaced.$$"
+HAD_DEST=""
+[ ! -d "$DEST" ] || HAD_DEST=1
+DEFER_SIG=""
+trap 'DEFER_SIG=129' HUP
+trap 'DEFER_SIG=130' INT
+trap 'DEFER_SIG=143' TERM
+(
+  trap '' HUP INT TERM
+  if [ -n "$HAD_DEST" ]; then
+    mv "$DEST" "$OLD"
+    mv "$BUILD" "$DEST"
+    if [ -n "$REBUILD" ]; then
+      mkdir -p "$OUT_ROOT/.archive"
+      mv "$OLD" "$ARCHIVED"
+    else
+      rm -rf "$OLD"
+    fi
   else
-    rm -rf "$OLD"
-    echo "[$(date '+%F %T')] 바꿔 끼웠다 — $DEST"
+    mv "$BUILD" "$DEST"
   fi
+  if [ -n "$MOVE_LATEST" ]; then
+    ln -sfn "$DEST" "$OUT_ROOT/.latest.$$"
+    mv -Tf "$OUT_ROOT/.latest.$$" "$OUT_ROOT/latest"
+  fi
+)
+BUILD=""
+_signal_traps
+if [ -z "$HAD_DEST" ]; then
+  :
+elif [ -n "$REBUILD" ]; then
+  echo "[$(date '+%F %T')] 바꿔 끼웠다 — $DEST (옛 폴더: $ARCHIVED)"
 else
-  mv "$BUILD" "$DEST"
+  echo "[$(date '+%F %T')] 바꿔 끼웠다 — $DEST"
 fi
 # 게시됐다 — 원장의 결말(검증에 걸렸어도 게시는 됐다. verify 필드가 그걸 말한다).
 [ -z "$FINAL_OK" ] || EV_FINAL=true
@@ -430,12 +514,7 @@ elif [ -n "$FINAL_OK" ]; then
 else
   EV_OUTCOME="published"
 fi
-
-# 재구성은 latest 를 뒤로 돌리지 않는다 — 지금 latest 보다 늦거나 같은 날일 때만 옮긴다.
-CUR_LATEST="$(basename "$(readlink "$OUT_ROOT/latest" 2>/dev/null || echo none)")"
-if [ -z "$REBUILD" ] || [ ! -d "$OUT_ROOT/$CUR_LATEST" ] || [[ ! "$ASOF" < "$CUR_LATEST" ]]; then
-  ln -sfn "$DEST" "$OUT_ROOT/latest"
-fi
+[ -z "$DEFER_SIG" ] || exit "$DEFER_SIG"
 if [ "$VERIFY_RC" -eq 0 ]; then
   echo "[$(date '+%F %T')] 완료 — $DEST 를 latest 로 게시했다"
   if [ -n "$FINAL_UNCONFIRMED" ] && [ -n "$REBUILD" ]; then

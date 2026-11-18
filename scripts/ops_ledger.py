@@ -12,7 +12,8 @@ freshness_check.py(이 모듈의 :func:`append_event`)다. SLO 정의는 ``docs/
 * ``report`` — daily_report.sh 실행 하나의 결말. ``asof``(기준일, 못 읽었으면 null) ·
   ``mode``(``normal``/``final``/``rebuild``) · ``rc`` · ``outcome``(``published`` 잠정 게시 · ``final`` 확정 재생성 ·
   ``rebuilt`` 재구성 · ``incomplete`` 관문 차단 · ``skipped`` 이미 있어 건너뜀 · ``locked`` 잠금 충돌 ·
-  ``holiday`` 재구성 대상이 휴장일 · ``error``) · ``gate``(``pass``/``blocked``/``error``/null=안 봄) ·
+  ``holiday`` 재구성 대상이 휴장일 · ``rejected`` 새 판이 검증에 걸려 통과한 게시본을 두고 ``.rejected/`` 로 비켜 둠 —
+  게시가 아니다 · ``error``) · ``gate``(``pass``/``blocked``/``error``/null=안 봄) ·
   ``verify``(``pass``/``fail``/null) · ``verify_checks``/``verify_fails``(VERIFY.txt 요약 줄의 검사·실패 건수) ·
   ``final``(bool — FINAL.txt 를 썼나) · ``diff``(final_diff.json 의 ``n_changed`` — 잠정→확정에서 바뀐 섹터 칸 수,
   비교 불가·해당 없음은 null) · ``payload_sha``(게시한 payload.json 의 sha256 — 같은 기준일을 다시 게시했을 때 숫자가

@@ -7,7 +7,8 @@
 # daily_collection(16:00)이 끝나는 시각은 고정이 아니다 — 18:47 까지 간 날이 있었다(2026-10-27).
 # 그래서 daily_report.sh 가 만들기 전에 완전성 관문을 보고, 수집이 덜 끝났으면 폴더에 INCOMPLETE.txt
 # 만 남기고 75 로 끝난다(latest 유지). 다음 크론이 그 기준일을 다시 만든다. 리포트가 이미 있는 날은
-# max(date) 한 번 읽고 건너뛰므로 비용이 없다. 다음날 08:20(KR_QUANT_FINAL=1)은 daily_finalize(06:30~07:25)가
+# max(date) 한 번 읽고 건너뛰므로 비용이 없다 — 다만 관문은 97% 에서 통과하므로, 그날 저녁 19:10 은 게시본의 GATE.txt 에 남은
+# 수집 행 수를 다시 재서(행 수 두 번) 달라졌으면 건너뛰지 않고 다시 만든다. 다음날 08:20(KR_QUANT_FINAL=1)은 daily_finalize(06:30~07:25)가
 # 확정치를 덮은 것을 확인하고(scripts/finalize_done.py) 그 기준일을 확정치로 다시 만든다 — 제목이 '마감·확정'.
 # 아직 못 만든 기준일이면 다음 18:10 에 기준일이 넘어가기 전의 마지막 기회이기도 하다. 07:50 배포(pull-all) 뒤라
 # 도중에 코드가 바뀌지 않는다. 기준일이 오늘이 아닌데 미완이면 1 로 끝나 오류로 알린다. 폴더 이름은 실행일이 아니라 **데이터 기준일**이다.
@@ -30,10 +31,11 @@
 20 10 * * 2-6 mkdir -p /home/young/git/sector-flow/reports && KR_QUANT_FINAL=1 /home/young/git/sector-flow/scripts/cron_run.sh sector-flow-report -- timeout -k 2m 40m /home/young/git/sector-flow/scripts/daily_report.sh >> /home/young/git/sector-flow/reports/cron.log 2>&1
 
 # 신선도 점검 — 평일 20:30(19:10 재시도·18:47 까지 간 수집 뒤). 결과만 본다(scripts/freshness_check.py):
-# 오늘 수급이 왔는데 latest 가 오늘이 아니면 1, 달력상 거래일인데 수급이 없으면 1(달력의 휴장은 0),
+# 오늘 수급이 왔는데 latest 가 오늘이 아니면 1, 달력상 거래일인데 수급이 없으면 1(달력의 휴장은 0), 오늘 리포트를 만든 뒤 수집이 더 들어왔으면 75,
 # 전 거래일에 FINAL.txt 가 없으면·미게시면·원장이 비면 75, alert.sh 가 읽을 ALERT_WEBHOOK_URL 이 비었거나 GET 에 죽어 있으면 75 —
 # 그러면 위의 모든 알림이 로그에만 남는다. 리포트·수급·확정 점검이 0 이면 HEARTBEAT_URL(있으면)로 하트비트를 보낸다 —
-# 웹훅이 없어도 보낸다(하트비트만 써도 된다). 웹훅이 **있는데 죽었으면** 안 보낸다 — 그날은 외부 감시가 유일한 통로다.
+# 알림 통로가 없는 날(웹훅이 비었거나 죽었거나 alert.sh 가 없다)은 안 보낸다 — 그날은 외부 감시가 유일한 통로다.
+# 하트비트만 쓰려면 SECTOR_FLOW_HEARTBEAT_ONLY=1 로 밝힌다(그때만 빈 웹훅이 정상이다).
 30 20 * * 1-5 mkdir -p /home/young/git/sector-flow/reports && /home/young/git/sector-flow/scripts/cron_run.sh sector-flow-fresh -- timeout -k 1m 10m /home/young/git/sector-flow/scripts/freshness_check.sh >> /home/young/git/sector-flow/reports/cron.log 2>&1
 
 # 리포트 웹 서비스 — 5분마다 "안 떠 있으면 띄운다"(scripts/serve.sh, 이미 떠 있으면 잠금을 못 잡고 바로 0).

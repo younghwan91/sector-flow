@@ -57,6 +57,8 @@ MESSAGES: list[tuple[str, str, str]] = [
     ("scripts/daily_report.sh", "완전성 관문 오류(rc=", "완전성 관문 오류(rc=N)"),
     ("scripts/daily_report.sh", "검증 실패", "검증 실패"),
     ("scripts/daily_report.sh", "게시했지만 검증에 걸렸다", "게시했지만 검증에 걸렸다"),
+    ("scripts/daily_report.sh", "새 판이 검증에 걸려 게시하지 않았다", "새 판이 검증에 걸려 게시하지 않았다"),
+    ("scripts/freshness_check.py", "리포트를 만든 뒤 수집이 더 들어왔다", "리포트를 만든 뒤 수집이 더 들어왔다"),
     # daily_report.sh — 지난 기준일 재구성(KR_QUANT_ASOF, 손 실행·rebuild_history)
     ("scripts/daily_report.sh", "KR_QUANT_ASOF 가 날짜 꼴(YYYY-MM-DD)이 아니다", "KR_QUANT_ASOF 가 날짜 꼴(YYYY-MM-DD)이 아니다"),
     ("scripts/daily_report.sh", "휴장이 아니라 수급 수집 공백이다", "수급 수집 공백"),
@@ -131,6 +133,7 @@ EXEMPT: list[tuple[str, str, str]] = [
     ("scripts/_env.sh", "cp .env.example .env", "바로 위 'DB 접속정보가 없다' 의 둘째 줄"),
     ("scripts/daily_report.sh", "KR_QUANT_FINAL=1 $0", "'확정치를 확인하지 못했다' 의 이어지는 줄"),
     ("scripts/daily_report.sh", "기준일이 넘어가 이 날은 잠정으로 남는다", "'확정치를 확인하지 못했다' 의 이어지는 줄"),
+    ("scripts/daily_report.sh", "걸린 판은 진단용이다", "'새 판이 검증에 걸려 게시하지 않았다' 의 이어지는 줄"),
     ("scripts/freshness_check.py", "[하트비트] 못 보냈다", "종료코드를 안 바꾼다 — 외부 감시가 알린다(하트비트 줄)"),
     ("scripts/freshness_check.py", "[하트비트] 보냈다", "정상 — 알림이 아니다"),
 ]

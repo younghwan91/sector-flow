@@ -45,7 +45,10 @@ a = sys.argv
 pathlib.Path(a[a.index("--html") + 1]).write_text("<html>")
 """
 FAKE_VERIFY = """
-import os, sys
+import os, pathlib, sys
+a = sys.argv
+if "--asof" in a:
+    pathlib.Path(a[a.index("--dir") + 1], "VERIFY_ASOF").write_text(a[a.index("--asof") + 1])
 sys.exit(int(os.environ.get("FAKE_VERIFY_RC", "0")))
 """
 #: 짓는 폴더 안에 쓰는 가짜 검증 페이지 — 진짜는 test_trust_page 가 보고, 여기서는 배선만 본다.
@@ -600,9 +603,11 @@ def test_finalize_log_layout_change_is_named_not_called_not_yet_run(tmp_path):
 
 
 def test_retrying_a_final_report_keeps_it_final(repo, tmp_path):
-    """휴장일 18:10 이 08:20 의 검증 실패 확정 리포트를 다시 만들며 잠정으로 내렸다."""
+    """휴장일 18:10 이 08:20 의 검증 실패 확정 리포트를 다시 만들며 잠정으로 내렸다.
+
+    잠정본도 검증에 걸린 날이다(2026-11-10) — 통과한 잠정본이면 걸린 확정 판은 게시되지 않는다(아래 keeps_a_verified 검사)."""
     _seed(repo.parent / "db.sqlite", today_kosdaq=50)
-    _published_today(repo)
+    (_published_today(repo) / "VERIFY_FAILED.txt").write_text("[FAIL] 잠정도 걸렸다")
     logs = _finalize_logs(tmp_path / "airflow")
     p = _run(repo, today="2026-11-03", KR_QUANT_FINAL="1", KR_QUANT_AIRFLOW_LOGS=str(logs), FAKE_VERIFY_RC="1")
     dest = repo / "reports" / TODAY
@@ -838,3 +843,158 @@ def test_cron_timeout_during_a_side_product_still_records_and_cleans(repo):
     time.sleep(0.3)
     pid = int(pidfile.read_text())
     assert not Path(f"/proc/{pid}").exists() or "Z" in Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0], "부속 단계 프로세스가 살아 남았다"
+
+
+# ── 검증에 걸린 새 판은 통과한 게시본을 밀어내지 못한다 ───────────────────────────────
+
+def _rejected(repo: Path) -> list[Path]:
+    return sorted((repo / "reports" / ".rejected").glob(f"{TODAY}.*"))
+
+
+def test_failed_rebuild_keeps_the_verified_report_published(repo):
+    """강제 재생성이 검증에 걸렸다 — 예전엔 통과본을 rm -rf 하고 걸린 판을 latest 로 걸었다(되돌릴 길 없음)."""
+    _seed(repo.parent / "db.sqlite", today_kosdaq=50)
+    assert _run(repo).returncode == 0
+    dest = repo / "reports" / TODAY
+    (dest / "numbers.html").write_text("<통과본>")
+    p = _run(repo, KR_QUANT_FORCE="1", FAKE_VERIFY_RC="1")
+    assert p.returncode == 1, p.stdout + p.stderr
+    assert "새 판이 검증에 걸려 게시하지 않았다" in p.stderr
+    assert (dest / "numbers.html").read_text() == "<통과본>", "통과본을 걸린 판으로 바꿔 꼈다"
+    assert not (dest / "VERIFY_FAILED.txt").exists()
+    assert (repo / "reports" / "latest").resolve() == dest.resolve()
+    kept = _rejected(repo)
+    assert len(kept) == 1 and (kept[0] / "VERIFY_FAILED.txt").is_file(), "걸린 판을 진단용으로 남기지 않았다"
+    assert not list((repo / "reports").glob("*.building.*")) and not list((repo / "reports").glob("*.replaced.*"))
+    # 걸린 판은 웹·목록에 안 보인다 — 날짜 폴더 이름이 아니다.
+    assert not any(c.name.startswith(TODAY + ".") for c in (repo / "reports").iterdir())
+    # 고친 뒤 다시 돌리면 바꿔 낀다.
+    assert _run(repo, KR_QUANT_FORCE="1").returncode == 0
+    assert (dest / "numbers.html").read_text() == "<html>"
+
+
+def test_failed_final_build_keeps_the_verified_provisional_and_its_markers(repo, tmp_path):
+    """08:20 확정 판이 걸리면 통과한 잠정본이 그대로 게시되고 FINAL.txt 는 걸린 판(.rejected) 안에만 있다 — 표시 파일은 그 폴더의 판을 말한다.
+    그래서 10:20 이 확정을 다시 해 보고, 통과하면 그때 확정본이 된다."""
+    _seed(repo.parent / "db.sqlite", today_kosdaq=50)
+    dest = _published_today(repo)
+    logs = str(_finalize_logs(tmp_path / "airflow"))
+    p = _run(repo, today="2026-11-03", KR_QUANT_FINAL="1", KR_QUANT_AIRFLOW_LOGS=logs, FAKE_VERIFY_RC="1")
+    assert p.returncode == 1, p.stdout + p.stderr
+    assert (dest / "numbers.html").read_text() == "<provisional>"
+    assert not (dest / "FINAL.txt").exists(), "게시본은 잠정인데 확정이라 적었다"
+    kept = _rejected(repo)
+    assert len(kept) == 1 and (kept[0] / "FINAL.txt").is_file() and (kept[0] / "VERIFY_FAILED.txt").is_file()
+    p = _run(repo, today="2026-11-03", KR_QUANT_FINAL="1", KR_QUANT_AIRFLOW_LOGS=logs)     # 10:20 재시도
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert (dest / "FINAL.txt").is_file() and not (dest / "VERIFY_FAILED.txt").exists()
+
+
+def test_failed_rebuild_of_a_verified_past_day_keeps_the_original(repo, tmp_path):
+    """재구성도 같다 — 원본은 .archive 로 가지 않고 제자리에 남는다."""
+    _seed(repo.parent / "db.sqlite", today_kosdaq=50)
+    old = repo / "reports" / DAYS[-2]
+    old.mkdir(parents=True)
+    (old / "numbers.html").write_text("<원본>")
+    p = _run(repo, KR_QUANT_ASOF=DAYS[-2], KR_QUANT_AIRFLOW_LOGS=str(_finalize_logs(tmp_path / "airflow")),
+             FAKE_VERIFY_RC="1")
+    assert p.returncode == 1, p.stdout + p.stderr
+    assert (old / "numbers.html").read_text() == "<원본>" and not (old / "REBUILT.txt").exists()
+    assert not (repo / "reports" / ".archive").exists()
+    assert list((repo / "reports" / ".rejected").glob(f"{DAYS[-2]}.*"))
+
+
+# ── 읽기는 언제나 관문이 본 기준일 이하 ────────────────────────────────────────────
+
+def test_normal_build_is_bound_to_the_gated_asof(repo):
+    """잠정 빌드도 sector_flow·검증에 --asof 를 준다 — 안 주면 관문과 빌드 사이에 들어온 다음 날 부분 수집이 이 폴더에 실린다.
+    재구성 표시(--rebuilt)는 붙이지 않는다."""
+    _seed(repo.parent / "db.sqlite", today_kosdaq=50)
+    assert _run(repo).returncode == 0
+    dest = repo / "reports" / TODAY
+    assert (dest / "ARGS_ASOF").read_text() == TODAY, "sector_flow 가 기준일을 다시 고른다(또는 재구성으로 표시했다)"
+    assert (dest / "VERIFY_ASOF").read_text() == TODAY, "검증이 DB 최신일을 기준일로 본다"
+    assert not (dest / "REBUILT.txt").exists()
+
+
+# ── 게시 뒤 수집이 더 들어왔으면 그날 저녁 재시도가 다시 만든다 ─────────────────────────
+
+def test_evening_retry_rebuilds_when_collection_grew_after_a_partial_pass(repo):
+    """18:10 에 98% 로 통과한 리포트를 19:10 이 '이미 있다' 며 건너뛰어 빠진 종목이 그날 저녁 내내 latest 에 남았다."""
+    db = repo.parent / "db.sqlite"
+    _seed(db, today_kosdaq=49)                           # 코스닥 49/50 = 98% — 관문 통과
+    assert _run(repo).returncode == 0
+    dest = repo / "reports" / TODAY
+    gate = (dest / "GATE.txt").read_text()
+    assert "수집 행 수" in gate and "[PASS]" in gate, "관문이 본 것을 판과 함께 남기지 않았다"
+    payload = dest / "payload.json"
+    before = payload.stat().st_mtime_ns
+    p = _run(repo)                                       # 그대로면 건너뛴다
+    assert p.returncode == 0 and "건너뛴다" in p.stdout and payload.stat().st_mtime_ns == before
+    _seed(db, today_kosdaq=50)                           # 나머지 수집이 들어왔다
+    p = _run(repo)
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert "수집이 더 들어왔다" in p.stdout and "건너뛴다" not in p.stdout
+    assert "수급 100" in (dest / "GATE.txt").read_text()
+    # 기준일이 오늘이 아니면(휴장일·다음날) 이 재시도는 없다 — 그날은 08:20 확정이 다시 만든다.
+    _seed(db, today_kosdaq=49)
+    p = _run(repo, today="2026-11-03")
+    assert p.returncode == 0 and "건너뛴다" in p.stdout
+
+
+# ── 끊긴 실행이 남긴 폴더 ─────────────────────────────────────────────────────
+
+def test_stale_build_and_replaced_folders_are_swept_under_the_lock(repo):
+    """KILL·OOM 이 남긴 <기준일>.building.N 이 리포트 한 벌씩 쌓였다. 바꿔 끼우기 도중 끊긴 .replaced.N 은 제자리가 비었으면 되돌린다."""
+    _seed(repo.parent / "db.sqlite", today_kosdaq=50)
+    root = repo / "reports"
+    root.mkdir()
+    old = time.time() - 2 * 86400
+    stale_build = root / f"{TODAY}.building.999999"
+    fresh_build = root / f"{TODAY}.building.999998"
+    orphan = root / f"{DAYS[-3]}.replaced.999997"            # 제자리(DAYS[-3])가 없다 — 유일한 사본
+    dup = root / f"{DAYS[-4]}.replaced.999996"               # 제자리가 있다 — 지워도 된다
+    (root / DAYS[-4]).mkdir()
+    for d in (stale_build, fresh_build, orphan, dup):
+        d.mkdir()
+        (d / "numbers.html").write_text(d.name)
+    for d in (stale_build, orphan, dup):
+        os.utime(d, (old, old))
+    assert _run(repo).returncode == 0
+    assert not stale_build.exists() and not dup.exists(), "끊긴 실행의 폴더를 안 치웠다"
+    assert fresh_build.exists(), "하루가 안 된 폴더까지 지웠다"
+    assert not orphan.exists() and (root / DAYS[-3] / "numbers.html").read_text() == orphan.name, "유일한 사본을 지웠다"
+
+
+# ── 바꿔 끼우기는 시그널에 끊기지 않는다 ──────────────────────────────────────────────
+
+def test_cron_timeout_between_the_two_moves_does_not_lose_the_report(repo, tmp_path):
+    """크론 timeout 의 TERM 이 mv 두 번 사이에 오면 트랩이 다 지은 판을 지워 <기준일> 이 사라지고 latest 가 끊겼다.
+    timeout 은 프로세스 그룹 전체에 보내 mv 자신도 죽는다 — 그룹째 TERM 을 보내 재현한다."""
+    import signal
+    _seed(repo.parent / "db.sqlite", today_kosdaq=50)
+    assert _run(repo).returncode == 0
+    marker = tmp_path / "in-mv"
+    shim = repo.parent / "bin"
+    real_mv = shutil.which("mv")
+    (shim / "mv").write_text(
+        f'#!/bin/sh\ncase "$*" in *.building.*) : > "{marker}"; sleep 2 ;; esac\nexec "{real_mv}" "$@"\n')
+    (shim / "mv").chmod(0o755)
+    env = _env(repo, KR_QUANT_FORCE="1")
+    p = subprocess.Popen([str(repo / "scripts" / "daily_report.sh")], env=env, start_new_session=True,
+                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    deadline = time.monotonic() + 60
+    while not marker.exists():
+        assert p.poll() is None and time.monotonic() < deadline, "바꿔 끼우기까지 못 갔다"
+        time.sleep(0.02)
+    os.killpg(p.pid, signal.SIGTERM)
+    out, err = p.communicate(timeout=60)
+    (shim / "mv").unlink()
+    dest = repo / "reports" / TODAY
+    assert (dest / "numbers.html").is_file(), f"기준일 폴더가 사라졌다\n{out}\n{err}"
+    assert (repo / "reports" / "latest").resolve() == dest.resolve(), "latest 가 끊겼다"
+    assert not list((repo / "reports").glob("*.building.*")) and not list((repo / "reports").glob("*.replaced.*"))
+    assert p.returncode == 143, (p.returncode, err)
+    report = [json.loads(ln) for ln in (repo / "reports" / "events.jsonl").read_text().splitlines()
+              if '"report"' in ln][-1]
+    assert report["outcome"] == "published" and report["rc"] == 143, report

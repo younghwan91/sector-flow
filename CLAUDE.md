@@ -23,7 +23,7 @@
 
 ## 운영
 - 크론 정본 `deploy/crontab.simnode` — dotfiles `cron-install` 이 `~/git/*/deploy/crontab.<호스트>` 를 훑어 설치한다. `crontab -e` 금지.
-  07:50 `pull-all --ci-gate` 가 ff 한 뒤 설치하니 main 푸시가 곧 다음날 배포다. 당장은 `git -C ~/git/sector-flow pull --ff-only`.
+  07:50 `pull-all --ci-gate` 가 ff 한 뒤 설치하니 main 푸시가 곧 다음날 배포다. 당장은 `flock ~/git/sector-flow/reports/.report.lock git -C ~/git/sector-flow pull --ff-only`(배치 도중 코드가 바뀌지 않게 리포트 잠금을 잡고).
 - 산출물은 `$REPO/reports/<기준일>`(gitignore) + `latest` 링크. 폴더 이름은 실행일이 아니라 데이터 기준일이다.
 - 크론은 평일 18:10·19:10, 화~토 08:20·10:20(확정 모드 `KR_QUANT_FINAL=1`, 10:20 은 재시도)에 같은 `daily_report.sh` 를 부른다. 08:20 은 `daily_finalize` 성공을
   Airflow 로그로 확인하고(`scripts/finalize_done.py`) 전날을 확정치로 다시 만든다(`FINAL.txt`). 확인 못 하면 75, 이미 확정이면 0 으로 건너뛴다. 완전성 관문(`scripts/completeness_gate.py`)이 막으면

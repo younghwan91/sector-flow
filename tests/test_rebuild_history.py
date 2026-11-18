@@ -262,3 +262,27 @@ def test_real_daily_report_rebuilds_in_order_skips_holidays_and_names_gate_block
     assert "이미 재구성" in (root / ".rebuild" / "2026-10-29.log").read_text()
     assert (root / FLOW.TODAY / "REBUILT.txt").is_file()
     assert os.path.realpath(root / "latest") == str((root / FLOW.TODAY).resolve())
+
+
+KEPT_FAKE = r"""#!/bin/sh
+d="$KR_QUANT_REPORTS/$KR_QUANT_ASOF"
+r="$KR_QUANT_REPORTS/.rejected/$KR_QUANT_ASOF.20261119000000.1"
+mkdir -p "$d" "$r"; : > "$d/numbers.html"; echo "원본은 x" > "$d/REBUILT.txt"
+printf '검사 10건 · 실패 0건 · 문서 주장 어긋남 0건\n전부 통과\n' > "$d/VERIFY.txt"
+printf '검사 10건 · 실패 2건 · 문서 주장 어긋남 0건\n실패 목록: B/키\n' > "$r/VERIFY.txt"
+echo "[..] ⚠️ 새 판이 검증에 걸려 게시하지 않았다 — 검증을 통과한 $d 와 latest 를 그대로 둔다. 걸린 판: $r/VERIFY_FAILED.txt" >&2
+exit 1
+"""
+
+
+def test_a_rebuild_kept_aside_is_a_verify_failure_not_a_rebuild(tmp_path):
+    """새 판이 검증에 걸려 통과한 게시본을 남겼으면 폴더는 옛 판이다 — 표시 파일만 보면 '재구성' 으로 적혔다."""
+    f = tmp_path / "daily_report.sh"
+    f.write_text(KEPT_FAKE)
+    f.chmod(f.stat().st_mode | stat.S_IEXEC)
+    root = tmp_path / "root"
+    rc = RH.main(["--allow-unmerged", "--report-script", str(f), "--root", str(root), "--dates", "2026-10-15"])
+    assert rc == 1
+    row = _rows(root)["2026-10-15"]
+    assert row[2] == "검증 실패(게시본 유지)", row
+    assert row[3] == "10건 중 실패 2" and row[4] == "B/키", "걸린 판이 아니라 남긴 게시본의 검증을 적었다"

@@ -23,6 +23,11 @@
 종목이 거래소 24·코스닥 54 이내이고, 실측 최저와도 2%p 간격이 있어 거짓 차단이 없다.
 막혀도 비용은 다음 재시도까지 지연뿐이고 ``latest`` 는 전날 것이 남는다.
 
+통과는 "수집이 끝났다" 가 아니라 "97% 이상 들어왔다" 다. 그래서 판정 끝에 **수집 행 수**(:func:`fill_line` — 그날 값이 찬
+수급 행·조정 종가 행)를 한 줄 더 찍고, daily_report.sh 가 그 출력을 게시 폴더의 ``GATE.txt`` 로 남긴다. 그날 저녁 재시도
+(19:10)는 리포트가 이미 있어도 이 줄만 다시 재서(``--fill-only``) 달라졌으면 다시 만들고, 20:30 신선도 점검은 그 뒤에도
+달라졌으면 경고한다 — 18:10 에 98% 로 통과한 리포트가 나머지 수집이 끝난 뒤에도 그대로 latest 로 남던 틈이다.
+
 종료코드 0 = 통과, :data:`EX_INCOMPLETE` = 미완(재시도 대상), 그 밖 = 오류(접속 실패 등).
 """
 
@@ -53,6 +58,8 @@ BASELINE_DAYS = 5
 #: sysexits 의 EX_TEMPFAIL — "나중에 다시 하면 된다".
 EX_INCOMPLETE = 75
 STATEMENT_TIMEOUT = "120s"
+#: 수집 행 수 줄의 머리 — daily_report.sh(``grep``)와 freshness_check.py 가 이 글로 찾는다.
+FILL_MARK = "수집 행 수"
 
 
 def read_counts(con, asof: str) -> dict[str, dict[str, tuple[int, int, float, int]]]:
@@ -122,15 +129,39 @@ def evaluate(counts: dict, asof: str) -> tuple[bool, list[str]]:
     return ok, lines
 
 
+def fill_line(con, asof: str) -> str:
+    """그날 값이 찬 행 수 한 줄 — 수급(``institution``·``close`` 가 있는 행, 출처 무관)과 조정 종가(``close > 0``).
+
+    관문 판정이 아니라 지문이다. 같은 기준일에 이 줄이 바뀌었으면 리포트를 만든 뒤 수집이 더 들어온(또는 고쳐진) 것이다.
+    수급의 빈 행은 나중에 값이 채워지므로(행 수가 아니라 값이 늘어난다) 값이 찬 행만 센다.
+    """
+    cur = con.cursor()
+    if _is_pg(con):
+        cur.execute(f"SET statement_timeout = '{STATEMENT_TIMEOUT}'")
+    ph = "%s" if _is_pg(con) else "?"
+    cur.execute(f"SELECT count(*) FROM supply_demand WHERE date = {ph} "  # noqa: S608
+                "AND institution IS NOT NULL AND close IS NOT NULL", (asof,))
+    sd = int(cur.fetchone()[0])
+    cur.execute(f"SELECT count(*) FROM daily_bars_adjusted WHERE date = {ph} AND close > 0", (asof,))  # noqa: S608
+    adj = int(cur.fetchone()[0])
+    return f"{FILL_MARK} {asof}: 수급 {sd} · 조정 종가 {adj}"
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--asof", required=True, help="검사할 기준일(YYYY-MM-DD)")
     ap.add_argument("--db", default=None)
+    ap.add_argument("--fill-only", action="store_true",
+                    help="판정 없이 수집 행 수 줄만 찍는다(daily_report.sh 의 저녁 재시도가 게시본의 GATE.txt 와 견준다)")
     a = ap.parse_args(argv)
 
     con = connect(a.db or db_default())
     try:
+        if a.fill_only:
+            print(fill_line(con, a.asof))
+            return 0
         counts = read_counts(con, a.asof)
+        fill = fill_line(con, a.asof)
     finally:
         con.close()
     ok, lines = evaluate(counts, a.asof)
@@ -138,6 +169,7 @@ def main(argv: list[str] | None = None) -> int:
           f"문턱 {MIN_COVERAGE:.0%}")
     for ln in lines:
         print("  " + ln)
+    print(fill)
     return 0 if ok else EX_INCOMPLETE
 
 

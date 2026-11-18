@@ -1600,8 +1600,8 @@ id = "final-rebuild-not-marked-final"
 why = "확정치로 다시 만들어도 제목이 잠정으로 남는다"
 guards = ["tests/test_daily_report_flow.py::test_final_mode_rebuilds_with_final_data_once_finalize_is_done"]
 file = "scripts/daily_report.sh"
-find = """  FINAL_ARGS=(--final)"""
-replace = """  FINAL_ARGS=()"""
+find = """  FINAL_ARGS+=(--final)"""
+replace = """  FINAL_ARGS+=()"""
 
 [[mutation]]
 id = "chip-never-says-final"
@@ -2955,16 +2955,16 @@ id = "heartbeat-never-sent"
 why = "HEARTBEAT_URL 을 넣어도 핑이 안 가 외부 감시가 매일 경보를 낸다"
 guards = ["tests/test_freshness_check.py::test_cron_path_clean_day_passes_and_pings_the_heartbeat"]
 file = "scripts/freshness_check.py"
-find = """    lines += heartbeat(alert_value("HEARTBEAT_URL", os.environ, alert_sh), data_rc == 0 and not dead_hook,"""
-replace = """    lines += heartbeat("", data_rc == 0 and not dead_hook,"""
+find = """    lines += heartbeat(alert_value("HEARTBEAT_URL", os.environ, alert_sh), data_rc == 0 and not no_channel,"""
+replace = """    lines += heartbeat("", data_rc == 0 and not no_channel,"""
 
 [[mutation]]
 id = "prev-day-final-unchecked"
 why = "08:20 확정 모드를 놓친 날을 아무도 안 본다 — 다음 거래일 수집이 들어오면 그 날은 영영 잠정이다"
 guards = ["tests/test_freshness_check.py::test_cron_path_previous_day_not_final_warns"]
 file = "scripts/freshness_check.py"
-find = "for xrc, xlines in (check_prev_final(root, prev), check_external_truth"
-replace = "for xrc, xlines in ((0, []), check_external_truth"
+find = "check_prev_final(root, prev), check_external_truth"
+replace = "(0, []), check_external_truth"
 [[mutation]]
 id = "prev-day-provisional-counts-as-final"
 why = "잠정 리포트만 있는 전 거래일을 확정으로 본다"
@@ -3131,9 +3131,10 @@ id = "web-restart-streak-never-reset"
 why = "건강해져도 연속 횟수를 안 지우면 다음 사고의 첫 재시작이 알림 없이 지나간다"
 guards = ["tests/test_serve_reports.py::test_serve_sh_names_a_503_and_resets_the_streak_once_healthy"]
 file = "scripts/serve.sh"
-find = """    rm -f "$RESTARTS"
+find = """    rm -f "$RESTARTS" "$MISSES"
     exit 0"""
-replace = """    exit 0"""
+replace = """    rm -f "$MISSES"
+    exit 0"""
 
 [[mutation]]
 id = "cron-run-stale-tails-kept"
@@ -4428,19 +4429,21 @@ replace = "# 20 10 * * 2-6 mkdir"
 id = "heartbeat-tied-to-the-webhook"
 why = "웹훅이 비면 하트비트도 안 가 하트비트만 쓰는 설정에서 외부 감시가 매일 같은 이유로 울린다"
 guards = ["tests/test_freshness_check.py::test_cron_path_heartbeat_works_without_a_webhook",
-          "tests/test_freshness_check.py::test_heartbeat_follows_the_data_checks_not_the_webhook_in_process"]
+          "tests/test_freshness_check.py::test_heartbeat_follows_the_data_checks_and_the_alert_channel_in_process"]
 file = "scripts/freshness_check.py"
-find = """data_rc == 0 and not dead_hook,"""
+find = """data_rc == 0 and not no_channel,"""
 replace = """rc == 0,"""
 
 [[mutation]]
 id = "heartbeat-despite-a-dead-webhook"
 why = "웹훅이 있는데 죽은 날 핑을 보내면 그 경고는 아무에게도 안 가고 외부 감시도 조용하다"
 guards = ["tests/test_freshness_check.py::test_cron_path_dead_webhook_withholds_the_heartbeat",
-          "tests/test_freshness_check.py::test_heartbeat_follows_the_data_checks_not_the_webhook_in_process"]
+          "tests/test_freshness_check.py::test_heartbeat_follows_the_data_checks_and_the_alert_channel_in_process"]
 file = "scripts/freshness_check.py"
-find = """    dead_hook = bool(webhook) and wrc != 0"""
-replace = """    dead_hook = False"""
+find = """    if bool(webhook) and wrc != 0:
+        no_channel = "알림 웹훅이 죽어 있다""""
+replace = """    if False:
+        no_channel = "알림 웹훅이 죽어 있다""""
 
 [[mutation]]
 id = "runbook-row-missing"
@@ -6727,8 +6730,8 @@ id = "report-rm-target-unassigned"
 why = "rm -rf 대상이 앞에서 안 정해지면 환경값을 지운다 — 같은 부류의 다음 변수를 잡는 검사다"
 guards = ["tests/test_ops_ledger.py::test_rm_rf_targets_in_shell_scripts_are_assigned_first"]
 file = "scripts/daily_report.sh"
-find = "  OLD=\"$DEST.replaced.$$\"\n"
-replace = "  : \n"
+find = "OLD=\"$DEST.replaced.$$\"\n"
+replace = ": \n"
 
 [[mutation]]
 id = "report-term-records-rc-0"
@@ -12586,3 +12589,188 @@ guards = ["tests/test_oneday.py::test_web_layer_catches_a_one_day_page_that_says
 file = "scripts/verify_report.py"
 find = "    chk(\"W\", \"'오늘 한 장' 섹터×주체 칸 — 평소 범위 밖 칸에만 %ile 숫자\", not bad_h,"
 replace = "    chk(\"W\", \"'오늘 한 장' 섹터×주체 칸 — 평소 범위 밖 칸에만 %ile 숫자\", True,"
+
+# ── fix-ops(2026-11-19): 검증에 걸린 재빌드 · 게시 뒤 수집 · 끊긴 바꿔 끼우기 · 알림 통로 ──
+
+[[mutation]]
+id = "report-failed-rebuild-replaces-verified"
+why = "검증에 걸린 새 판이 통과한 게시본을 rm -rf 하고 latest 가 된다 — 확정·강제·재구성 재빌드가 걸리면 되돌릴 길이 없다"
+guards = ["tests/test_daily_report_flow.py::test_failed_rebuild_keeps_the_verified_report_published",
+          "tests/test_daily_report_flow.py::test_failed_final_build_keeps_the_verified_provisional_and_its_markers",
+          "tests/test_daily_report_flow.py::test_failed_rebuild_of_a_verified_past_day_keeps_the_original",
+          "tests/test_ops_ledger.py::test_daily_report_ledger_records_a_rejected_build_as_not_a_publication"]
+file = "scripts/daily_report.sh"
+find = '''if [ "$VERIFY_RC" -ne 0 ] && [ -f "$DEST/numbers.html" ] && [ ! -f "$DEST/VERIFY_FAILED.txt" ]; then'''
+replace = '''if false; then'''
+
+[[mutation]]
+id = "report-rejected-build-discarded"
+why = "게시하지 않은 걸린 판을 버리면 무엇이 걸렸는지 볼 길이 없다(VERIFY_FAILED.txt 가 그 판에만 있다)"
+guards = ["tests/test_daily_report_flow.py::test_failed_rebuild_keeps_the_verified_report_published",
+          "tests/test_daily_report_flow.py::test_failed_final_build_keeps_the_verified_provisional_and_its_markers"]
+file = "scripts/daily_report.sh"
+find = '''  mv "$BUILD" "$REJECTED"'''
+replace = '''  rm -rf "$BUILD"; mkdir -p "$REJECTED"'''
+
+[[mutation]]
+id = "report-normal-build-not-bound-to-asof"
+why = "잠정·확정 빌드가 --asof 없이 max(date) 를 다시 고르면 관문과 빌드 사이에 들어온 다음 날 부분 수집이 앞 기준일 폴더에 실린다"
+guards = ["tests/test_daily_report_flow.py::test_normal_build_is_bound_to_the_gated_asof"]
+file = "scripts/daily_report.sh"
+find = '''FINAL_ARGS=(--asof "$ASOF")'''
+replace = '''FINAL_ARGS=()'''
+
+[[mutation]]
+id = "report-verify-not-bound-to-asof"
+why = "검증이 DB 최신일을 기준일로 보면 관문이 본 날로 묶은 판을 '최신일과 다르다' 로 걸어 버린다"
+guards = ["tests/test_daily_report_flow.py::test_normal_build_is_bound_to_the_gated_asof"]
+file = "scripts/daily_report.sh"
+find = '''VERIFY_ARGS=(--asof "$ASOF")'''
+replace = '''VERIFY_ARGS=()'''
+
+[[mutation]]
+id = "report-late-fill-ignored"
+why = "18:10 에 97~99% 로 통과한 리포트를 19:10 이 '이미 있다' 며 건너뛰어 빠진 종목이 그날 저녁 내내 latest 에 남는다"
+guards = ["tests/test_daily_report_flow.py::test_evening_retry_rebuilds_when_collection_grew_after_a_partial_pass"]
+file = "scripts/daily_report.sh"
+find = '''   && [ -z "$FINAL_REBUILD" ] && [ -z "$LATE_FILL" ]; then'''
+replace = '''   && [ -z "$FINAL_REBUILD" ]; then'''
+
+[[mutation]]
+id = "report-gate-output-not-kept"
+why = "관문이 본 수집 행 수를 판과 함께 남기지 않으면 저녁 재시도·20:30 점검이 게시 뒤 수집을 견줄 것이 없다"
+guards = ["tests/test_daily_report_flow.py::test_evening_retry_rebuilds_when_collection_grew_after_a_partial_pass"]
+file = "scripts/daily_report.sh"
+find = '''printf '%s\n' "$GATE_OUT" > "$BUILD/GATE.txt"'''
+replace = ''':'''
+
+[[mutation]]
+id = "report-late-fill-on-any-day"
+why = "기준일이 오늘이 아닌 실행(휴장일 18:10·다음날)까지 수집 행 수로 다시 지으면 확정 전 잠정본을 매번 새로 짓는다 — 그날은 08:20 확정의 몫이다"
+guards = ["tests/test_daily_report_flow.py::test_evening_retry_rebuilds_when_collection_grew_after_a_partial_pass"]
+file = "scripts/daily_report.sh"
+find = '''if [ -z "$REBUILD" ] && [ "$ASOF" = "$TODAY" ] && [ -f "$DEST/numbers.html" ] && [ -f "$DEST/GATE.txt" ] \'''
+replace = '''if [ -z "$REBUILD" ] && [ -f "$DEST/numbers.html" ] && [ -f "$DEST/GATE.txt" ] \'''
+
+[[mutation]]
+id = "report-stale-build-not-swept"
+why = "KILL·OOM 이 남긴 <기준일>.building.N 이 리포트 한 벌씩 reports/ 에 쌓여 디스크가 찬다"
+guards = ["tests/test_daily_report_flow.py::test_stale_build_and_replaced_folders_are_swept_under_the_lock"]
+file = "scripts/daily_report.sh"
+find = '''done < <(find "$OUT_ROOT" -mindepth 1 -maxdepth 1 -type d \( -name '*.building.*' -o -name '*.replaced.*' \) -mtime +0 2>/dev/null)'''
+replace = '''done < /dev/null'''
+
+[[mutation]]
+id = "report-sweep-deletes-the-only-copy"
+why = "바꿔 끼우기 도중 끊겨 제자리가 빈 .replaced.N 은 그날의 유일한 사본이다 — 지우면 그 기준일이 사라진다"
+guards = ["tests/test_daily_report_flow.py::test_stale_build_and_replaced_folders_are_swept_under_the_lock"]
+file = "scripts/daily_report.sh"
+find = '''      if [ ! -e "$HOME_DIR" ]; then'''
+replace = '''      if false; then'''
+
+[[mutation]]
+id = "report-sweep-ignores-age"
+why = "나이를 안 보면 다른 루트 규칙으로 짓는 중인 폴더(잠금 밖 손 작업)까지 지운다"
+guards = ["tests/test_daily_report_flow.py::test_stale_build_and_replaced_folders_are_swept_under_the_lock"]
+file = "scripts/daily_report.sh"
+find = '''\( -name '*.building.*' -o -name '*.replaced.*' \) -mtime +0 2>/dev/null)'''
+replace = '''\( -name '*.building.*' -o -name '*.replaced.*' \) 2>/dev/null)'''
+
+[[mutation]]
+id = "report-swap-killed-by-cron-timeout"
+why = "두 mv 사이에 온 크론 timeout 의 TERM 이 mv 를 죽이고 트랩이 다 지은 판을 지워 기준일 폴더가 사라지고 latest 가 끊긴다"
+guards = ["tests/test_daily_report_flow.py::test_cron_timeout_between_the_two_moves_does_not_lose_the_report"]
+file = "scripts/daily_report.sh"
+find = '''  trap '' HUP INT TERM'''
+replace = '''  true'''
+
+[[mutation]]
+id = "gate-fill-counts-empty-rows"
+why = "값이 아직 없는 수급 행까지 세면 빈 행에 값이 채워져도 수집 행 수가 그대로라 게시 뒤 수집을 못 본다"
+guards = ["tests/test_completeness_gate.py::test_fill_line_counts_rows_whose_values_arrived"]
+file = "scripts/completeness_gate.py"
+find = '''                "AND institution IS NOT NULL AND close IS NOT NULL", (asof,))'''
+replace = '''                "", (asof,))'''
+
+[[mutation]]
+id = "fresh-late-fill-ignored"
+why = "20:30 에도 게시 때보다 수집이 늘었는데 OK·하트비트 — 덜 찬 판이 그날 밤 latest 로 남는다"
+guards = ["tests/test_freshness_check.py::test_collection_that_grew_after_todays_report_is_a_warning",
+          "tests/test_freshness_check.py::test_main_measures_todays_collection_against_the_published_gate_line"]
+file = "scripts/freshness_check.py"
+find = '''    if latest_date(root) != today or not was or not fill_now or was == fill_now.strip():'''
+replace = '''    if True:'''
+
+[[mutation]]
+id = "fresh-late-fill-not-wired"
+why = "게시 뒤 수집 점검을 만들어 놓고 main 이 부르지 않는다"
+guards = ["tests/test_freshness_check.py::test_main_measures_todays_collection_against_the_published_gate_line"]
+file = "scripts/freshness_check.py"
+find = '''            for xrc, xlines in (check_late_fill(root, today, fill_now),
+                                check_prev_final(root, prev),'''
+replace = '''            for xrc, xlines in (check_prev_final(root, prev),'''
+
+[[mutation]]
+id = "fresh-prev-final-hides-rejected-build"
+why = "확정 판이 검증에 걸려 비켜 둔 날을 '확정 모드가 안 돌았다' 로 말하면 엉뚱한 곳(daily_finalize)을 본다"
+guards = ["tests/test_freshness_check.py::test_prev_final_names_a_final_build_kept_aside"]
+file = "scripts/freshness_check.py"
+find = '''    if (d / "numbers.html").is_file() and kept:'''
+replace = '''    if False:'''
+
+[[mutation]]
+id = "heartbeat-despite-missing-alert-sh"
+why = "alert.sh 가 없어 모든 알림이 로그에만 남는데 하트비트가 나가 외부 감시도 초록이다"
+guards = ["tests/test_freshness_check.py::test_heartbeat_follows_the_data_checks_and_the_alert_channel_in_process"]
+file = "scripts/freshness_check.py"
+find = '''    elif not has_alert_sh:'''
+replace = '''    elif False:'''
+
+[[mutation]]
+id = "heartbeat-despite-an-undeclared-empty-webhook"
+why = "ALERT_WEBHOOK_URL= 줄이 실수로 지워진 날 하트비트가 나가 알림 통로가 끊긴 것을 아무도 모른다"
+guards = ["tests/test_freshness_check.py::test_cron_path_empty_webhook_withholds_the_heartbeat_unless_declared",
+          "tests/test_freshness_check.py::test_heartbeat_follows_the_data_checks_and_the_alert_channel_in_process"]
+file = "scripts/freshness_check.py"
+find = '''    elif not webhook and not hb_only:'''
+replace = '''    elif False:'''
+
+[[mutation]]
+id = "web-misses-not-reset-when-healthy"
+why = "건강한 서버에서 기동 실패 횟수를 안 지우면 며칠에 걸친 띄엄띄엄한 순간 실패가 쌓여 '한 시간째' 거짓 알림이 나간다"
+guards = ["tests/test_ops_ledger.py::test_serve_probe_appends_one_event_while_the_server_is_up"]
+file = "scripts/serve.sh"
+find = '''    rm -f "$RESTARTS" "$MISSES"'''
+replace = '''    rm -f "$RESTARTS"'''
+
+[[mutation]]
+id = "web-address-blip-counted-as-start-failure"
+why = "서버가 떠 있는데 tailscale ip 가 순간 실패한 주기를 기동 실패로 센다"
+guards = ["tests/test_ops_ledger.py::test_serve_sh_does_not_count_an_address_blip_while_the_server_is_up"]
+file = "scripts/serve.sh"
+find = '''  if command -v flock >/dev/null 2>&1 && ! flock -n "$LOCK" true; then'''
+replace = '''  if false; then'''
+
+[[mutation]]
+id = "rebuild-history-kept-aside-called-rebuilt"
+why = "새 판이 걸려 옛 판을 남긴 날을 요약이 '재구성' 과 옛 판의 검증으로 적는다"
+guards = ["tests/test_rebuild_history.py::test_a_rebuild_kept_aside_is_a_verify_failure_not_a_rebuild"]
+file = "scripts/rebuild_history.py"
+find = '''        elif rc != 0 and kept:'''
+replace = '''        elif False:'''
+
+[[mutation]]
+id = "rebuild-history-reads-the-kept-folder"
+why = "걸린 판이 아니라 남긴 게시본의 VERIFY.txt 를 요약에 적으면 무엇이 걸렸는지 안 보인다"
+guards = ["tests/test_rebuild_history.py::test_a_rebuild_kept_aside_is_a_verify_failure_not_a_rebuild"]
+file = "scripts/rebuild_history.py"
+find = '''            folder = Path(kept.group(1))'''
+replace = '''            pass'''
+
+[[mutation]]
+id = "fresh-fill-mark-drifts-from-the-gate"
+why = "신선도 점검의 수집 행 수 머리가 관문과 어긋나면 GATE.txt 의 줄을 못 찾아 게시 뒤 수집 점검이 조용히 꺼진다"
+guards = ["tests/test_freshness_check.py::test_fill_mark_matches_the_gate"]
+file = "scripts/freshness_check.py"
+find = '''FILL_MARK = "수집 행 수"'''
+replace = '''FILL_MARK = "수집 행수"'''
