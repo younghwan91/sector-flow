@@ -9,7 +9,7 @@
 """
 from __future__ import annotations
 
-from sectorflow.basis import rhu
+from sectorflow.basis import PCT_HI, PCT_LO, pct_int, pct_side, rhu
 
 #: 시장 4주체 — 합 ≈ 0. '가장 큰 주체' 는 이 넷에서 고른다(``flow_view.DOMINANT_FROM`` 과 같은 넷).
 ACT4 = (("inst", "기관"), ("forgn", "외국인"), ("indiv", "개인"), ("etc", "기타법인"))
@@ -18,7 +18,7 @@ HEAT_ACTORS = (("inst", "기관"), ("invpen", "투신+연기금"), ("forgn", "�
 #: 시장 연속 줄이 보는 주체(``sector_flow.STREAK_MARKET_ACTORS``). 같은 길이면 앞의 것.
 STREAK_ORDER = (("inst", "기관"), ("invpen", "투신+연기금"), ("forgn", "외국인"), ("indiv", "개인"))
 #: 평소 범위 — 1년 %ile 의 **보이는 정수**가 이 안(5 초과 95 미만)이면 '평소 범위 안'. 말로 옮길 뿐 판정이 아니다.
-PCT_HI, PCT_LO = 95, 5
+#: 문턱과 판정은 ``sectorflow.basis.PCT_HI``·``PCT_LO``·``pct_side`` 한 곳이다(극단 목록·며칠째 표지와 같은 규칙).
 #: 얇은 섹터 — 종목 수가 이보다 적으면 칸 수에서 뺀다(``sector_flow.STREAK_MIN_MEMBERS`` 와 같은 값).
 MIN_MEMBERS = 10
 UNCLASSIFIED = "(미분류)"
@@ -49,19 +49,18 @@ def fmt_big(v) -> str:
 
 
 def pct_str(p) -> str:
-    return "—" if p is None else str(int(rhu(p)))
+    return "—" if p is None else str(pct_int(p))
 
 
 def band(p) -> str:
     """1년 %ile 을 말로 — 보이는 정수 ≥95 는 '평소 범위 밖(위)', ≤5 는 '밖(아래)', 그 사이 '안'. 값 없으면 빈 글자."""
     if p is None:
         return ""
-    q = int(rhu(p))
-    return "평소 범위 밖(위)" if q >= PCT_HI else "평소 범위 밖(아래)" if q <= PCT_LO else "평소 범위 안"
+    return {"hi": "평소 범위 밖(위)", "lo": "평소 범위 밖(아래)"}.get(pct_side(p), "평소 범위 안")
 
 
 def is_extreme(p) -> bool:
-    return p is not None and (int(rhu(p)) >= PCT_HI or int(rhu(p)) <= PCT_LO)
+    return pct_side(p) is not None
 
 
 def side(v) -> str:
@@ -98,9 +97,41 @@ def strip_lines(d: dict, market: str) -> "list[tuple[str, str, str]] | None":
 
 
 def dominant(net: dict) -> "str | None":
-    """그날 |순매수| 가 가장 큰 4주체 — 같으면 키가 큰 쪽(``flow_view.dominant_of`` 와 같은 규칙)."""
+    """그날 |순매수| 가 가장 큰 4주체 — 같으면 키가 큰 쪽. TUI(``flow_view.dominant_of``)·다이제스트가 이 함수를 부른다."""
     live = [(abs((net.get(k) or {}).get("v") or 0.0), k) for k, _ko in ACT4 if (net.get(k) or {}).get("v") is not None]
     return max(live)[1] if live else None
+
+
+def sector_rank(d: dict, market: str, actor: str, exclude=()) -> "list[tuple[str, float, float | None]]":
+    """오늘 (섹터, 순매수, 1년%ile) — 금액 큰 순, 같으면 이름순. 값이 없는 섹터와 ``exclude`` 는 뺀다.
+
+    TUI 상·하위(``flow_view._today_rank``)·다이제스트 상·하위가 같은 순서를 쓴다.
+    """
+    secs = (((d.get("today") or {}).get("sectors") or {}).get(market)) or {}
+    out = [(s, (v.get(actor) or {}).get("v"), (v.get(actor) or {}).get("pct"))
+           for s, v in secs.items() if s not in exclude]
+    out = [t for t in out if t[1] is not None]
+    out.sort(key=lambda t: (-t[1], t[0]))
+    return out
+
+
+def extreme_lists(d: dict, market: str, actor: str, exclude=()) -> "tuple[list[tuple[str, int, int | None]], list]":
+    """오늘 1년 %ile 극단 섹터 — (위, 아래), 각각 (섹터, 보이는 %ile, 그 극단에 며칠째). 위는 큰 순, 아래는 작은 순(실린 소수 1자리 값), 같으면 이름순.
+
+    판정은 :func:`sectorflow.basis.pct_side` 하나다. 며칠째는 ``today.day_change.extreme``(옛 리포트면 ``None``) —
+    그 표지도 같은 규칙으로 센 것이라(``sector_flow.extreme_run``) 목록에 있는 섹터는 표지가 있어야 한다(검증기 T 층).
+    TUI·웹 극단 목록과 다이제스트가 이 목록을 쓴다.
+    """
+    dc = (((d.get("today") or {}).get("day_change") or {}).get("extreme") or {}).get(market) or {}
+    runs = dc.get(actor) or {}
+    hi, lo = [], []
+    for s, _v, p in sector_rank(d, market, actor, exclude):
+        side = pct_side(p)
+        if side:
+            (hi if side == "hi" else lo).append((p, s, (runs.get(side) or {}).get(s)))
+    hi.sort(key=lambda t: (-t[0], t[1]))         # 실린 값(소수 1자리) 순 — 보이는 정수가 같으면 더 극단인 쪽이 앞
+    lo.sort(key=lambda t: (t[0], t[1]))
+    return [(s, pct_int(p), n) for p, s, n in hi], [(s, pct_int(p), n) for p, s, n in lo]
 
 
 def _members(d: dict, markets: list[str], sec: str) -> int:

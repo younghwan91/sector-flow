@@ -232,3 +232,20 @@ def test_digest_on_the_final_payload_drops_the_provisional_label(built, tmp_path
         assert "잠정치다" not in body
         assert f"잠정→확정 변경: {fd['n_changed']:,}칸 / {fd['n_cells']:,}칸" in body
     assert 'class="chip final"' in card
+
+
+def test_verifier_x_layer_reads_the_digest_built_on_the_pipeline_payload(built, tmp_path):
+    """배치 순서대로 — 리포트 폴더 → 다이제스트 → ``verify_report.py --layers X``. 멀쩡한 글은 통과, 극단 줄이 화면 목록과
+    다르면(2026-11-18 '출판/매체복제 95' 처럼) 실패하고 실패 이름을 적는다. 다이제스트가 없는데 X 를 고르면 실패다."""
+    d = tmp_path / "r"
+    shutil.copytree(built["prov"], d)
+    p = E._run(str(E.SCRIPTS / "verify_report.py"), "--dir", str(d), "--layers", "X")
+    assert p.returncode == 1 and "X/다이제스트(digest.md·digest.json)가 있는가" in p.stdout, p.stdout[-2000:]
+    assert dg.main(["--dir", str(d), "--out", str(d), "--png", "skip"]) == 0
+    p = E._run(str(E.SCRIPTS / "verify_report.py"), "--dir", str(d), "--layers", "X")
+    assert p.returncode == 0 and "[OK  ] X · 1년%ile 극단 목록" in p.stdout, p.stdout[-3000:]
+    md = (d / "digest.md").read_text("utf-8")
+    line = next(ln for ln in md.splitlines() if ln.startswith("- 기관 상단: "))
+    (d / "digest.md").write_text(md.replace(line, line.replace("- 기관 상단: ", "- 기관 상단: 가짜섹터 95 · ", 1)), "utf-8")
+    p = E._run(str(E.SCRIPTS / "verify_report.py"), "--dir", str(d), "--layers", "X")
+    assert p.returncode == 1 and "X/1년%ile 극단 목록 = 보이는 정수로 다시 셈 = 화면 목록" in p.stdout, p.stdout[-2000:]

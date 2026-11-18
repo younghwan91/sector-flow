@@ -406,9 +406,12 @@ function capOf(sec){
  *  `_w_viewer_expect` 와 같은 자리, 같은 문턱. */
 const Z=v=>Math.abs(v)<1e-6?0:v;
 function sum(arr,a,b){ let s=0; for(let i=a;i<=b;i++) s+=arr[i]; return Z(s); }
+/** 시총 대비(%p) — **시총이 없으면 결측(null)** 이다. 0 은 "유입이 없었다" 로 읽혀 `+0.00%p` 가 조용한 섹터처럼
+ *  랭킹 가운데 끼었다(수치표 `sector_numbers.agg` 는 None). 결측은 `—` 로 적고 맨 아래로 보낸다. */
+const shareOf=(t,c)=>c?t/c*100:null;
 function windowVal(sec,act){
   const t=sum(flow(sec,act),i0,i1);
-  if(M()==="amt") return t; const c=capOf(sec); return c?t/c*100:0; }
+  if(M()==="amt") return t; return shareOf(t,capOf(sec)); }
 /** 구간 누적 수익률(%) — **자체 바구니**(자금흐름과 같은 종목집합), 전일 시총 가중.
  *  이전 판본은 KRX 업종지수를 썼는데 구성종목이 달랐다(부동산 20일 지수 +6.0% vs
  *  자체 바구니 +74.9%). 분자는 A 바구니, 분모는 B 바구니를 보던 셈이고, 맞추니
@@ -426,9 +429,9 @@ function retOf(sec){
 }
 const hasIdx=sec=>retOf(sec)!=null;
 /** 기관이 아니라 **고른 주체**의 가속. 1일 창에는 없다(`null` → `—`). */
-function accelOf(sec){ if(nDays()===1) return null; const c=capOf(sec); return c?sum(flow(sec,actor),i0,i1)/c*100:0; }
+function accelOf(sec){ if(nDays()===1) return null; return shareOf(sum(flow(sec,actor),i0,i1),capOf(sec)); }
 function unit(){ return M()==="amt"?"억":"%p"; }
-function fmt(v){ return M()==="amt"?amt(v):pp(v); }
+function fmt(v){ return v==null?"—":M()==="amt"?amt(v):pp(v); }
 const ppx=v=>v==null?"—":pp(v);
 function fmt2(v){ return pp(v); }
 
@@ -511,8 +514,8 @@ function renderHeat(order){
   const vals=new Map(); let mx=0;
   // 농도의 최대는 **얇지 않은** 섹터에서 잰다 — 3종목 섹터의 %p 가 척도를 먹으면 나머지가 다 옅어진다.
   order.forEach(s=>{const f=flow(s,actor); const c=capOf(s);
-    const row=bk.map(([a,z])=>{const t=sum(f,a,z); return M()==="amt"?t:(c?t/c*100:0);});
-    vals.set(s,row); if(!thin(s)) row.forEach(v=>mx=Math.max(mx,Math.abs(v)));});
+    const row=bk.map(([a,z])=>{const t=sum(f,a,z); return M()==="amt"?t:shareOf(t,c);});
+    vals.set(s,row); if(!thin(s)) row.forEach(v=>{ if(v!=null) mx=Math.max(mx,Math.abs(v)); });});
   mx=mx||1;
   // 커서가 있던 칸이 사라졌으면(시장·구간 변경) 오른쪽 위 — 가장 최근 칸으로.
   // Enter 로 고르면 구간이 그 칸부터로 바뀌고 줄 순서도 바뀐다 — 고른 섹터의 첫 칸에 머문다.
@@ -528,25 +531,25 @@ function renderHeat(order){
       const ri=order.indexOf(s);
       const c=el("div","hmc"+(picked===s?" hmsel":"")+(th?" thin":""));
       const a=Math.min(1,Math.sqrt(Math.abs(v)/mx))*0.92+0.04;
-      if(Math.abs(v)>1e-9) c.style.background=`color-mix(in srgb, var(${v>=0?"--buy":"--sell"}) ${a*100}%, transparent)`;
+      if(v!=null&&Math.abs(v)>1e-9) c.style.background=`color-mix(in srgb, var(${v>=0?"--buy":"--sell"}) ${a*100}%, transparent)`;
       const [ba,bz]=bk[bi];
       // 칸 540개를 탭 정지로 두면 그 아래로 못 간다 — 격자 전체가 탭 정지 하나고(roving tabindex), 안에서는 화살표로 움직인다.
       const here=hmCur.r===ri&&hmCur.c===bi;
       c.tabIndex=here?0:-1;
       c.setAttribute("role","button");
       const who=ACTORS.find(x=>x[0]===actor)[1], rng=D.dates[ba]+" ~ "+D.dates[bz];
-      c.setAttribute("aria-label",s+" "+rng+" "+who+" "+fmt(v)+unit());
+      c.setAttribute("aria-label",s+" "+rng+" "+who+" "+fmt(v)+(v==null?"":unit()));
       c.dataset.r=String(ri); c.dataset.c=String(bi);
       c.addEventListener("mouseenter",e=>tipShow(e,s,[
         ["구간",rng],
-        [who,fmt(v)+unit(),cls(v)]]));
+        [who,fmt(v)+(v==null?"":unit()),cls(v)]]));
       c.addEventListener("mousemove",tipMove);
       c.addEventListener("mouseleave",tipHide);
       const pick=()=>{picked=s; i0=ba; hmCur={r:ri,c:bi}; hmRefocus=true; render();};
       c.addEventListener("click",pick);
       // 포커스한 칸의 값을 보인다 — 마우스의 툴팁과 같은 자리·같은 글자(#tip 은 aria-live 라 읽어 준다).
       c.addEventListener("focus",()=>{hmCur={r:ri,c:bi}; const q=c.getBoundingClientRect();
-        tipShow({clientX:q.right,clientY:q.bottom},s,[["구간",rng],[who,fmt(v)+unit(),cls(v)]]);});
+        tipShow({clientX:q.right,clientY:q.bottom},s,[["구간",rng],[who,fmt(v)+(v==null?"":unit()),cls(v)]]);});
       c.addEventListener("blur",tipHide);
       c.addEventListener("keydown",e=>{
         if(e.key==="Enter"||e.key===" "){ e.preventDefault(); pick(); return; }
@@ -586,9 +589,9 @@ function renderLine(order){
   const focus=picked||order[0];
   const series=order.map(s=>{
     const f=flow(s,actor), c=capOf(s); let acc=0; const pts=[];
-    for(let i=i0;i<=i1;i++){acc+=f[i]; const z=Z(acc); pts.push(M()==="amt"?z:(c?z/c*100:0));}
+    for(let i=i0;i<=i1;i++){acc+=f[i]; const z=Z(acc); pts.push(M()==="amt"?z:shareOf(z,c));}
     return {s,pts};
-  });
+  }).filter(o=>o.pts.every(v=>v!=null));        // 시총이 없는 섹터는 %p 선을 그리지 않는다(0 선이 아니다)
   // 세로 범위도 얇은 섹터를 빼고 잰다(강조한 섹터는 늘 넣는다) — 회색으로 죽인 선이 축을 정하면 안 된다.
   let lo=0,hi=0; series.forEach(o=>{ if(thin(o.s)&&o.s!==focus) return;
     o.pts.forEach(v=>{lo=Math.min(lo,v);hi=Math.max(hi,v);});});
@@ -636,8 +639,11 @@ const VS_HEAT=[["inst","기관"],["invpen","투신+연기금"],["forgn","외국�
 const vsBig=v=>v==null?"—":(Math.abs(RHU(v))>=1e4?sgn(v)+Math.abs(RHU(v/1e4,1)).toFixed(1)+"조":amt(v)+"억");
 const vsA=v=>v==null?"—":amt(v);
 const vsP=p=>p==null?"—":String(RHU(p));
-const vsBand=p=>p==null?"":RHU(p)>=95?"평소 범위 밖(위)":RHU(p)<=5?"평소 범위 밖(아래)":"평소 범위 안";
-const vsExt=p=>p!=null&&(RHU(p)>=95||RHU(p)<=5);
+/** 1년 %ile 극단 — `sectorflow.basis.pct_side` 의 사본(보이는 정수로 가른다). 수치표 `extSide` 와 같다. */
+const PCT_HI=95, PCT_LO=5;
+const vsExtSide=p=>p==null?null:RHU(p)>=PCT_HI?"hi":RHU(p)<=PCT_LO?"lo":null;
+const vsBand=p=>p==null?"":vsExtSide(p)==="hi"?"평소 범위 밖(위)":vsExtSide(p)==="lo"?"평소 범위 밖(아래)":"평소 범위 안";
+const vsExt=p=>vsExtSide(p)!=null;
 const vsSide=v=>(v||0)>=0?"순매수":"순매도";
 const vsMore=n=>n>3?" 외 "+(n-3):"";
 function vsItems(m){
@@ -659,7 +665,7 @@ function vsItems(m){
     VS_HEAT.forEach(([a,ko],i)=>{ const f=S[s][a]; if(!f||f.pct==null) return; total++;
       if(vsExt(f.pct)) cells.push({g:Math.abs(f.pct-50),s,i,ko,f}); }); });
   cells.sort((x,y)=>(y.g-x.g)||(x.s<y.s?-1:x.s>y.s?1:0)||(x.i-y.i));
-  out.push(["ext","평소 범위(1년 %ile 5~95) 밖 "+cells.length+"칸/"+total+"칸",
+  out.push(["ext","평소 범위(1년 %ile "+PCT_LO+"~"+PCT_HI+") 밖 "+cells.length+"칸/"+total+"칸",
     cells.length?": "+cells.slice(0,3).map(c=>c.s+" "+c.ko+" "+vsA(c.f.v)+"억("+vsP(c.f.pct)+")").join(" · ")+vsMore(cells.length):" — 없음"]);
   const DC=T.day_change||{};
   if(DC.prev_date){ const fl=((DC.flips||{})[m]||{}).inst||[];
@@ -690,7 +696,9 @@ function render(){
   document.getElementById("ln-title").firstChild.textContent=label+" 누적 추이 ("+unit()+", 구간 시작 = 0) ";
 
   // 얇은 섹터(`~`)는 기준과 무관하게 맨 아래 — TUI·수치표와 같다. 회색 줄이 맨 위를 차지하면 순서가 회색의 말을 뒤집는다.
-  let order=D.sectors.filter(present).sort((a,b)=>(thin(a)-thin(b))||(windowVal(b,actor)-windowVal(a,actor)));
+  // 시총이 없어 %p 가 결측인 섹터도 맨 아래(얇은 섹터 다음) — 0 으로 가운데 끼지 않게.
+  const wv=s=>windowVal(s,actor), miss=s=>wv(s)==null;
+  let order=D.sectors.filter(present).sort((a,b)=>(thin(a)-thin(b))||(miss(a)-miss(b))||((wv(b)??0)-(wv(a)??0)));
   if(!picked||!order.includes(picked)) picked=order[0];
   lastOrder=order;
 
@@ -699,7 +707,7 @@ function render(){
   renderLine(order);
 
   const core=order.filter(s=>!thin(s));
-  const mx=Math.max(...(core.length?core:order).map(s=>Math.abs(windowVal(s,actor))),1e-9);
+  const mx=Math.max(...(core.length?core:order).map(s=>Math.abs(windowVal(s,actor)??0)),1e-9);
   const rows=document.getElementById("rows"); rows.replaceChildren();
   order.forEach(s=>{
     const v=windowVal(s,actor), th=thin(s);
@@ -711,13 +719,14 @@ function render(){
     const nb=el("div","namebox"); nb.append(nm0);
     // 이름 줄 = 그 섹터 막대 방향(순매수면 산 쪽, 순매도면 판 쪽)의 **금액** 상위 2개.
     const dv=drivers(s,actor);
-    const lead=(v>=0?dv.filter(x=>x.v>0):dv.filter(x=>x.v<0).reverse()).slice(0,2);
+    const lead=((v??0)>=0?dv.filter(x=>x.v>0):dv.filter(x=>x.v<0).reverse()).slice(0,2);
     nb.append(el("div","drv", lead.length?lead.map(x=>x.name).join(" · "):"—"));
     b.append(nb);
     const tr=el("div","track"); tr.append(el("div","axis"));
-    const bb=el("div","bb "+(v>=0?"p":"n"));
-    if(v>=0) bb.style.left="50%"; else bb.style.right="50%";
-    bb.style.width=Math.min(50,Math.max(Math.abs(v)/mx*50,0.3))+"%"; tr.append(bb); b.append(tr);
+    if(v!=null){ const bb=el("div","bb "+(v>=0?"p":"n"));
+      if(v>=0) bb.style.left="50%"; else bb.style.right="50%";
+      bb.style.width=Math.min(50,Math.max(Math.abs(v)/mx*50,0.3))+"%"; tr.append(bb); }
+    b.append(tr);
     const val=el("div","val");
     val.append(el("span","num "+cls(v),fmt(v)));
     val.append(el("span","sub num",M()==="share"?amt(other)+osuf:(other==null?"—":pp(other)+osuf)));
@@ -728,7 +737,7 @@ function render(){
       ["거래대금",amt(sum(flow(s,"tv"),i0,i1)).replace("+","")+"억"],
       ["시총",amt(capOf(s)).replace("+","")+"억"],
       ["종목 수",(nOf(s)===Infinity?"—":nOf(s)+"개")+(th?" (~ 10개 미만)":"")],
-      ["가속 %p",accelOf(s)==null?"— (1일)":pp(accelOf(s))+"%p",accelOf(s)==null?"":cls(accelOf(s))],
+      ["가속 %p",nDays()===1?"— (1일)":accelOf(s)==null?"— (시총 없음)":pp(accelOf(s))+"%p",accelOf(s)==null?"":cls(accelOf(s))],
       ...(hasIdx(s)?[["수익률 (자체 바구니·"+retLabel(true)+")",pp(retOf(s))+"%",cls(retOf(s))]]:[["수익률","값 없음"]]),
       ...drivers(s,actor).filter(x=>x.v>0).slice(0,3).map(x=>["↑ "+x.name,amt(x.v)+"억",cls(x.v)])]));
     b.addEventListener("mousemove",tipMove); b.addEventListener("mouseleave",tipHide);
@@ -818,7 +827,7 @@ function renderTable(order){
   order.forEach(s=>{const th=thin(s), r=el("tr",th?"thin":null); r.append(el("td",null,s+(th?"~":"")));
     ACTORS.forEach(([k])=>{const v=sum(flow(s,k),i0,i1); r.append(el("td","num "+cls(v),amt(v)));});
     // 기관 가속 — 1일에는 없다(TUI 1일 창과 같다).
-    const c=capOf(s), iv=sum(flow(s,"inst"),i0,i1), sh=nDays()===1?null:(c?iv/c*100:0);
+    const c=capOf(s), iv=sum(flow(s,"inst"),i0,i1), sh=nDays()===1?null:shareOf(iv,c);
     r.append(el("td","num "+(sh==null?"":cls(sh)),ppx(sh)));
     r.append(el("td","num",amt(sum(flow(s,"tv"),i0,i1)).replace("+","")));
     r.append(el("td","num",amt(c).replace("+","")));

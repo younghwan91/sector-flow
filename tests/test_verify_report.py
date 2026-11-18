@@ -276,3 +276,17 @@ def test_a_crashing_layer_is_an_explicit_failure_and_later_layers_still_run(caps
     assert ran == [2]
     assert any("G" in f and "끝까지" in f for f in vr.FAILS)
     assert "NoneType" in capsys.readouterr().out
+
+
+def test_empty_sector_index_coverage_warns_but_does_not_fail_the_report():
+    """업종지수(``iret``)는 어떤 화면도 읽지 않는다 — 비었다고 리포트를 VERIFY_FAILED(⚠ 띠·다이제스트 안 만듦)로 만들면
+    화면에 없는 값 때문에 화면 숫자가 의심받는다(P8). 경고로 남기고(freshness_check 가 알린다) 실패는 아니다."""
+    VR = _load()
+    spec = importlib.util.spec_from_file_location("payload_today", REPO / "tests" / "test_payload_today.py")
+    PT = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(PT)
+    P = PT._payload()
+    P["iret"] = {m: {} for m in P["markets"]}
+    VR.layer_b(P, None)
+    assert not [f for f in VR.FAILS if "업종지수" in f], VR.FAILS
+    assert "B/업종지수 커버리지(화면 미사용 iret)" in VR.WARNS

@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import os
 import re
 import sys
@@ -34,7 +33,7 @@ from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 
-from sectorflow.basis import BASIS_SLOT, DATA_BASIS
+from sectorflow.basis import BASIS_SLOT, DATA_BASIS, PCT_HI, PCT_LO, pct_side
 from sectorflow.sector_override import SECTOR_OVERRIDE, SOURCE as OVERRIDE_SOURCE, UNCLASSIFIED, fingerprint
 from sectorflow.storage import (
     _is_pg,
@@ -322,9 +321,10 @@ def build_payload(df: pd.DataFrame, dates: list[str], caps: pd.DataFrame,
     # 금융에서 GS(+1,854억)가 화면에 있는 하림지주(+247억)보다 7배 큰데 빠졌다.
     # 누락되는 쪽이 하필 **최근에 방향이 바뀐** 종목이라(1년 누적이 0 근처) 성격이 나쁘다.
     #
-    # 일별 배열로 전 종목을 실으면 ~4MB 가 붙는다. **프리셋 구간의 합계만** 실으면
-    # 2,645종목 × 4구간 × 5값 ≈ 200KB 다. 임의 구간 드릴다운(뷰어의 날짜 직접 지정)을
-    # 포기하고 프리셋(5·20·60·120일)에서 전 종목을 정확히 보는 쪽을 택한다.
+    # 일별 배열로 전 종목을 실으면 수십 MB 가 붙는다. **프리셋 구간의 합계만** 싣는다 — 임의 구간 드릴다운(뷰어의 날짜
+    # 직접 지정)을 포기하고 프리셋(1·5·20·60·120일)에서 전 종목을 정확히 보는 쪽을 택한다. 크기는 작지 않다: 2026-11-18
+    # 실측 ``names`` 1.94MB(payload 3.49MB 의 56%, 2,646종목 × 5창 × 8값 — 키가 반복된다). 같은 블롭이 numbers.html·
+    # viewer.html 에도 실린다. 창·값을 더하면 세 파일이 같이 커진다.
     name_cap = (caps.set_index("code")["cap"].to_dict()
                 if "cap" in getattr(caps, "columns", []) else {})
     meta = df.drop_duplicates("code").set_index("code")[["name", "sector", "market"]]
@@ -346,7 +346,7 @@ def build_payload(df: pd.DataFrame, dates: list[str], caps: pd.DataFrame,
     #   채운 것은 다른 이야기인데, `inst` 한 덩어리에는 그 구분이 없다. 실측(20거래일):
     #   SK하이닉스 기관 −13,157억인데 투신 +1,549 · 연기금 +4,614 · 금투 −22,611 이다.
     #   원본 `df` 에 이미 종목·일별로 실려 있고 `load()` 에서 종가 환산까지 끝났으므로
-    #   집계 대상에 이름만 더하면 된다. 2,645종목 × 4창 × 2값이라 크기는 미미하다.
+    #   집계 대상에 이름만 더하면 된다(종목 × 창마다 값 둘 — 위 ``names`` 크기 실측에 들어 있다).
     # * ``ret`` — 그 구간의 종목 수익률(%). 화면의 `상대수익` 이 이것에서 섹터
     #   수익률을 빼서 "섹터는 갔는데 이건 안 갔다" 를 직접 답한다.
     _WIN_KEYS = ("inst", "forgn", "indiv", "etc", "tv", "invtrt", "penfnd_etc")
@@ -370,8 +370,9 @@ def build_payload(df: pd.DataFrame, dates: list[str], caps: pd.DataFrame,
             w["ret"] = round(float(v), 2) if v is not None and v == v else None
             names[code]["win"][str(win)] = w
 
-    # 참고용 자체 계산(전일 시총 가중). 화면의 수익률은 KRX 업종지수를 쓴다 —
-    # 아래 값은 지수가 없는 섹터의 폴백이자 대조용이다.
+    # 섹터 수익률 — **자체 바구니**(자금흐름과 같은 종목집합), 전일 시총 가중. 화면·웹의 섹터 수익률은 이 값이다
+    # (``sector_numbers.agg``·뷰어 ``retOf``). KRX 업종지수(``iret``)는 화면이 읽지 않는다 — 검증기 D 층·BYO 대조용으로만
+    # 싣는다. 화면의 'KRX 지수(정규장)' 칸은 시장 지수 ``today.krx_index`` 다.
     ret: dict = {m: {s: zeros() for s in sectors} for m in markets}
     rw: dict = {m: {s: zeros() for s in sectors} for m in markets}   # 그날 유효 가중합
     for (m, s, d), grp in df.groupby(["market", "sector", "date"], sort=False):
@@ -710,18 +711,12 @@ def streak_block(P: dict) -> dict:
 # 극단 목록은 오늘 값만 말하고, 부호 반전 줄은 5일 대 15일을 말한다. 어제 하루와의 차이는 어디에도 없었다
 # (11-05→11-06 기관 전기/전자 −1,625→+7,057). 세기만 한다 — 앞날을 말하지 않는다(CLAUDE.md 화면·리포트 규칙).
 
-#: 극단(1년 %ile)의 **보이는 정수** 문턱 — 화면에 95 로 적힌 날은 95 로 센다(``digest.pct_int`` 와 같은 반올림).
-DAY_PCT_HI, DAY_PCT_LO = 95, 5
+#: 극단(1년 %ile)의 문턱·판정은 ``sectorflow.basis.pct_side`` 한 곳이다 — 화면에 95 로 적힌 날은 95 로 센다(보이는 정수).
 #: 하루 단위 변화를 싣는 주체 — 첫 화면이 적을 수 있는 주체(기관·투신+연기금·그날 최대 순매매 주체).
 DAY_ACTORS = ("inst", "invpen", "forgn", "indiv", "etc")
 #: 부호가 바뀐 섹터의 크기 문턱 — |어제| 와 |오늘| 이 각각 그날 (시장, 주체) 섹터 목록 Σ|값| 의 이 몫 이상.
 #: 작은 칸의 +2억 → −3억 은 부호가 잡음이다. 문턱은 목록 안 몫으로 잡는다(CLAUDE.md 화면·리포트 규칙).
 DAY_FLIP_MIN_SHARE = 0.02
-
-
-def _visible_pct(p: float) -> int:
-    """화면이 적는 백분위 정수 — 소수 1자리로 실은 값을 0.5 올림(``flow_view.pct_int`` 와 같은 값)."""
-    return int(math.floor(round(p, 1) + 0.5 + 1e-9))
 
 
 def extreme_run(ser: list[float], hi: bool) -> int:
@@ -735,8 +730,7 @@ def extreme_run(ser: list[float], hi: bool) -> int:
         p = day_pct(ser[:end])
         if p is None:
             break
-        q = _visible_pct(p)
-        if not (q >= DAY_PCT_HI if hi else q <= DAY_PCT_LO):
+        if pct_side(round(p, 1)) != ("hi" if hi else "lo"):     # 페이로드처럼 소수 1자리로 실은 값을 판정한다
             break
         k += 1
     return k
@@ -749,7 +743,7 @@ def day_change_block(P: dict) -> dict:
     부호가 반대이고 양일 다 크기 문턱을 넘은 섹터(|오늘| 큰 순). 얇은 섹터·``(미분류)`` 는 부호 줄에서 뺀다.
     """
     dates = P["dates"]
-    out: dict = {"prev_date": dates[-2] if len(dates) > 1 else None, "pct_hi": DAY_PCT_HI, "pct_lo": DAY_PCT_LO,
+    out: dict = {"prev_date": dates[-2] if len(dates) > 1 else None, "pct_hi": PCT_HI, "pct_lo": PCT_LO,
                  "flip_min_share": DAY_FLIP_MIN_SHARE, "min_members": STREAK_MIN_MEMBERS, "extreme": {}, "flips": {}}
     for mkey, mks in _mkeys(P):
         present = [s for s in P["sectors"] if _present(P, mks, s)]
@@ -984,6 +978,9 @@ _FD_FAMILY = ("잠정 → 확정", "확정 재시도", "final_diff.json", "확�
 _VERIFY_LINE = re.compile(r"^\s*\[(OK  |FAIL)\] T · (.+?)(?:   (.*))?$")
 #: 옛 규칙(날값 %ile)의 들고 남을 지금 규칙(반올림 %ile)에 견줄 때 봐주는 폭 — 반올림 자릿수 한 칸.
 _EXT_SLACK = 0.1
+#: 보이는 정수 판정(``basis.pct_side``)이 문턱보다 넓게 받는 폭 — 94.5 는 95 로 보이므로 ≥95 다. 들어옴 쪽만 넓힌다:
+#: 옛 기록(실린 값 ≥95)도 지금 기록(보이는 정수 ≥95, 실린 값 ≥94.5)도 맞다고 받는다. 나감 쪽은 옛 문턱이 이미 더 넓다.
+_EXT_VISIBLE = 0.5
 
 
 def _failed_record_why(folder: str, fd: dict) -> "str | None":
@@ -1080,8 +1077,8 @@ def _record_mismatch(Q: dict, fd: dict) -> "str | None":
             sers = {s: _series(Q, mks, s, a) for s in Q["sectors"] if _present(Q, mks, s)}
             pct = {s: None if ser is None else _fact(ser)["pct"] for s, ser in sers.items()}
             # 들어온 섹터는 지금 그 목록에 있어야 하고 나간 섹터는 없어야 한다. 값이 없으면(None) 나간 쪽만 말이 된다.
-            if (any(pct.get(s) is None or pct[s] < PCT_HI - _EXT_SLACK for s in ch.get("hi_in") or [])
-                    or any(pct.get(s) is None or pct[s] > PCT_LO + _EXT_SLACK for s in ch.get("lo_in") or [])
+            if (any(pct.get(s) is None or pct[s] < PCT_HI - _EXT_VISIBLE - _EXT_SLACK for s in ch.get("hi_in") or [])
+                    or any(pct.get(s) is None or pct[s] > PCT_LO + _EXT_VISIBLE + _EXT_SLACK for s in ch.get("lo_in") or [])
                     or any(pct.get(s) is not None and pct[s] >= PCT_HI + _EXT_SLACK for s in ch.get("hi_out") or [])
                     or any(pct.get(s) is not None and pct[s] <= PCT_LO - _EXT_SLACK for s in ch.get("lo_out") or [])):
                 return f"extremes_change {mkey}/{a}"
@@ -1243,16 +1240,16 @@ def final_diff_compute(P: dict, old: dict) -> dict:
     }
 
 
-#: 오늘 1년%ile 의 극단 문턱 — 화면(``flow_view.PCT_HI/LO``)과 웹(``PCT_HI/LO``)이 같은 값을 쓴다.
-PCT_HI, PCT_LO = 95.0, 5.0
 #: 극단 목록의 들고 남을 적는 주체 — 첫 화면이 극단을 적는 주체(기관·투신+연기금)와 그날 최대 순매매 주체이 될 수 있는 셋.
 EXTREME_ACTORS = ("inst", "invpen", "forgn", "indiv", "etc")
 
 
 def _extremes(P: dict, mks: list[str], actor: str) -> "tuple[set, set] | None":
-    """그 페이로드에서 (≥95 섹터, ≤5 섹터) — 화면과 같은 반올림 ``pct``(:func:`_fact`)로 센다. 그 시장이 없으면 ``None``.
+    """그 페이로드에서 (≥95 섹터, ≤5 섹터) — 화면과 같은 값(:func:`_fact` 의 소수 1자리)·같은 판정(``basis.pct_side``,
+    보이는 정수)으로 센다. 그 시장이 없으면 ``None``.
 
-    날값으로 재면 94.98 이 화면의 ≥95 목록에는 있는데(95.0) 들고 남에서는 빠진다.
+    날값으로 재면 94.98 이 화면의 ≥95 목록에는 있는데(95.0) 들고 남에서는 빠진다. 소수 1자리로 재도 94.8 이 화면에
+    "95" 로 적히는데 빠졌다(2026-11-18) — 그래서 판정은 보이는 정수다.
     """
     if not set(mks) <= set(P.get("markets") or []):
         return None
@@ -1264,9 +1261,10 @@ def _extremes(P: dict, mks: list[str], actor: str) -> "tuple[set, set] | None":
         p = None if ser is None else _fact(ser)["pct"]
         if p is None:
             continue
-        if p >= PCT_HI:
+        side = pct_side(p)
+        if side == "hi":
             hi.add(s)
-        elif p <= PCT_LO:
+        elif side == "lo":
             lo.add(s)
     return hi, lo
 

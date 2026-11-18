@@ -1058,13 +1058,15 @@ def _pct_payload(values: list[float]) -> dict:
 
 
 @pytest.mark.parametrize("rank, want_hi, want_lo", [
-    (189.0, True, False),      # 189/199 = 94.97 — 화면 95.0
-    (188.0, False, False),     # 188/199 = 94.47
-    (10.0, False, True),       # 10/199 = 5.03 — 화면 5.0
-    (11.0, False, False),      # 11/199 = 5.53
+    (189.0, True, False),      # 189/199 = 94.97 — 실린 값 95.0
+    (188.0, True, False),      # 188/199 = 94.47 — 실린 값 94.5, 화면 95(보이는 정수) → ≥95
+    (187.0, False, False),     # 187/199 = 93.97 — 화면 94
+    (10.0, False, True),       # 10/199 = 5.03 — 화면 5
+    (11.0, False, False),      # 11/199 = 5.53 — 화면 6
 ])
 def test_extreme_lists_round_like_the_screen(rank, want_hi, want_lo):
-    """화면은 반올림한 pct 로 ≥95 를 고른다(94.97 → 95.0). 날값으로 재면 들고 남이 화면 목록과 갈린다(28일 57칸)."""
+    """≥95 는 **보이는 정수**로 고른다(94.5 → 95). 날값으로 재면 들고 남이 화면 목록과 갈리고(28일 57칸), 소수 1자리로 재면
+    화면에 95 로 적힌 섹터가 목록에서 빠진다(2026-11-18 출판/매체복제 94.8)."""
     values = [float(i) for i in range(200) if i != int(rank)] + [rank]
     P = _pct_payload(values)
     raw = sf.day_pct(sf._series(P, ["거래소"], "화학", "inst"))
@@ -1077,6 +1079,29 @@ def test_extreme_lists_round_like_the_screen(rank, want_hi, want_lo):
     d = {"today": {"sectors": {"거래소": {"화학": {"inst": sf._fact(P["flows"]["거래소"]["화학"]["inst"])}}}}}
     shi, slo = FV.today_extremes(d, "거래소", "inst")
     assert (bool(shi), bool(slo)) == (want_hi, want_lo), "화면 목록과 같아야 한다"
+
+
+def test_t_layer_ties_the_screen_extreme_list_to_the_visible_rule(monkeypatch):
+    """화면 극단 목록(TUI·웹·다이제스트가 같은 함수)이 며칠째 표지와 같은 규칙인지 T 층이 본다 — 실린 값 94.5(화면 '95')가
+    표지에는 있고 목록에서 빠지면 빨갛다(2026-11-18 출판/매체복제 94.8, P1)."""
+    from sectorflow import summary as SUM
+    values = [float(i) for i in range(200) if i != 188] + [188.0]          # 오늘 94.47 → 실린 값 94.5
+    P = _pct_payload(values)
+    secs = {}
+    for mk, mks in (("전체", ["거래소"]), ("거래소", ["거래소"])):
+        secs[mk] = {"화학": {a: sf._fact(sf._series(P, mks, "화학", a)) for a in vr.VT_DAY_ACTORS}}
+    P["today"] = {"sectors": secs}
+    P["today"]["day_change"] = sf.day_change_block(P)
+    assert secs["전체"]["화학"]["inst"]["pct"] == 94.5
+    assert "화학" in P["today"]["day_change"]["extreme"]["전체"]["inst"]["hi"]
+
+    def t_fails():
+        vr.FAILS.clear()
+        vr._vt_day_change_check(P)
+        return [f for f in vr.FAILS if "극단 목록" in f]
+    assert t_fails() == []
+    monkeypatch.setattr(SUM, "pct_side", lambda p: None if p is None else "hi" if p >= 95 else "lo" if p <= 5 else None)
+    assert t_fails(), "화면 목록이 실린 값으로 고르는데 T 층이 못 봤다"
 
 
 def test_retry_drops_boundary_rows_left_by_the_old_rule(tmp_path):

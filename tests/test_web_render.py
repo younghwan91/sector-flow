@@ -636,3 +636,37 @@ def test_viewer_chart_end_label_agrees_with_the_bars_when_the_window_cancels(PD,
              '__out({labels:svg.children.filter(e=>e.getAttribute("class")==="endlab").map(e=>e.textContent)});')
     got = _viewer_probe(P2, tmp_path, probe)
     assert got["labels"] == ["금융~ +0억"], got
+
+
+def _without_cap(P: dict) -> tuple[dict, str]:
+    """시총이 빠진 섹터 하나(그날 주식수 스냅샷·원 종가가 없던 칸) — 수치표는 가속을 결측으로 낸다."""
+    Q = json.loads(json.dumps(P))
+    sec = max(Q["sectors"], key=lambda s: abs(sum(Q["flows"][Q["markets"][0]].get(s, {}).get("inst", [0.0])[-20:])))
+    for m in Q["markets"]:
+        (Q.get("cap") or {}).get(m, {}).pop(sec, None)
+        ((Q.get("cap_by_month") or {}).get(m) or {}).pop(sec, None)
+    return Q, sec
+
+
+@node
+def test_viewer_shows_missing_share_for_a_sector_without_cap_and_the_verifier_expects_it(PD, tmp_path):
+    """시총이 없는 섹터의 가속(%p)은 뷰어에서도 결측(—)이다 — 0 이면 '+0.00%p' 가 조용한 섹터처럼 랭킹 가운데 낀다.
+
+    수치표(`sector_numbers.agg`)는 None 을 내는데 뷰어는 0, 검증기의 뷰어 기대값도 0 이라 이 어긋남을 못 봤다(P5).
+    멀쩡한 뷰어는 초록, 0 으로 되돌린 뷰어는 W 층이 빨갛다.
+    """
+    Q, sec = _without_cap(PD[0])
+    fails = [f for f in _w_fails(Q, PD[1], _write(tmp_path, Q, PD[1])) if "뷰어" in f]
+    assert fails == [], fails
+    got = _viewer_probe(Q, tmp_path, 'i1=NDATE-1; i0=NDATE-20; market="전체"; actor="inst"; metric="share"; render();\n'
+                                     '__out({rows:document.getElementById("rows").children.map(b=>[b.children[0].children[0]'
+                                     '.children[0].textContent, b.children[2].children[0].textContent])});')
+    rows = dict((n.rstrip("~"), v) for n, v in got["rows"])
+    assert rows[sec] == "—", rows
+    thin = next(n for n, _v in got["rows"] if n.rstrip("~") == sec).endswith("~")
+    same = [n.rstrip("~") for n, v in got["rows"] if n.endswith("~") == thin]      # 얇은 섹터는 따로 맨 아래다
+    assert all(rows[n] != "—" for n in same[:same.index(sec)]) and len(same) > 1, \
+        f"시총 없는 섹터가 값 있는 섹터 사이에 끼었다 {same}"
+    assert same[-1] == sec, same
+    bad = _write(tmp_path, Q, PD[1], viewer_patch=("const shareOf=(t,c)=>c?t/c*100:null;", "const shareOf=(t,c)=>c?t/c*100:0;"))
+    assert any("뷰어 랭킹 막대" in f for f in _w_fails(Q, PD[1], bad))
