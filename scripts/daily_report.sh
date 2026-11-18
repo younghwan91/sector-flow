@@ -395,6 +395,18 @@ fi
 SIDE_FAIL=""
 # 오늘의 수급 다이제스트(scripts/digest.py, 끄려면 KR_QUANT_DIGEST=0) — 폴더에만 쓴다(밖으로 보내지 않는다). 상한 5분·오프라인·판 고정.
 if [ "${KR_QUANT_DIGEST:-1}" != "0" ]; then UV_OFFLINE=1 _bounded "${KR_QUANT_DIGEST_TIMEOUT:-5m}" "${UVR[@]}" --with 'playwright==1.48.0' python scripts/digest.py --dir "$BUILD" || { echo "[$(date '+%F %T')] ⚠️ 다이제스트를 못 만들었다(실패 또는 시간 초과) — 리포트는 그대로 게시한다" >&2; SIDE_FAIL+="digest "; }; fi
+# 다이제스트 검증(verify_report.py X 층) — 글의 시장 줄·요약·가장 큰 주체·상·하위·극단·부호 바뀜·20일 변동이 페이로드·화면과
+# 같은가. 글은 위 검증 뒤에 지어져 위 검증이 못 본다(2026-11-18 글에만 실린 '출판/매체복제 95'). 걸리면 글·카드를 빼고
+# 게시한다 — 화면과 다른 말을 하는 글보다 없는 것이 낫다. 기록은 VERIFY_DIGEST.txt(통과해도 남긴다).
+if [ -f "$BUILD/digest.md" ]; then
+  if ! _bounded "${KR_QUANT_DIGEST_VERIFY_TIMEOUT:-5m}" "${UVR[@]}" python scripts/verify_report.py --dir "$BUILD" --layers X \
+       > "$BUILD/VERIFY_DIGEST.txt" 2>&1; then
+    echo "[$(date '+%F %T')] ⚠️ 다이제스트가 페이로드·화면과 다른 말을 한다(X 층) — 글·카드를 빼고 게시한다: $DEST/VERIFY_DIGEST.txt" >&2
+    grep -F '[FAIL]' "$BUILD/VERIFY_DIGEST.txt" >&2 || true
+    rm -f "$BUILD/digest.md" "$BUILD/digest.json" "$BUILD/digest_card.html" "$BUILD/digest.png"
+    SIDE_FAIL+="digest-verify "
+  fi
+fi
 # 글은 됐는데 카드만 못 찍은 날 — 웹의 /latest/digest.png 가 404 다.
 if [ "${KR_QUANT_DIGEST:-1}" != "0" ] && [ -f "$BUILD/digest.md" ] && [ ! -f "$BUILD/digest.png" ]; then
   echo "[$(date '+%F %T')] ⚠️ 다이제스트 카드(digest.png)를 못 찍었다 — 글은 만들었다" >&2

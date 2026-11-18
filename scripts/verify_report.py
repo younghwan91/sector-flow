@@ -731,10 +731,11 @@ def layer_b(payload: dict, db: str | None, asof: "str | None" = None) -> None:
     cur = con.cursor()
     ph = "?" if con.__class__.__module__.startswith("sqlite3") else "%s"
     if asof:
-        # 재구성(--asof): 기준일은 DB 최신일이 아니라 지정한 날이다. 그날이 거래일이고 페이로드가 거기서 끝나야 한다.
+        # --asof: 배치가 관문을 통과시킨 기준일(평소 빌드도 넘긴다 — 재구성만이 아니다). 기준일은 DB 최신일이 아니라
+        # 지정한 날이다. 그날이 거래일이고 페이로드가 거기서 끝나야 한다.
         cur.execute(f"SELECT max(date) FROM supply_demand WHERE date <= {ph}", (asof,))
         db_last = str(cur.fetchone()[0])
-        chk("B", "페이로드 기준일 = 재구성 기준일 = 그 이하 DB 마지막 거래일",
+        chk("B", "페이로드 기준일 = 지정 기준일(--asof) = 그 이하 DB 마지막 거래일",
             db_last == dates[-1] == asof, f"지정 {asof} / DB {db_last} / 리포트 {dates[-1]}")
     else:
         cur.execute("SELECT max(date) FROM supply_demand")
@@ -5308,7 +5309,7 @@ def main() -> int:
     ap.add_argument("--layers", default="",
                     help="쉼표로 고른 층만 돈다(예: A,A3,F). 테스트가 빠르게 돌려고 쓴다 — 배치는 늘 전 층이다. "
                          "고르면 출력 첫 줄에 '부분 검증' 이라고 적는다")
-    ap.add_argument("--asof", help="재구성 리포트의 기준일 — B 층이 DB 최신일 대신 이 날을 기준일로 본다")
+    ap.add_argument("--asof", help="리포트 기준일(배치가 관문을 통과시킨 날, 재구성 포함) — B 층이 DB 최신일 대신 이 날을 기준일로 본다")
     a = ap.parse_args()
     want = {x.strip() for x in a.layers.split(",") if x.strip()}
     unknown = want - set(LAYERS)

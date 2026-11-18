@@ -47,6 +47,9 @@ pathlib.Path(a[a.index("--html") + 1]).write_text("<html>")
 FAKE_VERIFY = """
 import os, pathlib, sys
 a = sys.argv
+if "--layers" in a and a[a.index("--layers") + 1] == "X":      # 다이제스트 검증 — 배선만 본다(진짜는 test_digest·계약 검사)
+    pathlib.Path(a[a.index("--dir") + 1], "VERIFY_X_CALLED").write_text("x")
+    sys.exit(int(os.environ.get("FAKE_VERIFY_X_RC", "0")))
 if "--asof" in a:
     pathlib.Path(a[a.index("--dir") + 1], "VERIFY_ASOF").write_text(a[a.index("--asof") + 1])
 sys.exit(int(os.environ.get("FAKE_VERIFY_RC", "0")))
@@ -814,6 +817,22 @@ import pathlib, sys
 """)
     r = _run(repo, KR_QUANT_FORCE="1")
     assert r.returncode == 75 and "카드(digest.png)를 못 찍었다" in r.stderr
+
+
+def test_digest_is_checked_by_the_x_layer_and_withheld_when_it_disagrees(repo, tmp_path):
+    """다이제스트는 검증 뒤에 지어진다 — 배치가 지은 뒤 X 층(``--layers X``)을 부르고, 걸리면 글·카드를 빼고 게시한다(75).
+    2026-11-18 글은 화면 목록에 없는 '95' 섹터를 실었는데 VERIFY.txt 는 전부 통과였다(P2)."""
+    _seed(repo.parent / "db.sqlite", today_kosdaq=50)
+    _digest_on(repo, tmp_path)
+    r = _run(repo)
+    assert r.returncode == 0, r.stderr
+    dest = repo / "reports" / TODAY
+    assert (dest / "VERIFY_X_CALLED").exists() and (dest / "digest.md").exists() and (dest / "VERIFY_DIGEST.txt").exists()
+    r = _run(repo, KR_QUANT_FORCE="1", FAKE_VERIFY_X_RC="1")
+    assert r.returncode == 75 and "다른 말을 한다(X 층)" in r.stderr, r.stderr
+    assert not (dest / "digest.md").exists() and not (dest / "digest.png").exists(), "검증에 걸린 글이 게시됐다"
+    assert (dest / "numbers.html").exists() and "부속 산출물 실패: digest-verify" in (dest / "VERIFY.txt").read_text()
+    assert not (dest / "VERIFY_FAILED.txt").exists(), "리포트 숫자의 실패가 아니다"
 
 
 def test_digest_can_be_turned_off(repo, tmp_path):

@@ -12892,3 +12892,22 @@ guards = ["tests/test_freshness_check.py::test_fill_mark_matches_the_gate"]
 file = "scripts/freshness_check.py"
 find = '''FILL_MARK = "수집 행 수"'''
 replace = '''FILL_MARK = "수집 행수"'''
+
+[[mutation]]
+id = "batch-never-checks-the-digest"
+why = "배치가 다이제스트를 지은 뒤 X 층을 안 부르면 글은 아무 검증도 거치지 않고 게시된다(P2)"
+guards = ["tests/test_daily_report_flow.py::test_digest_is_checked_by_the_x_layer_and_withheld_when_it_disagrees"]
+file = "scripts/daily_report.sh"
+find = '''if [ -f "$BUILD/digest.md" ]; then
+  if ! _bounded'''
+replace = '''if false; then
+  if ! _bounded'''
+
+[[mutation]]
+id = "batch-publishes-a-digest-that-failed-x"
+why = "X 층에 걸린 글·카드를 지우지 않으면 화면과 다른 말을 하는 글이 /latest/digest.md 로 나간다"
+guards = ["tests/test_daily_report_flow.py::test_digest_is_checked_by_the_x_layer_and_withheld_when_it_disagrees"]
+file = "scripts/daily_report.sh"
+find = '''    rm -f "$BUILD/digest.md" "$BUILD/digest.json" "$BUILD/digest_card.html" "$BUILD/digest.png"
+    SIDE_FAIL+="digest-verify "'''
+replace = '''    SIDE_FAIL+="digest-verify "'''

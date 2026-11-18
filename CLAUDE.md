@@ -15,7 +15,7 @@
   origin/main 의 깨끗한 체크아웃에서만 돈다(`--allow-unmerged` 는 리허설). daily_finalize 창(3일) 밖의 날은 `finalize: unverified`
   — FINAL.txt 없이 '확정 기록 없음' 으로 표시한다.
 - 화면: `uv run sw-flow`, `uv run sw-ledger` (`reports/latest` 를 연다). 데이터 없이는 `--demo`(합성, `src/sectorflow/demo.py`). 문서·그림의 예는 실데이터 대신 데모로 만든다(`scripts/demo_shots.py`, 원장 `docs/SCREENSHOTS.md`). 화면 코드를 고치면 그림을 다시 찍는다.
-- 검증·품질 페이지·다이제스트: 배치가 짓는 폴더 안에서 만들어 함께 바꿔 낀다(웹 `/latest/trust.html`·`/latest/digest.md`·`.png`, 문서 사본 `/latest/validation/`). 다이제스트는 기본 켜짐(`KR_QUANT_DIGEST=0` 으로 끈다), 밖으로 보내는 길은 없다. 미리 보기는 `uv run python scripts/trust_page.py --root reports --out <밖의 경로>`.
+- 검증·품질 페이지·다이제스트: 배치가 짓는 폴더 안에서 만들어 함께 바꿔 낀다(웹 `/latest/trust.html`·`/latest/digest.md`·`.png`, 문서 사본 `/latest/validation/`). 다이제스트는 기본 켜짐(`KR_QUANT_DIGEST=0` 으로 끈다), 밖으로 보내는 길은 없다. 다이제스트는 지은 뒤 `verify_report.py --layers X` 가 페이로드·화면과 맞추고(걸리면 글을 빼고 75, `VERIFY_DIGEST.txt`), 순위·극단·가장 큰 주체는 `sectorflow.summary` 를 쓴다 — 다이제스트에서 다시 정하지 않는다. 미리 보기는 `uv run python scripts/trust_page.py --root reports --out <밖의 경로>`.
 - 금칙어 표는 `src/sectorflow/wording.py` 하나다 — 수치표·뷰어·검증 페이지·다이제스트·README 가 같이 쓴다(`tests/test_wording.py`).
 - DB(TimescaleDB `kr_quant`, **읽기 전용**): `set -a; . ~/git/quant-airflow/.env; set +a` 뒤 `$KR_QUANT_DB`, psycopg2 는 `--extra pg`.
   `daily_report.sh` 는 `.env` 가 없으면 같은 파일을 불러 쓴다. 접속정보 사본을 이 레포에 두지 않는다.
