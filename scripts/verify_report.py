@@ -14,6 +14,7 @@
   H. 화면·키 — **듣는 키와 화면에 적힌 키**가 같은가(값이 아니라 조작을 본다)
   T. 오늘   — 1일 값·1년 백분위·시장 합계·직전 리포트 대비를 일별 배열에서 다시 센다
   W. 웹     — numbers.html·viewer.html 을 node 로 **그려** 칸의 글자를 페이로드·TUI 와 맞춘다
+  X. 글     — digest.md·digest.json 의 순위·극단·가장 큰 주체를 페이로드에서 다시 세고 화면 목록과 맞춘다(다이제스트를 지은 뒤)
 
 A~D 는 전부 *파일 안의 값끼리* 정합한지만 본다. 그래서 producer 가 임펄스를
 통째로 잘못 계산해도(수량을 금액으로 착각, `flu_rt` 의 bp 단위를 놓침 — 둘 다
@@ -38,6 +39,7 @@ U=½kx² 를 검산하면 1e-3 오차가 나서 멀쩡한 수식이 FAIL 로 뜬
 
 Run:  python scripts/verify_report.py --dir reports/2026-08-27
       python scripts/verify_report.py --dir <폴더> --db-check     # B·F 층까지
+      python scripts/verify_report.py --dir <폴더> --layers X     # 다이제스트를 지은 뒤 — 글 = 페이로드·화면
 """
 
 from __future__ import annotations
@@ -673,7 +675,13 @@ def layer_b(payload: dict, db: str | None, asof: "str | None" = None) -> None:
     cap_n = sum(1 for m in mkts for s in secs if payload["cap"].get(m, {}).get(s))
     idx_n = sum(1 for m in mkts for s in secs if payload["iret"].get(m, {}).get(s))
     chk("B", "섹터 시총 커버리지", cap_n >= len(secs), f"{cap_n}/{len(secs)*len(mkts)}")
-    chk("B", "업종지수 커버리지", idx_n >= len(secs) * 0.6, f"{idx_n}/{len(secs)*len(mkts)}")
+    # 업종지수(``iret``)는 어떤 화면·웹·다이제스트도 읽지 않는다(화면 수익률은 자체 바구니 ``ret``, KRX 지수 칸은
+    # ``today.krx_index`` — 시장 지수). 읽는 곳은 D 층의 집합 대조와 BYO 대조(``collect/equiv.py``)뿐이다. 그래서 비어도
+    # 화면 숫자는 그대로다 — 실패(VERIFY_FAILED·⚠ 띠·다이제스트 안 만듦)가 아니라 경고로 남긴다(freshness_check 가 알린다).
+    if idx_n >= len(secs) * 0.6:
+        chk("B", "업종지수 커버리지", True, f"{idx_n}/{len(secs)*len(mkts)}")
+    else:
+        warn("B", "업종지수 커버리지(화면 미사용 iret)", f"{idx_n}/{len(secs)*len(mkts)}")
 
     # 종목
     nm = payload["names"]
@@ -723,10 +731,11 @@ def layer_b(payload: dict, db: str | None, asof: "str | None" = None) -> None:
     cur = con.cursor()
     ph = "?" if con.__class__.__module__.startswith("sqlite3") else "%s"
     if asof:
-        # 재구성(--asof): 기준일은 DB 최신일이 아니라 지정한 날이다. 그날이 거래일이고 페이로드가 거기서 끝나야 한다.
+        # --asof: 배치가 관문을 통과시킨 기준일(평소 빌드도 넘긴다 — 재구성만이 아니다). 기준일은 DB 최신일이 아니라
+        # 지정한 날이다. 그날이 거래일이고 페이로드가 거기서 끝나야 한다.
         cur.execute(f"SELECT max(date) FROM supply_demand WHERE date <= {ph}", (asof,))
         db_last = str(cur.fetchone()[0])
-        chk("B", "페이로드 기준일 = 재구성 기준일 = 그 이하 DB 마지막 거래일",
+        chk("B", "페이로드 기준일 = 지정 기준일(--asof) = 그 이하 DB 마지막 거래일",
             db_last == dates[-1] == asof, f"지정 {asof} / DB {db_last} / 리포트 {dates[-1]}")
     else:
         cur.execute("SELECT max(date) FROM supply_demand")
@@ -2511,6 +2520,9 @@ VT_FD_WINS = (1, 5)
 VT_FD_TOL = 0.05
 #: 옛 규칙(날값 %ile)이 쓴 들고 남을 지금 규칙(반올림 %ile)에 견줄 때 봐주는 폭.
 VT_EXT_SLACK = 0.1
+#: 극단 판정은 **보이는 정수**다(``_vt_visible`` ≥95 · ≤5) — 실린 값 94.5 는 95 로 보이니 ≥95 다. 정의는 producer 상수를
+#: 읽지 않고 여기 적는다(:data:`VT_DAY_HI` 와 같은 값).
+VT_EXT_HI, VT_EXT_LO = 95, 5
 VT_EXT_ACTORS = ("inst", "invpen", "forgn", "indiv", "etc")
 VT_KST = 9 * 3600
 
@@ -2530,10 +2542,10 @@ def _vt_extremes(Q: dict, mks: list, actor: str):
         p = None if ser is None else _vt_pct(ser)
         if p is None:
             continue
-        p = round(p, 1)                         # 화면의 ≥95 목록은 반올림한 pct 로 고른다(94.98 → 95.0)
-        if p >= 95.0:
+        q = _vt_visible(p)                      # 화면의 ≥95 목록은 보이는 정수로 고른다(94.98 → 95.0 → 95, 94.8 → 95)
+        if q >= VT_EXT_HI:
             hi.add(s)
-        elif p <= 5.0:
+        elif q <= VT_EXT_LO:
             lo.add(s)
     return hi, lo
 
@@ -2645,8 +2657,9 @@ def _vt_fd_self(Q: dict, F: dict) -> list:
                     ser = _vt_series(Q, mks, s, a)
                 p = None if ser is None else _vt_pct(ser)
                 p = None if p is None else round(p, 1)
-                ok = {"hi_in": p is not None and p >= 95.0 - VT_EXT_SLACK,
-                      "lo_in": p is not None and p <= 5.0 + VT_EXT_SLACK,
+                # 들어옴은 옛 기록(실린 값 ≥95)·지금 기록(보이는 정수 ≥95 = 실린 값 ≥94.5) 둘 다 받는다.
+                ok = {"hi_in": p is not None and p >= 94.5 - VT_EXT_SLACK,
+                      "lo_in": p is not None and p <= 5.5 + VT_EXT_SLACK,
                       "hi_out": p is None or p < 95.0 + VT_EXT_SLACK,
                       "lo_out": p is None or p > 5.0 - VT_EXT_SLACK}[kind]
                 if not ok:
@@ -3375,10 +3388,11 @@ def _vt_day_change_check(P: dict) -> None:
     chk("T", "하루 단위 변화 블록(today.day_change)이 있는가", isinstance(DC, dict))
     if not isinstance(DC, dict):
         return
+    from sectorflow.tui import flow_view as FV
     dates, nb = P["dates"], P.get("n_by_sector") or {}
     chk("T", "하루 단위 변화 — 비교한 날 = 페이로드 끝에서 둘째 날",
         DC.get("prev_date") == (dates[-2] if len(dates) > 1 else None), f"{DC.get('prev_date')}")
-    bad_e, bad_f, n_e, n_f = [], [], 0, 0
+    bad_e, bad_f, bad_s, n_e, n_f = [], [], [], 0, 0
     for mk, mks in [("전체", list(P["markets"]))] + [(m, [m]) for m in P["markets"]]:
         present = [s for s in P["sectors"] if any(nb.get(m, {}).get(s) for m in mks)]
         for a in VT_DAY_ACTORS:
@@ -3393,6 +3407,11 @@ def _vt_day_change_check(P: dict) -> None:
                 if got != want:
                     diff = sorted(k for k in set(got) | set(want) if got.get(k) != want.get(k))[:2]
                     bad_e.append(f"{mk}/{a}/{side} {[(k, got.get(k), want.get(k)) for k in diff]}")
+                # 화면 극단 목록(TUI·웹·다이제스트가 같은 함수)이 이 규칙으로 센 섹터와 같은가 — 2026-11-18 '95' 로 적힌
+                # 출판/매체복제(94.8)가 며칠째 표지에는 있고 웹·TUI ≥95 목록에서는 빠졌다(규칙이 둘이었다).
+                scr = FV.today_extremes(P, mk, a)[0 if hi else 1]
+                if sorted(x.rsplit(" ", 1)[0] for x in scr) != sorted(want):
+                    bad_s.append(f"{mk}/{a}/{side} 화면 {[x.rsplit(' ', 1)[0] for x in scr][:3]} vs {sorted(want)[:3]}")
             if len(dates) < 2:
                 continue
             g_now, g_prev = sum(abs(x[-1]) for x in sers.values()), sum(abs(x[-2]) for x in sers.values())
@@ -3409,6 +3428,8 @@ def _vt_day_change_check(P: dict) -> None:
                 bad_f.append(f"{mk}/{a} {[f.get('sector') for f in got_f][:3]} vs {[t[0] for t in want_f][:3]}")
     chk("T", "하루 단위 변화 — 극단 지속 일수 재계산(날마다 그날까지의 분포)", not bad_e,
         f"{n_e}칸 · {len(bad_e)}건  " + "; ".join(bad_e[:2]))
+    chk("T", "오늘 1년%ile 극단 목록(화면·웹·글) = 보이는 정수로 다시 센 극단 섹터", not bad_s,
+        f"{len(bad_s)}건  " + "; ".join(bad_s[:2]))
     chk("T", "하루 단위 변화 — 어제와 부호가 바뀐 섹터 재계산(크기 문턱·얇은 섹터 제외)", not bad_f,
         f"{n_f}칸 · {len(bad_f)}건  " + "; ".join(bad_f[:2]))
 
@@ -4196,11 +4217,12 @@ def _w_viewer_full(D: dict, P: dict, node: str, vpath: str, FV) -> None:
                 continue
             n_bar += 1
             t, c = x[a], x["cap"]
-            sh = (t / c * 100) if c else 0.0
+            # 시총이 없으면 %p 는 결측(—)이다 — 0 은 '유입이 없었다' 로 읽힌다(수치표 `agg` 의 accel 과 같은 규칙).
+            sh = (t / c * 100) if c else None
             if w == 1:
                 want = (_w_A(t), "—")
             else:
-                want = (_w_P(sh), _w_A(t) + "억")
+                want = ("—" if sh is None else _w_P(sh), _w_A(t) + "억")
             if (b["val"], b["sub"]) != want:
                 bad_bar.append(f"{tag} {sec} 웹 {(b['val'], b['sub'])} vs {want}")
         # 종목 층 표지 — TUI `name_evidence`(창·주체)와 같은 글자, 드릴다운 헤더의 짧은 꼴과 같은 표지.
@@ -4244,7 +4266,7 @@ def _w_viewer_full(D: dict, P: dict, node: str, vpath: str, FV) -> None:
                 bad_c.append(f"{tag} {sec} 페이로드에 없다")
                 continue
             c = x["cap"]
-            want = [_w_A(x[k]) for k, _ in ACT] + ["—" if w == 1 else _w_P((x["inst"] / c * 100) if c else 0.0),
+            want = [_w_A(x[k]) for k, _ in ACT] + ["—" if w == 1 or not c else _w_P(x["inst"] / c * 100),
                                                    _w_A(x["tv"]).replace("+", ""), _w_A(c).replace("+", "")]
             n_c += len(want)
             if row[1:] != want:
@@ -5082,8 +5104,170 @@ def layer_h(D: dict, P: dict) -> None:
         not bad, f"{len(bad)}건  " + "; ".join(bad[:3]))
 
 
+# ─────────────────────────────────────────────── X. 다이제스트 — 글이 페이로드·화면과 같은 말을 하는가
+#
+# 다이제스트(``scripts/digest.py``)는 검증 **뒤에** 짓는다(VERIFY_FAILED 면 안 짓는다). 그래서 위 층들은 글을 못 본다 —
+# 2026-11-18 글은 극단 규칙이 화면과 따로라 '기관 상단: 출판/매체복제 95' 를 실었고 VERIFY.txt 는 전부 통과였다.
+# 이 층은 다이제스트를 지은 뒤 따로 부른다(``--layers X``). 전 층을 돌 때 다이제스트가 없으면 건너뛴다(아직 안 지었다).
+# 값은 페이로드에서 **여기서 다시** 센다(순위·가장 큰 주체·보이는 정수 극단). 극단 목록은 화면(TUI·웹이 같은 함수)과도 맞춘다.
+
+#: 다이제스트가 목록에 싣지 않는 묶음(``digest.EXCLUDED_SECTORS``) — 섹터가 아니다.
+VX_EXCLUDED = ("(미분류)",)
+VX_MARKET = "전체"
+VX_NET = (("inst", "기관"), ("forgn", "외국인"), ("indiv", "개인"), ("etc", "기타법인"))
+#: 글이 넘치면 줄이는 개수들(``digest.EXTREME_CAPS``·상·하위 3→2→1) — 어느 판이든 받는다.
+VX_CAPS, VX_RANKS = (4, 2, 1, 0), (3, 2, 1)
+
+
+def _vx_rhu(v: float) -> float:
+    q = math.floor(abs(v) + 0.5 + 1e-9)
+    return q if v >= 0 else -q
+
+
+def _vx_amt(v) -> str:
+    return "—" if v is None else ("+" if v >= 0 else "-") + f"{abs(_vx_rhu(v)):,.0f}"
+
+
+def _vx_tag(p) -> str:
+    return "(—)" if p is None else f"({int(_vx_rhu(p))})"
+
+
+def _vx_capped(xs: list, cap: int) -> str:
+    if not xs:
+        return "없음"
+    if cap == 0:
+        return f"{len(xs)}곳"
+    return " · ".join(xs[:cap]) + (f" 외 {len(xs) - cap}" if len(xs) > cap else "")
+
+
+def _vx_run(days) -> str:
+    return "" if not days else "·신규" if days == 1 else f"·{days}일째"
+
+
+def digest_mismatches(P: dict, F: dict, md: str) -> dict[str, list[str]]:
+    """다이제스트 사실(``digest.json`` = ``F``)과 글(``digest.md``)이 페이로드 ``P``·화면과 어긋난 곳 — 검사 키 → 어긋남.
+
+    값은 여기서 다시 센다: 시장 4주체 줄, 가장 큰 주체(|금액| 최대), 섹터 상·하위(금액 순·이름순, 하위는 상위와 안 겹침),
+    1년 %ile 극단(보이는 정수 ≥95·≤5, 며칠째는 ``day_change``), 부호 바뀐 섹터·20일 상위 변동(페이로드 그대로).
+    요약 문장은 화면과 같은 ``sectorflow.summary`` 의 글자, 극단 목록은 TUI 목록(웹이 같은지는 W 층)과도 같아야 한다.
+    글은 길이가 넘치면 목록을 줄이므로(``digest.TRIM_LADDER``) 줄인 어느 판이든 받는다.
+    """
+    from sectorflow import summary as SUM
+    from sectorflow.basis import status_label
+    from sectorflow.tui import flow_view as FV
+
+    T = P.get("today") or {}
+    lines = md.splitlines()
+    have = set(lines)
+    out: dict[str, list[str]] = {k: [] for k, _n in VX_CHECKS}
+    asof = T.get("date") or (P.get("dates") or [None])[-1]
+    if F.get("asof") != asof or F.get("status") != status_label(P):
+        out["head"].append(f"기준일·지위 {F.get('asof')}·{F.get('status')} vs {asof}·{status_label(P)}")
+    if not lines or str(asof) not in lines[0] or status_label(P) not in lines[0]:
+        out["head"].append(f"첫 줄 {lines[:1]}")
+
+    want_sum = SUM.summary_texts(P, VX_MARKET, list(P.get("markets") or [])) or []
+    if F.get("summary") != want_sum:
+        out["summary"].append(f"사실 {(F.get('summary') or [])[:1]} vs {want_sum[:1]}")
+    out["summary"] += [f"글에 없다: {t[:40]}" for t in want_sum if f"- {t}" not in have]
+
+    net = ((T.get("market") or {}).get(VX_MARKET) or {}).get("net") or {}
+    want_net = "- " + " · ".join(f"{ko} {_vx_amt((net.get(a) or {}).get('v'))}{_vx_tag((net.get(a) or {}).get('pct'))}"
+                                 for a, ko in VX_NET)
+    if want_net not in have:
+        out["net"].append(f"글에 '{want_net[:60]}' 줄이 없다")
+
+    big = max((abs(net[a]["v"]) for a, _ko in VX_NET if (net.get(a) or {}).get("v") is not None), default=None)
+    dom = F.get("dominant")
+    if dom != FV.dominant_of(P, VX_MARKET):
+        out["dominant"].append(f"{dom} vs 화면 {FV.dominant_of(P, VX_MARKET)}")
+    elif big is not None and (dom is None or abs((net.get(dom) or {}).get("v") or 0.0) != big):
+        out["dominant"].append(f"{dom} 의 |금액| 이 최대({big})가 아니다")
+
+    S = (T.get("sectors") or {}).get(VX_MARKET) or {}
+    DC = T.get("day_change") or {}
+    runs = ((DC.get("extreme") or {}).get(VX_MARKET)) or {}
+    want_actors = ["inst", "invpen"] + ([dom] if dom and dom not in ("inst", "invpen") else [])
+    if [s.get("actor") for s in F.get("sectors") or []] != want_actors:
+        out["rank"].append(f"주체 {[s.get('actor') for s in F.get('sectors') or []]} vs {want_actors}")
+    for s in F.get("sectors") or []:
+        a, ko = s.get("actor"), s.get("ko")
+        ranked = sorted(((n, (r.get(a) or {}).get("v"), (r.get(a) or {}).get("pct")) for n, r in S.items()
+                         if n not in VX_EXCLUDED and (r.get(a) or {}).get("v") is not None), key=lambda t: (-t[1], t[0]))
+        top = ranked[:3]
+        bottom = [t for t in ranked[::-1] if t not in top][:3]
+        if [tuple(t) for t in s.get("top") or []] != top or [tuple(t) for t in s.get("bottom") or []] != bottom:
+            out["rank"].append(f"{ko} 상·하위 {[t[0] for t in s.get('top') or []]} vs {[t[0] for t in top]}")
+
+        def row(xs, k):
+            return " · ".join(f"{n} {_vx_amt(v)}{_vx_tag(p)}" for n, v, p in xs[:k]) or "없음"
+        tops = {"  상위: " + row(top, k) for k in VX_RANKS}
+        bots = {"  하위: " + row(bottom, k) for k in VX_RANKS}
+        at = [i for i, ln in enumerate(lines) if ln == f"- {ko}" or ln.startswith(f"- {ko} — ")]
+        if not any(i + 2 < len(lines) and lines[i + 1] in tops and lines[i + 2] in bots for i in at):
+            out["rank"].append(f"{ko} 글의 상·하위 줄이 다시 센 순위와 다르다")
+        # 극단 — 보이는 정수로 여기서 다시 고르고(실린 값 순, 같으면 이름순), 화면 목록과도 맞춘다.
+        want = {}
+        for side, hi in (("hi", True), ("lo", False)):
+            xs = [(p, n) for n, _v, p in ranked if p is not None
+                  and (int(_vx_rhu(p)) >= VT_EXT_HI if hi else int(_vx_rhu(p)) <= VT_EXT_LO)]
+            xs.sort(key=lambda t: ((-t[0] if hi else t[0]), t[1]))
+            want[side] = [f"{n} {int(_vx_rhu(p))}{_vx_run(((runs.get(a) or {}).get(side) or {}).get(n))}" for p, n in xs]
+            got = [f"{n} {q}{_vx_run(dd)}" for n, q, dd in s.get(side) or []]
+            if got != want[side]:
+                out["extreme"].append(f"{ko}/{side} 사실 {got[:3]} vs 다시 셈 {want[side][:3]}")
+        scr = [[x for x in lst if x.rsplit(" ", 1)[0] not in VX_EXCLUDED] for lst in FV.today_extremes(P, VX_MARKET, a)]
+        if scr != [want["hi"], want["lo"]]:
+            out["extreme"].append(f"{ko} 화면 {scr[0][:3]}/{scr[1][:3]} vs 다시 셈 {want['hi'][:3]}/{want['lo'][:3]}")
+        if not {f"- {ko} 상단: {_vx_capped(want['hi'], c)} / 하단: {_vx_capped(want['lo'], c)}" for c in VX_CAPS} & have:
+            out["extreme"].append(f"{ko} 글의 극단 줄이 다시 센 목록과 다르다")
+        if DC.get("prev_date"):
+            wf = [[x["sector"], x["prev"], x["now"]] for x in ((DC.get("flips") or {}).get(VX_MARKET) or {}).get(a) or []
+                  if x["sector"] not in VX_EXCLUDED]
+            if s.get("flips") != wf:
+                out["flip"].append(f"{ko} {s.get('flips')} vs {wf}")
+
+    C = P.get("change")
+    for x in (F.get("change") or {}).get("actors") or []:
+        t = ((((C or {}).get("top") or {}).get(VX_MARKET) or {}).get(x.get("actor"))) or {}
+        ok = t.get("entered") is not None and t.get("exited") is not None
+        want_e = [n for n in t["entered"] if n not in VX_EXCLUDED] if ok else None
+        want_x = [n for n in t["exited"] if n not in VX_EXCLUDED] if ok else None
+        if (x.get("entered"), x.get("exited")) != (want_e, want_x):
+            out["change"].append(f"{x.get('ko')} {x.get('entered')}/{x.get('exited')} vs {want_e}/{want_x}")
+    return out
+
+
+#: X 층 검사 — (:func:`digest_mismatches` 의 키, 이름).
+VX_CHECKS = (("head", "기준일·값의 지위 = 페이로드"),
+             ("summary", "'한눈에' 요약 = 화면 요약 문장(sectorflow.summary)"),
+             ("net", "시장 4주체 순매수 줄 = 페이로드(표시 반올림)"),
+             ("dominant", "가장 큰 주체 = 화면(같은 규칙)·|금액| 최대"),
+             ("rank", "섹터 상·하위 = 페이로드에서 다시 센 순위(금액 순·이름순)"),
+             ("extreme", "1년%ile 극단 목록 = 보이는 정수로 다시 셈 = 화면 목록"),
+             ("flip", "어제와 부호 바뀐 섹터 = today.day_change"),
+             ("change", "20일 상위 변동 = payload.change"))
+
+
+def layer_x(P: dict, d: str, required: bool) -> None:
+    print("\nX. 다이제스트 — digest.md·digest.json 이 페이로드·화면과 같은 말을 하는가")
+    md_p, js_p = os.path.join(d, "digest.md"), os.path.join(d, "digest.json")
+    if not (os.path.isfile(md_p) and os.path.isfile(js_p)):
+        if required:
+            chk("X", "다이제스트(digest.md·digest.json)가 있는가", False, f"{d} 에 없다")
+        else:
+            print("  다이제스트 없음 — 건너뜀(배치는 다이제스트를 지은 뒤 --layers X 로 따로 돈다)")
+        return
+    F = json.load(open(js_p, encoding="utf-8"))
+    md = open(md_p, encoding="utf-8").read()
+    bad = digest_mismatches(P, F, md)
+    for key, name in VX_CHECKS:
+        chk("X", name, not bad[key], (f"{len(bad[key])}건  " + "; ".join(bad[key][:2])) if bad[key] else "")
+
+
 #: main 이 도는 층 — ``--layers`` 가 고를 수 있는 이름. 층을 더하면 여기에도 적는다(모르는 이름은 거부).
-LAYERS = ("A", "A3", "B", "C", "D", "E", "G", "H", "T", "W", "F")
+#: X(다이제스트)는 전 층에서는 다이제스트가 있을 때만 돈다 — 배치는 다이제스트를 지은 뒤 ``--layers X`` 로 따로 부른다.
+LAYERS = ("A", "A3", "B", "C", "D", "E", "G", "H", "T", "W", "F", "X")
 
 
 def run_layer(layer: str, fn, *args) -> None:
@@ -5125,7 +5309,7 @@ def main() -> int:
     ap.add_argument("--layers", default="",
                     help="쉼표로 고른 층만 돈다(예: A,A3,F). 테스트가 빠르게 돌려고 쓴다 — 배치는 늘 전 층이다. "
                          "고르면 출력 첫 줄에 '부분 검증' 이라고 적는다")
-    ap.add_argument("--asof", help="재구성 리포트의 기준일 — B 층이 DB 최신일 대신 이 날을 기준일로 본다")
+    ap.add_argument("--asof", help="리포트 기준일(배치가 관문을 통과시킨 날, 재구성 포함) — B 층이 DB 최신일 대신 이 날을 기준일로 본다")
     a = ap.parse_args()
     want = {x.strip() for x in a.layers.split(",") if x.strip()}
     unknown = want - set(LAYERS)
@@ -5167,6 +5351,7 @@ def main() -> int:
     go("W", layer_w, D, payload, d)
     if a.db_check and a.db:
         go("F", layer_f, payload, a.db)
+    go("X", layer_x, payload, d, "X" in want)
 
     print(f"\n검사 {CHECKS}건 · 실패 {len(FAILS)}건 · 문서 주장 어긋남 {len(CLAIMS)}건")
     if WARNS:

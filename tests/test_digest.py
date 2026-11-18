@@ -181,8 +181,9 @@ def test_block_suspects_reach_the_digest_with_every_name_first():
 
 def test_dominant_actor_is_by_absolute_amount():
     """순매도가 가장 큰 주체도 '오늘 금액이 가장 큰 주체' 다 — 부호로 고르면 순매수 쪽만 뽑힌다."""
+    from sectorflow.summary import dominant
     net = {"inst": {"v": 100.0}, "forgn": {"v": -900.0}, "indiv": {"v": 700.0}, "etc": {"v": 100.0}}
-    assert dg.dominant_actor(net) == "forgn"
+    assert dominant(net) == "forgn"
     F = dg.collect(fixture_payload())
     assert [s["actor"] for s in F["sectors"]] == ["inst", "invpen", "forgn"]
     # 기관이 최대면 세 번째 묶음을 겹쳐 싣지 않는다
@@ -402,6 +403,70 @@ def test_displayed_percentile_decides_the_band():
     text = dg.compose(F)[1]
     assert "금융 +800(95)" in text and "금융 95" in text
     assert dg.pct_int(94.5) == 95 and dg.pct_int(5.5) == 6 and dg.pct_int(None) is None
+
+
+# ── 검증기 X 층 — 다이제스트가 페이로드·화면과 같은 말을 하는가(검증 뒤에 지어져 위 층이 못 본다) ──────────────
+
+vr = _mod("verify_report")
+
+
+def _x(P: dict) -> dict:
+    F, text, _pages = dg.build(P)
+    return {k: v for k, v in vr.digest_mismatches(P, F, text).items() if v}
+
+
+def test_x_layer_is_green_on_a_built_digest_and_its_extremes_are_the_screens():
+    """같은 판정을 쓰니 94.8(화면 '95')은 글·화면 목록에 함께 들고, 94.4 는 함께 빠진다.
+
+    2026-11-18: 글은 보이는 정수, 웹·TUI 는 실린 값으로 갈라 '출판/매체복제 95' 가 글에만 실렸다(P1).
+    """
+    from sectorflow.tui import flow_view as FV
+    P = fixture_payload()
+    secs = P["today"]["sectors"]["전체"]
+    secs["금융"]["inst"]["pct"], secs["보험"]["inst"]["pct"] = 94.8, 94.4
+    assert _x(P) == {}
+    F = dg.collect(P)
+    hi = [f"{n} {q}" for n, q, _d in F["sectors"][0]["hi"]]
+    assert hi == FV.today_extremes(P, "전체", "inst")[0] == ["유통 99", "반도체 97", "금융 95"]
+
+
+def test_x_layer_catches_a_digest_that_says_something_else():
+    """글이 극단·순위·가장 큰 주체를 따로 정하면(또는 글자가 틀어지면) X 층이 잡는다 — 칸마다 따로."""
+    P = fixture_payload()
+    F, text, _pages = dg.build(P)
+    assert not any(vr.digest_mismatches(P, F, text).values())
+    cases = {
+        "extreme": text.replace("- 기관 상단: 유통 99 · 반도체 97", "- 기관 상단: 유통 99 · 반도체 97 · 금융 95"),
+        "rank": text.replace("  상위: 반도체 +1,200(97) · 금융 +800(90)", "  상위: 금융 +800(90) · 반도체 +1,200(97)"),
+        "net": text.replace("기관 +2,500(88)", "기관 +2,501(88)"),
+        "summary": text.replace("- 외국인 7일 연속 순매도", "- 외국인 6일 연속 순매도"),
+    }
+    for key, bad in cases.items():
+        assert bad != text, key
+        assert vr.digest_mismatches(P, F, bad)[key], key
+    G = json.loads(json.dumps(F))
+    G["dominant"] = "inst"
+    assert vr.digest_mismatches(P, G, text)["dominant"]
+    G = json.loads(json.dumps(F))
+    G["sectors"][0]["hi"].append(["금융", 95, None])
+    assert vr.digest_mismatches(P, G, text)["extreme"]
+
+
+def test_dominant_actor_tie_is_the_same_in_the_summary_and_the_digest_lines():
+    """|금액| 이 같은 두 주체 — 요약 문장의 '가장 큰 주체' 와 상·하위 머리의 '최대 순매매 주체' 가 같은 주체다(P6).
+
+    예전 글은 요약은 ``summary.dominant``(같으면 키가 큰 쪽), 상·하위·연속 줄은 자기 규칙(앞선 쪽)이라 한 글에서 갈렸다.
+    """
+    P = fixture_payload()
+    net = P["today"]["market"]["전체"]["net"]
+    assert net["forgn"]["v"] == -4200.5
+    net["indiv"]["v"] = 4200.5                 # 외국인과 같은 |금액| — 예전 글은 앞선 외국인, 요약은 개인
+    F = dg.collect(P)
+    from sectorflow.summary import dominant
+    assert F["dominant"] == dominant(net) == "indiv"
+    assert F["summary"][0].startswith("개인 ")
+    assert [s["actor"] for s in F["sectors"] if s["dominant"]] == ["indiv"]
+    assert _x(P) == {}
 
 
 def test_unclassified_bucket_is_not_listed_as_a_sector():
@@ -896,8 +961,9 @@ def test_no_comparison_still_states_the_default_window_and_top_n():
 
 def test_ties_rank_by_sector_name_whatever_the_payload_order():
     """같은 금액이면 이름순 — 페이로드 순서에 달리면 같은 수치가 날마다 다른 글이 된다."""
+    from sectorflow.summary import sector_rank
     secs = {"하": _row(inst=(10.0, 50.0)), "가": _row(inst=(10.0, 50.0)), "나": _row(inst=(20.0, 50.0))}
-    assert [t[0] for t in dg._rank(secs, "inst")] == ["나", "가", "하"]
+    assert [t[0] for t in sector_rank({"today": {"sectors": {"전체": secs}}}, "전체", "inst")] == ["나", "가", "하"]
 
 
 # ── PNG 경로 — 브라우저 없이 `main` 의 사다리·실패 처리를 돈다(찍는 함수만 바꿔 끼운다). 실제 찍기는 위 Playwright 검사.

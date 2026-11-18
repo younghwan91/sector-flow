@@ -16,8 +16,8 @@ from datetime import date
 
 from sectorflow import summary as SUMMARY
 from sectorflow.basis import (  # noqa: F401 — RET_LABEL* 는 이 모듈 이름으로도 읽힌다(검사·앱)
-    BASIS_HELP, DATA_BASIS_SHORT, DEMO_MARK, NOT_TESTED_NOTE, RET_LABEL, RET_LABEL_PROV, RET_LABEL_PROV_SHORT, RET_LABEL_SHORT,
-    ret_label, rhu, status_label, truth_gap_label,
+    BASIS_HELP, DATA_BASIS_SHORT, DEMO_MARK, NOT_TESTED_NOTE, PCT_HI, PCT_LO, RET_LABEL, RET_LABEL_PROV, RET_LABEL_PROV_SHORT,
+    RET_LABEL_SHORT, pct_int, ret_label, rhu, status_label, truth_gap_label,
 )
 
 #: East Asian Width 가 'A'(Ambiguous) 인 글자를 **두 칸으로 센다**.
@@ -242,11 +242,6 @@ COL_INVTRT, COL_PENFND = "투신[억]", "연기금[억]"
 #: 평균 6.2개인데 종목행의 51% 가 +0(|순매수|<0.5억) 이다 — 어디까지가 "그 섹터를
 #: 움직인 종목" 인지 눈으로 끊어준다.
 CUM_CUT = 80.0
-
-
-def pct_int(p: float) -> int:
-    """백분위 표시값(정수) — :func:`rhu` 와 같은 규칙."""
-    return int(rhu(p))
 
 
 def fmt_amt(v) -> str:
@@ -1089,8 +1084,7 @@ TODAY_KO = (("inst", "기관"), ("invtrt", "투신"), ("penfnd_etc", "연기금"
 
 #: 시작 배너가 쓰는 창. 화면 기본 창(20일)과 같고, 반전 검사는 그 안의 최근 5일과 직전 15일을 견준다.
 BANNER_WIN = "20"
-#: 1년 백분위가 "극단" 인 문턱 — 위·아래 5%.
-PCT_HI, PCT_LO = 95.0, 5.0
+#: 1년 백분위가 "극단" 인 문턱(위·아래 5%)과 판정은 ``sectorflow.basis.PCT_HI``·``PCT_LO``·``pct_side`` 한 곳이다.
 
 
 def _block_rows(d: dict, win: str, market: str) -> list[dict]:
@@ -1310,13 +1304,8 @@ def unclassified_count(d: dict, markets: list[str]) -> int:
 
 
 def _today_rank(d: dict, market: str, actor: str) -> list[tuple[str, float, "float | None"]]:
-    """오늘 (섹터, 순매수, 1년%ile) — 금액 큰 순. 값이 없는 섹터는 뺀다."""
-    secs = (((d.get("today") or {}).get("sectors") or {}).get(market)) or {}
-    out = [(s, (v.get(actor) or {}).get("v"), (v.get(actor) or {}).get("pct"))
-           for s, v in secs.items()]
-    out = [t for t in out if t[1] is not None]
-    out.sort(key=lambda t: (-t[1], t[0]))
-    return out
+    """오늘 (섹터, 순매수, 1년%ile) — 금액 큰 순. 값이 없는 섹터는 뺀다(``summary.sector_rank``, 다이제스트와 같은 순서)."""
+    return SUMMARY.sector_rank(d, market, actor)
 
 
 def today_extremes(d: dict, market: str, actor: str) -> tuple[list[str], list[str]]:
@@ -1324,27 +1313,10 @@ def today_extremes(d: dict, market: str, actor: str) -> tuple[list[str], list[st
 
     "오늘" 하루 값의 백분위다(페이로드 `today`, 오늘 포함 1년 일별 분포). 뒤의 표지는 그 극단에 며칠째인가 —
     `·신규`(오늘 처음)·`·3일째`(페이로드 ``today.day_change.extreme``). 옛 리포트엔 표지가 없다. 앞날을 말하지 않는다.
+    판정(보이는 정수 ≥95·≤5)과 순서는 ``summary.extreme_lists`` 하나다 — 다이제스트·웹 목록과 같은 섹터를 싣는다.
     """
-    runs = _extreme_runs(d, market, actor)
-    hi, lo = [], []
-    for s, _v, p in _today_rank(d, market, actor):
-        if p is None:
-            continue
-        if p >= PCT_HI:
-            hi.append((s, p))
-        elif p <= PCT_LO:
-            lo.append((s, p))
-    hi.sort(key=lambda t: (-t[1], t[0]))
-    lo.sort(key=lambda t: (t[1], t[0]))
-    return ([f"{s} {pct_int(p)}{_run_tag(runs['hi'].get(s))}" for s, p in hi],
-            [f"{s} {pct_int(p)}{_run_tag(runs['lo'].get(s))}" for s, p in lo])
-
-
-def _extreme_runs(d: dict, market: str, actor: str) -> dict:
-    """섹터 → 그 극단에 며칠째인가 — ``{"hi": {...}, "lo": {...}}``. 옛 리포트면 비었다."""
-    dc = ((d.get("today") or {}).get("day_change") or {}).get("extreme") or {}
-    e = (dc.get(market) or {}).get(actor) or {}
-    return {"hi": e.get("hi") or {}, "lo": e.get("lo") or {}}
+    hi, lo = SUMMARY.extreme_lists(d, market, actor)
+    return ([f"{s} {q}{_run_tag(n)}" for s, q, n in hi], [f"{s} {q}{_run_tag(n)}" for s, q, n in lo])
 
 
 def _run_tag(days) -> str:
@@ -1551,9 +1523,7 @@ def banner_actors(d: dict, market: str) -> list[tuple[str, str]]:
 def dominant_of(d: dict, market: str) -> "str | None":
     """그날의 최대 순매매 주체 — 그 시장 오늘 순매수 |금액| 이 가장 큰 4주체의 키. 값이 없으면 None."""
     net = ((((d.get("today") or {}).get("market") or {}).get(market) or {}).get("net")) or {}
-    live = [(abs((net.get(k) or {}).get("v") or 0.0), k) for k, _ko in DOMINANT_FROM
-            if (net.get(k) or {}).get("v") is not None]
-    return max(live)[1] if live else None
+    return SUMMARY.dominant(net)      # 같으면 키가 큰 쪽 — 다이제스트·요약 문장과 같은 규칙(한 곳)
 
 
 def day_stocks(d: dict, markets, actor: str) -> dict:

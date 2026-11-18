@@ -1,5 +1,5 @@
 # sw-flow · sw-ledger 화면 값의 수식 정의
-<!-- refs-verified-at: f99a8290b8e89d2a5b7d67cc96d2f2c0fd197b49 -->
+<!-- refs-verified-at: 4529b018463a74597eeaff713d0afce0ac687745 -->
 
 두 터미널 화면(`sw-flow`·`sw-ledger`)에 뜨는 모든 값의 정의를 코드 위치와 함께 모은 **정본**이다. 식마다 그것을
 계산하는 `파일:줄` 이 붙어 있고, 지표마다 **근거 수준**(앞날 수익률에 대해 검증된 것이 있나)을 적었다.
@@ -76,10 +76,10 @@
 ### 0.3 결측 규약
 
 두 앱이 공유하는 규칙: **뜻을 잃은 값은 고쳐 쓰지 않고 결측(`—`)으로 둔다. 결측은 정렬에서 어느 방향으로도 맨 뒤다** —
-값이 없는 것은 작은 값이 아니다. 구현 — `src/sectorflow/tui/flow_view.py:635-643`(섹터 정렬), `src/sectorflow/tui/flow_view.py:727-735`(종목 정렬),
+값이 없는 것은 작은 값이 아니다. 구현 — `src/sectorflow/tui/flow_view.py:625-633`(섹터 정렬), `src/sectorflow/tui/flow_view.py:717-725`(종목 정렬),
 `src/sectorflow/tui/ledger_view.py:654`(원장 정렬), `src/sectorflow/tui/ledger_view.py:734-735`(동시성 nan 순서).
 
-값이 없는 것은 작은 값이 아니다. 구현 — `src/sectorflow/tui/flow_view.py:673-681`(섹터 정렬), `src/sectorflow/tui/flow_view.py:765-773`(종목 정렬),
+값이 없는 것은 작은 값이 아니다. 구현 — `src/sectorflow/tui/flow_view.py:663-671`(섹터 정렬), `src/sectorflow/tui/flow_view.py:755-763`(종목 정렬),
 `src/sectorflow/tui/ledger_view.py:552`(원장 정렬), `src/sectorflow/tui/ledger_view.py:635-636`(동시성 nan 순서).
 
 적용되는 자리: 수익률이 없는 종목·날(§1.3), 최근집중의 작은 분모·작은 몫(§3.6), 잔여몫·최대일몫의
@@ -123,8 +123,8 @@ DB(`supply_demand`)는 주체별 순매매 **수량**만 준다. 금액은 그�
 
 **(1)** $\quad f^A_{c,i} = q^A_{c,i}\times|P_{c,i}|\,/\,10^8$ [억원]
 
-`scripts/sector_flow.py:110-111` · 종가 절댓값 `scripts/sector_flow.py:103`(DB 가 상하한 표시를 음수 부호로 싣는 경우가 있다) ·
-`EOK = 1e8` `scripts/sector_flow.py:47`. $P$ 는 `supply_demand.close`(키움, 원 종가)다.
+`scripts/sector_flow.py:108-109` · 종가 절댓값 `scripts/sector_flow.py:101`(DB 가 상하한 표시를 음수 부호로 싣는 경우가 있다) ·
+`EOK = 1e8` `scripts/sector_flow.py:45`. $P$ 는 `supply_demand.close`(키움, 원 종가)다.
 
 이 근사가 문서 전체의 하한이다. 참값은 주체별 체결가 합이고 VWAP 환산도 근사다. 방향과 상대 크기를 보는 값이지 원 단위 정확도를 주장하지 않는다
 (지표 검증 Q3b: 거래소는 안정, 코스닥은 48일 중 71% 만 상대차 중앙 5% 이내). 시장 합계는 `supply_demand` 에 있는 종목만의 합이다 — 우선주·리츠 등 139코드가 없다.
@@ -155,21 +155,21 @@ $V$ 는 통합 세션 VWAP 다. 5% 를 넘으면 화면·웹이 `종가·VWAP �
 
 **(2)** $\quad f^A_{m,s,i} = \sum_{c\in(m,s)} f^A_{c,i}$
 
-`scripts/sector_flow.py:290-299`. 섹터가 비어 있는 종목은 `(미분류)` 로 묶인다(`scripts/sector_flow.py:104`).
-기관 세부 6개(금투·보험·투신·은행·연기금·사모)도 같은 식으로 환산해 `detail` 에 싣는다(`scripts/sector_flow.py:112-113`, `scripts/sector_flow.py:301-310`).
-`natn`(국가)은 90일 내내 0 이라 뺐다(`scripts/sector_flow.py:62-64`).
+`scripts/sector_flow.py:288-297`. 섹터가 비어 있는 종목은 `(미분류)` 로 묶인다(`scripts/sector_flow.py:102`).
+기관 세부 6개(금투·보험·투신·은행·연기금·사모)도 같은 식으로 환산해 `detail` 에 싣는다(`scripts/sector_flow.py:110-111`, `scripts/sector_flow.py:299-308`).
+`natn`(국가)은 90일 내내 0 이라 뺐다(`scripts/sector_flow.py:60-62`).
 
 ### 1.2 거래대금
 
 **(3)** $\quad tv_{c,i} = Q_{c,i}\times|P_{c,i}|\,/\,10^8,\quad Q=$ `acc_trde_qty`
 
-`scripts/sector_flow.py:114`. `daily_bars.trade_value` 가 아니라 **수급 표의 누적 거래량 × 수급 표의 종가**다. 섹터 합은 (2)와 같다.
+`scripts/sector_flow.py:112`. `daily_bars.trade_value` 가 아니라 **수급 표의 누적 거래량 × 수급 표의 종가**다. 섹터 합은 (2)와 같다.
 
 ### 1.3 종목 일별 수익률 — 조정 종가 비
 
 **(4)** $\quad r_{c,i} = \left(\dfrac{P^{adj}_{c,i}}{P^{adj}_{c,\,\text{직전}}}-1\right)\times100$ [%]
 
-`adjusted_returns` `scripts/sector_flow.py:130-156`(직전 거래일 종가 확보 `scripts/sector_flow.py:145`, 비율 `scripts/sector_flow.py:153`).
+`adjusted_returns` `scripts/sector_flow.py:128-154`(직전 거래일 종가 확보 `scripts/sector_flow.py:143`, 비율 `scripts/sector_flow.py:151`).
 $P^{adj}$ 는 `daily_bars_adjusted.close`, "직전" 은 그 종목의 바로 앞 조정 종가 행이다. 분할·병합은 그 표에서 백조정돼 있다.
 
 - **그날 조정 종가가 없으면 $r=$ NaN** 이다 — 0 으로 채우지 않는다. 완전성 관문이 기준일 조정 종가 커버리지 97% 를
@@ -202,7 +202,7 @@ $P^{adj}$ 는 `daily_bars_adjusted.close`, "직전" 은 그 종목의 바로 앞
   ($1/(1+u_e/100)$ 배 안쪽, 최대 약 2배) 나온다. 값을 고치지 않는 이유: (a) 그 시점 상장주식수는 정말 옛 값이다 — 네이버도 그렇게 잰다(11-09 조회 MH에탄올·알파칩스·
   코나아이·이렘의 시총 ÷ 종가 = 옛 주식수). (b) `upd_rt` 는 유상·무상이 섞인 가격 배율이라 주식수 배율이 아니다 — 그 12건 중 4건이 10% 넘게 어긋났고(SK디앤디 예측 1.47배, 실제 3.4배)
   엘앤씨바이오 ×1.99(약 1.29조)는 네이버 7,345억과 멀다. 표지 조건: 권리락 $u_e\le-10$%, 100일 안, 기준일 주식수 < 직전 주식수 × 1.05. 페이로드 `names[c]["cap_pending"]`,
-  화면은 종목 칸의 `!`(`CAP_PENDING_MARK` `src/sectorflow/tui/flow_view.py:287`)와 섹터 글(`cap_pending_note`). 섹터 시총 $C_s$ 도 그 종목만큼 작다. 검증기 F 층이 DB 에서 다시 고른다.
+  화면은 종목 칸의 `!`(`CAP_PENDING_MARK` `src/sectorflow/tui/flow_view.py:277`)와 섹터 글(`cap_pending_note`). 섹터 시총 $C_s$ 도 그 종목만큼 작다. 검증기 F 층이 DB 에서 다시 고른다.
 - 가격이나 주식수가 없으면 NaN. 주식수 0 이하도 NaN(`src/sectorflow/storage.py:464`).
 
 세 가지 시총이 다른 용도로 쓰인다. 섞지 않는다.
@@ -213,8 +213,8 @@ $P^{adj}$ 는 `daily_bars_adjusted.close`, "직전" 은 그 종목의 바로 앞
 | $C_c$ (종목 시총) | 페이로드 기준일의 그 종목 시총 | 시총대비·시총 열(§3.8) |
 | $C_{c,i-1}$ (전일 시총) | 종목별 일별 시총의 1일 지연 | 섹터 수익률의 가중치(§2.6) |
 
-`sector_cap` `scripts/sector_flow.py:217-235` · `attach_daily_cap` `scripts/sector_flow.py:159-171`(`cap_lag` `scripts/sector_flow.py:170`) ·
-페이로드 `cap` `scripts/sector_flow.py:312-314`(`caps`) · `names[c]["cap"]` `scripts/sector_flow.py:339`.
+`sector_cap` `scripts/sector_flow.py:215-233` · `attach_daily_cap` `scripts/sector_flow.py:157-169`(`cap_lag` `scripts/sector_flow.py:168`) ·
+페이로드 `cap` `scripts/sector_flow.py:310-312`(`caps`) · `names[c]["cap"]` `scripts/sector_flow.py:339`.
 블록은 언제나 페이로드 기준일에서 끝나므로(§2.1) $C_s$ 는 곧 **구간말** 시총이다.
 
 전일 시총으로 가중하는 이유: 같은 날 거래대금이나 같은 날 시총으로 가중하면 그날 급등한 종목이 가중치도 커서 섹터 수익률이
@@ -224,8 +224,8 @@ $P^{adj}$ 는 `daily_bars_adjusted.close`, "직전" 은 그 종목의 바로 앞
 
 **(6)** `read_supply_demand(..., sources=("kiwoom",), allow_individual_survivorship=True, require_delisted=False)`
 
-`scripts/sector_flow.py:91-99`. 개인과 기관 세부는 키움에만 있다. 소스를 안 좁히면 지표마다 유니버스가 달라진다. 대가는
-생존편향이다(§7.4). 종목 메타는 `stocks`(현재 상장 마스터)와 inner join 한다(`scripts/sector_flow.py:101-102`).
+`scripts/sector_flow.py:89-97`. 개인과 기관 세부는 키움에만 있다. 소스를 안 좁히면 지표마다 유니버스가 달라진다. 대가는
+생존편향이다(§7.4). 종목 메타는 `stocks`(현재 상장 마스터)와 inner join 한다(`scripts/sector_flow.py:99-100`).
 
 **유니버스는 보통주 마스터다.** `stocks` 는 `kind = 'A'` 만 담는다 — 우선주·리츠·인프라펀드 등은 `stocks`·`supply_demand`·`daily_bars`
 어디에도 없어 모든 화면과 시장 합계에서 빠진다. 2026-11-06 기준 139종목(거래소 137·코스닥 2), 시총 약 160조(삼성전자우 약 125조),
@@ -246,7 +246,7 @@ $P^{adj}$ 는 `daily_bars_adjusted.close`, "직전" 은 그 종목의 바로 앞
 
 **(8)** $\quad \nu^{W}_c[\mathrm{ret}] = \Big(\prod_{i=N-W}^{N-1}(1+r_{c,i}/100)-1\Big)\times100$ [%]
 
-`scripts/sector_flow.py:352-371`(기하 누적 `scripts/sector_flow.py:365-366`) · `NAME_WINDOWS` `scripts/sector_flow.py:55`.
+`scripts/sector_flow.py:352-371`(기하 누적 `scripts/sector_flow.py:365-366`) · `NAME_WINDOWS` `scripts/sector_flow.py:53`.
 **결측일($r$=NaN)은 1 배로 본다**(그날 0%). 조정 종가가 하루 비어도 다음 유효일의 수익률이 직전 유효 종가에서 재므로 구간
 누적은 보존된다. 그 구간에 한 번도 거래가 없으면 그 창의 키 자체가 없다 — 이것이 §2.13·§3.1 의 "그 구간에 거래된 종목" 이다.
 
@@ -284,16 +284,18 @@ $P^{adj}$ 는 `daily_bars_adjusted.close`, "직전" 은 그 종목의 바로 앞
 
 **(10)** $\quad F^A_s = \sum_{m\in M}\sum_{i=i_0}^{i_1} f^A_{m,s,i}$ [억원]
 
-블록 생성 `scripts/sector_numbers.py:134-140`(`agg` 의 `s()`) · 주체 투영 `src/sectorflow/tui/flow_view.py:527-530` · 열 `src/sectorflow/tui/flow_view.py:2243`.
-부호를 명시하고 천단위 구분을 넣은 정수로 적는다(`def fmt_amt` `src/sectorflow/tui/flow_view.py:252-255`).
+블록 생성 `scripts/sector_numbers.py:134-140`(`agg` 의 `s()`) · 주체 투영 `src/sectorflow/tui/flow_view.py:517-520` · 열 `src/sectorflow/tui/flow_view.py:2183`.
+부호를 명시하고 천단위 구분을 넣은 정수로 적는다(`def fmt_amt` `src/sectorflow/tui/flow_view.py:247-250`).
 
 ### 2.3 가속[%p]
 
 **(11)** $\quad a^A_s = F^A_s / C_s \times 100$ [%p]
 
-블록 `scripts/sector_numbers.py:170` · 화면 `src/sectorflow/tui/flow_view.py:531` · 열 `src/sectorflow/tui/flow_view.py:2242`.
+블록 `scripts/sector_numbers.py:170` · 화면 `src/sectorflow/tui/flow_view.py:521` · 열 `src/sectorflow/tui/flow_view.py:2182`.
 금액만 보면 대형 섹터가 늘 이기므로 "어디로 쏠렸나" 는 규모로 정규화된 이쪽이 정직하다. 그래서 **기본 정렬이 가속**이다
 (`SORTS` 첫 항목 `src/sectorflow/tui/flow_view.py:161`(`SORTS`)). $C_s=0$ 이면 블록과 화면 모두 결측이고, 그런 행은 `absent_row` 로 빠진다.
+웹 뷰어도 같다 — 시총이 없는 (시장, 섹터)의 %p(랭킹 막대·전체 표 '기관 가속'·히트맵·누적 추이)는 0 이 아니라 결측(`—`)이고 정렬에서 맨 뒤다
+(`shareOf` `scripts/templates/sector_flow.html`). 예전 뷰어는 0 을 내 `+0.00%p` 가 조용한 섹터처럼 랭킹 가운데 끼었다. 검증기 W 층의 뷰어 기대값도 결측이다.
 
 이 "가속" 과 풀림(ẍ, §2.10)은 이름만 같다. 여기 $a$ 는 자금 축의 0차 비율이고 ẍ 는 가격 갭의 2차 시간미분이다.
 
@@ -306,7 +308,7 @@ $P^{adj}$ 는 `daily_bars_adjusted.close`, "직전" 은 그 종목의 바로 앞
 **(13)** $\quad \text{pct} = 100\times\dfrac{\#\{j: S_j<S_{\text{last}}\} + \tfrac12\big(\#\{j:S_j=S_{\text{last}}\}-1\big)}{|S|-1}$
 
 `rolling_pct` `scripts/sector_numbers.py:77-101` · `PCT_LOOKBACK = 260` `scripts/sector_numbers.py:61` · 주체별로 따로 싣는다
-`scripts/sector_numbers.py:323-331` · 열 `src/sectorflow/tui/flow_view.py:2245-2246`. 동률은 중간순위다. $W>n$ 이거나 $|S|<2$ 면 결측.
+`scripts/sector_numbers.py:323-331` · 열 `src/sectorflow/tui/flow_view.py:2185-2186`. 동률은 중간순위다. $W>n$ 이거나 $|S|<2$ 면 결측.
 z-점수를 안 쓰는 이유: 창이 겹쳐 자기상관이 크고 260일 안의 비겹침 20일 창은 13개뿐이다.
 
 ### 2.5 추이[8]
@@ -321,7 +323,7 @@ z-점수를 안 쓰는 이유: 창이 겹쳐 자기상관이 크고 260일 안�
 
 **(15)** $\quad c_j=\sum_{u\le j} g_u,\quad \ell_j=\min\!\big(3,\lfloor 3(c_j-lo)/(hi-lo)+0.5\rfloor\big),\quad lo=\min(0,c),\ hi=\max(0,c)$
 
-`spark` `src/sectorflow/tui/flow_view.py:2167-2194` · 열 `src/sectorflow/tui/flow_view.py:2247`. 오른쪽으로 올라가면 계속 유입,
+`spark` `src/sectorflow/tui/flow_view.py:2107-2134` · 열 `src/sectorflow/tui/flow_view.py:2187`. 오른쪽으로 올라가면 계속 유입,
 내려가면 유출, 평평하면 멈춤. 높이는 그 행 안에서만 정규화하므로 행끼리 비교되지 않는다. 조각이 8개보다 적으면 왼쪽을 `⠀`
 로 비운다. $hi=lo$ 면 전 칸이 최저 단계다.
 
@@ -333,8 +335,8 @@ z-점수를 안 쓰는 이유: 창이 겹쳐 자기상관이 크고 260일 안�
 
 **(17)** $\quad \Delta v_s = \Big(\prod_{i=i_0}^{i_1}\big(1+\bar r_{s,i}/100\big)-1\Big)\times100$ [%], 여기서 $\bar r_{s,i}$ 는 고른 시장들의 가중합 $\sum_m w_{m,s,i}\bar r_{m,s,i}/\sum_m w_{m,s,i}$
 
-일별 가중평균 `scripts/sector_flow.py:375-384`(유효 종목만 `scripts/sector_flow.py:381`) · 구간 기하누적 `scripts/sector_numbers.py:149-162` ·
-열 `src/sectorflow/tui/flow_view.py:2248`.
+일별 가중평균 `scripts/sector_flow.py:377-386`(유효 종목만 `scripts/sector_flow.py:383`) · 구간 기하누적 `scripts/sector_numbers.py:149-162` ·
+열 `src/sectorflow/tui/flow_view.py:2188`.
 
 - **수익률이 없는 종목은 분자에서도 가중치에서도 뺀다.** 남기면 평균이 0 쪽으로 끌린다.
 - 그날 유효 가중합이 0 이면 그날 기여는 0(1 배)이다. 구간 안에 한 번도 유효하지 않았으면 $\Delta v$ 는 결측이다(`scripts/sector_numbers.py:172`).
@@ -352,7 +354,7 @@ z-점수를 안 쓰는 이유: 창이 겹쳐 자기상관이 크고 260일 안�
 **(20)** $\quad t=k/\mathrm{se}(k),\quad \mathrm{se}(k)=\sqrt{\dfrac{\mathrm{SSE}/(n-2)}{\sum_{\mathcal U}(\alpha_s-\bar\alpha)^2}},\quad n=|\mathcal U|$
 
 `scripts/sector_numbers.py:358-373`(표본 `scripts/sector_numbers.py:358`) · 블록에 저장 `scripts/sector_numbers.py:473-477`(k·b 소수 3자리, t 2자리) ·
-헤더 `block_meta` `src/sectorflow/tui/flow_view.py:684-696`.
+헤더 `block_meta` `src/sectorflow/tui/flow_view.py:674-686`.
 
 - **얇은 섹터(종목 10개 미만, §2.13)는 적합에서 뺀다.** 한두 종목의 등락이 섹터 수익률이 되는 점이 큰 지렛대를 가져 k 의 부호를
   바꾼 날이 있었다(2026-10-15 20|전체: 포함 −0.59 · 제외 +14.42).
@@ -370,7 +372,7 @@ $k$ 를 상수처럼 읽지 마라. 블록마다 다시 적합되고 창이 바�
 
 **(22)** $\quad x_s = \widehat{\Delta v}_s - \Delta v_s$ [%p]
 
-`scripts/sector_numbers.py:379` · 열 `src/sectorflow/tui/flow_view.py:2254`(소수 1자리). $x>0$ 은 "그 유입이면 갔어야 할 만큼에서 덜 간 폭",
+`scripts/sector_numbers.py:379` · 열 `src/sectorflow/tui/flow_view.py:2194`(소수 1자리). $x>0$ 은 "그 유입이면 갔어야 할 만큼에서 덜 간 폭",
 $x<0$ 은 "이미 더 갔다" 다. OLS 잔차의 부호 반전이라 **적합 표본 $\mathcal U$ 안에서** 합이 0 이다. 얇은 섹터에도 같은 직선으로
 $x$ 를 내지만 그 값은 $\sum=0$ 에 들지 않는다. $\Delta v$ 나 $C$ 가 없는 섹터는 $\alpha,\widehat{\Delta v},x,U$ 가 전부 결측이다
 (`scripts/sector_numbers.py:375`, `scripts/sector_numbers.py:399`).
@@ -390,7 +392,7 @@ $x$ 를 내지만 그 값은 $\sum=0$ 에 들지 않는다. $\Delta v$ 나 $C$ �
 
 **(26)** $\quad \dot x=-\dfrac{x_3-x_1}{2\Delta}$ [%p/일], $\quad \ddot x=-\dfrac{x_3-2x_2+x_1}{\Delta^2}$ [%p/일²]
 
-`release` `scripts/sector_numbers.py:228-260` · 대입 `scripts/sector_numbers.py:401-409` · 열 `src/sectorflow/tui/flow_view.py:2255`(소수 3자리).
+`release` `scripts/sector_numbers.py:228-260` · 대입 `scripts/sector_numbers.py:401-409` · 열 `src/sectorflow/tui/flow_view.py:2195`(소수 3자리).
 $\dot x$ 는 페이로드에만 있고 표에 열이 없다(`SORTS` 에도 없다).
 
 - 조각별 $\alpha^{(p)}$ 의 **분모는 조각 끝이 아니라 블록 기간말 섹터 시총 $C_s$** 다.
@@ -407,7 +409,7 @@ $\dot x$ 는 페이로드에만 있고 표에 열이 없다(`SORTS` 에도 없�
 
 **(28)** $\quad \dfrac{dW}{dt}=\dfrac{W_{\text{후}}-W_{\text{전}}}{\max(1,\,i_1-\text{mid})}$ [%p/일]
 
-`power` `scripts/sector_numbers.py:206-225` · 대입 `scripts/sector_numbers.py:400` · 열 `src/sectorflow/tui/flow_view.py:2265`.
+`power` `scripts/sector_numbers.py:206-225` · 대입 `scripts/sector_numbers.py:400` · 열 `src/sectorflow/tui/flow_view.py:2205`.
 $\alpha$ 의 분모는 역시 $C_s$ 다. 반쪽에서 $\Delta v$ 나 $C$ 가 없거나 반쪽이 안 나오는 짧은 구간($\text{mid}\le i_0$)이면 결측.
 $k$ 를 쓰지 않으므로 5일 창에서도 나온다 — ẍ 와 다른 점이다.
 
@@ -422,7 +424,7 @@ $k$ 를 쓰지 않으므로 5일 창에서도 나온다 — ẍ 와 다른 점�
 **(31)** $\quad \mathrm{pass}_s=[\,G_s\ne\varnothing\,]$ → 표의 `*` 마커(페이로드 키 `G_pass`)
 
 관문 `scripts/sector_numbers.py:433-436` · 단독 통과 0.5 `scripts/sector_numbers.py:437-442` · 순위(오름차순, 0-기반, 동률은 중간순위)
-`scripts/sector_numbers.py:443-466` · `G_pass` `scripts/sector_numbers.py:467-471` · 마커 열 `src/sectorflow/tui/flow_view.py:2239-2241` ·
+`scripts/sector_numbers.py:443-466` · `G_pass` `scripts/sector_numbers.py:467-471` · 마커 열 `src/sectorflow/tui/flow_view.py:2179-2181` ·
 G 열 `_TABLE_COLS` (`src/sectorflow/tui/flow_view.py`). 열 이름은 2026-11-08 `선정` → `G` 로 되돌렸다 — 종목 층의
 `선정`(§3.9)과 설계가 같지 않은데(단독 후보·숨은 관문) 같은 이름을 쓰고 있었다. G·`*`·종합 G 는 `e` 로 켜는 탐색 모드에서만 보인다.
 
@@ -438,7 +440,7 @@ G 열 `_TABLE_COLS` (`src/sectorflow/tui/flow_view.py`). 열 이름은 2026-11-0
 **(32)** $\quad n_s=\#\{c:\ \text{sector}(c)=s\ \wedge\ \text{market}(c)\in M\ \wedge\ \nu^{W}_c\ne\varnothing\},\qquad \text{thin}_s=[\,n_s<10\,]$ → `~` 마커
 
 `names_count` `scripts/sector_numbers.py:269-291` · `MIN_NAMES = 10` `scripts/sector_numbers.py:266` · 창별로 다시 셈
-`scripts/sector_numbers.py:317-319` · 열 `src/sectorflow/tui/flow_view.py:2268` · 마커 `src/sectorflow/tui/flow_view.py:2239-2241`.
+`scripts/sector_numbers.py:317-319` · 열 `src/sectorflow/tui/flow_view.py:2208` · 마커 `src/sectorflow/tui/flow_view.py:2179-2181`.
 
 「상장 종목 수」가 아니라 「그 구간에 거래된 종목 수」다. `Enter` 로 여는 목록의 길이와 정확히 같다. `thin` 은 k 적합(§2.7)과
 G 관문(§2.12) 둘 다에서 쓰인다. 얇은 행은 회색으로 그린다. 마커를 글자로 두는 이유는 무색 터미널·색맹·`--dump` 에서 색이 사라지기 때문이다.
@@ -447,8 +449,8 @@ G 관문(§2.12) 둘 다에서 쓰인다. 얇은 행은 회색으로 그린다. 
 
 **(33)** $\quad \text{buy}=\text{상위 3}\{c: \phi_c>0\},\quad \text{sell}=\text{하위 3}\{c:\phi_c<0\},\quad \phi_c=\nu^{W'}_c[A]$
 
-`State._leads` `src/sectorflow/tui/flow_view.py:541-571`(부호가 맞는 종목만 `src/sectorflow/tui/flow_view.py:567-568`) · 표의 열(1개씩)
-`src/sectorflow/tui/flow_view.py:2261-2262` · 상세 패널(3개씩) `src/sectorflow/tui/flow_view.py:2545-2552`(`def side`). $A$ 는 **고른 주체**, $W'$ 는
+`State._leads` `src/sectorflow/tui/flow_view.py:531-561`(부호가 맞는 종목만 `src/sectorflow/tui/flow_view.py:557-558`) · 표의 열(1개씩)
+`src/sectorflow/tui/flow_view.py:2201-2202` · 상세 패널(3개씩) `src/sectorflow/tui/flow_view.py:2515-2522`(`def side`). $A$ 는 **고른 주체**, $W'$ 는
 현재 창(종합이면 20일)이다. 페이로드의 `top`(`drivers`, 기관 전용)은 화면이 쓰지 않는다. 정렬이 시총 대비가 아니라 금액인 이유는
 섹터 합계가 금액의 합이라 기여도가 금액으로만 정의되기 때문이다.
 
@@ -456,7 +458,7 @@ G 관문(§2.12) 둘 다에서 쓰인다. 얇은 행은 회색으로 그린다. 
 
 **(34)** $\quad T_s=\sum_{c\in(M,s)}\big(\nu^{5}_c[\mathrm{invtrt}]+\nu^{5}_c[\mathrm{penfnd}]\big)$ [억원]
 
-`trusted_recent` `src/sectorflow/tui/flow_view.py:886-927` · 열 `src/sectorflow/tui/flow_view.py:2266-2267`. 고른 창·주체와 무관하게
+`trusted_recent` `src/sectorflow/tui/flow_view.py:876-917` · 열 `src/sectorflow/tui/flow_view.py:2206-2207`. 고른 창·주체와 무관하게
 **최근 5일**의 투신+연기금이다. 옆 열 `투신+연기금[억]` 은 같은 합의 **이 창** 값($\nu^{W}$, 1일 창이면 그날, `trusted_window`).
 표의 임펄스는 현재 창 누적이라 "아직도 들어오나" 를 말하지 않는다. 기본 표 = 가속·임펄스·1년%ile·추이·수익률·투신+연기금(5일·창)·종목수이고
 미실현·풀림가속·dW/dt·G 는 탐색 모드(`e`)에서만 선다. 좋다/나쁘다 부호는 붙이지
@@ -471,30 +473,30 @@ G 관문(§2.12) 둘 다에서 쓰인다. 얇은 행은 회색으로 그린다. 
 **(37)** $\quad \text{통과[구간]}=|\mathcal W_s|\,/\,|\mathcal W|$ (예 2/3)
 
 `scripts/sector_numbers.py:484-517`(창 고르기 `scripts/sector_numbers.py:488-491`, 평균 `scripts/sector_numbers.py:509-510`) ·
-열 구성 `table_cols` `src/sectorflow/tui/flow_view.py:2274-2293`(통과 `src/sectorflow/tui/flow_view.py:2290-2291`) · 창별 G `_per_win`
-`src/sectorflow/tui/flow_view.py:2266-2271`(`def _per_win`).
+열 구성 `table_cols` `src/sectorflow/tui/flow_view.py:2244-2263`(통과 `src/sectorflow/tui/flow_view.py:2230-2231`) · 창별 G `_per_win`
+`src/sectorflow/tui/flow_view.py:2236-2241`(`def _per_win`).
 
 - G 가 이제 관문 통과 섹터에만 있으므로 **종합 G 는 그 섹터가 통과한 창들만의 평균**이다. 한 창만 통과한 섹터가 세 창 모두
-  통과한 섹터보다 위에 올 수 있다(도움말 `src/sectorflow/tui/flow_view.py:3221` 이 그렇게 적는다).
+  통과한 섹터보다 위에 올 수 있다(도움말 `src/sectorflow/tui/flow_view.py:3161` 이 그렇게 적는다).
 - 그날 통과 섹터가 하나도 없는 창은 $\mathcal W$ 에서 빠진다. 5일 창은 ẍ 가 없어 늘 빠진다(§2.10). 남는 창이 2개 미만이면 종합이
-  없고 화면이 그 사유를 적는다(`src/sectorflow/tui/flow_view.py:648-652`(`def empty_reason`)). "20·60·120 세 창" 은 관측 결과이지 상수가 아니다.
+  없고 화면이 그 사유를 적는다(`src/sectorflow/tui/flow_view.py:638-642`(`def empty_reason`)). "20·60·120 세 창" 은 관측 결과이지 상수가 아니다.
 - 종합의 `*` 는 판정할 수 있었던 창(얇지 않고 a·x·ẍ 가 다 있다) **모두**에서 통과했을 때 붙는다(`G_pass` `scripts/sector_numbers.py:512`).
 - 종합에는 주체별 값과 정렬이 없다(`정렬없음[G 순]`, 페이로드 순서 = $G^{\text{종합}}$ 내림차순 `scripts/sector_numbers.py:516`).
-  견인주·종목 목록·4주체 줄은 대표 창 20일을 쓴다(`COMBINED_WIN` `src/sectorflow/tui/flow_view.py:626`).
+  견인주·종목 목록·4주체 줄은 대표 창 20일을 쓴다(`COMBINED_WIN` `src/sectorflow/tui/flow_view.py:621`).
 
 ### 2.17 헤더 · 주체 투영 · 정렬
 
-**헤더 두 줄** — `header_lines` `src/sectorflow/tui/flow_view.py:2094-2140`.
+**헤더 두 줄** — `header_lines` `src/sectorflow/tui/flow_view.py:2034-2080`.
 
 | 칩 | 내용 | 근거 |
 |---|---|---|
-| 날짜 + 상태 | `마감·확정` / `마감·확정기록없음`(창 밖 재구성) / `마감·잠정` / `장중·미확정`, 재구성이면 `·재구성` + `⚠ …` 경고(§5) | `status_chip` `src/sectorflow/tui/flow_view.py:2029-2034` |
-| 구간[·] 시장[·] 주체[·] | 현재 선택 | `src/sectorflow/tui/flow_view.py:2126-2127` |
-| 정렬[열▼/▲] / 정렬없음[G 순] | 종합에는 정렬이 없다 | `sortable` `src/sectorflow/tui/flow_view.py:577-591`, `src/sectorflow/tui/flow_view.py:2114-2126` |
-| 날짜 ~ 날짜 · k=… (t=…) | 블록 구간과 그날 적합한 회귀(k·t 는 탐색 모드에서만). 종합이면 `구간 20·60·120일 등가중` | `block_meta` `src/sectorflow/tui/flow_view.py:683-695` |
-| ※ 미실현·풀림가속·dW/dt·G 는 기관 기준 | 탐색 모드에서 주체가 기관이 아니고 종합이 아닐 때 | `src/sectorflow/tui/flow_view.py:2130-2132` |
+| 날짜 + 상태 | `마감·확정` / `마감·확정기록없음`(창 밖 재구성) / `마감·잠정` / `장중·미확정`, 재구성이면 `·재구성` + `⚠ …` 경고(§5) | `status_chip` `src/sectorflow/tui/flow_view.py:1999-2004` |
+| 구간[·] 시장[·] 주체[·] | 현재 선택 | `src/sectorflow/tui/flow_view.py:2066-2067` |
+| 정렬[열▼/▲] / 정렬없음[G 순] | 종합에는 정렬이 없다 | `sortable` `src/sectorflow/tui/flow_view.py:567-581`, `src/sectorflow/tui/flow_view.py:2054-2066` |
+| 날짜 ~ 날짜 · k=… (t=…) | 블록 구간과 그날 적합한 회귀(k·t 는 탐색 모드에서만). 종합이면 `구간 20·60·120일 등가중` | `block_meta` `src/sectorflow/tui/flow_view.py:673-685` |
+| ※ 미실현·풀림가속·dW/dt·G 는 기관 기준 | 탐색 모드에서 주체가 기관이 아니고 종합이 아닐 때 | `src/sectorflow/tui/flow_view.py:2070-2072` |
 
-**주체 투영** — 주체를 바꾸면 임펄스·가속·1년%ile·추이·견인주가 그 주체 값으로 바뀐다(`_project` `src/sectorflow/tui/flow_view.py:515-539`).
+**주체 투영** — 주체를 바꾸면 임펄스·가속·1년%ile·추이·견인주가 그 주체 값으로 바뀐다(`_project` `src/sectorflow/tui/flow_view.py:505-529`).
 바뀌지 않는 것은 $k\cdot b$ 에서 파생된 값이다.
 
 **(38)** `INST_ONLY = ("exp", "x", "U", "P", "xdot", "xddot", "G", "G_pass")` — `src/sectorflow/tui/flow_view.py:139`(`INST_ONLY`)
@@ -502,7 +504,7 @@ G 관문(§2.12) 둘 다에서 쓰인다. 얇은 행은 회색으로 그린다. 
 $k$ 는 (18)에서 기관 유입에 회귀한 것이라 다른 주체로 재계산할 수 없다. 지우지 않고 남기되 헤더가 출처를 밝힌다.
 
 **정렬 폴백** — 선택한 정렬 키가 그 블록에서 전멸이면(5일 창의 G·풀림) `accel → flow → ret` 순으로 대체하고 헤더에
-`※ 이 구간에 … 값이 없다` 를 적는다(`SORT_FALLBACK` `src/sectorflow/tui/flow_view.py:574`, `effective_sort` `src/sectorflow/tui/flow_view.py:593-606`).
+`※ 이 구간에 … 값이 없다` 를 적는다(`SORT_FALLBACK` `src/sectorflow/tui/flow_view.py:569`, `effective_sort` `src/sectorflow/tui/flow_view.py:583-596`).
 정렬 키 목록 `SORTS` `src/sectorflow/tui/flow_view.py:161-163` — 거래대금·시총은 열 없이 정렬 키로만 있다.
 
 ### 2.18 시작 요약(배너) — 오늘의 수급
@@ -518,7 +520,12 @@ $k$ 는 (18)에서 기관 유입에 회귀한 것이라 다른 주체로 재계�
 - **오늘 시장 순매수** — `today.market[시장].net[A]` 의 값과 1년%ile(§2.19). 4주체는 합 ≈ 0 이라 하나도 자르지 않는다(좁으면 두 줄).
 - **네이버 시장값과 차이 큼 칩** — 대조를 켠 리포트(기본 꺼짐)에서 §1.1 (2a) 의 $h_M$ 가 5 를 넘는 시장에만. **분봉 밖 거래 큼 칩** — 같은 절 정의의 종목이 있을 때. **종가·VWAP 환산 차 칩** — (2b) 가 `APPROX_GAP_WARN = 5` 를 넘는 시장·섹터에.
 - **상위·하위 3** — 오늘 섹터 순매수 $f^A_{s,N-1}$ 금액 순, 각자의 1년%ile.
-- **1년%ile 극단** — 오늘 값의 백분위 $p\ge95$ 또는 $\le5$(문턱 포함). 직전 리포트와 견주지 않는다 — 오늘 값이 1년 중 어디인지다.
+- **1년%ile 극단** — 오늘 값의 백분위의 **보이는 정수** $q=\lfloor p+0.5\rfloor$($p$ 는 실린 소수 1자리 값)가 $q\ge95$ 또는 $q\le5$(문턱 포함).
+  직전 리포트와 견주지 않는다 — 오늘 값이 1년 중 어디인지다. 판정은 한 곳(`pct_side` `src/sectorflow/basis.py`, 웹 JS `extSide` 사본)이고
+  TUI 극단 목록·웹 극단 카드·요약 '평소 범위'·히트맵 칸·다이제스트·며칠째 표지(§2.23)·잠정→확정 들고 남(`_extremes`)이 모두 이것을 쓴다.
+  화면은 정수만 적으니 판정도 그 정수로 한다 — 실린 값 94.8 은 화면에 '95' 로 적히고 ≥95 목록에 든다(2026-11-18 전에는 목록이
+  실린 값으로, 글·요약이 보이는 정수로 갈라 '출판/매체복제 95' 가 글에만 실렸다). 경계의 0.5 는 백분위 한 칸(260일에서 ≈0.38)과
+  비슷해 실린 값이 더 정확하지도 않다. 검증기 T 층이 보이는 정수로 다시 센 섹터 = 화면 목록인지 보고, X 층이 글의 목록을 같은 규칙으로 맞춘다.
 - **직전 리포트 대비** — `change.top[시장][A]` 의 `entered`·`exited`: 직전 거래일 리포트가 게시한 20일 순매수 순위의 상위 5 와
   오늘 상위 5 의 차집합. 직전 리포트가 없으면 `change_reason`.
 - **부호 반전** — 전 섹터에서 $\mathrm{sign}(J^{20}-J^{5})\ne\mathrm{sign}(J^{5})$ 인 것(`reversal_flags`, 선택 주체). 눌림인지
@@ -688,7 +695,8 @@ $A$ 별 `섹터 값 − 두 종목 값`(`rest`, `concentration_block` `scripts/s
 - **같은 길이 횟수** `streaks.market[m][A].times`(§2.22 에 더함) — 최근 $n$ 일 안에서 $L_u=L_{N-1}$ 이고 $\sigma_u=\sigma_{N-1}$ 인 날 수(오늘 포함).
   연속 하나는 길이 $L_{N-1}$ 을 한 번만 지나므로 "같은 방향 $L$일 이상 연속 $k$번" 이다. 요약은 가장 긴 시장 연속(2일 이상, 같으면 기관·투신+연기금·외국인·개인
   순)만 적는다.
-- **가장 큰 주체** = 그 시장 오늘 |순매수| 가 가장 큰 4주체(§2.18 최대 순매매 주체와 같다). **어제와 바뀐 섹터** = §2.23 `flips[m]["inst"]`.
+- **가장 큰 주체** = 그 시장 오늘 |순매수| 가 가장 큰 4주체(§2.18 최대 순매매 주체와 같다). |순매수| 가 같으면 키 이름이 큰 쪽(`dominant`
+  `src/sectorflow/summary.py` — TUI·다이제스트가 같은 함수를 부른다). **어제와 바뀐 섹터** = §2.23 `flips[m]["inst"]`.
 - **최근 20일** `today.recent.sectors[m][s][A]` — 섹터 일별 순매수의 마지막 20일($A\in\{$기관, 투신+연기금, 외국인$\}$). 섹터를 누르면 그 누적을
   작은 선으로 그린다. 섹터 20일 수급은 검정했고 관계가 확인되지 않았다([앞날 증거 없음]) — 방향 단서가 아니다.
 
@@ -704,22 +712,22 @@ $A$ 별 `섹터 값 − 두 종목 값`(`rest`, `concentration_block` `scripts/s
 
 **(39)** $\quad L=\{c:\ \text{sector}(c)=s^\star\ \wedge\ \text{market}(c)\in M\ \wedge\ \nu^{W'}_c\ne\varnothing\},\quad W'=\begin{cases}20 & \text{종합}\\ W & \text{그 밖}\end{cases}$
 
-`State.names` `src/sectorflow/tui/flow_view.py:705-775`(`def names`). $|L|$ 은 (32)의 $n_s$ 와 정확히 같다. 제목 줄이 `섹터 · 종목 N개 · 20일 기준 · 정렬[…]`
-형태로 창을 밝힌다(`src/sectorflow/tui/flow_view.py:2708-2710`). 투신·연기금 키가 아예 없는 옛 페이로드면 제목에 `옛 리포트(새 열 없음)` 를
-붙인다 — 값이 0 인지로 판정하면 조용한 날에 거짓말을 한다(`legacy_names` `src/sectorflow/tui/flow_view.py:994-1010`).
+`State.names` `src/sectorflow/tui/flow_view.py:695-765`(`def names`). $|L|$ 은 (32)의 $n_s$ 와 정확히 같다. 제목 줄이 `섹터 · 종목 N개 · 20일 기준 · 정렬[…]`
+형태로 창을 밝힌다(`src/sectorflow/tui/flow_view.py:2648-2650`). 투신·연기금 키가 아예 없는 옛 페이로드면 제목에 `옛 리포트(새 열 없음)` 를
+붙인다 — 값이 0 인지로 판정하면 조용한 날에 거짓말을 한다(`legacy_names` `src/sectorflow/tui/flow_view.py:984-1000`).
 
 ### 3.2 순매수[억]
 
 **(40)** $\quad \phi_c=\nu^{W'}_c[A]$ [억원]
 
-`src/sectorflow/tui/flow_view.py:727` · 열 `src/sectorflow/tui/flow_view.py:2402`. 기본 정렬은 **절댓값** 순이고 역순은 부호 오름차순(가장 많이 판 쪽
-먼저)이다(`src/sectorflow/tui/flow_view.py:758-769`). 섹터를 움직인 건 산 쪽과 판 쪽 둘 다다.
+`src/sectorflow/tui/flow_view.py:717` · 열 `src/sectorflow/tui/flow_view.py:2342`. 기본 정렬은 **절댓값** 순이고 역순은 부호 오름차순(가장 많이 판 쪽
+먼저)이다(`src/sectorflow/tui/flow_view.py:748-759`). 섹터를 움직인 건 산 쪽과 판 쪽 둘 다다.
 
 ### 3.3 누적[%]과 `-` 마커
 
 **(41)** $\quad T=\sum_{c\in L}|\phi_c|,\quad \text{cum}_j=\dfrac{\sum_{u\le j}|\phi_{(u)}|}{T}\times100,\quad \text{cut}_j=[\text{cum}_j\ge80\ \wedge\ \forall u<j:\ \text{cum}_u<80]$
 
-`_attach_cum` `src/sectorflow/tui/flow_view.py:1053-1071` · `CUM_CUT = 80.0` `src/sectorflow/tui/flow_view.py:244` · 열 `src/sectorflow/tui/flow_view.py:2403-2405`.
+`_attach_cum` `src/sectorflow/tui/flow_view.py:1043-1061` · `CUM_CUT = 80.0` `src/sectorflow/tui/flow_view.py:244` · 열 `src/sectorflow/tui/flow_view.py:2343-2345`.
 **순매수 절댓값 정렬에서만** 채운다 — 다른 순서의 누적은 뜻 없는 톱니다. 마커는 80% 를 처음 넘긴 행 하나에, 행 안 1칸 열로 긋는다.
 실측: 전기/전자 386종목 중 7개가 80% 를 설명한다.
 
@@ -727,7 +735,7 @@ $A$ 별 `섹터 값 − 두 종목 값`(`rest`, `concentration_block` `scripts/s
 
 **(42)** $\quad \nu^{W'}_c[\mathrm{invtrt}],\quad \nu^{W'}_c[\mathrm{penfnd}]$
 
-`src/sectorflow/tui/flow_view.py:730` · 열 `src/sectorflow/tui/flow_view.py:2406-2407`. 선택 주체와 무관하게 늘 기관 세부다. 기관 총액이 같아도
+`src/sectorflow/tui/flow_view.py:720` · 열 `src/sectorflow/tui/flow_view.py:2346-2347`. 선택 주체와 무관하게 늘 기관 세부다. 기관 총액이 같아도
 투신·연기금이 채운 것과 금투(헤지·차익이 섞인 자기매매)가 채운 것은 다른 이야기다. 「기관 대비 몫 %」는 분모가 상쇄로 0 근처에
 가면 폭발해 버렸다. §1.5 때문에 두 열을 더해 기관 열을 검산하면 안 맞는다.
 
@@ -735,7 +743,7 @@ $A$ 별 `섹터 값 − 두 종목 값`(`rest`, `concentration_block` `scripts/s
 
 **(43)** $\quad \text{rrel}_c=\nu^{W'}_c[\mathrm{ret}]-\Delta v_{s^\star}$ [%p]
 
-`src/sectorflow/tui/flow_view.py:749-750` · 기준선 `_sector_ret` `src/sectorflow/tui/flow_view.py:1012-1029` · 열 `src/sectorflow/tui/flow_view.py:2408`.
+`src/sectorflow/tui/flow_view.py:739-740` · 기준선 `_sector_ret` `src/sectorflow/tui/flow_view.py:1002-1019` · 열 `src/sectorflow/tui/flow_view.py:2348`.
 기준선은 표의 `수익률[%]`(식 17)과 같은 값이다. 종합이면 20일 블록에서 꺼낸다. 섹터의 $x$ 를 종목에 내리지 않는다 — 그 $k,b$ 는 섹터
 횡단면에서 적합된 것이라 종목 위에서는 적합된 적이 없다.
 
@@ -743,36 +751,36 @@ $A$ 별 `섹터 값 − 두 종목 값`(`rest`, `concentration_block` `scripts/s
 
 **(44)** $\quad \text{conc}_c=\dfrac{\nu^{5}_c[A]}{\phi_c}\times100$ [%]
 
-`_conc` `src/sectorflow/tui/flow_view.py:1031-1051` · `CONC_WIN = "5"` `src/sectorflow/tui/flow_view.py:192` · 열 `src/sectorflow/tui/flow_view.py:2409`.
+`_conc` `src/sectorflow/tui/flow_view.py:1021-1041` · `CONC_WIN = "5"` `src/sectorflow/tui/flow_view.py:192` · 열 `src/sectorflow/tui/flow_view.py:2349`.
 분자는 늘 5일, 분모는 지금 보는 창이다. 20일 화면에서 ≈25 면 고르게 분산, ≈100 이면 최근 5일에 몰림, >100 이면 앞에서 팔다 방향을 튼 것,
 음수면 최근 5일이 구간 전체와 반대다.
 
 | 조건 | 처리 | 근거 |
 |---|---|---|
-| $W'=5$ · $W'=1$ | 결측(5일은 분자 = 분모라 늘 100, 1일은 분모가 분자보다 짧다) | `src/sectorflow/tui/flow_view.py:1048` |
+| $W'=5$ · $W'=1$ | 결측(5일은 분자 = 분모라 늘 100, 1일은 분모가 분자보다 짧다) | `src/sectorflow/tui/flow_view.py:1038` |
 | 분모 절댓값 < 1억 | 결측 — 0.1억 반올림 오차가 비율에 그대로 실린다 | `CONC_MIN_DEN` `src/sectorflow/tui/flow_view.py:200` |
-| 목록 전체 Σ절댓값(순매수) 중 그 줄의 몫 < 0.5% | 결측 — 볼 이유가 없는 줄 | `CONC_MIN_SHARE` `src/sectorflow/tui/flow_view.py:224`, `_gate_conc` `src/sectorflow/tui/flow_view.py:977-991` |
-| 절댓값 > 999 | `>999` / `<-999` 로 적는다 | `CONC_CAP` `src/sectorflow/tui/flow_view.py:227`, `fmt_conc` `src/sectorflow/tui/flow_view.py:259-267` |
+| 목록 전체 Σ절댓값(순매수) 중 그 줄의 몫 < 0.5% | 결측 — 볼 이유가 없는 줄 | `CONC_MIN_SHARE` `src/sectorflow/tui/flow_view.py:224`, `_gate_conc` `src/sectorflow/tui/flow_view.py:967-981` |
+| 절댓값 > 999 | `>999` / `<-999` 로 적는다 | `CONC_CAP` `src/sectorflow/tui/flow_view.py:227`, `fmt_conc` `src/sectorflow/tui/flow_view.py:249-257` |
 
 ### 3.7 참여율[%]
 
 **(45)** $\quad \text{part}_c=\phi_c\,/\,\nu^{W'}_c[tv]\times100$ [%]
 
-`src/sectorflow/tui/flow_view.py:736` · 열 `src/sectorflow/tui/flow_view.py:2420`. 거래대금이 0 이거나 순매수가 결측이면 결측. "그 거래의 몇 %가 한 방향이었나" 다.
+`src/sectorflow/tui/flow_view.py:726` · 열 `src/sectorflow/tui/flow_view.py:2360`. 거래대금이 0 이거나 순매수가 결측이면 결측. "그 거래의 몇 %가 한 방향이었나" 다.
 비율이라 유동성을 못 말하므로 거래대금과 짝이다 — 폭이 모자라 거래대금이 떨어지면 참여율도 같이 뺀다(`COL_PAIRS`
-`src/sectorflow/tui/flow_view.py:2445`(`COL_PAIRS`), `fit_names` `src/sectorflow/tui/flow_view.py:2448-2458`).
+`src/sectorflow/tui/flow_view.py:2415`(`COL_PAIRS`), `fit_names` `src/sectorflow/tui/flow_view.py:2418-2428`).
 
 ### 3.8 시총대비[%p] · 시총[억] · 거래대금[억]
 
 **(46)** $\quad a_c=\phi_c/C_c\times100$ [%p], $\quad C_c=\mathrm{cap}_c$, $\quad tv_c=\nu^{W'}_c[tv]$
 
-`src/sectorflow/tui/flow_view.py:737` · 열 `src/sectorflow/tui/flow_view.py:2421-2426`. 시총이 없으면 결측. $C_c$ 는 식 (5)의 기준일 값이다.
+`src/sectorflow/tui/flow_view.py:727` · 열 `src/sectorflow/tui/flow_view.py:2361-2366`. 시총이 없으면 결측. $C_c$ 는 식 (5)의 기준일 값이다.
 시총대비는 섹터를 고른 뒤에는 대체로 작은 종목을 올리는 재정렬이라 열 순서 뒤쪽에 있다. `시총[억]`·`거래대금[억]` 은 섹터 표에서는
 정렬 키(섹터 합계)이고 드릴다운에서는 종목 값이다. 칸 끝의 `!` 는 권리락 뒤 신주 상장 전이라는 표지다(§1.4) — 그 종목은 시총이 작게, 시총대비가 크게 나온다.
 
 ### 3.9 선정[0~1](종목)
 
-섹터 표 G 의 "관문 + 순위 평균" 구조를 종목 층에 옮긴 것이다(`_attach_pick` `src/sectorflow/tui/flow_view.py:790-874`).
+섹터 표 G 의 "관문 + 순위 평균" 구조를 종목 층에 옮긴 것이다(`_attach_pick` `src/sectorflow/tui/flow_view.py:780-864`).
 
 **(47)** 후보 = $|\phi|$ 내림차순으로 훑어 **누적 80% 를 처음 넘긴 행까지** 중에서
 
@@ -780,8 +788,8 @@ $\quad \phi_c>0\ \wedge\ \text{invtrt}_c\ge0\ \wedge\ \text{penfnd}_c\ge0\ \wedg
 
 **(48)** $\quad \text{pick}_c=\tfrac14\big(R(\text{invtrt}+\text{penfnd})+R(\text{conc})+R(-\text{rrel})+R(\text{part})\big)$, 후보가 2개 이상일 때만
 
-후보 경계 `src/sectorflow/tui/flow_view.py:829-847` · `PICK_MIN_TV = 100.0` `src/sectorflow/tui/flow_view.py:788` · 후보 2개 미만이면 전부 결측
-`src/sectorflow/tui/flow_view.py:848-849` · 점수 `src/sectorflow/tui/flow_view.py:869-874` · 열 `src/sectorflow/tui/flow_view.py:2400-2401`.
+후보 경계 `src/sectorflow/tui/flow_view.py:819-837` · `PICK_MIN_TV = 100.0` `src/sectorflow/tui/flow_view.py:783` · 후보 2개 미만이면 전부 결측
+`src/sectorflow/tui/flow_view.py:838-839` · 점수 `src/sectorflow/tui/flow_view.py:859-864` · 열 `src/sectorflow/tui/flow_view.py:2340-2341`.
 순위 $R$ 은 (30)과 같은 중간순위 $[0,1]$ 정규화다.
 
 - 모집단 경계는 화면 정렬과 무관하게 $|\phi|$ 순서를 다시 만들어 정한다 — 선정점수로 정렬해도 모집단이 안 사라지게.
@@ -791,15 +799,15 @@ $\quad \phi_c>0\ \wedge\ \text{invtrt}_c\ge0\ \wedge\ \text{penfnd}_c\ge0\ \wedg
 
 ### 3.10 상세 패널
 
-**섹터 표에서** — 제목(`섹터 · 종목 N개 · Enter 로 전체`), 4주체 줄, 순매수/순매도 상위 3개(`detail_lines` `src/sectorflow/tui/flow_view.py:2537-2572`).
+**섹터 표에서** — 제목(`섹터 · 종목 N개 · Enter 로 전체`), 4주체 줄, 순매수/순매도 상위 3개(`detail_lines` `src/sectorflow/tui/flow_view.py:2477-2512`).
 
 **(49)** $\quad$ 4주체 줄 $=[\,F^{\text{개인}}_s,\ F^{\text{외국인}}_s,\ F^{\text{기관}}_s,\ F^{\text{기타법인}}_s\,]$ [억]
 
-`_actors_line` `src/sectorflow/tui/flow_view.py:2588-2619`. 화면이 한 주체만 보여주므로 "누가 받았나" 를 이 줄이 답한다. 폭이 모자라면 뒤에서
-자르되 고른 주체는 남긴다. 종합에서는 **20일 블록의 섹터 합**을 그대로 쓰고(`_actor_sums` `src/sectorflow/tui/flow_view.py:628-646`) 줄 끝에
+`_actors_line` `src/sectorflow/tui/flow_view.py:2528-2559`. 화면이 한 주체만 보여주므로 "누가 받았나" 를 이 줄이 답한다. 폭이 모자라면 뒤에서
+자르되 고른 주체는 남긴다. 종합에서는 **20일 블록의 섹터 합**을 그대로 쓰고(`_actor_sums` `src/sectorflow/tui/flow_view.py:618-636`) 줄 끝에
 `· 20일 기준` 을 단다. 잔여(−Σ4주체)는 여기 안 적는다 — 원장의 일이다.
 
-**종목 목록에서** — 고른 종목의 투신·연기금을 겹치지 않는 구간으로 차분해 보인다(`_stock_detail_lines` `src/sectorflow/tui/flow_view.py:2501-2534`).
+**종목 목록에서** — 고른 종목의 투신·연기금을 겹치지 않는 구간으로 차분해 보인다(`_stock_detail_lines` `src/sectorflow/tui/flow_view.py:2441-2474`).
 
 **(50)** $\quad$ `120-60` $=\nu^{120}_c-\nu^{60}_c$, `60-20`, `20-5`, `5` $=\nu^{5}_c$ — 한쪽이 결측이면 결측
 
@@ -810,7 +818,7 @@ $\quad \phi_c>0\ \wedge\ \text{invtrt}_c\ge0\ \wedge\ \text{penfnd}_c\ge0\ \wedg
 
 **(51)** $\quad \text{곱}_c=G_{s(c)}\times\text{pick}_c$ — 둘 다 있을 때만, 곱 내림차순 고정
 
-`all_picks` `src/sectorflow/tui/flow_view.py:929-975` · 열 `_ALL_COLS` `src/sectorflow/tui/flow_view.py:2625-2639` · 화면 `all_lines` `src/sectorflow/tui/flow_view.py:2646-2685`.
+`all_picks` `src/sectorflow/tui/flow_view.py:919-965` · 열 `_ALL_COLS` `src/sectorflow/tui/flow_view.py:2595-2609` · 화면 `all_lines` `src/sectorflow/tui/flow_view.py:2586-2625`.
 층 사이에서 평균을 안 쓰는 이유: 평균이면 아무도 안 사는 섹터의 1등이 모두가 사는 섹터의 3등을 이긴다. 곱은 둘 다 높을 때만 산다.
 종합에서는 섹터 점수가 종합 G, 종목 점수가 20일 목록이라 두 층이 다른 구간을 보고, 제목이 그 사실을 적는다.
 
@@ -951,12 +959,12 @@ KRX 주체(기타외국인 등)의 순매수 추정치에 결측과 식 (1)의 �
 
 | 표시 | 뜻 | 근거 |
 |---|---|---|
-| `장중·미확정` | 기준일이 오늘이고 KST 17시 전 | `_finalized` `scripts/sector_flow.py:67-74`, `FINALIZED_KST_HOUR = 17` `scripts/sector_flow.py:58` |
-| `마감·잠정` | 수집 창이 지났다(시계만 본다). 당일 수급은 잠정치다 | `src/sectorflow/tui/flow_view.py:2029-2038`(`status_chip`) |
-| `마감·확정` | 화~토 08:20 확정 모드가 `daily_finalize`(`finalize_both`·`rebuild_adjusted`) 성공을 확인하고 확정치로 다시 만든 리포트. 페이로드에 `final: true`, 폴더에 `FINAL.txt` | `scripts/daily_report.sh:209-266`(`FINAL_OK`), `scripts/daily_report.sh:404-439`, `scripts/finalize_done.py:100-148`(`def finalize_done`), `scripts/sector_flow.py:1973-1975` |
-| `⚠ 검증 실패(VERIFY_FAILED.txt)` | 저장 직후 자기 검증에 걸렸다. 게시는 하고 다음 크론이 다시 만든다 — 다만 같은 기준일에 검증을 통과한 게시본이 있으면 바꿔 끼우지 않고 걸린 판을 `.rejected/` 에 비켜 둔다(1 로 알림) | `report_warnings` `src/sectorflow/tui/flow_view.py:2040-2058`, `scripts/daily_report.sh:370-392`(`VERIFY_RC`) |
-| `⚠ MM-DD 수집 미완` | 더 뒤 기준일 폴더에 `INCOMPLETE.txt` — 완전성 관문이 막아 `latest` 가 전날에 머문다 | `src/sectorflow/tui/flow_view.py:2056-2057`, `scripts/daily_report.sh:295-331`(`GATE_RC`) |
-| `⚠ N일 지난 리포트` | 기준일이 달력 4일 이상 지났다 | `STALE_DAYS = 4` `src/sectorflow/tui/flow_view.py:2063`, `staleness_warning` `src/sectorflow/tui/flow_view.py:2076-2082` |
+| `장중·미확정` | 기준일이 오늘이고 KST 17시 전 | `_finalized` `scripts/sector_flow.py:66-73`, `FINALIZED_KST_HOUR = 17` `scripts/sector_flow.py:57` |
+| `마감·잠정` | 수집 창이 지났다(시계만 본다). 당일 수급은 잠정치다 | `src/sectorflow/tui/flow_view.py:1999-2008`(`status_chip`) |
+| `마감·확정` | 화~토 08:20 확정 모드가 `daily_finalize`(`finalize_both`·`rebuild_adjusted`) 성공을 확인하고 확정치로 다시 만든 리포트. 페이로드에 `final: true`, 폴더에 `FINAL.txt` | `scripts/daily_report.sh:209-266`(`FINAL_OK`), `scripts/daily_report.sh:416-451`, `scripts/finalize_done.py:100-148`(`def finalize_done`), `scripts/sector_flow.py:1971-1973` |
+| `⚠ 검증 실패(VERIFY_FAILED.txt)` | 저장 직후 자기 검증에 걸렸다. 게시는 하고 다음 크론이 다시 만든다 — 다만 같은 기준일에 검증을 통과한 게시본이 있으면 바꿔 끼우지 않고 걸린 판을 `.rejected/` 에 비켜 둔다(1 로 알림) | `report_warnings` `src/sectorflow/tui/flow_view.py:2010-2028`, `scripts/daily_report.sh:370-392`(`VERIFY_RC`) |
+| `⚠ MM-DD 수집 미완` | 더 뒤 기준일 폴더에 `INCOMPLETE.txt` — 완전성 관문이 막아 `latest` 가 전날에 머문다 | `src/sectorflow/tui/flow_view.py:2026-2027`, `scripts/daily_report.sh:295-331`(`GATE_RC`) |
+| `⚠ N일 지난 리포트` | 기준일이 달력 4일 이상 지났다 | `STALE_DAYS = 4` `src/sectorflow/tui/flow_view.py:2033`, `staleness_warning` `src/sectorflow/tui/flow_view.py:2046-2052` |
 
 잠정 리포트의 G 는 확정치에서 자주 바뀐다(지표 검증 Q3a: 게시본과 확정치의 G 순위가 크게 갈린 날 37%). 가속 순위는 ρ 0.999 로 안정적이다.
 
@@ -1063,6 +1071,6 @@ $x$ 는 OLS 잔차의 부호 반전이고 회귀 설명력이 낮다. 순위상�
 화면·도움말·README 쪽은 맞췄다. 남은 것은 `scripts/sector_numbers.py`·`flow_view.py` 안의 주석이다.
 
 1. **종목 선정의 단독 후보.** 섹터 G 는 단독 통과에 0.5 를 주는데(`scripts/sector_numbers.py:437-442`) 종목 선정은 후보가 하나면 점수가
-   없다(`src/sectorflow/tui/flow_view.py:848-849`). 그런데 주석 `scripts/sector_numbers.py:411-412` 은 둘을 "같은 설계" 라 적는다.
+   없다(`src/sectorflow/tui/flow_view.py:838-839`). 그런데 주석 `scripts/sector_numbers.py:411-412` 은 둘을 "같은 설계" 라 적는다.
 2. **낡은 수치·참조.** x↔−Δv ρ 0.94~1.00 이 주석 `scripts/sector_numbers.py:430` 에 남아 있다(지금 정의로는 0.82~0.93).
-   `docs/GUARDRAILS.md` 를 가리키는 주석(`src/sectorflow/tui/flow_view.py:74`, `src/sectorflow/tui/flow_view.py:2150`)은 swing-it 의 파일이다.
+   `docs/GUARDRAILS.md` 를 가리키는 주석(`src/sectorflow/tui/flow_view.py:74`, `src/sectorflow/tui/flow_view.py:2090`)은 swing-it 의 파일이다.

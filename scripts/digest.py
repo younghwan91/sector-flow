@@ -18,9 +18,10 @@
 (:func:`check_compliance` — 금칙어가 하나라도 있으면 세 파일 모두 안 쓰고, 옛 산출물도 지운다).
 
 ``flow_view`` 를 import 하지 않는다 — 화면 코드와 엮이면 화면을 고칠 때마다 이 글이 같이 흔들린다. 값의 지위·수익률 라벨·
-반올림·자료 범위는 화면과 같은 ``sectorflow.basis`` 를 쓴다(글이 화면과 다른 글자를 내면 둘 중 하나가 거짓이다).
-같은 정의(1년 %ile 문턱 95/5)를 여기서 다시 적는다. 다만 문턱 비교는 화면과 달리 **보이는 정수**
-(반올림한 값)로 한다 — 글에 "95" 로 적힌 섹터가 "≥95" 목록에서 빠지거나 "100" 이 99.6 인 어긋남을 없앤다.
+반올림·자료 범위·1년 %ile 극단 판정(보이는 정수 ≥95·≤5)은 화면과 같은 ``sectorflow.basis`` 를, 섹터 순위·극단 목록·
+가장 큰 주체는 화면과 같은 ``sectorflow.summary`` 를 쓴다 — 여기서 다시 정하지 않는다(글이 화면과 다른 섹터를 싣으면 둘 중
+하나가 거짓이다. 2026-11-18 글은 규칙이 따로라 출판/매체복제 95 를 실었고 웹·TUI 목록은 뺐다). 만든 글은 검증기 X 층
+(``verify_report.py --layers X``)이 페이로드·화면 목록과 다시 맞춘다.
 
 ``(미분류)``(벤더가 섹터를 안 준 종목 묶음)는 목록에 싣지 않는다 — 섹터가 아니다. ``digest.json`` 의
 ``excluded`` 에 남긴다.
@@ -47,7 +48,8 @@ from datetime import date
 from pathlib import Path
 
 from sectorflow.basis import DATA_BASIS_SHORT, NOT_TESTED_NOTE, ret_label, rhu, status_label, truth_gap_label
-from sectorflow.summary import NOT_SAID_SHORT, summary_items
+from sectorflow.basis import PCT_HI, PCT_LO, pct_int as _pct_int  # 극단 문턱·보이는 정수 — 화면과 같은 한 곳
+from sectorflow.summary import NOT_SAID_SHORT, dominant, extreme_lists, sector_rank, summary_items
 from sectorflow.wording import BANNED, banned_hits  # noqa: F401 — 금칙어 표의 정본(모든 산출물이 같이 쓴다)
 
 HERE = Path(__file__).resolve().parent
@@ -66,8 +68,6 @@ SECTOR_ACTORS = (("inst", "기관"), ("invpen", "투신+연기금"))
 KO = {"inst": "기관", "invtrt": "투신", "penfnd_etc": "연기금", "invpen": "투신+연기금",
       "forgn": "외국인", "indiv": "개인", "etc": "기타법인"}
 TOP_N = 3
-#: 1년%ile 상단·하단 문턱(포함) — 화면 배너(flow_view.PCT_HI/PCT_LO)와 같은 값. 비교는 보이는 정수로.
-PCT_HI, PCT_LO = 95, 5
 #: 목록에서 빼는 묶음 — 섹터가 아니다.
 EXCLUDED_SECTORS = ("(미분류)",)
 #: 글 길이 상한(문자 수, 줄바꿈 포함) — 뉴스레터 한 화면. 기관 세부·부호 바뀜·거래대금 집중이 들어와 1200 에서 올렸고,
@@ -109,8 +109,8 @@ class CardOverflow(DigestError):
 # ─────────────────────────────────────────────────────────── 사실 모으기
 
 def pct_int(p) -> "int | None":
-    """보이는 백분위 — 반올림(0.5 는 올림, 화면과 같은 :func:`rhu`). 글·카드·문턱 비교가 모두 이 값을 쓴다."""
-    return None if p is None else int(rhu(p))
+    """보이는 백분위 — 화면과 같은 ``basis.pct_int``(0.5 는 올림). 글·카드가 이 값을 적는다. 값이 없으면 None."""
+    return None if p is None else _pct_int(p)
 
 
 def _fact(x) -> tuple:
@@ -118,25 +118,8 @@ def _fact(x) -> tuple:
     return x.get("v"), x.get("pct")
 
 
-def _rank(secs: dict, actor: str) -> list[tuple[str, float, "float | None"]]:
-    """(섹터, 오늘 순매수, 1년%ile) — 금액 큰 순, 동률은 이름순. 값이 없는 섹터는 뺀다."""
-    out = [(s, *_fact(row.get(actor))) for s, row in secs.items() if s not in EXCLUDED_SECTORS]
-    out = [t for t in out if t[1] is not None]
-    out.sort(key=lambda t: (-t[1], t[0]))
-    return out
-
-
 def _sectors_only(names: list[str]) -> list[str]:
     return [s for s in names if s not in EXCLUDED_SECTORS]
-
-
-def dominant_actor(net: dict) -> "str | None":
-    """오늘 시장 순매수 **금액 절댓값**이 가장 큰 주체(4주체 중). 판정이 아니라 크기 순이다."""
-    vals = [(a, (net.get(a) or {}).get("v")) for a, _ in NET_ACTORS]
-    vals = [(a, v) for a, v in vals if v is not None]
-    if not vals:
-        return None
-    return max(vals, key=lambda t: (abs(t[1]), -[a for a, _ in NET_ACTORS].index(t[0])))[0]
 
 
 def collect(P: dict) -> dict:
@@ -148,22 +131,18 @@ def collect(P: dict) -> dict:
     M = (T.get("market") or {}).get(MARKET)
     if not M:
         raise DigestError(f"today.market 에 '{MARKET}' 이 없다")
-    secs = (T.get("sectors") or {}).get(MARKET) or {}
     net = M.get("net") or {}
 
-    dom = dominant_actor(net)
+    dom = dominant(net)            # 화면·요약 문장과 같은 함수 — 같으면 키가 큰 쪽(한 글 안에서 두 주체가 갈리지 않게)
     DC = T.get("day_change") or {}
     actors = list(SECTOR_ACTORS)
     if dom and dom not in dict(actors):
         actors.append((dom, KO[dom]))
     sectors = []
     for a, ko in actors:
-        ranked = _rank(secs, a)
-        shown = [(s, pct_int(p)) for s, _v, p in ranked if p is not None]
-        ext = ((DC.get("extreme") or {}).get(MARKET) or {}).get(a) or {}
-        # (섹터, 보이는 %ile, 그 극단에 며칠째) — 며칠째는 옛 리포트면 None.
-        hi = sorted(((s, q, (ext.get("hi") or {}).get(s)) for s, q in shown if q >= PCT_HI), key=lambda t: (-t[1], t[0]))
-        lo = sorted(((s, q, (ext.get("lo") or {}).get(s)) for s, q in shown if q <= PCT_LO), key=lambda t: (t[1], t[0]))
+        ranked = sector_rank(P, MARKET, a, exclude=EXCLUDED_SECTORS)
+        # (섹터, 보이는 %ile, 그 극단에 며칠째) — 화면 극단 목록과 같은 함수. 며칠째는 옛 리포트면 None.
+        hi, lo = extreme_lists(P, MARKET, a, exclude=EXCLUDED_SECTORS)
         flips = None
         if DC.get("prev_date"):
             flips = [[f["sector"], f["prev"], f["now"]] for f in ((DC.get("flips") or {}).get(MARKET) or {}).get(a) or []

@@ -2666,9 +2666,9 @@ replace = "        ranked_lines.append(_ranked_line(f\"   {ko} 하위: \", ranke
 id = "today-extremes-exclude-threshold"
 why = "1년%ile 극단 문턱을 미만/초과로 센다 — 정확히 95·5 인 섹터가 빠진다(도움말·웹은 ≥·≤ 라 적는다)"
 guards = ["tests/test_tui_flow_view.py::test_today_extremes_are_todays_percentile_at_95_and_5"]
-file = "src/sectorflow/tui/flow_view.py"
-find = "        if p >= PCT_HI:\n            hi.append((s, p))"
-replace = "        if p > PCT_HI:\n            hi.append((s, p))"
+file = "src/sectorflow/basis.py"
+find = '''    return "hi" if q >= PCT_HI else "lo" if q <= PCT_LO else None'''
+replace = '''    return "hi" if q > PCT_HI else "lo" if q <= PCT_LO else None'''
 
 [[mutation]]
 id = "change-items-swapped"
@@ -3301,8 +3301,8 @@ id = "verify-layer-name-list-drifts"
 why = "main 이 도는 층이 --layers 이름표에 없다 — 그 층은 고를 수 없고 부분 실행에서 조용히 빠진다"
 guards = ["tests/test_pipeline_e2e.py::test_every_layer_main_runs_is_selectable"]
 file = "scripts/verify_report.py"
-find = "LAYERS = (\"A\", \"A3\", \"B\", \"C\", \"D\", \"E\", \"G\", \"H\", \"T\", \"W\", \"F\")"
-replace = "LAYERS = (\"A\", \"A3\", \"B\", \"C\", \"D\", \"E\", \"G\", \"H\", \"T\", \"F\")"
+find = '''LAYERS = ("A", "A3", "B", "C", "D", "E", "G", "H", "T", "W", "F", "X")'''
+replace = '''LAYERS = ("A", "A3", "B", "C", "D", "E", "G", "H", "T", "F", "X")'''
 
 # ── 하네스 자신(verify_merge.py) — 빨라진 하네스가 판정을 바꾸면 이 게이트는 장식이 된다 ──
 
@@ -3665,8 +3665,8 @@ why = """뷰어가 얇은 섹터(10종목 미만)를 섞어 줄세운다. 1일 �
 출판/매체복제(2종목)였다 — TUI·수치표는 회색·맨 아래인데 웹만 맨 위에 올렸다."""
 guards = ["tests/test_viewer_page.py::test_viewer_sinks_thin_sectors_and_greys_them"]
 file = "scripts/templates/sector_flow.html"
-find = "  let order=D.sectors.filter(present).sort((a,b)=>(thin(a)-thin(b))||(windowVal(b,actor)-windowVal(a,actor)));"
-replace = "  let order=D.sectors.filter(present).sort((a,b)=>windowVal(b,actor)-windowVal(a,actor));"
+find = '''  let order=D.sectors.filter(present).sort((a,b)=>(thin(a)-thin(b))||(miss(a)-miss(b))||((wv(b)??0)-(wv(a)??0)));'''
+replace = '''  let order=D.sectors.filter(present).sort((a,b)=>(miss(a)-miss(b))||((wv(b)??0)-(wv(a)??0)));'''
 
 [[mutation]]
 id = "viewer-one-day-accel"
@@ -3756,8 +3756,8 @@ id = "viewer-heat-scale-includes-thin"
 why = """히트맵 농도의 최대를 얇은 섹터까지 넣어 잰다 — 3종목 섹터의 %p 가 척도를 먹어 나머지가 다 옅어진다."""
 guards = ["tests/test_viewer_page.py::test_heat_scale_and_context_lines_leave_thin_sectors_out"]
 file = "scripts/templates/sector_flow.html"
-find = "vals.set(s,row); if(!thin(s)) row.forEach(v=>mx=Math.max(mx,Math.abs(v)));});"
-replace = "vals.set(s,row); row.forEach(v=>mx=Math.max(mx,Math.abs(v)));});"
+find = '''vals.set(s,row); if(!thin(s)) row.forEach(v=>{ if(v!=null) mx=Math.max(mx,Math.abs(v)); });});'''
+replace = '''vals.set(s,row); row.forEach(v=>{ if(v!=null) mx=Math.max(mx,Math.abs(v)); });});'''
 
 [[mutation]]
 id = "viewer-thin-lines-drawn"
@@ -3788,8 +3788,8 @@ id = "viewer-one-day-table-accel"
 why = """1일 표의 기관 가속 열에 값을 낸다 — TUI 1일 창은 `—` 다."""
 guards = ["tests/test_viewer_page.py::test_one_day_table_has_no_accel_and_no_badge_on_it"]
 file = "scripts/templates/sector_flow.html"
-find = "sh=nDays()===1?null:(c?iv/c*100:0);"
-replace = "sh=(c?iv/c*100:0);"
+find = '''sh=nDays()===1?null:shareOf(iv,c);'''
+replace = '''sh=shareOf(iv,c);'''
 
 [[mutation]]
 id = "viewer-one-day-accel-badge"
@@ -3969,7 +3969,7 @@ guards = [
   "tests/test_tui_flow_view.py::test_half_rounds_up_like_the_web",
   "tests/test_web_render.py::test_web_layer_is_green_on_a_fresh_report",
 ]
-file = "src/sectorflow/tui/flow_view.py"
+file = "src/sectorflow/basis.py"
 find = "    return int(rhu(p))"
 replace = "    return int(f\"{p:.0f}\")"
 
@@ -6900,9 +6900,9 @@ id = "digest-dominant-by-sign"
 why = "'금액이 가장 큰 주체' 를 부호로 고르면 순매도가 가장 큰 날(외국인 −2.8조)에 순매수 쪽이 뽑힌다"
 guards = ["tests/test_digest.py::test_dominant_actor_is_by_absolute_amount",
           "tests/test_digest.py::test_snapshot_from_fixture"]
-file = "scripts/digest.py"
-find = "key=lambda t: (abs(t[1]),"
-replace = "key=lambda t: (t[1],"
+file = "src/sectorflow/summary.py"
+find = '''    live = [(abs((net.get(k) or {}).get("v") or 0.0), k) for k, _ko in ACT4'''
+replace = '''    live = [(((net.get(k) or {}).get("v") or 0.0), k) for k, _ko in ACT4'''
 
 [[mutation]]
 id = "digest-sell-bar-painted-buy"
@@ -6998,18 +6998,20 @@ replace = '_ITEM_SEP = re.compile(r"\n")'
 [[mutation]]
 id = "digest-band-on-raw-percentile"
 why = "날 값으로 문턱을 비교하면 '(95)' 로 보이는 94.6 이 상단 목록에서 빠진다 — 글이 자기 숫자와 어긋난다"
-guards = ["tests/test_digest.py::test_displayed_percentile_decides_the_band"]
-file = "scripts/digest.py"
-find = "        shown = [(s, pct_int(p)) for s, _v, p in ranked if p is not None]"
-replace = "        shown = [(s, p) for s, _v, p in ranked if p is not None]"
+guards = ["tests/test_digest.py::test_displayed_percentile_decides_the_band", "tests/test_digest.py::test_x_layer_is_green_on_a_built_digest_and_its_extremes_are_the_screens", "tests/test_streaks_revisions.py::test_extreme_lists_round_like_the_screen"]
+file = "src/sectorflow/basis.py"
+find = '''    q = pct_int(p)
+    return "hi"'''
+replace = '''    q = p
+    return "hi"'''
 
 [[mutation]]
 id = "digest-unclassified-listed"
 why = "'(미분류)' 를 섹터처럼 상·하위에 싣는다"
 guards = ["tests/test_digest.py::test_unclassified_bucket_is_not_listed_as_a_sector"]
 file = "scripts/digest.py"
-find = "for s, row in secs.items() if s not in EXCLUDED_SECTORS]"
-replace = "for s, row in secs.items()]"
+find = '''        ranked = sector_rank(P, MARKET, a, exclude=EXCLUDED_SECTORS)'''
+replace = '''        ranked = sector_rank(P, MARKET, a)'''
 
 [[mutation]]
 id = "digest-top-bottom-overlap"
@@ -9874,8 +9876,8 @@ id = "extreme-list-loses-run-tag"
 why = "극단 목록이 오늘 처음인지 며칠째인지 다시 말하지 않는다"
 guards = ["tests/test_day_facts.py::test_extremes_carry_how_many_days_at_that_extreme"]
 file = "src/sectorflow/tui/flow_view.py"
-find = "    return ([f\"{s} {pct_int(p)}{_run_tag(runs['hi'].get(s))}\" for s, p in hi],"
-replace = "    return ([f\"{s} {pct_int(p)}\" for s, p in hi],"
+find = '''    return ([f"{s} {q}{_run_tag(n)}" for s, q, n in hi],'''
+replace = '''    return ([f"{s} {q}" for s, q, n in hi],'''
 
 [[mutation]]
 id = "digest-return-label-fixed-at-20h"
@@ -10074,8 +10076,8 @@ id = "digest-percentile-truncates"
 why = "다이제스트 %ile 이 버림이라 화면과 1씩 갈린다"
 guards = ["tests/test_day_facts.py::test_digest_percentile_is_the_screens"]
 file = "scripts/digest.py"
-find = "return None if p is None else int(rhu(p))"
-replace = "return None if p is None else int(p)"
+find = '''    return None if p is None else _pct_int(p)'''
+replace = '''    return None if p is None else int(p)'''
 
 [[mutation]]
 id = "digest-status-own-copy"
@@ -11181,7 +11183,7 @@ replace = """top_n = {c for c, _w in sorted(by_new[ms], key=lambda t: (-(t[1].ge
 id = "digest-ties-follow-payload-order"
 why = "동률의 순서가 페이로드에 달려 같은 수치가 다른 글이 된다"
 guards = ["tests/test_digest.py::test_ties_rank_by_sector_name_whatever_the_payload_order"]
-file = "scripts/digest.py"
+file = "src/sectorflow/summary.py"
 find = """    out.sort(key=lambda t: (-t[1], t[0]))
     return out"""
 replace = """    out.sort(key=lambda t: (-t[1], t[1]))
@@ -11553,7 +11555,7 @@ id = "mismatch-hi-in-blind"
 why = "지금 ≥95 가 아닌 섹터를 '들어옴' 으로 적어도 모른다"
 guards = ["tests/test_streaks_revisions.py::test_a_record_that_contradicts_itself_is_not_inherited"]
 file = "scripts/sector_flow.py"
-find = '''            if (any(pct.get(s) is None or pct[s] < PCT_HI - _EXT_SLACK for s in ch.get("hi_in") or [])'''
+find = '''            if (any(pct.get(s) is None or pct[s] < PCT_HI - _EXT_VISIBLE - _EXT_SLACK for s in ch.get("hi_in") or [])'''
 replace = '''            if (False'''
 
 [[mutation]]
@@ -11561,7 +11563,7 @@ id = "mismatch-lo-in-blind"
 why = "지금 ≤5 가 아닌 섹터를 '들어옴' 으로 적어도 모른다"
 guards = ["tests/test_streaks_revisions.py::test_a_record_that_contradicts_itself_is_not_inherited"]
 file = "scripts/sector_flow.py"
-find = '''                    or any(pct.get(s) is None or pct[s] > PCT_LO + _EXT_SLACK for s in ch.get("lo_in") or [])'''
+find = '''                    or any(pct.get(s) is None or pct[s] > PCT_LO + _EXT_VISIBLE + _EXT_SLACK for s in ch.get("lo_in") or [])'''
 replace = '''                    or False'''
 
 [[mutation]]
@@ -11619,8 +11621,8 @@ id = "verify-extremes-raw-pct"
 why = "검증기가 날값으로 재면 생산자와 들고 남이 갈려 거짓 실패한다"
 guards = ["tests/test_streaks_revisions.py::test_extreme_lists_round_like_the_screen"]
 file = "scripts/verify_report.py"
-find = '''        p = round(p, 1)                         # 화면의 ≥95 목록은 반올림한 pct 로 고른다(94.98 → 95.0)'''
-replace = '''        p = float(p)'''
+find = '''        q = _vt_visible(p)                      # 화면의 ≥95 목록은 보이는 정수로 고른다(94.98 → 95.0 → 95, 94.8 → 95)'''
+replace = '''        q = p'''
 
 [[mutation]]
 id = "verify-retry-trust-blind"
@@ -11677,7 +11679,7 @@ id = "verify-self-hi-in-blind"
 why = "검증기가 지금 ≥95 아닌 '들어옴' 을 모른다"
 guards = ["tests/test_streaks_revisions.py::test_a_record_that_contradicts_itself_is_not_inherited"]
 file = "scripts/verify_report.py"
-find = '''                ok = {"hi_in": p is not None and p >= 95.0 - VT_EXT_SLACK,'''
+find = '''                ok = {"hi_in": p is not None and p >= 94.5 - VT_EXT_SLACK,'''
 replace = '''                ok = {"hi_in": True,'''
 
 [[mutation]]
@@ -11685,7 +11687,7 @@ id = "verify-self-lo-in-blind"
 why = "검증기가 지금 ≤5 아닌 '들어옴' 을 모른다"
 guards = ["tests/test_streaks_revisions.py::test_a_record_that_contradicts_itself_is_not_inherited"]
 file = "scripts/verify_report.py"
-find = '''                      "lo_in": p is not None and p <= 5.0 + VT_EXT_SLACK,'''
+find = '''                      "lo_in": p is not None and p <= 5.5 + VT_EXT_SLACK,'''
 replace = '''                      "lo_in": True,'''
 
 [[mutation]]
@@ -12483,8 +12485,8 @@ id = "oneday-summary-band-edge"
 why = "보이는 정수 95 를 '평소 범위 안' 이라 적는다 — 화면 숫자와 말이 갈린다"
 guards = ["tests/test_oneday.py::test_summary_sentences_say_who_how_much_what_is_unusual_and_what_changed"]
 file = "src/sectorflow/summary.py"
-find = "return \"평소 범위 밖(위)\" if q >= PCT_HI else"
-replace = "return \"평소 범위 밖(위)\" if q > PCT_HI else"
+find = '''    return {"hi": "평소 범위 밖(위)", "lo": "평소 범위 밖(아래)"}.get(pct_side(p), "평소 범위 안")'''
+replace = '''    return "평소 범위 밖(위)" if p > PCT_HI else "평소 범위 밖(아래)" if p <= PCT_LO else "평소 범위 안"'''
 
 [[mutation]]
 id = "oneday-summary-counts-thin"
@@ -12589,6 +12591,122 @@ guards = ["tests/test_oneday.py::test_web_layer_catches_a_one_day_page_that_says
 file = "scripts/verify_report.py"
 find = "    chk(\"W\", \"'오늘 한 장' 섹터×주체 칸 — 평소 범위 밖 칸에만 %ile 숫자\", not bad_h,"
 replace = "    chk(\"W\", \"'오늘 한 장' 섹터×주체 칸 — 평소 범위 밖 칸에만 %ile 숫자\", True,"
+
+# ── 2026-11-19 데이터 흐름 리뷰(P1·P2·P5·P6·P8) — 극단 판정 한 곳, 다이제스트 X 층, 뷰어 시총 결측, iret 경고 ──
+
+[[mutation]]
+id = "digest-extremes-own-rule"
+why = """다이제스트가 극단을 화면과 다른 규칙으로 다시 고른다 — 2026-11-18 글과 웹·TUI 가 '95' 섹터를 두고 갈렸다(P1).
+글이 화면과 같은 함수를 쓰고, X 층이 보이는 정수로 다시 센 목록과 맞춘다."""
+guards = ["tests/test_digest.py::test_x_layer_is_green_on_a_built_digest_and_its_extremes_are_the_screens"]
+file = "scripts/digest.py"
+find = '''        hi, lo = extreme_lists(P, MARKET, a, exclude=EXCLUDED_SECTORS)'''
+replace = '''        hi, lo = [t for t in extreme_lists(P, MARKET, a, exclude=EXCLUDED_SECTORS)[0] if t[1] > PCT_HI], extreme_lists(P, MARKET, a, exclude=EXCLUDED_SECTORS)[1]'''
+
+[[mutation]]
+id = "digest-dominant-own-tie-rule"
+why = "다이제스트가 가장 큰 주체를 자기 동률 규칙(앞선 쪽)으로 고르면 한 글 안에서 요약 문장과 상·하위 머리가 다른 주체를 말한다(P6)"
+guards = ["tests/test_digest.py::test_dominant_actor_tie_is_the_same_in_the_summary_and_the_digest_lines"]
+file = "scripts/digest.py"
+find = '''    dom = dominant(net)'''
+replace = '''    dom = max((a for a, _ko in NET_ACTORS if (net.get(a) or {}).get("v") is not None), key=lambda a: abs(net[a]["v"]), default=None)'''
+
+[[mutation]]
+id = "x-layer-digest-extremes-not-recounted"
+why = "X 층이 다이제스트 사실의 극단 목록을 다시 세지 않으면 글이 화면에 없는 섹터를 실어도 통과한다"
+guards = ["tests/test_digest.py::test_x_layer_catches_a_digest_that_says_something_else"]
+file = "scripts/verify_report.py"
+find = '''            if got != want[side]:
+                out["extreme"].append(f"{ko}/{side} 사실'''
+replace = '''            if False:
+                out["extreme"].append(f"{ko}/{side} 사실'''
+
+[[mutation]]
+id = "x-layer-md-extreme-line-unchecked"
+why = "X 층이 digest.md 의 극단 줄을 보지 않으면 글자가 사실(json)과 달라도 통과한다 — 사람이 읽는 것은 글이다"
+guards = ["tests/test_digest.py::test_x_layer_catches_a_digest_that_says_something_else",
+          "tests/test_artifact_contracts.py::test_verifier_x_layer_reads_the_digest_built_on_the_pipeline_payload"]
+file = "scripts/verify_report.py"
+find = '''        if not {f"- {ko} 상단: {_vx_capped(want['hi'], c)} / 하단: {_vx_capped(want['lo'], c)}" for c in VX_CAPS} & have:'''
+replace = '''        if False:'''
+
+[[mutation]]
+id = "x-layer-rank-line-unchecked"
+why = "X 층이 글의 상·하위 줄을 다시 센 순위와 맞추지 않으면 다이제스트가 순위를 따로 정해도 모른다(P2)"
+guards = ["tests/test_digest.py::test_x_layer_catches_a_digest_that_says_something_else"]
+file = "scripts/verify_report.py"
+find = '''        if not any(i + 2 < len(lines) and lines[i + 1] in tops and lines[i + 2] in bots for i in at):'''
+replace = '''        if False:'''
+
+[[mutation]]
+id = "x-layer-net-line-unchecked"
+why = "X 층이 시장 4주체 줄을 보지 않으면 금액 반올림·부호가 틀어져도 통과한다"
+guards = ["tests/test_digest.py::test_x_layer_catches_a_digest_that_says_something_else"]
+file = "scripts/verify_report.py"
+find = '''    if want_net not in have:'''
+replace = '''    if False:'''
+
+[[mutation]]
+id = "x-layer-summary-line-unchecked"
+why = "X 층이 글에 요약 문장이 그대로 있는지 보지 않으면 글만 다른 문장을 적어도 통과한다"
+guards = ["tests/test_digest.py::test_x_layer_catches_a_digest_that_says_something_else"]
+file = "scripts/verify_report.py"
+find = '''    out["summary"] += [f"글에 없다: {t[:40]}" for t in want_sum if f"- {t}" not in have]'''
+replace = '''    out["summary"] += []'''
+
+[[mutation]]
+id = "x-layer-dominant-unchecked"
+why = "X 층이 가장 큰 주체를 화면·|금액| 최대와 맞추지 않으면 다이제스트가 다른 주체를 골라도 통과한다(P6)"
+guards = ["tests/test_digest.py::test_x_layer_catches_a_digest_that_says_something_else"]
+file = "scripts/verify_report.py"
+find = '''    if dom != FV.dominant_of(P, VX_MARKET):
+        out["dominant"].append(f"{dom} vs 화면 {FV.dominant_of(P, VX_MARKET)}")
+    elif big is not None'''
+replace = '''    if False:
+        pass
+    elif False and big is not None'''
+
+[[mutation]]
+id = "x-layer-missing-digest-passes"
+why = "--layers X 로 불렀는데 다이제스트가 없으면 실패여야 한다 — 건너뛰고 통과하면 배치가 글을 검사한 것처럼 읽힌다"
+guards = ["tests/test_artifact_contracts.py::test_verifier_x_layer_reads_the_digest_built_on_the_pipeline_payload"]
+file = "scripts/verify_report.py"
+find = '''        if required:
+            chk("X", "다이제스트(digest.md·digest.json)가 있는가", False'''
+replace = '''        if False:
+            chk("X", "다이제스트(digest.md·digest.json)가 있는가", False'''
+
+[[mutation]]
+id = "t-layer-screen-extreme-list-unchecked"
+why = "T 층이 화면 극단 목록을 보이는 정수 규칙과 맞추지 않으면 목록과 며칠째 표지가 다른 규칙이어도 통과한다(P1)"
+guards = ["tests/test_streaks_revisions.py::test_t_layer_ties_the_screen_extreme_list_to_the_visible_rule"]
+file = "scripts/verify_report.py"
+find = '''                if sorted(x.rsplit(" ", 1)[0] for x in scr) != sorted(want):'''
+replace = '''                if False:'''
+
+[[mutation]]
+id = "viewer-missing-cap-share-is-zero"
+why = "시총이 없는 섹터의 %p 를 0 으로 내면 '+0.00%p' 가 조용한 섹터처럼 랭킹 가운데 낀다 — 수치표는 결측이다(P5)"
+guards = ["tests/test_web_render.py::test_viewer_shows_missing_share_for_a_sector_without_cap_and_the_verifier_expects_it"]
+file = "scripts/templates/sector_flow.html"
+find = '''const shareOf=(t,c)=>c?t/c*100:null;'''
+replace = '''const shareOf=(t,c)=>c?t/c*100:0;'''
+
+[[mutation]]
+id = "verify-viewer-missing-cap-expects-zero"
+why = "검증기의 뷰어 기대값이 시총 없는 칸을 0 으로 폴백하면 뷰어의 0/결측 어긋남을 못 본다(P5)"
+guards = ["tests/test_web_render.py::test_viewer_shows_missing_share_for_a_sector_without_cap_and_the_verifier_expects_it"]
+file = "scripts/verify_report.py"
+find = '''            sh = (t / c * 100) if c else None'''
+replace = '''            sh = (t / c * 100) if c else 0.0'''
+
+[[mutation]]
+id = "iret-coverage-fails-the-report"
+why = "화면이 읽지 않는 업종지수 커버리지로 리포트를 VERIFY_FAILED 로 만들면 ⚠ 띠가 붙고 다이제스트가 안 나온다(P8)"
+guards = ["tests/test_verify_report.py::test_empty_sector_index_coverage_warns_but_does_not_fail_the_report"]
+file = "scripts/verify_report.py"
+find = '''        warn("B", "업종지수 커버리지(화면 미사용 iret)", f"{idx_n}/{len(secs)*len(mkts)}")'''
+replace = '''        chk("B", "업종지수 커버리지(화면 미사용 iret)", False, f"{idx_n}/{len(secs)*len(mkts)}")'''
 
 # ── fix-ops(2026-11-19): 검증에 걸린 재빌드 · 게시 뒤 수집 · 끊긴 바꿔 끼우기 · 알림 통로 ──
 
@@ -12774,3 +12892,22 @@ guards = ["tests/test_freshness_check.py::test_fill_mark_matches_the_gate"]
 file = "scripts/freshness_check.py"
 find = '''FILL_MARK = "수집 행 수"'''
 replace = '''FILL_MARK = "수집 행수"'''
+
+[[mutation]]
+id = "batch-never-checks-the-digest"
+why = "배치가 다이제스트를 지은 뒤 X 층을 안 부르면 글은 아무 검증도 거치지 않고 게시된다(P2)"
+guards = ["tests/test_daily_report_flow.py::test_digest_is_checked_by_the_x_layer_and_withheld_when_it_disagrees"]
+file = "scripts/daily_report.sh"
+find = '''if [ -f "$BUILD/digest.md" ]; then
+  if ! _bounded'''
+replace = '''if false; then
+  if ! _bounded'''
+
+[[mutation]]
+id = "batch-publishes-a-digest-that-failed-x"
+why = "X 층에 걸린 글·카드를 지우지 않으면 화면과 다른 말을 하는 글이 /latest/digest.md 로 나간다"
+guards = ["tests/test_daily_report_flow.py::test_digest_is_checked_by_the_x_layer_and_withheld_when_it_disagrees"]
+file = "scripts/daily_report.sh"
+find = '''    rm -f "$BUILD/digest.md" "$BUILD/digest.json" "$BUILD/digest_card.html" "$BUILD/digest.png"
+    SIDE_FAIL+="digest-verify "'''
+replace = '''    SIDE_FAIL+="digest-verify "'''

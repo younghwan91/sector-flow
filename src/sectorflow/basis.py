@@ -49,6 +49,30 @@ def rhu(v: float, nd: int = 0) -> float:
     return q if v >= 0 else -q
 
 
+#: 1년 %ile 극단 문턱(포함) — 위 ≥95 · 아래 ≤5. 화면·웹·다이제스트·요약·잠정→확정 들고 남이 모두 이 한 쌍과
+#: :func:`pct_side` 를 쓴다(웹 JS 는 ``PCT_HI``·``PCT_LO``·``extSide`` 사본 — 검증기 W·T·X 층이 맞춘다).
+PCT_HI, PCT_LO = 95, 5
+
+
+def pct_int(p: float) -> int:
+    """1년 %ile 의 **보이는 정수** — :func:`rhu`(0.5 는 위로). 화면·웹·글이 적는 바로 그 숫자다."""
+    return int(rhu(p))
+
+
+def pct_side(p: "float | None") -> "str | None":
+    """1년 %ile 이 극단인가 — 보이는 정수(:func:`pct_int`)가 ≥:data:`PCT_HI` 면 ``"hi"``, ≤:data:`PCT_LO` 면 ``"lo"``.
+
+    ``p`` 는 페이로드에 실린 값(소수 1자리)이다 — 날값을 넘기려면 먼저 ``round(p, 1)``(페이로드와 같은 반올림).
+    **판정은 보이는 정수로 한다**(``docs/formulas.md`` §오늘 한 장 '극단 문턱'). 날값으로 가르면 94.8 이 화면·글에
+    "95" 로 적히는데 '≥95' 목록에서는 빠진다 — 2026-11-18 다이제스트는 출판/매체복제 95 를 상단에 싣고 웹·TUI 목록은
+    뺐다(규칙이 둘이었다). 경계의 0.5 는 백분위 한 칸(260일 분포에서 ≈0.38)과 비슷해 날값 쪽이 더 정확하지도 않다.
+    """
+    if p is None:
+        return None
+    q = pct_int(p)
+    return "hi" if q >= PCT_HI else "lo" if q <= PCT_LO else None
+
+
 #: 수익률 라벨 — 2026-09-14 부터 일별 종가가 애프터마켓(~20:00) 포함 통합값이라 확정 리포트의 수익률은
 #: "전일 20:00 → 당일 20:00" 이다(정규장 15:30 종가가 아니다). KRX 지수(정규장)와 같은 날 크게 갈릴 수 있다.
 RET_LABEL = "전일 20:00→당일 20:00 (애프터마켓 포함 통합 종가)"
