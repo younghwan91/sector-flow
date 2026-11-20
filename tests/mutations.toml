@@ -12782,3 +12782,67 @@ file = "scripts/daily_report.sh"
 find = '''    rm -f "$BUILD/digest.md" "$BUILD/digest.json" "$BUILD/digest_card.html" "$BUILD/digest.png"
     SIDE_FAIL+="digest-verify "'''
 replace = '''    SIDE_FAIL+="digest-verify "'''
+
+[[removed]]
+id = "krx-inquiry-denies-minute-bars"
+why = "사업화를 접어 docs/strategy(질의서·약관·성적표·경쟁사 노트)를 지웠다 — 대상 문서가 없다"
+
+[[removed]]
+id = "fsc-flag-frequency-vague"
+why = "사업화를 접어 docs/strategy(질의서·약관·성적표·경쟁사 노트)를 지웠다 — 대상 문서가 없다"
+
+[[removed]]
+id = "sales-copy-lumps-percentile"
+why = "사업화를 접어 docs/strategy(질의서·약관·성적표·경쟁사 노트)를 지웠다 — 대상 문서가 없다"
+
+[[removed]]
+id = "attachment-a-drifts-from-the-screen"
+why = "사업화를 접어 docs/strategy(질의서·약관·성적표·경쟁사 노트)를 지웠다 — 대상 문서가 없다"
+
+[[removed]]
+id = "inquiry-overclaims-evidence-marks"
+why = "사업화를 접어 docs/strategy(질의서·약관·성적표·경쟁사 노트)를 지웠다 — 대상 문서가 없다"
+
+[[removed]]
+id = "inquiry-drops-naver-source"
+why = "사업화를 접어 docs/strategy(질의서·약관·성적표·경쟁사 노트)를 지웠다 — 대상 문서가 없다"
+
+[[removed]]
+id = "fsc-inquiry-hides-stock-names"
+why = "사업화를 접어 docs/strategy(질의서·약관·성적표·경쟁사 노트)를 지웠다 — 대상 문서가 없다"
+
+[[removed]]
+id = "krx-inquiry-window-back-to-250"
+why = "사업화를 접어 docs/strategy(질의서·약관·성적표·경쟁사 노트)를 지웠다 — 대상 문서가 없다"
+
+[[removed]]
+id = "krx-inquiry-denies-data-krx"
+why = "사업화를 접어 docs/strategy(질의서·약관·성적표·경쟁사 노트)를 지웠다 — 대상 문서가 없다"
+
+[[removed]]
+id = "fsc-inquiry-claims-missing-notice"
+why = "사업화를 접어 docs/strategy(질의서·약관·성적표·경쟁사 노트)를 지웠다 — 대상 문서가 없다"
+
+[[removed]]
+id = "draft-loses-its-mark"
+why = "사업화를 접어 docs/strategy(질의서·약관·성적표·경쟁사 노트)를 지웠다 — 대상 문서가 없다"
+
+[[removed]]
+id = "attachment-gets-a-real-name"
+why = "사업화를 접어 docs/strategy(질의서·약관·성적표·경쟁사 노트)를 지웠다 — 대상 문서가 없다"
+
+[[removed]]
+id = "strategy-doc-absolute-link"
+why = "사업화를 접어 docs/strategy(질의서·약관·성적표·경쟁사 노트)를 지웠다 — 대상 문서가 없다"
+
+[[removed]]
+id = "strategy-report-legal-shield-returns"
+why = "사업화를 접어 docs/strategy(질의서·약관·성적표·경쟁사 노트)를 지웠다 — 대상 문서가 없다"
+
+[[removed]]
+id = "competitor-note-own-basket-returns"
+why = "사업화를 접어 docs/strategy(질의서·약관·성적표·경쟁사 노트)를 지웠다 — 대상 문서가 없다"
+
+[[removed]]
+id = "scorecard-claims-faster"
+why = "사업화를 접어 docs/strategy(질의서·약관·성적표·경쟁사 노트)를 지웠다 — 대상 문서가 없다"
