@@ -25,8 +25,8 @@ uv run sw-flow --dir <리포트 폴더>   # 받은 폴더(DB 불요, §4.3)
 scripts/daily_report.sh              # 수급 DB 에 접속할 수 있으면 직접 만든다(§4.1) → uv run sw-flow
 ```
 
-> **리포트 폴더는 제3자에게 넘기지 않는다.** 실제 종목별 수급이 들어 있고, KRX·키움 이용 범위 질의
-> (비공개 초안, 아직 보내지 않음)의 서면 회신을 받기 전이다. 본인 기기 사이에서만 옮긴다(§4.3).
+> **리포트 폴더는 제3자에게 넘기지 않는다.** 실제 종목별 수급이 들어 있고, KRX·키움의 데이터 이용 범위상
+> 재배포할 수 없다. 본인 기기 사이에서만 옮기고, 남에게 보여 줄 때는 합성 데모를 쓴다(§4.3).
 
 > **데이터는 어디서 오나.** 일일 배치는 [quant-airflow](https://github.com/younghwan91/quant-airflow) 가 적재한 DB 를 읽기만
 > 한다. `src/sectorflow/collect/`(`sector-flow-collect`)는 자기 키움 키로 sqlite 를 채우는 BYO 수집기로, 아직 섹터 몇 개 크기의
@@ -135,7 +135,7 @@ scripts/
 ├── sector_numbers.py       # payload → numbers.html (templates/)
 ├── verify_report.py        # 리포트 자기 검증 (§9)
 ├── krx_truth.py            # 네이버 시장값과 시장 합계 대조 (내부 전용)
-├── demo_shots.py           # README 그림·질의서 화면 예시를 합성 데모로 다시 만든다
+├── demo_shots.py           # README 그림·화면 예시를 합성 데모로 다시 만든다
 ├── krx_calendar.py         # KRX 휴장 달력 — 거래일 판정·SLO 분모
 ├── digest.py               # (선택) 다이제스트 글·카드 — 폴더에만 쓴다
 ├── trust_page.py           # 검증·품질 페이지 trust.html
@@ -243,8 +243,8 @@ uv run sector-flow-demo --out <폴더>     # 합성 데모 폴더만 만든다 �
 
 **받는 쪽에는 DB 도 수집 파이프라인도 필요 없다.** 만드는 쪽이 폴더를 압축해 옮긴다.
 
-> ⚠️ **회신 전 제3자 전달 금지.** 폴더에는 실제 종목별 수급이 들어 있다. KRX·키움 이용 범위 질의
-> (비공개 초안)의 서면 회신을 받기 전에는 본인 기기 사이에서만 옮긴다. 남에게 보여 줄 때는 합성 데모를 쓴다.
+> ⚠️ **제3자 전달 금지.** 폴더에는 실제 종목별 수급이 들어 있고 KRX·키움의 데이터 이용 범위상 재배포할 수 없다.
+> 본인 기기 사이에서만 옮긴다. 남에게 보여 줄 때는 합성 데모를 쓴다.
 
 ```bash
 tar czf sector-flow-2026-11-06.tar.gz -C <저장소>/reports 2026-11-06            # 보내는 쪽
