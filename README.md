@@ -26,7 +26,7 @@ scripts/daily_report.sh              # 수급 DB 에 접속할 수 있으면 직
 ```
 
 > **리포트 폴더는 제3자에게 넘기지 않는다.** 실제 종목별 수급이 들어 있고, KRX·키움 이용 범위 질의
-> ([`docs/strategy/inquiries/`](docs/strategy/inquiries/), 아직 보내지 않은 초안)의 서면 회신을 받기 전이다. 본인 기기 사이에서만 옮긴다(§4.3).
+> (비공개 초안, 아직 보내지 않음)의 서면 회신을 받기 전이다. 본인 기기 사이에서만 옮긴다(§4.3).
 
 > **데이터는 어디서 오나.** 일일 배치는 [quant-airflow](https://github.com/younghwan91/quant-airflow) 가 적재한 DB 를 읽기만
 > 한다. `src/sectorflow/collect/`(`sector-flow-collect`)는 자기 키움 키로 sqlite 를 채우는 BYO 수집기로, 아직 섹터 몇 개 크기의
@@ -71,7 +71,7 @@ scripts/daily_report.sh              # 수급 DB 에 접속할 수 있으면 직
 ### 1.1 다른 자료와 무엇이 다른가
 
 **원자료는 여기서만 보는 것이 아니고, 이 저장소가 더 좋은 데이터를 갖고 있지도 않다.** 무료로 볼 수 있는 곳이 이미 많다.
-아래는 2026-11-08~09 에 공개 페이지로 확인한 범위다. 출처는 [`competitors.md`](docs/strategy/research_notes/섹터%20수급%20리포트%20수익화%20전략/competitors.md).
+아래는 2026-11-08~09 에 공개 페이지로 확인한 범위다.
 
 | 자료 | 확인한 것 | 이 저장소와 다른 점 |
 |---|---|---|
@@ -245,7 +245,7 @@ uv run sector-flow-demo --out <폴더>     # 합성 데모 폴더만 만든다 �
 **받는 쪽에는 DB 도 수집 파이프라인도 필요 없다.** 만드는 쪽이 폴더를 압축해 옮긴다.
 
 > ⚠️ **회신 전 제3자 전달 금지.** 폴더에는 실제 종목별 수급이 들어 있다. KRX·키움 이용 범위 질의
-> ([`docs/strategy/inquiries/`](docs/strategy/inquiries/))의 서면 회신을 받기 전에는 본인 기기 사이에서만 옮긴다. 남에게 보여 줄 때는 합성 데모를 쓴다.
+> (비공개 초안)의 서면 회신을 받기 전에는 본인 기기 사이에서만 옮긴다. 남에게 보여 줄 때는 합성 데모를 쓴다.
 
 ```bash
 tar czf sector-flow-2026-11-06.tar.gz -C <저장소>/reports 2026-11-06            # 보내는 쪽
@@ -529,7 +529,6 @@ pytest 와 변이 실행은 프로세스 하나당 `RLIMIT_DATA` 6GiB 안에서 
 | [`docs/runbook.md`](docs/runbook.md) | 운영 런북 — 알림 문구별 원인과 할 일, 운영 사건 원장 |
 | [`docs/slo.md`](docs/slo.md) | 게시 기한의 정의와 재는 법 |
 | [`docs/byo/`](docs/byo/) | 자기 키움 키로 수집하는 BYO 조각의 동등성 실측 |
-| [`docs/strategy/`](docs/strategy/) | 수익화 조사·성적표·당국 질의서 초안 — 외부에 낸 것이 아니고 법률 자문도 아니다 |
 
 ## 12. 관련 프로젝트 — 오픈소스 퀀트 스택
 

@@ -37,3 +37,6 @@ coverage.json
 # Archify 스킬 사본(skills-lock.json 으로 다시 설치)·작업 폴더
 /.claude/skills/
 /.archify/
+
+# 비공개 사업·질의 문서 — 공개 레포에 두지 않는다(원본은 비공개 sector-flow-archive)
+docs/strategy/

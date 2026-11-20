@@ -324,8 +324,9 @@ def main(argv: "list[str] | None" = None) -> int:
     keep = tempfile.mkdtemp(prefix="sf-shots.") if not a.demo_dir else None
     try:
         report = Path(a.demo_dir or demo.ensure(Path(keep) / "demo"))
-        ATTACHMENT.write_text(rewrite_attachment(ATTACHMENT.read_text("utf-8"), attachment_screens(str(report))), "utf-8")
-        print(f"wrote {ATTACHMENT.relative_to(REPO)}")
+        if ATTACHMENT.is_file():  # 질의서 첨부는 비공개 문서다 — 공개 레포에는 없다
+            ATTACHMENT.write_text(rewrite_attachment(ATTACHMENT.read_text("utf-8"), attachment_screens(str(report))), "utf-8")
+            print(f"wrote {ATTACHMENT.relative_to(REPO)}")
         if a.attachment:
             return 0
         text = MANIFEST.read_text("utf-8")
