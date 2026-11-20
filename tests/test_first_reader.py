@@ -76,11 +76,11 @@ def test_comparison_table_names_what_competitors_do():
 
 
 def test_received_folder_warning_is_at_both_entrances():
-    """폴더를 주고받는 말이 나오는 두 곳 모두 회신 전 제3자 전달 금지를 적는다."""
+    """폴더를 주고받는 말이 나오는 두 곳 모두 제3자 전달 금지를 적는다."""
     quick = _section(README, "## Quick start", "## 목차")
     share = _section(README, "### 4.3 ", "### 4.4 ")
     for sec in (quick, share):
-        assert "제3자" in sec and "회신" in sec, sec[:200]
+        assert "제3자" in sec and "재배포" in sec, sec[:200]
 
 
 def test_quick_start_starts_with_something_that_runs():
@@ -103,7 +103,7 @@ def test_docs_do_not_name_columns_that_are_gone(doc, text):
 
 @pytest.mark.parametrize("doc,text", [("README", README), ("가이드", GUIDE)])
 def test_docs_use_no_real_stock_name(doc, text):
-    """이용 범위 회신 전이라 문서의 예도 합성 데모로 만든다."""
+    """데이터 이용 범위상 문서의 예도 합성 데모로 만든다."""
     for name in ("삼성전자", "SK하이닉스", "NAVER", "삼성에스디에스", "LG씨엔에스", "아이티센글로벌"):
         assert name not in text, f"{doc} 에 실종목명: {name}"
 
