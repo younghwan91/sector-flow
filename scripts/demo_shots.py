@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
-"""README 그림·질의서 화면 예시를 **합성 데모**로 다시 만든다 — 실종목·실숫자를 문서에 싣지 않는다.
+"""README 그림을 **합성 데모**로 다시 만든다 — 실종목·실숫자를 문서에 싣지 않는다.
 
     uv run --with playwright --with pillow python scripts/demo_shots.py     # docs/images/*.png 7장 + 원장 sha
-    uv run python scripts/demo_shots.py --attachment                        # 질의서 첨부 A 의 화면 예시만
 
 터미널은 tmux 160×45 ``capture-pane -e`` → ANSI → HTML → Chromium(128색), 웹은 Chromium 1440·390(DPR 2, 64색).
 그림은 **HEAD 의 화면 코드**여야 뜻이 있다 — ``docs/SCREENSHOTS.md`` 의 감시 경로에 커밋 안 한 변경이 있으면 찍지 않는다.
@@ -26,14 +25,10 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "src"))
 
-from sectorflow.tui import flow_app, flow_view  # noqa: E402
 
 MANIFEST = REPO / "docs" / "SCREENSHOTS.md"
-ATTACHMENT = REPO / "docs" / "strategy" / "inquiries" / "attachments" / "A_screen_example.md"
 IMAGES = REPO / "docs" / "images"
 TERM_W, TERM_H = 160, 45
-#: 첨부 A 의 코드 블록 순서 — 그 자리에 들어갈 화면(섹터 표·종목 목록은 앞부분만).
-ATTACHMENT_ROWS = {"table": 11, "names": 8, "explore": 8, "all": 7}
 #: 터미널 그림 — (파일, 명령, 키, 끝 빈 줄을 지우나). 키는 tmux send-keys 인자.
 TUI_SHOTS = (("kqflow-today.png", "sw-flow", (), True),
              ("kqflow-table.png", "sw-flow", ("x",), False),
@@ -151,68 +146,6 @@ font-family:"Noto Sans KR","DejaVu Sans Mono",monospace}} .g1{{width:1ch;font-fa
 </style></head><body><div id="t">{rows}</div></body></html>"""
 
 
-# ── 첨부 A — 글자 화면 ─────────────────────────────────────────────────────────────────
-
-class _Scr:
-    """curses 화면의 쓰는 부분 — 글자만 모은다."""
-
-    def __init__(self, h: int, w: int) -> None:
-        self.h, self.w, self.lines = h, w, {}
-
-    def getmaxyx(self):
-        return self.h, self.w
-
-    def addstr(self, y, _x, s, _attr=0):
-        self.lines[y] = self.lines.get(y, "") + s
-
-    def erase(self):
-        self.lines = {}
-
-    def refresh(self):
-        pass
-
-    def chgat(self, *_a):
-        pass
-
-
-def _drawn(st, n: int) -> str:
-    scr = _Scr(TERM_H + 1, TERM_W + 1)
-    flow_app._draw(scr, st)
-    return "\n".join(scr.lines.get(i, "").rstrip() for i in range(n))
-
-
-def attachment_screens(report_dir: str) -> list[str]:
-    """첨부 A 의 코드 블록 — 첫 화면·섹터 표·종목 목록·탐색 모드·`t` 전 종목(폭 160)."""
-    d = flow_app.load(report_dir)
-    d["report_warnings"] = []
-    width = flow_view.view_width(TERM_W + 1)
-    st = flow_view.State(d)
-    banner = "\n".join(ln.rstrip() for ln in flow_view.banner_lines(st, width))
-    table = _drawn(st, ATTACHMENT_ROWS["table"])
-    st.drill = True
-    names = _drawn(st, ATTACHMENT_ROWS["names"])
-    ex = flow_view.State(d)
-    ex.explore = True
-    explore = _drawn(ex, ATTACHMENT_ROWS["explore"])
-    every = "\n".join(ln.rstrip() for ln in flow_view.all_lines(ex, width)[0][:ATTACHMENT_ROWS["all"]])
-    return [banner, table, names, explore, every]
-
-
-FENCE = re.compile(r"^```\n.*?^```$", re.M | re.S)
-
-
-def attachment_blocks(text: str) -> list[str]:
-    return [m.group(0)[4:-4] for m in FENCE.finditer(text)]
-
-
-def rewrite_attachment(text: str, screens: list[str]) -> str:
-    """코드 블록을 순서대로 바꿔 쓴다 — 블록 수가 다르면 문서 형식이 바뀐 것이다."""
-    if len(attachment_blocks(text)) != len(screens):
-        raise SystemExit(f"첨부 A 코드 블록이 {len(attachment_blocks(text))}개다 — {len(screens)}개를 기대했다")
-    it = iter(screens)
-    return FENCE.sub(lambda _m: f"```\n{next(it)}\n```", text)
-
-
 # ── 그림 ──────────────────────────────────────────────────────────────────────────────
 
 def _tmux(*args: str) -> str:
@@ -316,7 +249,6 @@ def stamp_manifest(text: str, sha: str) -> str:
 
 def main(argv: "list[str] | None" = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--attachment", action="store_true", help="질의서 첨부 A 의 화면 예시만 다시 쓴다(tmux·Chromium 불요)")
     ap.add_argument("--demo-dir", help="이미 만든 합성 데모 폴더 — 없으면 임시로 만든다")
     a = ap.parse_args(argv)
     from sectorflow import demo  # noqa: PLC0415 — pandas 등이 데모를 지을 때만 필요하다
@@ -324,11 +256,6 @@ def main(argv: "list[str] | None" = None) -> int:
     keep = tempfile.mkdtemp(prefix="sf-shots.") if not a.demo_dir else None
     try:
         report = Path(a.demo_dir or demo.ensure(Path(keep) / "demo"))
-        if ATTACHMENT.is_file():  # 질의서 첨부는 비공개 문서다 — 공개 레포에는 없다
-            ATTACHMENT.write_text(rewrite_attachment(ATTACHMENT.read_text("utf-8"), attachment_screens(str(report))), "utf-8")
-            print(f"wrote {ATTACHMENT.relative_to(REPO)}")
-        if a.attachment:
-            return 0
         text = MANIFEST.read_text("utf-8")
         dirty = _git("status", "--porcelain", "--", *watched(text))
         if dirty:
