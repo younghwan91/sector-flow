@@ -561,5 +561,5 @@ MIT
 
 ## 기여 및 이슈 제보
 
-- 🐛 버그 제보, 질문, 기능 제안: [GitHub Issues](https://github.com/younghwan91/sector-flow/issues) (비공개 저장소라 접근 권한이 있어야 열린다)
+- 🐛 버그 제보, 질문, 기능 제안: [GitHub Issues](https://github.com/younghwan91/sector-flow/issues)
 - 📈 업데이트 소식: [팔로우 @younghwan91](https://github.com/younghwan91)
