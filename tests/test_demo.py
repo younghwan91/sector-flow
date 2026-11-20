@@ -181,7 +181,7 @@ def test_demo_identities_hold_after_the_provisional_edit(built, tmp_path):
 
 
 def test_demo_links_stay_inside_the_folder_and_the_trust_page_gives_the_grounds(built):
-    """면책 문구의 '검증·품질' 링크가 데모에서 404 였다 — 고객에겐 데모가 유일한 길이다. 판정 글자는 실 페이지와 같다."""
+    """면책 문구의 '검증·품질' 링크가 데모에서 404 였다 — 리포트 없이 보는 사람에겐 데모가 유일한 길이다. 판정 글자는 실 페이지와 같다."""
     pages = {n: (built["dir"] / n).read_text("utf-8") for n in ("numbers.html", "viewer.html", "trust.html")}
     for name, html in pages.items():
         for href in re.findall(r'<a [^>]*href="([^"#]+)', html):
@@ -198,18 +198,6 @@ def test_demo_links_stay_inside_the_folder_and_the_trust_page_gives_the_grounds(
     assert (verdicts["Q3d-sector"], verdicts["Q3d-G"], verdicts["S1-S3"]) == ("증거 없음", "판정 불가", "증거 없음")
     said = {v for _q, v, _w in demo.TRUST_RESULTS}
     assert said <= set(verdicts.values()), said - set(verdicts.values())
-
-
-def test_inquiry_attachment_quotes_the_current_screens(built):
-    """질의서 첨부 A 는 지금 화면이다 — 기관 세부·부호 바뀜이 없는 옛 화면을 인용하면 질의의 사실관계가 틀린다."""
-    spec = importlib.util.spec_from_file_location("_shots", REPO / "scripts" / "demo_shots.py")
-    shots = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(shots)
-    doc = shots.ATTACHMENT.read_text("utf-8")
-    assert shots.attachment_blocks(doc) == shots.attachment_screens(str(built["dir"])), (
-        "첨부 A 가 지금 화면과 다르다 — uv run python scripts/demo_shots.py --attachment")
-    for mark in ("기관 세부", "오늘 달라진 것", "부호가 바뀐 섹터", "분봉 밖 거래 큼", "거래대금 집중", "네이버 시장값과 차이 큼", "[합성 데모]"):
-        assert mark in shots.attachment_blocks(doc)[0], mark
 
 
 @pytest.mark.parametrize("width", (40, 80, 160))

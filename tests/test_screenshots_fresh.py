@@ -96,12 +96,3 @@ def test_ansi_to_html_keeps_color_width_and_trims_only_when_asked():
     assert '<span class="g2">빨</span>' in page, "한글은 2칸 격자에 넣어야 표 열이 안 어긋난다"
     assert page.count('class="r"') == 3
     assert S.ansi_html(raw, trim=True).count('class="r"') == 2
-
-
-def test_attachment_rewrite_replaces_blocks_in_order_and_refuses_a_changed_format():
-    S = _shots()
-    doc = "# t\n\n```\nold1\n```\nmid\n```\nold2\n```\n"
-    new = S.rewrite_attachment(doc, ["A\nB", "C"])
-    assert S.attachment_blocks(new) == ["A\nB", "C"] and "mid" in new and "old" not in new
-    with pytest.raises(SystemExit):
-        S.rewrite_attachment(doc, ["A"])

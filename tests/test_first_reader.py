@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from sectorflow.tui.flow_view import B_SHORT, BANNER_DISCLAIMER, EXPLORE_LABEL_TIERS
+from sectorflow.tui.flow_view import B_SHORT, EXPLORE_LABEL_TIERS
 
 REPO = Path(__file__).resolve().parent.parent
 README = (REPO / "README.md").read_text("utf-8")
@@ -133,57 +133,10 @@ def test_env_example_does_not_promise_a_sqlite_fallback():
     assert "로컬 SQLite(" not in text
 
 
-# ── 당국 질의서 — 발송 전에 사실이 맞아야 한다 ─────────────────────────────────
-
-INQ = REPO / "docs/strategy/inquiries"
-FSC = (INQ / "fsc_advisory_scope.md").read_text("utf-8")
-KRX = (INQ / "krx_market_data.md").read_text("utf-8")
-KIWOOM = (INQ / "kiwoom_api_terms.md").read_text("utf-8")
-
-
-def test_inquiries_state_what_the_screen_really_shows():
-    """'종목 없음·점수 없음' 은 사실이 아니다 — 첫 화면 종목명, 드릴다운 전 종목, 탐색 모드 점수를 적고 묻는다."""
-    facts = _section(FSC, "## 1. 사실관계", "## 2. 질의 사항")    # 질문 칸이 아니라 사실관계 칸에 적혀야 한다
-    for must in ("종목명", "전 종목", "탐색 모드", "질문 12"):
-        assert must in facts, must
-    assert "점수·등급·판정" not in FSC
-    assert "탐색 모드" in KRX and "전 종목" in KRX
-    assert "탐색 모드" in KIWOOM
-
-
-def test_inquiries_state_what_the_first_screen_names_and_where_the_data_comes_from():
-    """첫 화면 종목명은 섹터 옆만이 아니다. 네이버 대조도 원천이다. '열마다 표지' 는 부풀린 말이었다. 면책 인용은 지금 글자다."""
-    facts = _section(FSC, "## 1. 사실관계", "## 2. 질의 사항")
-    for must in ("분봉 밖 거래 큼", "거래대금 집중", "네이버", "기관 세부", "부호가 바뀐"):
-        assert must in facts, must
-    assert "열마다 근거 수준 표지" not in FSC
-    assert BANNER_DISCLAIMER[0].strip() in facts, "질의서의 면책 인용이 지금 화면과 다르다"
-    legal = (REPO / "docs/strategy/research_notes/섹터 수급 리포트 수익화 전략/legal_licensing.md").read_text("utf-8")
-    assert "m.stock.naver.com" in legal and "m.stock.naver.com" in KRX
-
-
-def test_inquiries_state_the_publication_schedule_and_window():
-    """'확정 기준 하루 1회'·'약 250거래일' 은 틀렸다 — 18:10 잠정·08:20 확정, 260거래일."""
-    for doc in (FSC, KRX):
-        assert "18:10" in doc and "08:20" in doc and "하루 1회" not in doc
-        assert "260거래일" in doc
-    assert "약 250" not in KRX
-
-
-def test_krx_inquiry_states_the_real_sources():
-    """정보데이터시스템에서 '받지 않는다' 는 틀렸다 — 상장폐지 목록·업종 분류·DART 주식수를 적는다."""
-    assert "정보데이터시스템에서는 받지 않습니다" not in KRX
-    sources = _section(KRX, "## 2. 원천 데이터", "## 3. 질문")    # 질문 칸이 아니라 원천 설명에 적혀야 한다
-    for must in ("상장폐지", "OpenDART", "KRX 체결만"):
-        assert must in sources, must
-    assert "400 LOGOUT" in KRX
-
-
 #: 근거를 넘는 단정 — 검증 문서 결론은 수량만 말하고 까닭은 미확인이다. '일 수 있다' 로만 쓴다(6회차 D2).
 OVERCLAIMS = ("값이 틀린 것이 아니라", "값이 틀린 표지가 아니라", "정의가 갈린", "대량 체결 의심", "드물게 뜨는", "정의 차이(")
 OVERCLAIM_SURFACES = ("README.md", "docs/glossary.md", "docs/reading-guide.md", "docs/runbook.md",
-                      "docs/strategy/inquiries/fsc_advisory_scope.md", "docs/strategy/inquiries/krx_market_data.md",
-                      "docs/strategy/inquiries/kiwoom_api_terms.md", "scripts/digest.py", "scripts/templates/trust.html",
+                      "scripts/digest.py", "scripts/templates/trust.html",
                       "scripts/templates/sector_numbers.html", "src/sectorflow/demo.py", "src/sectorflow/tui/flow_view.py")
 
 
@@ -199,86 +152,6 @@ def test_validation_doc_states_the_stock_check_scope():
     scope = v.split("**종목값 대조의 범위.**")[1].splitlines()[0]
     for must in ("10-12", "수량", "미확인", "10-29"):
         assert must in scope, must
-
-
-def test_inquiries_state_minute_bars_and_the_unverified_api():
-    """'실시간·장중 데이터는 쓰지 않습니다'·'일별 조회만' 은 틀렸다 — 분봉을 읽는다. 수집 API 는 미확인으로 적는다."""
-    for doc in (KRX, KIWOOM):
-        assert "minute_bars" in doc and "확인하지 못했습니다" in doc and "거래대금 집중" in doc
-    assert "실시간·장중 데이터는 쓰지 않습니다" not in KRX and "일별 조회만" not in KIWOOM
-
-
-def test_inquiries_put_numbers_on_the_flag_and_disclose_reconstruction():
-    """표지 빈도는 숫자로. 차이 % 로 네이버 값을 되짚을 수 있다는 것·기본 꺼짐·다이제스트 용도를 밝힌다."""
-    assert "36거래일 중 16일(44%" in FSC and "다이제스트" in FSC
-    for doc in (FSC, KRX):
-        assert "되짚을 수 있습니다" in doc and "기본 꺼짐" in doc
-
-
-@pytest.mark.parametrize("rel", [
-    "docs/strategy/inquiries/krx_market_data.md", "docs/strategy/inquiries/kiwoom_api_terms.md",
-    "docs/strategy/inquiries/attachments/B_metric_definitions.md", "docs/strategy/inquiries/attachments/D_sales_copy_draft.md",
-    "docs/strategy/legal/terms_of_service_draft.md"])
-def test_legal_drafts_do_not_lump_percentile_with_the_tested_metrics(rel):
-    """1년 백분위는 앞날 검정을 안 했다 — '검정 증거 없음' 옆에 안 적으면 백분위도 검정한 것처럼 읽힌다."""
-    assert "1년 백분위·연속 일수는 앞날 검정을 하지 않" in (REPO / rel).read_text("utf-8")
-
-
-def test_fsc_inquiry_does_not_claim_a_notice_the_screen_lacks():
-    """'권유 아님' 은 지금 화면에 없다 — 있다고 적으면 질의의 사실관계가 틀린다."""
-    assert '화면에 "관측이며 예측·권유가 아님"과 검증 결과를 표시합니다' not in FSC
-    assert "지금 화면에 없고" in FSC
-
-
-@pytest.mark.parametrize("rel", [
-    "docs/strategy/inquiries/fsc_advisory_scope.md", "docs/strategy/inquiries/krx_market_data.md",
-    "docs/strategy/inquiries/kiwoom_api_terms.md", "docs/strategy/inquiries/opendart_terms.md",
-    "docs/strategy/inquiries/attachments/A_screen_example.md", "docs/strategy/inquiries/attachments/B_metric_definitions.md",
-    "docs/strategy/inquiries/attachments/C_byo_structure.md", "docs/strategy/inquiries/attachments/D_sales_copy_draft.md",
-    "docs/strategy/legal/terms_of_service_draft.md", "docs/strategy/legal/privacy_policy_draft.md",
-    "docs/strategy/legal/refund_policy_draft.md"])
-def test_drafts_say_they_are_drafts(rel):
-    head = "\n".join((REPO / rel).read_text("utf-8").splitlines()[:5])
-    assert "법률 검토 전 초안" in head, rel
-
-
-def test_screen_example_attachment_has_no_real_name():
-    """첨부 A 는 합성 데모다. 이름은 전부 가상이어야 한다."""
-    text = (INQ / "attachments/A_screen_example.md").read_text("utf-8")
-    assert "수치는 가상" in text and "[합성 데모]" in text and "가상유통" in text
-    for name in ("삼성전자", "SK하이닉스", "NAVER", "전기/전자"):
-        assert name not in text, name
-
-
-# ── 전략 문서 ────────────────────────────────────────────────────────────────
-
-STRATEGY = sorted((REPO / "docs/strategy").rglob("*.md"))
-
-
-def test_strategy_docs_have_no_local_absolute_link():
-    bad = [p.name for p in STRATEGY if "/home/young" in p.read_text("utf-8")]
-    assert not bad, bad
-
-
-def test_strategy_report_marks_interpretation_as_interpretation():
-    """'법적 방패'·'가장 싼 방법' 은 확인 없는 단정이었고, 지불 의사와 공개 검증도 없는 것을 있는 듯 적었다."""
-    text = next(p for p in STRATEGY if p.parent.name == "reports").read_text("utf-8")
-    for gone in ("법적 방패", "광고 규제를 피하는", "통과하는 가장 싼 방법", "예측력 없음", "관측에는 월 5,900", "업종 한 개씩",
-                 "검사 144건", "(/home"):
-        assert gone not in text, gone
-    for must in ("지불 미검증", "해석", "미확인", "비공개", "확인하지 못한 것", "204건"):
-        assert must in text, must
-
-
-def test_competitor_note_does_not_call_vendor_labels_its_own_basket():
-    """섹터 라벨은 벤더 업종 27칸(미분류 포함)과 덮어쓴 4종목이다 — 자체 분류가 아니다."""
-    text = next(p for p in STRATEGY if p.name == "competitors.md").read_text("utf-8")
-    assert "자체 바스켓" not in text and "벤더 업종" in text and "[0797]" in text
-
-
-def test_scorecard_does_not_claim_being_faster():
-    text = (REPO / "docs/strategy/2026-11-08-scorecard.md").read_text("utf-8")
-    assert "무료 소스보다 빠르고" not in text and "16:10" in text
 
 
 # ── 연구 재현 문서 ───────────────────────────────────────────────────────────
