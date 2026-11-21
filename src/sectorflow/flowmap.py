@@ -9,6 +9,9 @@
 """
 from __future__ import annotations
 
+from sectorflow import summary
+from sectorflow.josa import josa
+
 #: 페이로드 ``flows[시장][섹터]`` 의 주체 키 — 순서가 화면의 주체 노드 순서다(양쪽 같게).
 ACTORS = ("indiv", "forgn", "inst", "etc")
 #: 잔여 = ``−Σ ACTORS`` — KRX 분류 중 싣지 않는 주체(기타외국인 등)의 순매수 추정치이자 근사 오차.
@@ -207,3 +210,46 @@ def frames(P: dict, markets: list[str], *, span: int = 1, n: int = 60) -> dict:
         shown = [by.get(s) or (0.0, s, {}, {}) for s in order]
         out.append(_assemble(rows, shown, [r for r in rows if r[1] not in order]))
     return {"dates": P["dates"][first:], "order": order, "frames": out}
+
+
+#: 전체 시장 — ``P["markets"]`` 를 다 더한 것.
+ALL_MARKETS = "전체"
+#: 헤드라인 아래 사실 줄 수 — 간선 큰 순.
+N_FACTS = 3
+
+
+def market_list(P: dict, market: str) -> list[str]:
+    """화면의 시장 하나 → 더할 페이로드 시장들. :data:`ALL_MARKETS` 면 전부."""
+    return list(P["markets"]) if market == ALL_MARKETS else [market]
+
+
+def _big(v: float) -> str:
+    """``−2.9조``·``+3,210억`` — 부호는 웹처럼 ``−``(U+2212), 자릿수·반올림·조 단위는 ``summary.fmt_big`` 그대로."""
+    return summary.fmt_big(v).replace("-", "−")
+
+
+def map_headline(P: dict, market: str, win: int) -> dict:
+    """지도 머리글 — ``lead`` 한 줄과 ``facts`` 간선 큰 순 :data:`N_FACTS` 줄. 주변합만 말한다.
+
+    ``lead`` 는 창 합계에서 순매도가 가장 큰 주체와 순매수가 가장 큰 주체 — 고르는 규칙은 ``summary.dominant``
+    (|값| 큰 4주체, 같으면 키가 큰 쪽)를 부호별로 부른 것이다. 두 주체를 잇지 않는다: "개인이 판 것을 기관이 받았다" 는
+    관측이 아니다(주변합으로 쌍별 이전량이 정해지지 않는다). ``facts`` 는 ``가상전자 — 개인 −2,927억`` 꼴이고
+    4주체 간선만 센다(잔여는 주체가 아니다). 같은 크기면 페이로드 섹터 순서·주체 순서.
+    """
+    N = len(P["dates"])
+    sums = window_sums(P, market_list(P, market), N - win, N - 1)
+    net = {a: {"v": sum(r[a] for r in sums.values())} for a in ACTORS}
+    gave = summary.dominant({a: f for a, f in net.items() if f["v"] < -EPS})
+    took = summary.dominant({a: f for a, f in net.items() if f["v"] > EPS})
+    period = "기준일" if win == 1 else f"최근 {win}거래일"
+    parts = []
+    if gave:
+        parts.append(f"{josa(ACTOR_LABEL[gave], '이/가')} 가장 크게 순매도 {_big(net[gave]['v'])}")
+    if took:
+        parts.append(f"{josa(ACTOR_LABEL[took], '이/가')} 가장 크게 순매수 {_big(net[took]['v'])}")
+    lead = f"{period} {market} — " + (" · ".join(parts) if parts else "순매수·순매도가 없다")
+    edges = [(abs(row[a]), i, j, s, a, row[a]) for i, (s, row) in enumerate(sums.items())
+             for j, a in enumerate(ACTORS) if abs(row[a]) > EPS]
+    edges.sort(key=lambda e: (-e[0], e[1], e[2]))
+    facts = [f"{s} — {ACTOR_LABEL[a]} {_big(v)}" for _m, _i, _j, s, a, v in edges[:N_FACTS]]
+    return {"lead": lead, "facts": facts}

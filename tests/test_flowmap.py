@@ -277,3 +277,60 @@ def test_span5_is_rolling_sum():
             if s in got:
                 assert got[s] == gt, (j, s)
         assert f["left"] == G["left"] and f["right"] == G["right"] and f["gross"] == pytest.approx(G["gross"])
+
+
+@pytest.fixture(scope="module")
+def demo_payload(tmp_path_factory):
+    """합성 데모의 페이로드 — 데모 DB 를 짓고 배치와 같은 ``sector_flow.py`` 로 한 번(약 6초). 실데이터를 쓰지 않는다."""
+    import json
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    from sectorflow import demo
+
+    root = tmp_path_factory.mktemp("flowmap-demo")
+    demo.build_db(root / "demo.db")
+    script = Path(__file__).resolve().parent.parent / "scripts" / "sector_flow.py"
+    subprocess.run([sys.executable, str(script), "--db", str(root / "demo.db"), "--days", str(demo.REPORT_DAYS),
+                    "--reports-root", str(root / "r"), "--final", "--json", str(root / "payload.json")],
+                   check=True, capture_output=True, timeout=300)
+    return json.loads((root / "payload.json").read_text("utf-8"))
+
+
+def test_headline_uses_summary(monkeypatch):
+    """가장 큰 주체는 ``summary.dominant`` 가 고른다 — 지도가 규칙을 다시 정하지 않는다."""
+    P = _long_payload()
+    H = FM.map_headline(P, "거래소", 1)
+    assert H["lead"].startswith("기준일 거래소 — ") and "개인이 가장 크게 순매도 −" in H["lead"]
+    assert "기관이 가장 크게 순매수 +" in H["lead"]
+    picked = []
+
+    def fake(net):
+        picked.append(sorted(net))
+        return "etc" if "etc" in net else None
+    monkeypatch.setattr(FM.summary, "dominant", fake)
+    P["flows"]["거래소"]["섹0"]["etc"] = [5.0] * 8
+    H2 = FM.map_headline(P, "거래소", 5)
+    assert H2["lead"] == "최근 5거래일 거래소 — 기타법인이 가장 크게 순매수 +25억"
+    assert picked == [["indiv"], ["etc", "inst"]], "부호별로 나눠 부른다 — 순매도 쪽, 순매수 쪽"
+
+
+def test_headline_facts_are_marginal_edges():
+    """사실 줄은 (섹터, 주체) 간선 큰 순 — '가상전자 — 개인 −2,927억' 꼴, 두 주체를 잇는 말이 없다."""
+    S = _payload()
+    H = FM.map_headline(S, FM.ALL_MARKETS, 3)
+    assert H["facts"] == ["가 — 개인 −54억", "가 — 외국인 +27억", "가 — 기관 +24억"]
+    one = FM.map_headline(S, "코스닥", 1)
+    assert one["facts"] == ["가 — 개인 +3억", "가 — 외국인 −1억"], "0 간선은 사실이 아니다"
+
+
+def test_headline_wording_clean(demo_payload):
+    from sectorflow.wording import map_hits
+
+    for m in (FM.ALL_MARKETS, *demo_payload["markets"]):
+        for w in (1, 5, 20):
+            H = FM.map_headline(demo_payload, m, w)
+            assert len(H["facts"]) == FM.N_FACTS
+            assert map_hits(" · ".join([H["lead"], *H["facts"]])) == [], (m, w, H)
+            assert all(" — " in f and f.endswith(("억", "조")) for f in H["facts"])

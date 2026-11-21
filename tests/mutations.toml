@@ -12486,6 +12486,54 @@ file = "src/sectorflow/flowmap.py"
 find = "        rows = _rows(window_sums(P, markets, j - span + 1, j))"
 replace = "        rows = _rows(window_sums(P, markets, j, j))"
 
+[[mutation]]
+id = "josa-pair-swapped"
+why = "받침 있는 쪽·없는 쪽을 뒤집으면 '기관가'·'외국인는' 이 헤드라인에 나간다"
+guards = ["tests/test_josa.py::test_josa_basic"]
+file = "src/sectorflow/josa.py"
+find = "    with_coda, without = PAIRS[pair]"
+replace = "    without, with_coda = PAIRS[pair]"
+
+[[mutation]]
+id = "josa-rieul-rule-lost"
+why = "ㄹ 받침 뒤에 '으로' 를 붙이면 '가상건설으로' 가 된다"
+guards = ["tests/test_josa.py::test_josa_rieul_and_readings"]
+file = "src/sectorflow/josa.py"
+find = "        return word + (with_coda if c == \"o\" else without)"
+replace = "        return word + (with_coda if c else without)"
+
+[[mutation]]
+id = "josa-digits-read-as-no-coda"
+why = "숫자를 읽는 소리로 보지 않으면 '120는'·'3가' 가 된다(창 길이·순위가 숫자로 끝난다)"
+guards = ["tests/test_josa.py::test_josa_rieul_and_readings"]
+file = "src/sectorflow/josa.py"
+find = "_DIGIT = {\"0\": \"o\", \"1\": \"l\", \"2\": \"\", \"3\": \"o\", \"4\": \"\", \"5\": \"\", \"6\": \"o\", \"7\": \"l\", \"8\": \"l\", \"9\": \"\"}"
+replace = "_DIGIT = {c: \"\" for c in \"0123456789\"}"
+
+[[mutation]]
+id = "headline-picks-own-dominant"
+why = "지도가 가장 큰 주체를 따로 고르면 다이제스트·화면과 같은 날 다른 주체를 말할 수 있다(같으면 키가 큰 쪽 규칙 등)"
+guards = ["tests/test_flowmap.py::test_headline_uses_summary"]
+file = "src/sectorflow/flowmap.py"
+find = "    gave = summary.dominant({a: f for a, f in net.items() if f[\"v\"] < -EPS})"
+replace = "    gave = min(net, key=lambda a: net[a][\"v\"])"
+
+[[mutation]]
+id = "headline-zero-edge-fact"
+why = "0 간선을 사실 줄로 세우면 '가 — 기관 +0억' 같은 관측 아닌 줄이 나간다"
+guards = ["tests/test_flowmap.py::test_headline_facts_are_marginal_edges"]
+file = "src/sectorflow/flowmap.py"
+find = "             for j, a in enumerate(ACTORS) if abs(row[a]) > EPS]"
+replace = "             for j, a in enumerate(ACTORS)]"
+
+[[mutation]]
+id = "headline-says-inflow"
+why = "머리글이 '유입' 처럼 돈이 어디서 왔다고 읽히는 말을 쓰면 관측 안 된 섹터·주체 쌍을 함의한다(MAP_AVOID)"
+guards = ["tests/test_flowmap.py::test_headline_wording_clean"]
+file = "src/sectorflow/flowmap.py"
+find = "가장 크게 순매수 {"
+replace = "가장 크게 유입 {"
+
 [[removed]]
 id = "ci-shard-denominator-hardcoded"
 why = "샤드를 없앴다 — 전체 검증은 잡 하나다(tests/test_ci_workflow.py 가 matrix 를 막는다)"
