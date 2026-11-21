@@ -227,3 +227,53 @@ def test_detail_order_puts_invtrt_penfnd_first():
     D = FM.inst_detail_sums(_payload_detail(), ["거래소"], 0, 2)
     assert list(D["가"]) == ["invtrt", "penfnd_etc", "fnnc_invt", "insrnc", "bank", "samo_fund", "inst_other"]
     assert FM.detail_keys(_payload_detail()) == ["invtrt", "penfnd_etc", "fnnc_invt", "insrnc", "bank", "samo_fund"]
+
+
+def _long_payload(n_days: int = 8, n_sec: int = 8):
+    """한 시장, 날마다 순위가 바뀌는 섹터들 — 섹터 i 의 기관 순매수는 (i + 3·날) mod n_sec 에 비례, 개인이 반대로."""
+    secs = [f"섹{i}" for i in range(n_sec)]
+    flows = {}
+    for i, s in enumerate(secs):
+        v = [float(((i + 3 * d) % n_sec + 1) * 10) for d in range(n_days)]
+        flows[s] = _flows(indiv=[-x for x in v], forgn=[0.0] * n_days, inst=v, etc=[0.0] * n_days)
+    return {"dates": [f"2026-02-{d + 1:02d}" for d in range(n_days)], "sectors": secs, "markets": ["거래소"],
+            "flows": {"거래소": flows}}
+
+
+def test_frames_order_fixed():
+    """노드 순서는 구간 전체 합으로 한 번 정한다 — 프레임마다 다시 줄세우면 띠가 깜빡인다. 꼬리 집합도 고정이다."""
+    P = _long_payload()
+    T = FM.frames(P, ["거래소"], span=1, n=6)
+    assert len(T["frames"]) == 6
+    days = [[r["name"] for r in sorted(f["sectors"], key=lambda r: -sum(r["take"].values()))] for f in T["frames"]]
+    assert len({tuple(d) for d in days}) > 1, "픽스처가 날마다 순위를 바꾸지 않으면 이 검사는 헛돈다"
+    whole = FM.exchange_graph(FM.window_sums(P, ["거래소"], 2, 7))
+    assert T["order"] == [r["name"] for r in whole["sectors"]]
+    for f in T["frames"]:
+        assert [r["name"] for r in f["sectors"]] == T["order"]
+        assert set((f["tail"] or {"names": []})["names"]) <= set(P["sectors"]) - set(T["order"])
+
+
+def test_frame_count_capped_by_dates():
+    P = _payload()
+    T = FM.frames(P, ["거래소", "코스닥"])
+    assert T["dates"] == P["dates"] and len(T["frames"]) == 3, "n=60 이어도 날짜 수까지"
+    T2 = FM.frames(P, ["거래소", "코스닥"], span=2, n=60)
+    assert T2["dates"] == P["dates"][1:] and len(T2["frames"]) == 2, "5일 이동합은 앞의 span−1 일이 프레임이 되지 못한다"
+    assert FM.frames(P, ["거래소"], span=5)["frames"] == [] and FM.frames(P, ["거래소"], span=5)["dates"] == []
+
+
+def test_span5_is_rolling_sum():
+    P = _long_payload(n_days=8)
+    T = FM.frames(P, ["거래소"], span=5, n=3)
+    assert T["dates"] == P["dates"][5:]
+    for f, j in zip(T["frames"], range(5, 8)):
+        G = FM.exchange_graph(FM.window_sums(P, ["거래소"], j - 4, j))
+        want = {r["name"]: (r["give"], r["take"]) for r in G["sectors"]}
+        if G["tail"]:
+            assert set(G["tail"]["names"]) | set(want) <= set(P["sectors"])
+        got = {r["name"]: (r["give"], r["take"]) for r in f["sectors"]}
+        for s, gt in want.items():
+            if s in got:
+                assert got[s] == gt, (j, s)
+        assert f["left"] == G["left"] and f["right"] == G["right"] and f["gross"] == pytest.approx(G["gross"])

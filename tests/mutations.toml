@@ -12406,8 +12406,8 @@ id = "flowmap-tail-keyed-by-sector"
 why = "꼬리를 섹터 이름 키로 담으면 데이터에 섹터 키 구조가 생긴다 — 섹터→섹터 짝으로 읽힐 길을 데이터가 연다"
 guards = ["tests/test_flowmap.py::test_no_sector_to_sector_keys"]
 file = "src/sectorflow/flowmap.py"
-find = "        tail = {\"names\": [r[1] for r in rows[k:]], \"give\": _ordered(tg), \"take\": _ordered(tt)}"
-replace = "        tail = {\"names\": {r[1]: r[0] for r in rows[k:]}, \"give\": _ordered(tg), \"take\": _ordered(tt)}"
+find = "        tail = {\"names\": [r[1] for r in rest], \"give\": _ordered(tg), \"take\": _ordered(tt)}"
+replace = "        tail = {\"names\": {r[1]: r[0] for r in rest}, \"give\": _ordered(tg), \"take\": _ordered(tt)}"
 
 [[mutation]]
 id = "flowmap-actor-gave-ascending"
@@ -12461,6 +12461,30 @@ guards = ["tests/test_flowmap.py::test_detail_order_puts_invtrt_penfnd_first"]
 file = "src/sectorflow/flowmap.py"
 find = "DETAIL_FIRST = (\"invtrt\", \"penfnd_etc\")"
 replace = "DETAIL_FIRST = ()"
+
+[[mutation]]
+id = "flowmap-frames-resort-each-day"
+why = "프레임마다 그날 크기로 다시 줄세우면 재생 중 띠가 자리를 바꿔 깜빡인다(설계 §3.3)"
+guards = ["tests/test_flowmap.py::test_frames_order_fixed"]
+file = "src/sectorflow/flowmap.py"
+find = "        shown = [by.get(s) or (0.0, s, {}, {}) for s in order]"
+replace = "        shown = sorted(rows, key=lambda r: -r[0])[:len(order)]"
+
+[[mutation]]
+id = "flowmap-frames-ignore-span-start"
+why = "이동합 창이 날짜 앞을 넘으면 음수 색인이 끝에서부터 잘라 엉뚱한 합(또는 빈 합)을 프레임으로 낸다"
+guards = ["tests/test_flowmap.py::test_frame_count_capped_by_dates"]
+file = "src/sectorflow/flowmap.py"
+find = "    n = max(0, min(n, N - span + 1))"
+replace = "    n = max(0, min(n, N))"
+
+[[mutation]]
+id = "flowmap-frames-span-ignored"
+why = "span 을 무시하면 '5일 이동합' 재생이 실제로는 하루치다"
+guards = ["tests/test_flowmap.py::test_span5_is_rolling_sum"]
+file = "src/sectorflow/flowmap.py"
+find = "        rows = _rows(window_sums(P, markets, j - span + 1, j))"
+replace = "        rows = _rows(window_sums(P, markets, j, j))"
 
 [[removed]]
 id = "ci-shard-denominator-hardcoded"

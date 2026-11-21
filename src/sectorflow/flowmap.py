@@ -84,30 +84,44 @@ def exchange_graph(sums: Sums) -> dict:
     둘은 다른 숫자다. 0 인 주체는 키가 없다(노드를 그리지 않는다). ``gross`` = Σ노드 높이 = Σleft = Σright.
     왼쪽 주체와 오른쪽 주체를 잇는 구조는 없다 — 한 간선의 두 끝은 늘 주체 하나와 섹터 하나다.
     """
+    rows = _rows(sums)
+    rows.sort(key=lambda r: -r[0])           # 안정 정렬 — 같은 높이는 입력(페이로드) 순서
+    k = _n_shown([r[0] for r in rows], sum(r[0] for r in rows))
+    return _assemble(rows, rows[:k], rows[k:])
+
+
+#: (노드 높이, 섹터, give, take)
+_Row = tuple[float, str, dict[str, float], dict[str, float]]
+
+
+def _rows(sums: Sums) -> list[_Row]:
+    """간선이 하나라도 있는 섹터의 행 — 입력 순서."""
     rows = []
     for name, row in sums.items():
         give, take = _split(row)
         size = max(sum(give.values()), sum(take.values()))
         if size > EPS:
             rows.append((size, name, give, take))
-    rows.sort(key=lambda r: -r[0])           # 안정 정렬 — 같은 높이는 입력(페이로드) 순서
-    gross = sum(r[0] for r in rows)
-    k = _n_shown([r[0] for r in rows], gross)
+    return rows
+
+
+def _assemble(rows: list[_Row], shown: list[_Row], rest: list[_Row]) -> dict:
+    """보이는 행·꼬리 행으로 그래프 dict — 주체 노드 높이와 gross 는 ``rows`` 전부에서."""
     left: dict[str, float] = {}
     right: dict[str, float] = {}
     for _size, _name, give, take in rows:
         _add(left, give)
         _add(right, take)
     tail = None
-    if rows[k:]:
+    if rest:
         tg: dict[str, float] = {}
         tt: dict[str, float] = {}
-        for _size, _name, give, take in rows[k:]:
+        for _size, _name, give, take in rest:
             _add(tg, give)
             _add(tt, take)
-        tail = {"names": [r[1] for r in rows[k:]], "give": _ordered(tg), "take": _ordered(tt)}
-    return {"sectors": [{"name": n, "give": g, "take": t} for _s, n, g, t in rows[:k]],
-            "tail": tail, "left": _ordered(left), "right": _ordered(right), "gross": gross}
+        tail = {"names": [r[1] for r in rest], "give": _ordered(tg), "take": _ordered(tt)}
+    return {"sectors": [{"name": n, "give": g, "take": t} for _s, n, g, t in shown],
+            "tail": tail, "left": _ordered(left), "right": _ordered(right), "gross": sum(r[0] for r in rows)}
 
 
 def _cut(items: list[list], gross: float) -> tuple[list[list], "list | None"]:
@@ -170,3 +184,26 @@ def with_detail(sums: Sums, detail: dict[str, dict[str, float]]) -> Sums:
     """합계에 기관 세부를 ``inst:<키>`` 로 붙인 새 합계 — :func:`actor_graph` 가 세부를 주체처럼 받게. 보기 1 은 그대로다
     (:func:`exchange_graph` 는 :data:`NODE_ORDER` 만 본다 — 세부는 기관의 부분이지 다른 주체가 아니다)."""
     return {s: {**row, **{DETAIL_PREFIX + k: v for k, v in (detail.get(s) or {}).items()}} for s, row in sums.items()}
+
+
+def frames(P: dict, markets: list[str], *, span: int = 1, n: int = 60) -> dict:
+    """타임랩스 — 마지막 ``n`` 거래일 각각의 보기 1 그래프. 프레임 하나는 그날까지 ``span`` 일 합(1 이면 하루, 5 면 5일 이동합).
+
+    노드 순서 ``order`` 는 구간 전체(첫 프레임 창의 시작 ~ 마지막 날) 합의 :func:`exchange_graph` 로 **한 번** 정한다 —
+    프레임마다 다시 줄세우면 띠가 깜빡인다. 프레임의 ``sectors`` 는 늘 ``order`` 의 섹터 전부이고(그날 간선이 없으면 빈
+    give·take), 꼬리는 ``order`` 밖의 섹터(고정 집합) 중 그날 간선이 있는 것이다. 날짜가 ``span`` 보다 적으면 프레임이 없다.
+    """
+    N = len(P["dates"])
+    n = max(0, min(n, N - span + 1))
+    if n == 0:
+        return {"dates": [], "order": [], "frames": []}
+    first = N - n
+    whole = exchange_graph(window_sums(P, markets, first - span + 1, N - 1))
+    order = [r["name"] for r in whole["sectors"]]
+    out = []
+    for j in range(first, N):
+        rows = _rows(window_sums(P, markets, j - span + 1, j))
+        by = {r[1]: r for r in rows}
+        shown = [by.get(s) or (0.0, s, {}, {}) for s in order]
+        out.append(_assemble(rows, shown, [r for r in rows if r[1] not in order]))
+    return {"dates": P["dates"][first:], "order": order, "frames": out}
