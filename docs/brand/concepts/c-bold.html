@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>오늘 돈은 어디로 · sector-flow [합성 데모]</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&display=swap">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<style>
+:root{
+  --bg:#0a0d13; --ink:#f3efe6; --mute:#9aa3b2; --line:#232a36;
+  --red:#ff3346; --red-soft:#ff8a95; --blue:#2f7bff; --blue-soft:#8fb6ff;
+  --pillar:#f3efe6; --pillar-ink:#0d1017;
+  --head:"Black Han Sans","Pretendard Variable",Pretendard,sans-serif;
+  --body:"Pretendard Variable",Pretendard,-apple-system,"Apple SD Gothic Neo","Noto Sans KR",sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--body);-webkit-font-smoothing:antialiased}
+body{overflow-x:hidden;
+  background:
+    radial-gradient(900px 600px at -10% 60%, rgba(47,123,255,.13), transparent 60%),
+    radial-gradient(900px 600px at 110% 60%, rgba(255,51,70,.13), transparent 60%),
+    var(--bg);
+  min-height:100vh}
+.page{max-width:1320px;margin:0 auto;padding:28px 32px 24px}
+.brandrow{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;font-size:14px;color:var(--mute)}
+.badge{display:inline-flex;align-items:center;font-family:var(--head);font-size:15px;letter-spacing:.02em;color:#0a0d13;background:#ffd23f;padding:4px 10px 3px;border-radius:4px;transform:rotate(-2deg);box-shadow:3px 3px 0 #000}
+.nw{white-space:nowrap}
+.kicker b{color:var(--ink);font-weight:700}
+h1{font-family:var(--head);font-weight:400;font-size:clamp(34px,5.2vw,74px);line-height:1.08;margin:14px 0 8px;letter-spacing:-.01em;word-break:keep-all}
+.hl{display:inline-block;padding:0 .14em;border-radius:.12em;line-height:1.05}
+.hl.buy{background:var(--red);color:#fff;box-shadow:.08em .08em 0 #000}
+.hl.sell{background:var(--blue);color:#fff;box-shadow:.08em .08em 0 #000}
+.hl .g{font-size:.5em;vertical-align:.35em;margin-right:.08em}
+.dek{margin:6px 0 0;font-size:clamp(14px,1.5vw,18px);color:#cfd5df;word-break:keep-all}
+.dek b{color:var(--ink)}
+.controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:16px 0 4px}
+.seg{display:inline-flex;background:#151a23;border:2px solid #000;border-radius:10px;padding:3px;box-shadow:3px 3px 0 #000}
+.seg button{all:unset;cursor:pointer;font-weight:800;font-size:14px;padding:7px 14px;border-radius:7px;color:var(--mute)}
+.seg button[aria-checked="true"]{background:var(--ink);color:#0a0d13}
+.seg button:focus-visible,.btn:focus-visible{outline:3px solid #ffd23f;outline-offset:2px}
+.btn{all:unset;cursor:pointer;font-family:var(--head);font-size:16px;padding:9px 16px 8px;border-radius:10px;background:#ffd23f;color:#0a0d13;border:2px solid #000;box-shadow:3px 3px 0 #000}
+.btn:active{transform:translate(2px,2px);box-shadow:1px 1px 0 #000}
+.btn.ghost{background:#151a23;color:var(--ink)}
+.chips{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:14px 0 6px}
+.chip{display:flex;align-items:center;gap:10px;background:#121722;border:2px solid #000;border-radius:12px;padding:9px 12px;box-shadow:3px 3px 0 #000;min-width:0}
+.chip svg{flex:none;width:30px;height:30px;padding:5px;border-radius:8px;background:var(--pillar);color:var(--pillar-ink)}
+.chip .t{min-width:0}
+.chip .n{font-family:var(--head);font-size:17px;line-height:1.1}
+.chip .v{font-weight:800;font-size:15px;white-space:nowrap}
+.chip .v.buy{color:var(--red-soft)} .chip .v.sell{color:var(--blue-soft)}
+.chip .v small{font-weight:600;color:var(--mute);font-size:12px;margin-right:4px}
+.stage{position:relative;margin-top:8px}
+#chart{width:100%}
+#chart svg{display:block;width:100%;height:auto;overflow:visible}
+.note{font-size:12.5px;line-height:1.6;color:var(--mute);margin:10px 0 0;word-break:keep-all}
+.note i{font-style:normal;display:inline-block;width:22px;height:10px;vertical-align:-1px;margin-right:4px;border:1px dashed #c9ced8;background:repeating-linear-gradient(135deg,rgba(255,255,255,.55) 0 2px,transparent 2px 5px)}
+footer{margin-top:16px;padding-top:12px;border-top:1px solid var(--line);font-size:12.5px;color:var(--mute)}
+
+/* svg */
+.t-name{font-family:var(--head);fill:#fff}
+.t-amt{font-family:var(--body);font-weight:800;fill:rgba(255,255,255,.92)}
+.t-head{font-family:var(--head);font-size:15px}
+.t-sub{font-family:var(--body);font-size:11.5px;fill:var(--mute)}
+.p-name{font-family:var(--head);fill:var(--pillar-ink)}
+.p-sub{font-family:var(--body);font-weight:700;fill:#4a5263}
+.stub-t{font-family:var(--body);font-weight:800;fill:#fff;paint-order:stroke;stroke:#0a0d13;stroke-width:3px;stroke-linejoin:round}
+.el{transition:opacity .18s}
+svg.dim .el{opacity:.09}
+svg.dim .el.on{opacity:1}
+svg.dim .band.el.on{filter:saturate(1.3) brightness(1.15)}
+.hit{cursor:pointer}
+.anim .tile{animation:pop .55s cubic-bezier(.2,1.5,.45,1) both;animation-delay:var(--d)}
+.anim .pillar{animation:rise .6s cubic-bezier(.2,1.25,.45,1) both;animation-delay:var(--d)}
+.anim .stub{animation:fade .5s ease-out both;animation-delay:var(--d)}
+.tile,.pillar{transform-box:fill-box;transform-origin:center}
+.pillar{transform-origin:center bottom}
+@keyframes pop{from{transform:scale(.3);opacity:0}to{transform:none;opacity:1}}
+@keyframes rise{from{transform:scaleY(0);opacity:0}to{transform:none;opacity:1}}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+.anim .h1in{animation:slam .5s cubic-bezier(.2,1.6,.4,1) both}
+@keyframes slam{from{transform:translateY(-14px) scale(1.06);opacity:0}to{transform:none;opacity:1}}
+
+#tip{position:fixed;z-index:30;pointer-events:none;max-width:280px;background:#0d1017;border:2px solid #000;outline:1px solid #2a3240;border-radius:10px;padding:10px 12px;font-size:13px;line-height:1.5;box-shadow:4px 4px 0 #000;opacity:0;transform:translateY(4px);transition:opacity .12s,transform .12s}
+#tip.show{opacity:1;transform:none}
+#tip h4{margin:0 0 4px;font-family:var(--head);font-weight:400;font-size:17px}
+#tip .row{display:flex;justify-content:space-between;gap:14px;white-space:nowrap}
+#tip .buy{color:var(--red-soft);font-weight:800} #tip .sell{color:var(--blue-soft);font-weight:800}
+#tip .sep{border-top:1px solid #2a3240;margin:5px 0}
+#tip .m{color:var(--mute);font-size:12px}
+
+/* share card */
+#cardOverlay{position:fixed;inset:0;z-index:40;background:rgba(4,6,10,.92);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:12px}
+#cardOverlay[hidden]{display:none}
+.cardbox{position:relative;flex:none;box-shadow:0 20px 60px rgba(0,0,0,.6)}
+.card{position:absolute;left:0;top:0;width:1080px;height:1080px;transform-origin:0 0;overflow:hidden;display:flex;flex-direction:column;padding:56px 60px 40px;
+  background:
+    radial-gradient(700px 520px at -8% 62%, rgba(47,123,255,.20), transparent 62%),
+    radial-gradient(700px 520px at 108% 62%, rgba(255,51,70,.20), transparent 62%),
+    var(--bg)}
+.card .brandrow{font-size:20px}
+.card .badge{font-size:22px;padding:6px 14px 5px}
+.card h2{font-family:var(--head);font-weight:400;font-size:76px;line-height:1.08;margin:22px 0 10px;word-break:keep-all}
+.card .chips{margin:10px 0 4px;gap:12px}
+.card .chip{padding:10px 12px}
+.card .chip .n{font-size:20px} .card .chip .v{font-size:18px}
+.card .c-chart{flex:1;min-height:0;margin-top:10px}
+.card .c-chart svg{display:block;width:100%;height:100%;overflow:visible}
+.card .c-foot{font-size:17px;color:var(--mute);border-top:1px solid var(--line);padding-top:14px;display:flex;justify-content:space-between;gap:20px}
+.cardbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:center;color:var(--mute);font-size:13px}
+
+@media (max-width:720px){
+  .page{padding:18px 14px 18px}
+  .chips{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .chip{padding:7px 9px;gap:8px}
+  .chip svg{width:26px;height:26px;padding:4px}
+  .chip .n{font-size:15px}
+  .chip .v{font-size:13.5px}
+  .chip .v small{display:none}
+  .seg button{padding:7px 11px}
+  .t-head{font-size:12px}
+  .t-sub{font-size:10px}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important}
+}
+</style>
+</head>
+<body>
+<main class="page" id="page">
+  <header>
+    <div class="brandrow">
+      <span class="badge" title="실제 시장 자료가 아닌 합성 데이터">[합성 데모]</span>
+      <span class="kicker"><span class="nw">섹터 자금 흐름</span> · <b id="dateLabel" class="nw"></b> · <span id="mkLabel" class="nw"></span> · <span class="nw">단위 억원</span></span>
+    </div>
+    <h1 id="headline" class="h1in"></h1>
+    <p class="dek" id="dek"></p>
+    <div class="controls">
+      <div class="seg" role="radiogroup" aria-label="시장 선택" id="seg"></div>
+      <button class="btn" id="shareBtn" type="button">공유 카드</button>
+    </div>
+  </header>
+  <section class="chips" id="chips" aria-label="투자자별 순매수·순매도 합계"></section>
+  <section class="stage">
+    <div id="chart" role="img" aria-label="왼쪽 순매도된 섹터에서 가운데 투자자를 거쳐 오른쪽 순매수된 섹터로 이어지는 띠 그림"></div>
+  </section>
+  <p class="note">
+    띠 굵기 = 억원(모든 띠 같은 축척). <b style="color:var(--blue-soft)">왼쪽 −</b> 띠는 그 섹터를 순매도한 투자자, <b style="color:var(--red-soft)">오른쪽 +</b> 띠는 순매수한 투자자다.
+    섹터와 섹터 사이의 직접 이동은 자료에 없어 그리지 않는다. <i></i>빗금 = 투자자별 산 것과 판 것의 차이(순매수·순매도 합계).
+    섹터마다 네 주체 합이 0 에 가까워 같은 섹터가 양쪽에 비슷한 크기로 나온다. 작은 섹터는 <b>기타 N개 섹터</b>로 묶었다. 섹터나 투자자를 누르면 그 띠만 보인다.
+  </p>
+  <footer>sector-flow · 자료: 합성 데모 · 숫자는 동시기 관측이며 예측이 아니다</footer>
+</main>
+
+<div id="tip" role="tooltip" aria-hidden="true"></div>
+
+<div id="cardOverlay" hidden role="dialog" aria-modal="true" aria-label="공유 카드 1080×1080">
+  <div class="cardbox" id="cardbox">
+    <div class="card" id="card">
+      <div class="brandrow">
+        <span class="badge">[합성 데모]</span>
+        <span class="kicker">섹터 자금 흐름 · <b id="cDate"></b> · <span id="cMk"></span> · 단위 억원</span>
+      </div>
+      <h2 id="cHead"></h2>
+      <div class="chips" id="cChips"></div>
+      <div class="c-chart" id="cChart"></div>
+      <div class="c-foot"><span>sector-flow · 자료: 합성 데모 · 숫자는 동시기 관측이며 예측이 아니다</span><span>1080×1080</span></div>
+    </div>
+  </div>
+  <div class="cardbar"><span>1080×1080 공유 카드 · 화면을 캡처해 저장</span><button class="btn ghost" id="closeCard" type="button">닫기</button></div>
+</div>
+
+<script>
+const DATA = {"date":"2026-10-30","markets":{"거래소":{"가상건설":{"indiv":-1820.28,"forgn":486.7,"inst":1365.97,"etc":-32.39,"tv":11763.94},"가상금융":{"indiv":-1339.75,"forgn":419.14,"inst":848.98,"etc":71.64,"tv":10743.84},"가상기계":{"indiv":-2138.91,"forgn":514.74,"inst":1718.0,"etc":-93.83,"tv":21508.52},"가상섬유":{"indiv":315.32,"forgn":46.08,"inst":-494.87,"etc":133.47,"tv":29588.84},"가상소재":{"indiv":-738.83,"forgn":166.82,"inst":543.0,"etc":29.02,"tv":8557.26},"가상소형":{"indiv":842.43,"forgn":-342.95,"inst":-464.54,"etc":-34.95,"tv":5507.68},"가상운송":{"indiv":301.77,"forgn":-2126.58,"inst":1864.35,"etc":-39.55,"tv":36024.48},"가상유통":{"indiv":-1014.74,"forgn":122.77,"inst":810.37,"etc":81.6,"tv":19481.07},"가상음식":{"indiv":249.12,"forgn":287.07,"inst":-556.88,"etc":20.68,"tv":22018.23},"가상전자":{"indiv":-3615.87,"forgn":883.38,"inst":3114.46,"etc":-381.97,"tv":66864.48},"가상제약":{"indiv":416.19,"forgn":-13.89,"inst":-369.63,"etc":-32.67,"tv":8457.86},"가상통신":{"indiv":1973.68,"forgn":-240.9,"inst":-1682.6,"etc":-50.18,"tv":5843.31},"가상화학":{"indiv":-1440.02,"forgn":36.28,"inst":1377.81,"etc":25.92,"tv":15002.1}},"코스닥":{"가상건설":{"indiv":-31.68,"forgn":-48.61,"inst":77.16,"etc":3.12,"tv":687.12},"가상금융":{"indiv":49.64,"forgn":-64.03,"inst":24.31,"etc":-9.91,"tv":1229.85},"가상기계":{"indiv":-308.18,"forgn":-104.27,"inst":401.45,"etc":11.0,"tv":2228.12},"가상섬유":{"indiv":163.83,"forgn":-51.36,"inst":-111.12,"etc":-1.35,"tv":2030.03},"가상소재":{"indiv":9.34,"forgn":-62.62,"inst":66.92,"etc":-13.63,"tv":1166.75},"가상소형":{"indiv":33.69,"forgn":16.84,"inst":-45.63,"etc":-4.91,"tv":401.78},"가상운송":{"indiv":246.25,"forgn":114.52,"inst":-346.53,"etc":-14.24,"tv":2178.24},"가상유통":{"indiv":364.62,"forgn":-343.43,"inst":-20.24,"etc":-0.95,"tv":2020.48},"가상음식":{"indiv":-96.85,"forgn":173.35,"inst":-68.92,"etc":-7.58,"tv":2483.44},"가상전자":{"indiv":688.73,"forgn":28.88,"inst":-697.61,"etc":-20.0,"tv":4999.04},"가상제약":{"indiv":-16.42,"forgn":29.11,"inst":-6.97,"etc":-5.73,"tv":459.28},"가상통신":{"indiv":161.88,"forgn":-25.49,"inst":-132.41,"etc":-3.97,"tv":916.01},"가상화학":{"indiv":-180.45,"forgn":95.82,"inst":89.7,"etc":-5.07,"tv":1596.0}}}};
+
+const INV = [
+  {k:'indiv', name:'개인',     icon:'person'},
+  {k:'forgn', name:'외국인',   icon:'globe'},
+  {k:'inst',  name:'기관',     icon:'bank'},
+  {k:'etc',   name:'기타법인', icon:'case'},
+];
+const MK = {
+  all:     {label:'전체',   keys:['거래소','코스닥'], sub:'코스피+코스닥 합산'},
+  '거래소': {label:'코스피', keys:['거래소'],          sub:'코스피'},
+  '코스닥': {label:'코스닥', keys:['코스닥'],          sub:'코스닥'},
+};
+const ICON = {
+  person:'<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="7.5" r="4.2"/><path d="M3.8 21c0-4.6 3.7-7.6 8.2-7.6s8.2 3 8.2 7.6z"/></svg>',
+  globe:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" aria-hidden="true"><circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4" ry="9"/><path d="M3 12h18M5 7h14M5 17h14"/></svg>',
+  bank:'<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2.5 2.5 8v2h19V8z"/><rect x="4.5" y="11.5" width="2.6" height="7"/><rect x="9.1" y="11.5" width="2.6" height="7"/><rect x="13.7" y="11.5" width="2.6" height="7"/><rect x="18.3" y="11.5" width="1.5" height="7"/><rect x="2.5" y="19.5" width="19" height="2.2"/></svg>',
+  case:'<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M9 3.5h6a1.5 1.5 0 0 1 1.5 1.5v2H20a1.5 1.5 0 0 1 1.5 1.5V12h-19V8.5A1.5 1.5 0 0 1 4 7h3.5V5A1.5 1.5 0 0 1 9 3.5zm.5 2V7h5V5.5z"/><path d="M2.5 13.5h8v1.8h3v-1.8h8V19a1.5 1.5 0 0 1-1.5 1.5H4A1.5 1.5 0 0 1 2.5 19z"/></svg>',
+};
+const MINUS = '−';
+const R = Math.round;
+const fmt = v => R(Math.abs(v)).toLocaleString('ko-KR');
+const sgn = v => (R(v) > 0 ? '+' : R(v) < 0 ? MINUS : '±') + fmt(v) + '억';
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const QS = new URLSearchParams(location.search);
+
+/* Korean particles */
+const lastCode = w => w.charCodeAt(w.length - 1);
+const jong = w => { const c = lastCode(w); return (c >= 0xAC00 && c <= 0xD7A3) ? (c - 0xAC00) % 28 : 0; };
+const eun = w => jong(w) ? '은' : '는';
+const iga = w => jong(w) ? '이' : '가';
+const ro  = w => (!jong(w) || jong(w) === 8) ? '로' : '으로';
+
+/* ---------- model ---------- */
+function aggregate(mk) {
+  const agg = {};
+  for (const m of MK[mk].keys) for (const [s, r] of Object.entries(DATA.markets[m] || {})) {
+    const a = agg[s] || (agg[s] = {indiv:0, forgn:0, inst:0, etc:0});
+    for (const i of INV) a[i.k] += +r[i.k] || 0;
+  }
+  return agg;
+}
+
+function buildModel(mk, opt) {
+  const agg = aggregate(mk);
+  const side = dir => {           // dir -1: 순매도된 섹터(왼쪽), +1: 순매수된 섹터(오른쪽)
+    const list = Object.entries(agg).map(([s, r]) => {
+      const parts = {}; let v = 0;
+      for (const i of INV) { const x = r[i.k] * dir; if (x >= 0.5) { parts[i.k] = x; v += x; } }
+      return {s, parts, v};
+    }).filter(d => d.v > 0).sort((a, b) => b.v - a.v);
+    const total = list.reduce((a, d) => a + d.v, 0);
+    const keep = [], rest = [];
+    list.forEach((d, i) => (i < opt.maxKeep && d.v / total >= opt.minShare ? keep : rest).push(d));
+    if (rest.length === 1) keep.push(rest.pop());
+    const nodes = keep.map(d => ({id:d.s, name:d.s, v:d.v, parts:d.parts, members:[d.s], dir}));
+    if (rest.length) {
+      const parts = {}; let v = 0;
+      rest.forEach(d => { for (const k in d.parts) { parts[k] = (parts[k] || 0) + d.parts[k]; v += d.parts[k]; } });
+      nodes.push({id:'__other' + dir, name:`기타 ${rest.length}개 섹터`, v, parts, members:rest.map(d => d.s), dir, other:true});
+    }
+    return nodes;
+  };
+  const left = side(-1), right = side(1);
+  const invs = INV.map(i => {
+    const out = left.reduce((a, n) => a + (n.parts[i.k] || 0), 0);   // 판 것 (섹터 → 투자자)
+    const inn = right.reduce((a, n) => a + (n.parts[i.k] || 0), 0);  // 산 것 (투자자 → 섹터)
+    return {...i, sold:out, bought:inn, net:inn - out};
+  });
+  return {agg, left, right, invs};
+}
+
+/* headline, from observed facts only: who net-bought / net-sold which sector */
+function headline(model) {
+  const byNet = [...model.invs].sort((a, b) => b.net - a.net);
+  const buyer = byNet[0], seller = byNet[byNet.length - 1];
+  const top = (k, dir) => Object.entries(model.agg).map(([s, r]) => [s, r[k] * dir]).sort((a, b) => b[1] - a[1])[0];
+  const [bS, bV] = top(buyer.k, 1), [sS, sV] = top(seller.k, -1);
+  const span = (s, cls) => `<span class="hl ${cls}"><span class="g">${cls === 'buy' ? '+' : MINUS}</span>${esc(s)}</span>`;
+  let html, text;
+  if (bS === sS) {
+    html = `${esc(bS)}${eun(bS)} <br>${span(seller.name + iga(seller.name) + ' 팔고', 'sell')} ${span(buyer.name + iga(buyer.name) + ' 샀다', 'buy')}`;
+    text = `${bS}${eun(bS)} ${seller.name}${iga(seller.name)} 팔고 ${buyer.name}${iga(buyer.name)} 샀다`;
+  } else {
+    html = `오늘 ${buyer.name}${eun(buyer.name)} ${span(bS, 'buy')}${ro(bS)},<br>${seller.name}${eun(seller.name)} ${span(sS, 'sell')}에서`;
+    text = `오늘 ${buyer.name}${eun(buyer.name)} ${bS}${ro(bS)}, ${seller.name}${eun(seller.name)} ${sS}에서`;
+  }
+  const dek = `${buyer.name} <b>순매수 합계 ${sgn(buyer.net)}</b> · ${seller.name} <b>순매도 합계 ${sgn(seller.net)}</b> — `
+    + `${seller.name}${iga(seller.name)} 가장 많이 판 섹터 ${esc(sS)} ${sgn(-sV)}, ${buyer.name}${iga(buyer.name)} 가장 많이 산 섹터 ${esc(bS)} ${sgn(bV)}`;
+  return {html, text, dek};
+}
+
+function chipsHTML(model) {
+  return model.invs.map(i => {
+    const cls = i.net >= 0 ? 'buy' : 'sell';
+    const word = i.net >= 0 ? '순매수 합계' : '순매도 합계';
+    const glyph = i.net >= 0 ? '▲' : '▼';
+    return `<div class="chip">${ICON[i.icon]}<div class="t"><div class="n">${i.name}</div>`
+      + `<div class="v ${cls}"><small>${word}</small>${glyph} ${sgn(i.net)}</div></div></div>`;
+  }).join('');
+}
+
+/* ---------- layout ---------- */
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+function estW(s, fs) { let w = 0; for (const ch of s) w += /[가-힣]/.test(ch) ? 1 : (/[0-9,+\-−·억 ]/.test(ch) ? .58 : .62); return w * fs; }
+
+function params(W, H) {
+  const compact = W < 640;
+  return compact ? {
+    compact, W, H, tileW: R(W * .255), pillarW: R(W * .18), headH: 42, botPad: 6,
+    minTile: 30, minPillar: 46, gapMin: 4, gapMax: 9, gapPillar: 12, stubL: 12,
+  } : {
+    compact, W, H, tileW: R(clamp(W * .19, 150, 250)), pillarW: R(clamp(W * .135, 118, 172)), headH: 52, botPad: 6,
+    minTile: 26, minPillar: 66, gapMin: 6, gapMax: 14, gapPillar: 20, stubL: 86,
+  };
+}
+
+function layout(model, P) {
+  const top = P.headH, Hc = P.H - top - P.botPad;
+  const cols = [
+    {nodes:model.left,  size:d => d.v, min:P.minTile, gapMin:P.gapMin, gapMax:P.gapMax},
+    {nodes:model.invs,  size:d => Math.max(d.sold, d.bought), min:P.minPillar, gapMin:P.gapPillar, gapMax:P.gapPillar * 1.6},
+    {nodes:model.right, size:d => d.v, min:P.minTile, gapMin:P.gapMin, gapMax:P.gapMax},
+  ];
+  const need = (c, k) => c.nodes.reduce((a, d) => a + Math.max(c.size(d) * k, c.min), 0) + c.gapMin * (c.nodes.length - 1);
+  const fits = k => cols.every(c => need(c, k) <= Hc);
+  let lo = 0, hi = 1e-3;
+  while (fits(hi) && hi < 10) hi *= 2;
+  for (let i = 0; i < 40; i++) { const m = (lo + hi) / 2; fits(m) ? lo = m : hi = m; }
+  const k = lo;
+  const xs = [[0, P.tileW], [(P.W - P.pillarW) / 2, (P.W + P.pillarW) / 2], [P.W - P.tileW, P.W]];
+  cols.forEach((c, ci) => {
+    const hs = c.nodes.map(d => Math.max(c.size(d) * k, c.min));
+    const sum = hs.reduce((a, b) => a + b, 0);
+    const n = c.nodes.length;
+    const gap = n > 1 ? clamp((Hc - sum) / (n - 1), c.gapMin, c.gapMax) : 0;
+    let y = top + (Hc - sum - gap * (n - 1)) / 2;
+    c.nodes.forEach((d, i) => {
+      d.x0 = xs[ci][0]; d.x1 = xs[ci][1]; d.y0 = y; d.y1 = y + hs[i]; d.h = hs[i];
+      d.fy = y + (hs[i] - c.size(d) * k) / 2;   // where the flow stack starts
+      y += hs[i] + gap;
+    });
+  });
+  // links
+  const links = [];
+  const invIdx = Object.fromEntries(model.invs.map((d, i) => [d.k, i]));
+  const mk = (nodes, side) => nodes.forEach((n, ni) => {
+    let y = n.fy;
+    for (const i of INV) {
+      const v = n.parts[i.k]; if (!v) continue;
+      links.push({node:n, ni, inv:model.invs[invIdx[i.k]], side, v, w:v * k, yt:y});
+      y += v * k;
+    }
+  });
+  mk(model.left, 'L'); mk(model.right, 'R');
+  for (const inv of model.invs) {
+    let yl = inv.fy, yr = inv.fy;
+    links.filter(l => l.inv === inv && l.side === 'L').sort((a, b) => a.ni - b.ni).forEach(l => { l.yi = yl; yl += l.w; });
+    links.filter(l => l.inv === inv && l.side === 'R').sort((a, b) => a.ni - b.ni).forEach(l => { l.yi = yr; yr += l.w; });
+    const diff = Math.abs(inv.bought - inv.sold) * k;
+    inv.stub = inv.net >= 0
+      ? {side:'L', y:yl, h:diff}    // 산 것이 더 많다: 왼쪽(판 쪽)이 모자란다
+      : {side:'R', y:yr, h:diff};
+  }
+  return {k, links, xs};
+}
+
+function ribbon(x0, a0, b0, x1, a1, b1) {
+  const xm = (x0 + x1) / 2;
+  return `M${x0},${a0}C${xm},${a0} ${xm},${a1} ${x1},${a1}L${x1},${b1}C${xm},${b1} ${xm},${b0} ${x0},${b0}Z`;
+}
+function mix(a, b, t) { return `rgb(${a.map((v, i) => R(v + (b[i] - v) * t)).join(',')})`; }
+const BLUE0 = [22, 38, 74], BLUE1 = [47, 123, 255], RED0 = [74, 22, 32], RED1 = [255, 51, 70];
+
+/* ---------- render ---------- */
+let uid = 0;
+function renderChart(model, P, {anim, idp}) {
+  const L = layout(model, P);
+  const id = idp + (uid++);
+  const maxV = Math.max(...model.left.map(d => d.v), ...model.right.map(d => d.v));
+  const [xLa, xLb] = [L.xs[0][1], L.xs[1][0]], [xRa, xRb] = [L.xs[1][1], L.xs[2][0]];
+  const parts = [];
+  parts.push(`<svg viewBox="0 0 ${P.W} ${P.H}" width="${P.W}" height="${P.H}" xmlns="http://www.w3.org/2000/svg" class="${anim ? 'anim' : ''}">`);
+  parts.push(`<defs>
+    <linearGradient id="${id}gl" gradientUnits="userSpaceOnUse" x1="${xLa}" x2="${xLb}" y1="0" y2="0">
+      <stop offset="0" stop-color="#2f7bff" stop-opacity=".85"/><stop offset="1" stop-color="#7fa8ff" stop-opacity=".5"/></linearGradient>
+    <linearGradient id="${id}gr" gradientUnits="userSpaceOnUse" x1="${xRa}" x2="${xRb}" y1="0" y2="0">
+      <stop offset="0" stop-color="#ff7f8a" stop-opacity=".5"/><stop offset="1" stop-color="#ff3346" stop-opacity=".85"/></linearGradient>
+    <pattern id="${id}hatch" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <rect width="7" height="7" fill="rgba(243,239,230,.10)"/><rect width="2.6" height="7" fill="rgba(243,239,230,.55)"/></pattern>
+    <clipPath id="${id}cl"><rect class="clipL" x="${xLa - 2}" y="0" width="${anim ? 0 : xLb - xLa + 4}" height="${P.H}"/></clipPath>
+    <clipPath id="${id}cr"><rect class="clipR" x="${xRa - 2}" y="0" width="${anim ? 0 : xRb - xRa + 4}" height="${P.H}"/></clipPath>
+  </defs>`);
+
+  // column heads
+  const hy = P.compact ? 16 : 20, sy = P.compact ? 31 : 39;
+  parts.push(`<text class="t-head" x="0" y="${hy}" fill="#8fb6ff">▼ 순매도된 섹터</text>
+    <text class="t-sub" x="0" y="${sy}">누가 팔았나 (−)</text>
+    <text class="t-head" x="${P.W / 2}" y="${hy}" text-anchor="middle" fill="#f3efe6">투자자</text>
+    <text class="t-sub" x="${P.W / 2}" y="${sy}" text-anchor="middle">← 판 것 · 산 것 →</text>
+    <text class="t-head" x="${P.W}" y="${hy}" text-anchor="end" fill="#ff8a95">순매수된 섹터 ▲</text>
+    <text class="t-sub" x="${P.W}" y="${sy}" text-anchor="end">누가 샀나 (+)</text>`);
+
+  // bands
+  const band = (l, i) => {
+    const n = l.node, inv = l.inv;
+    const d = l.side === 'L'
+      ? ribbon(n.x1, l.yt, l.yt + l.w, inv.x0, l.yi, l.yi + l.w)
+      : ribbon(inv.x1, l.yi, l.yi + l.w, n.x0, l.yt, l.yt + l.w);
+    return `<path class="band el hit" data-b="${i}" d="${d}" fill="url(#${id}${l.side === 'L' ? 'gl' : 'gr'})"/>`;
+  };
+  parts.push(`<g clip-path="url(#${id}cl)">${L.links.map((l, i) => l.side === 'L' ? band(l, i) : '').join('')}</g>`);
+  parts.push(`<g clip-path="url(#${id}cr)">${L.links.map((l, i) => l.side === 'R' ? band(l, i) : '').join('')}</g>`);
+
+  // stubs (difference between bought and sold per investor)
+  const stubDelay = 1.55;
+  model.invs.forEach((inv, ii) => {
+    const s = inv.stub, h = Math.max(s.h, 2);
+    const len = P.stubL, x = s.side === 'R' ? inv.x1 : inv.x0 - len;
+    const y = Math.min(s.y, inv.y1 - h);
+    const word = inv.net >= 0 ? '순매수 합계' : '순매도 합계';
+    let lab = '';
+    if (!P.compact) {
+      if (h >= 36) {
+        const cx = x + len / 2, cy = y + h / 2;
+        lab = `<text class="stub-t" x="${cx}" y="${cy - 3}" text-anchor="middle" font-size="12">${word}</text>
+               <text class="stub-t" x="${cx}" y="${cy + 13}" text-anchor="middle" font-size="14.5">${sgn(inv.net)}</text>`;
+      } else {
+        const t = `${word} ${sgn(inv.net)}`, fs = 12, tw = estW(t, fs) + 14;
+        const tx = s.side === 'R' ? x + len + 4 : x - 4 - tw, ty = y + h / 2;
+        lab = `<rect x="${tx}" y="${ty - 11}" width="${tw}" height="22" rx="11" fill="#0d1017" stroke="#3a4352"/>
+               <text class="stub-t" x="${tx + tw / 2}" y="${ty + 4.2}" text-anchor="middle" font-size="${fs}" style="stroke:none">${t}</text>`;
+      }
+    }
+    parts.push(`<g class="stub el" data-inv="${ii}" style="--d:${stubDelay + ii * .06}s">
+      <rect x="${x}" y="${y}" width="${len}" height="${h}" fill="url(#${id}hatch)" stroke="rgba(243,239,230,.55)" stroke-dasharray="3 3"/>${lab}</g>`);
+  });
+
+  // tiles
+  const tile = (n, ni, side) => {
+    const t = Math.sqrt(n.v / maxV);
+    const fill = side === 'L' ? mix(BLUE0, BLUE1, t) : mix(RED0, RED1, t);
+    const pad = P.compact ? 7 : 12, w = n.x1 - n.x0, h = n.h;
+    const amt = sgn(side === 'L' ? -n.v : n.v);
+    const glyph = side === 'L' ? '▼' : '▲';
+    let txt = '';
+    const nameFit = (fs) => Math.min(fs, (w - pad * 2) / Math.max(1, estW(n.name, 1)));
+    if (P.compact) {
+      const fs = nameFit(h >= 52 ? 15 : 12.5);
+      txt = `<text class="t-name" x="${n.x0 + pad}" y="${n.y0 + h / 2 - 2}" font-size="${fs}">${esc(n.name)}</text>
+             <text class="t-amt" x="${n.x0 + pad}" y="${n.y0 + h / 2 + 11}" font-size="10.5">${glyph} ${amt}</text>`;
+    } else if (h >= 62) {
+      const fs = nameFit(clamp(h * .27, 19, 36));
+      txt = `<text class="t-name" x="${n.x0 + pad}" y="${n.y0 + h / 2 + fs * .12}" font-size="${fs}">${esc(n.name)}</text>
+             <text class="t-amt" x="${n.x0 + pad}" y="${n.y0 + h / 2 + fs * .12 + 19}" font-size="15">${glyph} ${amt}</text>`;
+    } else {
+      const as = h >= 34 ? 13.5 : 12, aw = estW(`${glyph} ${amt}`, as) + 10;
+      const fs = Math.min(h >= 34 ? 16.5 : 13.5, (w - pad * 2 - aw) / Math.max(1, estW(n.name, 1)));
+      txt = `<text class="t-name" x="${n.x0 + pad}" y="${n.y0 + h / 2 + fs * .36}" font-size="${fs}">${esc(n.name)}</text>
+             <text class="t-amt" x="${n.x1 - pad}" y="${n.y0 + h / 2 + as * .36}" font-size="${as}" text-anchor="end">${glyph} ${amt}</text>`;
+    }
+    const delay = side === 'L' ? .05 + ni * .045 : 1.05 + ni * .045;
+    const outline = n.other ? ` stroke="rgba(255,255,255,.55)" stroke-width="1.5" stroke-dasharray="5 4"` : ` stroke="#000" stroke-width="2"`;
+    return `<g class="tile el hit" data-side="${side}" data-n="${ni}" style="--d:${delay}s" tabindex="0" role="button" aria-label="${esc(n.name)} ${side === 'L' ? '순매도' : '순매수'} ${amt}">
+      <rect x="${n.x0}" y="${n.y0}" width="${w}" height="${h}" rx="${P.compact ? 5 : 7}" fill="${fill}"${outline}/>
+      ${n.other ? '' : `<rect x="${n.x0 + 3}" y="${n.y0 + 3}" width="${w - 6}" height="${Math.min(3, h / 6)}" rx="1.5" fill="rgba(255,255,255,.22)"/>`}
+      ${txt}</g>`;
+  };
+  parts.push(model.left.map((n, i) => tile(n, i, 'L')).join(''));
+  parts.push(model.right.map((n, i) => tile(n, i, 'R')).join(''));
+
+  // pillars
+  model.invs.forEach((inv, ii) => {
+    const w = inv.x1 - inv.x0, h = inv.h, cx = inv.x0 + w / 2, cy = inv.y0 + h / 2;
+    let txt = '';
+    if (P.compact) {
+      const fs = Math.min(13.5, (w - 8) / estW(inv.name, 1));
+      txt = `<text class="p-name" x="${cx}" y="${cy - 1}" text-anchor="middle" font-size="${fs}">${inv.name}</text>
+             <text class="p-sub" x="${cx}" y="${cy + 13}" text-anchor="middle" font-size="10" style="fill:${inv.net >= 0 ? '#c4182c' : '#1d5ed8'}">${sgn(inv.net)}</text>`;
+    } else if (h >= 130) {
+      txt = `<g transform="translate(${cx - 19},${cy - 56}) scale(1.6)" style="color:#0d1017">${ICON[inv.icon].replace('<svg', '<svg width="24" height="24"')}</g>
+             <text class="p-name" x="${cx}" y="${cy + 16}" text-anchor="middle" font-size="${Math.min(32, (w - 16) / estW(inv.name, 1))}">${inv.name}</text>
+             <text class="p-sub" x="${cx}" y="${cy + 38}" text-anchor="middle" font-size="12">판 ${fmt(inv.sold)}억</text>
+             <text class="p-sub" x="${cx}" y="${cy + 54}" text-anchor="middle" font-size="12">산 ${fmt(inv.bought)}억</text>`;
+    } else {
+      const fs = Math.min(22, (w - 46) / estW(inv.name, 1));
+      const nw = estW(inv.name, fs), gx = cx - (nw + 26) / 2;
+      txt = `<g transform="translate(${gx},${cy - 19})" style="color:#0d1017">${ICON[inv.icon].replace('<svg', '<svg width="20" height="20"')}</g>
+             <text class="p-name" x="${gx + 26}" y="${cy - 2}" font-size="${fs}">${inv.name}</text>
+             <text class="p-sub" x="${cx}" y="${cy + 18}" text-anchor="middle" font-size="11.5">판 ${fmt(inv.sold)} · 산 ${fmt(inv.bought)}</text>`;
+    }
+    parts.push(`<g class="pillar el hit" data-inv="${ii}" style="--d:${.35 + ii * .08}s" tabindex="0" role="button" aria-label="${inv.name} ${inv.net >= 0 ? '순매수' : '순매도'} 합계 ${sgn(inv.net)}">
+      <rect x="${inv.x0 + 4}" y="${inv.y0 + 4}" width="${w}" height="${h}" rx="${P.compact ? 7 : 11}" fill="#000"/>
+      <rect x="${inv.x0}" y="${inv.y0}" width="${w}" height="${h}" rx="${P.compact ? 7 : 11}" fill="#f3efe6" stroke="#000" stroke-width="2"/>
+      ${txt}</g>`);
+  });
+  parts.push('</svg>');
+  return {svg:parts.join(''), L};
+}
+
+function pour(svgEl) {
+  const cl = svgEl.querySelector('.clipL'), cr = svgEl.querySelector('.clipR');
+  const targetL = svgEl.viewBox.baseVal.width, targetR = targetL;
+  const t0 = performance.now();
+  const ease = t => 1 - Math.pow(1 - t, 3);
+  const step = now => {
+    const t = now - t0;
+    const a = clamp((t - 300) / 650, 0, 1), b = clamp((t - 850) / 650, 0, 1);
+    cl.setAttribute('width', ease(a) * targetL);
+    cr.setAttribute('width', ease(b) * targetR);
+    if (b < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+/* ---------- interaction ---------- */
+const tip = document.getElementById('tip');
+function tipShow(html, x, y) {
+  tip.innerHTML = html; tip.classList.add('show');
+  const r = tip.getBoundingClientRect(), vw = innerWidth, vh = innerHeight;
+  let tx = x + 16, ty = y + 16;
+  if (tx + r.width > vw - 8) tx = Math.max(8, x - r.width - 16);
+  if (ty + r.height > vh - 8) ty = Math.max(8, y - r.height - 16);
+  tip.style.left = tx + 'px'; tip.style.top = ty + 'px';
+}
+function tipHide() { tip.classList.remove('show'); }
+
+function sectorTip(model, node) {
+  const rows = [];
+  for (const s of node.members) {
+    const r = model.agg[s];
+    if (node.other) rows.push(`<div class="m" style="margin-top:4px">${esc(s)}</div>`);
+    if (!node.other || node.members.length <= 6) for (const i of INV) {
+      const v = r[i.k]; if (Math.abs(v) < .5 && node.other) continue;
+      rows.push(`<div class="row"><span>${i.name}</span><span class="${v >= 0 ? 'buy' : 'sell'}">${v >= 0 ? '▲' : '▼'} ${sgn(v)}</span></div>`);
+    }
+  }
+  const sold = node.members.reduce((a, s) => a + INV.reduce((b, i) => b + Math.min(0, model.agg[s][i.k]), 0), 0);
+  const bought = node.members.reduce((a, s) => a + INV.reduce((b, i) => b + Math.max(0, model.agg[s][i.k]), 0), 0);
+  return `<h4>${esc(node.name)}</h4>${rows.join('')}<div class="sep"></div>
+    <div class="row"><span>판 쪽 합계</span><span class="sell">${sgn(sold)}</span></div>
+    <div class="row"><span>산 쪽 합계</span><span class="buy">${sgn(bought)}</span></div>`;
+}
+function invTip(model, inv) {
+  const top = (side) => (side === 'L' ? model.left : model.right).filter(n => n.parts[inv.k])
+    .sort((a, b) => b.parts[inv.k] - a.parts[inv.k]).slice(0, 4)
+    .map(n => `<div class="row"><span>${esc(n.name)}</span><span class="${side === 'L' ? 'sell' : 'buy'}">${sgn(side === 'L' ? -n.parts[inv.k] : n.parts[inv.k])}</span></div>`).join('');
+  return `<h4>${inv.name}</h4><div class="m">판 섹터</div>${top('L')}<div class="m" style="margin-top:4px">산 섹터</div>${top('R')}
+    <div class="sep"></div><div class="row"><span>판 합계</span><span class="sell">${sgn(-inv.sold)}</span></div>
+    <div class="row"><span>산 합계</span><span class="buy">${sgn(inv.bought)}</span></div>
+    <div class="row"><span><b>${inv.net >= 0 ? '순매수 합계' : '순매도 합계'}</b></span><span class="${inv.net >= 0 ? 'buy' : 'sell'}">${sgn(inv.net)}</span></div>`;
+}
+
+function wire(svgEl, model, L) {
+  const els = [...svgEl.querySelectorAll('.el')];
+  let pinned = null;
+  const focus = (pred) => {
+    svgEl.classList.add('dim');
+    els.forEach(e => e.classList.toggle('on', pred(e)));
+  };
+  const clear = () => { svgEl.classList.remove('dim'); els.forEach(e => e.classList.remove('on')); };
+  const nodeOf = e => (e.dataset.side === 'L' ? model.left : model.right)[+e.dataset.n];
+  const act = (e, x, y) => {
+    if (e.classList.contains('tile')) {
+      const n = nodeOf(e), S = new Set(n.members);
+      const hitN = m => m.members.some(s => S.has(s));
+      const invs = new Set(L.links.filter(l => hitN(l.node)).map(l => l.inv));
+      focus(el => el.classList.contains('band') ? hitN(L.links[+el.dataset.b].node)
+        : el.classList.contains('tile') ? hitN(nodeOf(el))
+        : el.classList.contains('pillar') ? invs.has(model.invs[+el.dataset.inv]) : false);
+      tipShow(sectorTip(model, n), x, y);
+    } else if (e.classList.contains('pillar')) {
+      const inv = model.invs[+e.dataset.inv];
+      const nodes = new Set(L.links.filter(l => l.inv === inv).map(l => l.node));
+      focus(el => el.classList.contains('band') ? L.links[+el.dataset.b].inv === inv
+        : el.classList.contains('tile') ? nodes.has(nodeOf(el))
+        : (el.classList.contains('pillar') || el.classList.contains('stub')) ? +el.dataset.inv === +e.dataset.inv : false);
+      tipShow(invTip(model, inv), x, y);
+    } else if (e.classList.contains('band')) {
+      const l = L.links[+e.dataset.b];
+      focus(el => el === e || (el.classList.contains('pillar') && model.invs[+el.dataset.inv] === l.inv)
+        || (el.classList.contains('tile') && nodeOf(el) === l.node && el.dataset.side === l.side));
+      tipShow(`<h4>${esc(l.node.name)}</h4><div class="row"><span>${l.inv.name} ${l.side === 'L' ? '순매도' : '순매수'}</span>
+        <span class="${l.side === 'L' ? 'sell' : 'buy'}">${sgn(l.side === 'L' ? -l.v : l.v)}</span></div>`, x, y);
+    }
+  };
+  const target = ev => ev.target.closest('.hit');
+  svgEl.addEventListener('pointermove', ev => {
+    if (ev.pointerType !== 'mouse' || pinned) return;
+    const t = target(ev); t ? act(t, ev.clientX, ev.clientY) : (clear(), tipHide());
+  });
+  svgEl.addEventListener('pointerleave', ev => { if (ev.pointerType === 'mouse' && !pinned) { clear(); tipHide(); } });
+  svgEl.addEventListener('click', ev => {
+    const t = target(ev);
+    if (!t || t === pinned) { pinned = null; clear(); tipHide(); return; }
+    pinned = t; act(t, ev.clientX, ev.clientY);
+  });
+  svgEl.addEventListener('focusin', ev => {
+    const t = target(ev); if (!t) return; const r = t.getBoundingClientRect(); act(t, r.right, r.top);
+  });
+  svgEl.addEventListener('focusout', () => { if (!pinned) { clear(); tipHide(); } });
+  document.addEventListener('pointerdown', ev => { if (pinned && !svgEl.contains(ev.target)) { pinned = null; clear(); tipHide(); } });
+}
+
+/* ---------- page ---------- */
+let state = {mk: QS.get('mk') && MK[QS.get('mk')] ? QS.get('mk') : 'all'};
+const OPT = {maxKeep: 9, minShare: .045};
+const dateStr = (() => {
+  const [y, m, d] = DATA.date.split('-').map(Number);
+  const wd = '일월화수목금토'[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
+  return `${y}.${String(m).padStart(2, '0')}.${String(d).padStart(2, '0')} (${wd})`;
+})();
+
+function renderPage(anim) {
+  const model = buildModel(state.mk, OPT);
+  const hl = headline(model);
+  const h1 = document.getElementById('headline');
+  h1.innerHTML = hl.html;
+  document.title = `${hl.text} · sector-flow [합성 데모]`;
+  document.getElementById('dek').innerHTML = hl.dek;
+  document.getElementById('dateLabel').textContent = dateStr;
+  document.getElementById('mkLabel').textContent = MK[state.mk].sub;
+  document.getElementById('chips').innerHTML = chipsHTML(model);
+  const box = document.getElementById('chart');
+  const W = Math.max(300, box.clientWidth);
+  const H = W < 640 ? 720 : clamp(innerHeight - 330, 560, 700);
+  const P = params(W, H);
+  const doAnim = anim && !REDUCED;
+  const {svg, L} = renderChart(model, P, {anim:doAnim, idp:'m'});
+  box.innerHTML = svg;
+  const svgEl = box.querySelector('svg');
+  wire(svgEl, model, L);
+  if (doAnim) {
+    pour(svgEl);
+    document.querySelector('.page').classList.remove('anim'); void h1.offsetWidth;
+    document.querySelector('.page').classList.add('anim');
+  }
+}
+
+function buildSeg() {
+  const seg = document.getElementById('seg');
+  seg.innerHTML = Object.entries(MK).map(([k, v]) => `<button type="button" role="radio" data-mk="${k}" aria-checked="${k === state.mk}">${v.label}</button>`).join('');
+  seg.addEventListener('click', ev => {
+    const b = ev.target.closest('button'); if (!b || b.dataset.mk === state.mk) return;
+    state.mk = b.dataset.mk;
+    seg.querySelectorAll('button').forEach(x => x.setAttribute('aria-checked', x.dataset.mk === state.mk));
+    tipHide(); renderPage(true);
+  });
+}
+
+/* share card */
+const overlay = document.getElementById('cardOverlay');
+function fitCard() {
+  const s = Math.min((innerWidth - 24) / 1080, (innerHeight - 80) / 1080, 1);
+  const box = document.getElementById('cardbox');
+  box.style.width = 1080 * s + 'px'; box.style.height = 1080 * s + 'px';
+  document.getElementById('card').style.transform = `scale(${s})`;
+}
+function openCard() {
+  overlay.hidden = false; tipHide();
+  const model = buildModel(state.mk, OPT);
+  const hl = headline(model);
+  document.getElementById('cHead').innerHTML = hl.html;
+  document.getElementById('cDate').textContent = dateStr;
+  document.getElementById('cMk').textContent = MK[state.mk].sub;
+  document.getElementById('cChips').innerHTML = chipsHTML(model);
+  const c = document.getElementById('cChart');
+  c.innerHTML = '';
+  const P = params(c.clientWidth, c.clientHeight);
+  P.minPillar = 70; P.stubL = 92;
+  c.innerHTML = renderChart(model, P, {anim:false, idp:'c'}).svg;
+  fitCard();
+  document.getElementById('closeCard').focus();
+}
+function closeCard() { overlay.hidden = true; document.getElementById('shareBtn').focus(); }
+document.getElementById('shareBtn').addEventListener('click', openCard);
+document.getElementById('closeCard').addEventListener('click', closeCard);
+overlay.addEventListener('click', ev => { if (ev.target === overlay) closeCard(); });
+addEventListener('keydown', ev => { if (ev.key === 'Escape' && !overlay.hidden) closeCard(); });
+
+let lastW = 0, rt;
+addEventListener('resize', () => {
+  clearTimeout(rt);
+  rt = setTimeout(() => {
+    const w = document.getElementById('chart').clientWidth;
+    if (w !== lastW) { lastW = w; renderPage(false); }
+    if (!overlay.hidden) fitCard();
+  }, 120);
+});
+
+buildSeg();
+const start = () => {
+  const still = QS.has('still') || QS.has('card');
+  renderPage(!still);
+  lastW = document.getElementById('chart').clientWidth;
+  if (QS.has('card')) openCard();
+};
+(document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve()).then(start, start);
+</script>
+</body>
+</html>
