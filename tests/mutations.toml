@@ -7809,6 +7809,14 @@ find = "if(a) t+=sum(a,i0,i1);}); return Z(t);});"
 replace = "if(a) t+=sum(a,i0,i1);}); return t;});"
 
 [[mutation]]
+id = "readme-loses-disclaimer-link"
+why = """README 의 '예측이 아니다' 절에서 고지 링크가 빠진다 — 권리자가 연락 경로를 못 찾는다"""
+guards = ["tests/test_first_reader.py::test_readers_can_find_the_disclaimer"]
+file = "README.md"
+find = " — [고지](DISCLAIMER.md) · [보안 정책](SECURITY.md)."
+replace = "."
+
+[[mutation]]
 id = "viewer-chart-end-label-keeps-binary-residue"
 why = "누적 선 끝 라벨이 제 누적의 잔차를 남겨, 같은 화면의 막대 '+0' 옆에 '−0' 을 적는다"
 guards = ["tests/test_web_render.py::test_viewer_chart_end_label_agrees_with_the_bars_when_the_window_cancels"]

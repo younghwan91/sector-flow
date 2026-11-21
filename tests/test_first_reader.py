@@ -64,6 +64,13 @@ def test_readers_can_find_the_glossary():
     assert "docs/glossary.md" in README and "glossary.md" in GUIDE
 
 
+def test_readers_can_find_the_disclaimer():
+    """투자 조언 아님·데이터 이용 조건·권리자 연락은 '예측이 아니다' 절에서 바로 찾을 수 있어야 한다."""
+    sec = _section(README, "## 8. 주의", "## 9.")
+    assert "](DISCLAIMER.md)" in sec and "](SECURITY.md)" in sec
+    assert (REPO / "DISCLAIMER.md").exists() and (REPO / "SECURITY.md").exists()
+
+
 def test_comparison_table_names_what_competitors_do():
     """'확인 못 해 뺐다' 고 적었지만 조사 노트가 그 페이지를 인용했다 — 비교에서 빼면 부풀림이다."""
     sec = _section(README, "### 1.1 다른 자료와", "**못하는 것도 있다.**")

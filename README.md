@@ -446,6 +446,9 @@ http://<서버의 Tailscale 주소>:8765/latest/viewer.html   #            — �
 
 ## 8. 주의 — 이 숫자들은 예측이 아니다
 
+> **투자 조언이 아니다.** 화면의 숫자는 동시기 관측이며 예측이 아니다. 데이터는 각자의 이용 조건을 따르고, 권리자 연락은
+> GitHub 이슈로 받아 바로 조치한다 — [고지](DISCLAIMER.md) · [보안 정책](SECURITY.md).
+
 **한계를 지표와 같이 싣는다.** 도움말(`?`)에는 열마다 아래 표지가 `증거` 줄로 붙고, 웹 두 장은 열 이름 아래와 범례에 같은
 표지를 단다. 근거는 2026-11-08 사전등록 검정([`docs/validation/`](docs/validation/))이다.
 
@@ -543,4 +546,5 @@ MIT
 ## 기여 및 이슈 제보
 
 - 🐛 버그 제보, 질문, 기능 제안: [GitHub Issues](https://github.com/younghwan91/sector-flow/issues)
+- 🔒 보안 문제·권리자 연락: [SECURITY.md](SECURITY.md) · [고지](DISCLAIMER.md)
 - 📈 업데이트 소식: [팔로우 @younghwan91](https://github.com/younghwan91)
