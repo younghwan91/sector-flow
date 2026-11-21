@@ -32,8 +32,12 @@ def banned_hits(text: str) -> list[str]:
     비교한다 — 공백(`수익  보장`)·폭 0 문자·문장부호(`추.천`·`급-등`)를 끼워도 잡는다. 항목 경계를 넘어
     붙이지는 않는다(`통신 · 호텔` 이 `신호` 가 되지 않게).
     """
+    return _hits(text, BANNED)
+
+
+def _hits(text: str, words: tuple[str, ...]) -> list[str]:
     items = [_letters(it) for it in _ITEM_SEP.split(unicodedata.normalize("NFKC", text))]
-    return [w for w in BANNED if any(_letters(w) in it for it in items)]
+    return [w for w in words if any(_letters(w) in it for it in items)]
 
 
 #: 화면 글은 문장이 길다 — 문장을 넘어 붙여 읽지 않는다(`바꾸기. 대문자` 가 `기대` 가 되지 않게). 공백 없는 `추.천` 은 그대로 잡힌다.
@@ -42,7 +46,23 @@ _SENTENCE = re.compile(r"[.,;!?]\s+")
 
 def page_hits(text: str) -> list[str]:
     """화면·문서용 — :data:`NEGATED` 의 부정문을 빼고 문장으로 나눈 뒤 :func:`banned_hits`."""
-    return banned_hits(_SENTENCE.sub("\n", NEGATED.sub(" ", unicodedata.normalize("NFKC", text))))
+    return banned_hits(_sentences(text))
+
+
+def _sentences(text: str) -> str:
+    return _SENTENCE.sub("\n", NEGATED.sub(" ", unicodedata.normalize("NFKC", text)))
+
+
+#: 지도·카드·랜딩·README 머리가 **더** 피할 말 — 섹터 사이·주체 사이로 돈이 옮겨 간 것처럼 읽히게 하는 말과 내부 목표어
+#: (``성지``). 관측되는 것은 (주체, 섹터) 순매수뿐이다(``docs/superpowers/specs/2026-08-29-money-flow-ledger.md`` §1.2·§2).
+#: :data:`BANNED` 에 넣지 않는다 — 기존 화면의 같은 말(로그 ``회전`` 등)은 뜻이 달라 그대로 둔다.
+MAP_AVOID = ("유입", "유출", "몰림", "몰렸", "쏠림", "회전", "성지")
+
+
+def map_hits(text: str) -> list[str]:
+    """지도·카드·랜딩용 — :func:`page_hits` 에 :data:`MAP_AVOID` 를 더한다(같은 정규화·같은 부정문 예외)."""
+    t = _sentences(text)
+    return banned_hits(t) + _hits(t, MAP_AVOID)
 
 
 #: 페이지에 심은 데이터 줄(``const D = {...};``) — 종목·섹터 이름은 벤더가 준 고유명사라 검사 대상이 아니다.
