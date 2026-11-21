@@ -7505,6 +7505,39 @@ find = "if info.get(\"more\"):"
 replace = "if False:"
 
 [[mutation]]
+id = "byo-universe-list-truncation-silent"
+why = "ka10099 가 쪽 상한에서 잘렸는데 앞쪽만으로 유니버스를 쓴다 — 섹터 합계가 조용히 줄어든다"
+guards = ["tests/test_collect_universe.py::test_universe_truncated_list_is_a_failure_not_a_smaller_market",
+          "tests/test_collect_universe.py::test_stock_list_raises_on_truncation"]
+file = "src/sectorflow/collect/fetch.py"
+find = "    if info.get(\"more\"):\n        raise TruncatedResponse("
+replace = "    if False:\n        raise TruncatedResponse("
+
+[[mutation]]
+id = "byo-universe-one-market"
+why = "universe 가 거래소만 받는다(코스닥 섹터가 통째로 빈다)"
+guards = ["tests/test_collect_universe.py::test_universe_writes_both_markets_with_sectors_across_pages"]
+file = "src/sectorflow/collect/run.py"
+find = "for m in fetch.MARKETS for s in fetch.stock_list(api, m)"
+replace = "for m in (\"kospi\",) for s in fetch.stock_list(api, m)"
+
+[[mutation]]
+id = "byo-universe-keeps-preferred"
+why = "universe 가 우선주·ETF 까지 stocks 에 쓴다(kr_quant 보통주 유니버스와 달라진다)"
+guards = ["tests/test_collect_universe.py::test_universe_writes_both_markets_with_sectors_across_pages"]
+file = "src/sectorflow/collect/run.py"
+find = " if fetch.is_common_stock(s)]"
+replace = "]"
+
+[[mutation]]
+id = "byo-universe-busy-exit-lost"
+why = "운영 창에 걸려 멈춘 universe 가 75(다시 돌리면 된다)가 아니라 1(실패)로 끝난다"
+guards = ["tests/test_collect_universe.py::test_universe_stops_before_sending_in_a_busy_window"]
+file = "src/sectorflow/collect/run.py"
+find = "                          \"failed\": failed, \"notes\": notes}, ensure_ascii=False, indent=1))\n    if interrupted:\n        return EXIT_BUSY\n"
+replace = "                          \"failed\": failed, \"notes\": notes}, ensure_ascii=False, indent=1))\n    if interrupted:\n        return 1\n"
+
+[[mutation]]
 id = "byo-pages-more-never-set"
 why = "연속조회 잘림 표시(more)가 늘 거짓이다"
 guards = ["tests/test_collect_kiwoom.py::test_pages_info_tells_truncation_from_end_of_history"]
