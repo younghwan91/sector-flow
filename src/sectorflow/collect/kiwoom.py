@@ -12,6 +12,9 @@ quant-airflow 는 ``kiwoom-client`` 라이브러리를 쓰지만 BYO 도구는 �
 - **429 / return_code 5** 는 선형 백오프로 재시도한다(quant-airflow 와 같은 ``max_retries=5``).
 - **연속조회**는 응답 헤더 ``cont-yn``·``next-key`` 로 한다.
 - **호출 상한**(``max_calls``) — 넘으면 :class:`CallBudgetExceeded`. 토큰 발급도 센다.
+- **분·시간 창**(:data:`KIWOOM_LIMITS`, 앱키 하나에서 모든 TR 합: 초 5 · 분 100 · 시간 1,000). 창이 차면 가장 오래된
+  전송이 창을 벗어날 때까지 기다린다(멈추지 않는다 — 전 시장 증분은 몇 시간 걸린다). 기다린 뒤에도 운영 창 검사는 한다.
+- **TR 제한**(``only``) — 지도 전용 수집은 ka10099·ka10059 만. 그 밖은 요청 전에 :class:`ForbiddenTR`.
 """
 
 from __future__ import annotations
@@ -20,7 +23,7 @@ import json
 import time
 import urllib.error
 import urllib.request
-from collections import Counter
+from collections import Counter, deque
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
@@ -50,6 +53,11 @@ EXPIRY_MARGIN_S = 300.0
 MAX_REISSUES = 2
 #: 키움 ``expires_dt`` 는 KST 현지 시각이다 — 호스트 시간대와 무관하게 읽는다.
 KST = timezone(timedelta(hours=9))
+
+#: 키움 REST 호출 상한 — (횟수, 창[초]). 앱키 하나의 모든 요청(토큰 발급 포함) 합으로 센다(설계 §5).
+KIWOOM_LIMITS: tuple[tuple[int, float], ...] = ((5, 1.0), (100, 60.0), (1000, 3600.0))
+#: 이보다 오래 기다리면 ``notice`` 로 알린다[초] — 시간 창에 걸린 실행이 멈춘 것처럼 보이지 않게.
+NOTICE_WAIT_S = 30.0
 
 #: ``transport(url, headers, body, timeout) -> (status, response_headers, json_body)``.
 Transport = Callable[[str, dict, dict, float], "tuple[int, dict[str, str], dict]"]
@@ -104,6 +112,9 @@ class KiwoomRest:
         max_calls: 이 세션의 총 호출 상한(토큰 발급 포함). ``None`` 이면 무제한.
         max_reissues: 이 세션의 토큰 재발급 상한(만료 전 정기 갱신은 세지 않는다).
         guard: 요청(토큰 발급 포함) **직전마다** 부른다. 운영 창이면 :class:`BusyWindow` 를 던진다.
+        limits: 모든 요청 합의 (횟수, 창[초]) 상한. 기본 :data:`KIWOOM_LIMITS`.
+        only: 주면 이 TR 만 부른다(허용 목록 안에서 더 좁힌다) — 밖은 요청 전에 :class:`ForbiddenTR`.
+        notice: 긴 대기(:data:`NOTICE_WAIT_S` 초 이상)를 알릴 곳.
         transport, clock, sleep: 테스트가 바꿔 끼운다.
     """
 
@@ -112,6 +123,9 @@ class KiwoomRest:
                  max_calls: "int | None" = None, timeout: float = 30.0,
                  max_reissues: int = MAX_REISSUES,
                  guard: "Callable[[], None] | None" = None,
+                 limits: "tuple[tuple[int, float], ...]" = KIWOOM_LIMITS,
+                 only: "tuple[str, ...] | None" = None,
+                 notice: "Callable[[str], None] | None" = None,
                  transport: "Transport | None" = None,
                  clock: Callable[[], float] = time.monotonic,
                  sleep: Callable[[float], None] = time.sleep,
@@ -128,6 +142,9 @@ class KiwoomRest:
         self._last: dict[str, float] = {}
         self.max_reissues, self.reissues = max_reissues, 0
         self._guard = guard
+        self.limits, self.only, self._notice = tuple(limits), only, notice
+        #: 최근 전송 시각(``clock``) — 가장 큰 창의 횟수만큼만 둔다.
+        self._sent: deque = deque(maxlen=max((n for n, _ in self.limits), default=1))
         self.calls: Counter = Counter()
         self.retries: Counter = Counter()
 
@@ -148,13 +165,22 @@ class KiwoomRest:
         if self.max_calls is not None and self.total_calls >= self.max_calls:
             raise CallBudgetExceeded(f"호출 상한 {self.max_calls} 에 닿았다({dict(self.calls)})")
         self.calls[what] += 1
+        self._sent.append(self._clock())
 
     def _throttle(self, key: str) -> None:
+        """TR별 간격과 합계 창 중 가장 긴 대기를 한 번 잔다 — 창의 n번째 최근 전송이 창을 벗어날 때까지."""
+        now = self._clock()
+        wait = 0.0
         last = self._last.get(key)
         if last is not None and self.min_interval:
-            wait = self.min_interval - (self._clock() - last)
-            if wait > 0:
-                self._sleep(wait)
+            wait = self.min_interval - (now - last)
+        for n, span in self.limits:
+            if len(self._sent) >= n:
+                wait = max(wait, self._sent[-n] + span - now)
+        if wait > 0:
+            if self._notice is not None and wait >= NOTICE_WAIT_S:
+                self._notice(f"⏳ 호출 상한(초 5·분 100·시간 1,000) — {wait:.0f}초 기다린다")
+            self._sleep(wait)
         self._last[key] = self._clock()
 
     # ── 토큰 ──────────────────────────────────────────────────────────────
@@ -186,6 +212,8 @@ class KiwoomRest:
         path = TR_PATHS.get(api_id)
         if path is None:
             raise ForbiddenTR(api_id, "-", "허용 목록(TR_PATHS) 밖의 TR — 읽기 전용 시세·수급 TR 만 부른다")
+        if self.only is not None and api_id not in self.only:
+            raise ForbiddenTR(api_id, "-", f"이 실행은 {', '.join(self.only)} 만 부른다(지도 전용 수집)")
         refreshed = False
         attempt = 0
         while True:

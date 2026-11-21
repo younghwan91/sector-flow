@@ -255,3 +255,46 @@ def test_env_file_accepts_export_lines(tmp_path, monkeypatch):
     f = tmp_path / ".env"
     f.write_text("# c\nexport KIWOOM_APP_KEY='kk'\nKIWOOM_APP_SECRET=ss\n", encoding="utf-8")
     assert load_keys(f) == ("kk", "ss")
+
+
+def _timed(n_replies, clock, **kw):
+    """보낸 시각(가짜 시계)을 적는 전송 — 토큰 발급도 한 건이다."""
+    fake, times = Fake([ok()] * n_replies), []
+
+    def transport(url, headers, body, timeout):
+        times.append(clock.t)
+        return fake(url, headers, body, timeout)
+    api = K.KiwoomRest(FAKE_KEY, FAKE_SECRET, transport=transport, clock=clock.now, sleep=clock.sleep,
+                       wall=clock.now, rate=None, **kw)
+    return api, times
+
+
+def test_hourly_cap_blocks_1001st():
+    clock = Clock()
+    api, times = _timed(1000, clock)
+    for _ in range(1000):
+        api.request("ka10059", {})
+    assert len(times) == 1001                               # 토큰 1 + 요청 1,000
+    assert times[999] < times[0] + 3600                     # 1,000번째까지는 첫 한 시간 안에 나간다
+    assert times[1000] >= times[0] + 3600                   # 1,001번째는 첫 전송이 창을 벗어날 때까지 기다린다
+    assert all(times[i + 1000] - times[i] >= 3600 for i in range(len(times) - 1000))
+
+
+def test_second_and_minute_windows_hold_across_trs():
+    clock = Clock()
+    api, times = _timed(300, clock)
+    for i in range(300):
+        api.request(("ka10059", "ka10099", "ka10081")[i % 3], {})      # TR 을 섞어도 창은 합으로 센다
+    assert all(times[i + 5] - times[i] >= 1.0 for i in range(len(times) - 5))
+    assert all(times[i + 100] - times[i] >= 60.0 for i in range(len(times) - 100))
+    assert times[4] == times[0]                             # 초 5건까지는 기다리지 않는다
+
+
+def test_only_restricts_trs_before_sending():
+    fake = Fake([ok()])
+    api, _ = _api(fake, rate=None, only=("ka10099", "ka10059"))
+    with pytest.raises(K.ForbiddenTR):
+        api.request("ka10081", {})
+    assert fake.sent == [] and fake.tokens == 0
+    api.request("ka10059", {})
+    assert len(fake.sent) == 1
