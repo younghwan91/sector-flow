@@ -530,6 +530,11 @@ pytest 와 변이 실행은 프로세스 하나당 `RLIMIT_DATA` 6GiB 안에서 
 | [`docs/slo.md`](docs/slo.md) | 게시 기한의 정의와 재는 법 |
 | [`docs/byo/`](docs/byo/) | 자기 키움 키로 수집하는 BYO 조각의 동등성 실측 |
 
+## 후원
+
+sector-flow 는 MIT 오픈소스다. 코드와 유지보수가 쓸모 있었다면 [GitHub Sponsors](https://github.com/sponsors/younghwan91)로 후원할 수 있다.
+후원은 코드·유지보수에 대한 것이고 혜택은 없다 — 후원해도 더 보이는 숫자·화면·데이터가 없다. 데이터와 리포트 폴더는 팔지 않는다.
+
 ## 라이선스
 
 MIT
