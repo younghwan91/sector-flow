@@ -393,6 +393,12 @@ fi
 # 부속 산출물 — 다이제스트·검증 페이지는 짓는 폴더 안에서 만들어 리포트와 **함께** 바꿔 낀다(게시된 폴더의 파일 하나를 고쳐 쓰는 길은 없다).
 # 실패·멈춤에도 리포트는 게시한다. 다만 조용히 빠지면 안 된다 — VERIFY.txt 끝에 적고 맨 끝에서 75(경고)로 알린다.
 SIDE_FAIL=""
+# 수급 지도(scripts/sector_map.py) — 페이로드만 읽는다. 못 만들어도 리포트 숫자와 무관하니 게시는 그대로.
+if ! UV_OFFLINE=1 _bounded "${KR_QUANT_MAP_TIMEOUT:-2m}" "${UVR[@]}" python scripts/sector_map.py \
+     --payload "$BUILD/payload.json" --html "$BUILD/map.html" >/dev/null; then
+  echo "[$(date '+%F %T')] ⚠️ 수급 지도(map.html)를 못 만들었다 — 리포트는 그대로 게시한다" >&2
+  SIDE_FAIL+="map.html "
+fi
 # 오늘의 수급 다이제스트(scripts/digest.py, 끄려면 KR_QUANT_DIGEST=0) — 폴더에만 쓴다(밖으로 보내지 않는다). 상한 5분·오프라인·판 고정.
 if [ "${KR_QUANT_DIGEST:-1}" != "0" ]; then UV_OFFLINE=1 _bounded "${KR_QUANT_DIGEST_TIMEOUT:-5m}" "${UVR[@]}" --with 'playwright==1.48.0' python scripts/digest.py --dir "$BUILD" || { echo "[$(date '+%F %T')] ⚠️ 다이제스트를 못 만들었다(실패 또는 시간 초과) — 리포트는 그대로 게시한다" >&2; SIDE_FAIL+="digest "; }; fi
 # 다이제스트 검증(verify_report.py X 층) — 글의 시장 줄·요약·가장 큰 주체·상·하위·극단·부호 바뀜·20일 변동이 페이로드·화면과

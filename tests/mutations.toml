@@ -12582,6 +12582,30 @@ file = "scripts/templates/sector_map.html"
 find = "<div class=\"heads\" id=\"heads\"><span class=\"g\">"
 replace = "<div class=\"heads\" id=\"heads\"><span class=\"g\">유입 "
 
+[[mutation]]
+id = "batch-map-not-built"
+why = "배치가 수급 지도를 리포트 폴더에 안 짓는다 — 비공개 웹의 /latest/map.html 이 404 다."
+guards = ["tests/test_daily_report_flow.py::test_map_is_built_into_the_report"]
+file = "scripts/daily_report.sh"
+find = '--payload "$BUILD/payload.json" --html "$BUILD/map.html" >/dev/null; then'
+replace = '--payload "$BUILD/payload.json" --html /dev/null >/dev/null; then'
+
+[[mutation]]
+id = "batch-map-failure-silent"
+why = "수급 지도를 못 만든 날 종료코드가 0 — 웹의 링크가 사라졌는데 아무도 모른다."
+guards = ["tests/test_daily_report_flow.py::test_map_failure_warns_without_blocking"]
+file = "scripts/daily_report.sh"
+find = '  SIDE_FAIL+="map.html "'
+replace = '  :'
+
+[[mutation]]
+id = "web-map-not-linked"
+why = "비공개 웹 목록이 수급 지도를 잇지 않는다 — 폴더에 있어도 찾아 들어갈 길이 없다."
+guards = ["tests/test_serve_reports.py::test_index_links_extras_only_when_the_folder_has_them"]
+file = "scripts/serve_reports.py"
+find = 'EXTRAS = (("map.html", "수급 지도"), ("trust.html", "검증·품질"),'
+replace = 'EXTRAS = (("trust.html", "검증·품질"),'
+
 [[removed]]
 id = "ci-shard-denominator-hardcoded"
 why = "샤드를 없앴다 — 전체 검증은 잡 하나다(tests/test_ci_workflow.py 가 matrix 를 막는다)"
