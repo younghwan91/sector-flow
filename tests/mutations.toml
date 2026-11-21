@@ -12329,6 +12329,38 @@ file = "src/sectorflow/wording.py"
 find = '"전망", "기대", "적중")'
 replace = '"전망", "기대", "적중", "회전")'
 
+[[mutation]]
+id = "flowmap-window-end-exclusive"
+why = "창 끝을 빼고 더하면(반열린 구간) 1일 창이 빈 합이 되고 모든 창이 하루씩 짧다"
+guards = ["tests/test_flowmap.py::test_window_sums_adds_markets_and_days"]
+file = "src/sectorflow/flowmap.py"
+find = "    return float(sum(v for v in vals[i0:i1 + 1] if v is not None))"
+replace = "    return float(sum(v for v in vals[i0:i1] if v is not None))"
+
+[[mutation]]
+id = "flowmap-resid-dropped"
+why = "잔여를 0 으로 두면 4주체 합의 잔차가 사라져 섹터마다 넘긴 쪽과 넘겨받은 쪽이 안 맞는다(원장 §2.3)"
+guards = ["tests/test_flowmap.py::test_resid_is_negative_sum"]
+file = "src/sectorflow/flowmap.py"
+find = "        row[RESID] = 0.0 - sum(row[a] for a in ACTORS)"
+replace = "        row[RESID] = 0.0"
+
+[[mutation]]
+id = "flowmap-none-not-skipped"
+why = "미보고(None)를 거르지 않으면 결측 하루가 섞인 창 전체가 TypeError 로 지도를 못 짓는다"
+guards = ["tests/test_flowmap.py::test_none_counts_as_zero"]
+file = "src/sectorflow/flowmap.py"
+find = "    return float(sum(v for v in vals[i0:i1 + 1] if v is not None))"
+replace = "    return float(sum(v for v in vals[i0:i1 + 1]))"
+
+[[mutation]]
+id = "flowmap-missing-sector-in-market"
+why = "그 시장에 없는 섹터(코스닥 보험 등)를 건너뛰지 않으면 전체 시장 지도가 통째로 죽는다"
+guards = ["tests/test_flowmap.py::test_none_counts_as_zero"]
+file = "src/sectorflow/flowmap.py"
+find = "            if not f:\n                continue\n"
+replace = ""
+
 [[removed]]
 id = "ci-shard-denominator-hardcoded"
 why = "샤드를 없앴다 — 전체 검증은 잡 하나다(tests/test_ci_workflow.py 가 matrix 를 막는다)"
