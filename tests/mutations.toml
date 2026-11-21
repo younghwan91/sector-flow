@@ -2783,6 +2783,14 @@ find = "    const bot=tline(ko+\" 하위\",r.slice().reverse().slice(0,3).map(([
 replace = "    const bot=tline(ko+\" 하위\",r.slice(0,3).map(([s,v,p])=>[s,v,p,stockTag(st[s],\"sell\"),sret(s)]));"
 
 [[mutation]]
+id = "contributing-names-a-missing-file"
+why = """기여 안내가 없는 파일을 가리킨다 — 처음 온 기여자가 찾다 막힌다. 문서 경로 검사가 루트의 기여 안내까지 봐야 잡힌다"""
+guards = ["tests/test_doc_paths.py::test_every_repo_path_in_the_docs_exists"]
+file = "CONTRIBUTING.md"
+find = "금칙어 표(`src/sectorflow/wording.py`)"
+replace = "금칙어 표(`src/sectorflow/words.py`)"
+
+[[mutation]]
 id = "web-final-diff-no-list"
 why = "웹 잠정→확정 변경에 바뀐 칸 목록이 없다 — 'N칸' 만 적고 어디인지 못 본다"
 guards = ["tests/test_report_pages.py::test_numbers_today_panel_lists_the_provisional_to_final_changes"]
