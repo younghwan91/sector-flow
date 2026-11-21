@@ -12534,6 +12534,30 @@ file = "src/sectorflow/flowmap.py"
 find = "가장 크게 순매수 {"
 replace = "가장 크게 유입 {"
 
+[[mutation]]
+id = "mapdata-windows-beyond-dates"
+why = "날짜보다 긴 창을 남기면 음수 색인이 끝에서 잘라 120일 버튼이 20일 폴더의 엉뚱한 합을 보인다"
+guards = ["tests/test_flowmap.py::test_windows_beyond_dates_skipped"]
+file = "src/sectorflow/flowmap.py"
+find = "    windows = [w for w in MAP_WINDOWS if w <= N]"
+replace = "    windows = list(MAP_WINDOWS)"
+
+[[mutation]]
+id = "mapdata-no-size-shrink"
+why = "크기 상한을 넘어도 타임랩스를 줄이지 않으면 27섹터·긴 창에서 페이지가 무거워진다(상한이 있으나 마나)"
+guards = ["tests/test_flowmap.py::test_size_budget"]
+file = "src/sectorflow/flowmap.py"
+find = "        n = max(0, n - TIMELAPSE_STEP)"
+replace = "        return out"
+
+[[mutation]]
+id = "mapdata-detail-needs-labels"
+why = "라벨 표가 없다고 세부를 버리면 BYO 수급만 페이로드에서 기관을 펼칠 수 없다"
+guards = ["tests/test_flowmap.py::test_flows_only_payload_ok"]
+file = "src/sectorflow/flowmap.py"
+find = "    if not keys:\n        for by_sec"
+replace = "    if False:\n        for by_sec"
+
 [[removed]]
 id = "ci-shard-denominator-hardcoded"
 why = "샤드를 없앴다 — 전체 검증은 잡 하나다(tests/test_ci_workflow.py 가 matrix 를 막는다)"

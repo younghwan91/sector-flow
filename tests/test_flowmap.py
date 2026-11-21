@@ -334,3 +334,41 @@ def test_headline_wording_clean(demo_payload):
             assert len(H["facts"]) == FM.N_FACTS
             assert map_hits(" · ".join([H["lead"], *H["facts"]])) == [], (m, w, H)
             assert all(" — " in f and f.endswith(("억", "조")) for f in H["facts"])
+
+
+def test_windows_beyond_dates_skipped():
+    """창이 날짜 수보다 길면(BYO 20일 폴더) 그 창은 빠진다 — 화면은 없는 창의 버튼을 감춘다."""
+    P = _long_payload(n_days=25)
+    D = FM.build_map_data(P)
+    assert D["windows"] == [1, 5, 20] and D["markets"] == ["전체", "거래소"]
+    assert list(D["views"]["전체"]) == ["1", "5", "20"]
+    assert D["asof"] == P["dates"][-1] and D["demo"] is False
+    v = D["views"]["거래소"]["20"]
+    assert v["exchange"] == FM.exchange_graph(FM.window_sums(P, ["거래소"], 5, 24))
+    assert set(v["actors"]) == {*FM.ACTORS, FM.RESID}, "기관 세부가 없는 페이로드는 세부 주체가 없다"
+    assert len(D["timelapse"]["전체"]["frames"]) == 25
+
+
+def test_size_budget(demo_payload, monkeypatch):
+    import json
+
+    D = FM.build_map_data(demo_payload)
+    assert len(json.dumps(D, ensure_ascii=False, separators=(",", ":")).encode("utf-8")) <= FM.MAP_JSON_MAX
+    assert D["windows"] == list(FM.MAP_WINDOWS) and len(D["timelapse"]["전체"]["frames"]) == FM.TIMELAPSE_N
+    assert "inst:invtrt" in D["views"]["전체"]["20"]["actors"] and D["labels"]["inst:invtrt"] == "투신"
+    json.loads(json.dumps(D))
+    monkeypatch.setattr(FM, "MAP_JSON_MAX", FM._size({**D, "timelapse": {}}) + 60_000)
+    small = FM.build_map_data(demo_payload)
+    assert FM._size(small) <= FM.MAP_JSON_MAX, "상한을 넘으면 타임랩스를 줄여 맞춘다"
+    assert 0 < len(small["timelapse"]["전체"]["frames"]) < FM.TIMELAPSE_N
+    assert small["views"] == D["views"], "보기 1·2 는 줄이지 않는다"
+
+
+def test_flows_only_payload_ok(demo_payload):
+    """수익률·오늘 블록 없이 수급만 든 페이로드(BYO --flows-only 의 전제)로도 지도가 선다."""
+    keep = ("flows", "detail", "sectors", "markets", "dates", "n_by_sector")
+    P = {k: demo_payload[k] for k in keep}
+    D = FM.build_map_data(P)
+    assert D["views"]["전체"]["5"]["exchange"] == FM.build_map_data(demo_payload)["views"]["전체"]["5"]["exchange"]
+    assert "inst:invtrt" in D["views"]["전체"]["5"]["actors"], "라벨 표가 없어도 세부 키는 페이로드에서 읽는다"
+    assert list(D["views"]["코스닥"]["1"]["actors"])[5:7] == ["inst:invtrt", "inst:penfnd_etc"]

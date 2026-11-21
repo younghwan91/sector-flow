@@ -9,7 +9,10 @@
 """
 from __future__ import annotations
 
+import json
+
 from sectorflow import summary
+from sectorflow.basis import DATA_BASIS_SHORT
 from sectorflow.josa import josa
 
 #: 페이로드 ``flows[시장][섹터]`` 의 주체 키 — 순서가 화면의 주체 노드 순서다(양쪽 같게).
@@ -162,8 +165,13 @@ DETAIL_PREFIX = "inst:"
 
 
 def detail_keys(P: dict) -> list[str]:
-    """기관 세부 키의 화면 순서 — :data:`DETAIL_FIRST` 가 먼저, 나머지는 ``P["detail_labels"]`` 순서."""
+    """기관 세부 키의 화면 순서 — :data:`DETAIL_FIRST` 가 먼저, 나머지는 ``P["detail_labels"]`` 순서.
+    라벨 표가 없는 페이로드(BYO 수급만)는 ``P["detail"]`` 에 처음 나온 순서."""
     keys = list(P.get("detail_labels") or {})
+    if not keys:
+        for by_sec in (P.get("detail") or {}).values():
+            for d in by_sec.values():
+                keys += [k for k in d if k not in keys]
     return [k for k in DETAIL_FIRST if k in keys] + [k for k in keys if k not in DETAIL_FIRST]
 
 
@@ -253,3 +261,56 @@ def map_headline(P: dict, market: str, win: int) -> dict:
     edges.sort(key=lambda e: (-e[0], e[1], e[2]))
     facts = [f"{s} — {ACTOR_LABEL[a]} {_big(v)}" for _m, _i, _j, s, a, v in edges[:N_FACTS]]
     return {"lead": lead, "facts": facts}
+
+
+#: 지도의 창(거래일 누적) — 리포트의 기존 창. 날짜 수보다 긴 창은 빠진다(BYO 20일 폴더면 1·5·20).
+MAP_WINDOWS = (1, 5, 20, 60, 120)
+#: 지도 데이터를 JSON 으로 적었을 때의 상한(바이트) — 넘으면 타임랩스 프레임 수를 줄여 맞춘다.
+MAP_JSON_MAX = 600_000
+#: 타임랩스 기본 프레임 수와, 상한을 넘을 때 한 번에 줄이는 수.
+TIMELAPSE_N = 60
+TIMELAPSE_STEP = 10
+
+
+def _size(o) -> int:
+    return len(json.dumps(o, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+
+
+def actor_keys(P: dict) -> list[str]:
+    """보기 2 에서 누를 수 있는 주체 — 4주체·잔여, 그리고 기관 세부(``inst:<키>``, 투신·연기금 먼저)와 기관 나머지."""
+    det = detail_keys(P)
+    return [*NODE_ORDER, *([DETAIL_PREFIX + k for k in (*det, INST_OTHER)] if det else [])]
+
+
+def build_map_data(P: dict) -> dict:
+    """``map.html`` 에 심을 묶음 — 시장(전체·각 시장) × 창마다 보기 1(``exchange``)·보기 2(``actors``)·머리글, 그리고 타임랩스.
+
+    쓰는 페이로드 키는 ``dates``·``sectors``·``markets``·``flows``·``detail``·``detail_labels`` 뿐이다(수익률 등 없이 —
+    BYO 수급만 페이로드가 이 길을 탄다). 창 키는 JSON 과 같게 문자열(``"5"``)이다. 크기는 :data:`MAP_JSON_MAX` 안으로
+    타임랩스 프레임 수를 줄여 맞춘다(보기 1·2 는 줄이지 않는다).
+    """
+    N = len(P["dates"])
+    windows = [w for w in MAP_WINDOWS if w <= N]
+    markets = [ALL_MARKETS, *P["markets"]]
+    keys = actor_keys(P)
+    views: dict = {}
+    for m in markets:
+        ms = market_list(P, m)
+        views[m] = {}
+        for w in windows:
+            sums = window_sums(P, ms, N - w, N - 1)
+            full = with_detail(sums, inst_detail_sums(P, ms, N - w, N - 1)) if len(keys) > len(NODE_ORDER) else sums
+            views[m][str(w)] = {"exchange": exchange_graph(sums),
+                                "actors": {a: actor_graph(full, a) for a in keys},
+                                "headline": map_headline(P, m, w)}
+    out = {"asof": P["dates"][-1] if N else None, "demo": bool(P.get("demo")), "basis": DATA_BASIS_SHORT,
+           "markets": markets, "windows": windows, "labels": {**ACTOR_LABEL, **{DETAIL_PREFIX + k: v for k, v in
+                                                                                  (P.get("detail_labels") or {}).items()},
+                                                               DETAIL_PREFIX + INST_OTHER: "기관 나머지"},
+           "views": views, "timelapse": {}}
+    n = min(TIMELAPSE_N, N)
+    while True:
+        out["timelapse"] = {m: frames(P, market_list(P, m), span=1, n=n) for m in markets}
+        if n <= 0 or _size(out) <= MAP_JSON_MAX:
+            return out
+        n = max(0, n - TIMELAPSE_STEP)
