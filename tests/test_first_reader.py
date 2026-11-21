@@ -90,6 +90,20 @@ def test_received_folder_warning_is_at_both_entrances():
         assert "제3자" in sec and "재배포" in sec, sec[:200]
 
 
+def _commands(block: str) -> list[str]:
+    return [ln.split("  #")[0].strip() for ln in block.strip().splitlines()]
+
+
+def test_english_quick_start_runs_the_same_commands():
+    """영어 README 는 한국어 Quick start 의 첫 블록을 옮긴 것이다 — 명령이 갈리면 한쪽이 낡았다."""
+    en = (REPO / "README.en.md").read_text("utf-8")
+    ko_first = re.search(r"```bash\n(.*?)```", _section(README, "## Quick start", "## 목차"), re.S).group(1)
+    en_first = re.search(r"```bash\n(.*?)```", _section(en, "## Quick start", "## Data policy"), re.S).group(1)
+    assert _commands(en_first) == _commands(ko_first)
+    assert "](README.en.md)" in README.split("## Quick start")[0], "한국어 README 머리에 영어 링크가 없다"
+    assert "](README.md)" in en.split("## Quick start")[0]
+
+
 def test_quick_start_starts_with_something_that_runs():
     """첫 코드 블록은 DB·폴더 없이 도는 명령이어야 한다 — '리포트 폴더가 있어야 뜬다' 가 입구를 막았다."""
     first = re.search(r"```bash\n(.*?)```", _section(README, "## Quick start", "## 목차"), re.S).group(1)
