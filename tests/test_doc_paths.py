@@ -4,6 +4,7 @@
 (런북 이 지금 없는 스크립트를 가리킨 적이 있다). 인용 줄 번호(`파일:줄`)는 tests/test_docs_refs.py 가 본다 —
 여기서는 경로만 본다.
 
+* 대상: 루트의 ``*.md``(README·CLAUDE.md·기여 안내·고지 등)와 ``docs/**/*.md``
 * 백틱 안의 `scripts/`·`src/`·`docs/`·`tests/`·`deploy/`·`research/` 로 시작하는 경로(앞이 `/`·`~` 면 다른 레포라 뺀다)
 * 상대 마크다운 링크 `[…](경로)`
 * 기록 문서(사전등록·결과·옛 설계)는 그때의 경로를 적은 것이라 뺀다(:data:`HISTORICAL`). 다른 레포나 지운 파일을
@@ -40,7 +41,7 @@ LINK = re.compile(r"\]\(([A-Za-z0-9_./-]+)(?:#[^)]*)?\)")
 
 
 def _docs() -> list[Path]:
-    out = [REPO / "README.md", REPO / "CLAUDE.md"]
+    out = sorted(REPO.glob("*.md"))
     for p in sorted((REPO / "docs").rglob("*.md")):
         rel = p.relative_to(REPO).as_posix()
         if not any(rel.startswith(h + "/") for h in HISTORICAL):
