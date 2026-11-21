@@ -41,3 +41,70 @@ def window_sums(P: dict, markets: list[str], i0: int, i1: int) -> Sums:
         row[RESID] = 0.0 - sum(row[a] for a in ACTORS)    # 0.0 − : 합이 0 이면 −0.0 이 아니라 0.0
         out[s] = row
     return out
+
+
+#: 꼬리 묶기 — 섹터 몫(노드 높이 ÷ gross)이 이보다 작거나 순위가 :data:`MAX_SHOWN` 을 넘으면 ``기타 N개 섹터`` 로 묶는다.
+#: 단 보이는 섹터는 최소 :data:`MIN_SHOWN` 개(그만큼 있으면). 문턱은 목록 안 몫이다(CLAUDE.md 비율 열 규칙).
+TAIL_SHARE = 0.03
+MAX_SHOWN = 12
+MIN_SHOWN = 5
+#: 이보다 작은 |값| 은 간선이 아니다 — 합의 부동소수 찌꺼기(1e-13 따위)가 폭 0 인 잔여 간선이 되지 않게.
+EPS = 1e-9
+#: 노드 순서 — 양쪽 주체 노드가 같은 순서로 선다(개인·외국인·기관·기타법인·잔여).
+NODE_ORDER = (*ACTORS, RESID)
+
+
+def _split(row: dict[str, float]) -> tuple[dict[str, float], dict[str, float]]:
+    """한 섹터의 (넘긴 쪽, 넘겨받은 쪽) — 순매도는 절댓값으로 give, 순매수는 take. 잔여도 부호대로 한쪽에 선다."""
+    give = {a: -row[a] for a in NODE_ORDER if row.get(a, 0.0) < -EPS}
+    take = {a: row[a] for a in NODE_ORDER if row.get(a, 0.0) > EPS}
+    return give, take
+
+
+def _add(acc: dict[str, float], part: dict[str, float]) -> None:
+    for a, v in part.items():
+        acc[a] = acc.get(a, 0.0) + v
+
+
+def _ordered(d: dict[str, float]) -> dict[str, float]:
+    return {a: d[a] for a in NODE_ORDER if a in d}
+
+
+def _n_shown(sizes: list[float], gross: float) -> int:
+    """내림차순 노드 높이 중 보일 개수 — 몫 문턱·:data:`MAX_SHOWN`, 그리고 바닥 :data:`MIN_SHOWN`."""
+    k = sum(1 for v in sizes[:MAX_SHOWN] if gross > 0 and v / gross >= TAIL_SHARE)
+    return min(len(sizes), max(k, MIN_SHOWN))
+
+
+def exchange_graph(sums: Sums) -> dict:
+    """보기 1 "넘긴 쪽 → 섹터 → 넘겨받은 쪽" — 간선은 (주체, 섹터) 하나하나다.
+
+    ``sectors`` 는 노드 높이(Σtake, 보존식으로 Σgive 와 같다) 큰 순이고 같으면 입력 순서다. 간선이 없는(전부 0) 섹터는 뺀다.
+    ``left``·``right`` 는 주체 노드의 높이 — 왼쪽 개인 = 개인이 순매도한 섹터들의 합, 오른쪽 개인 = 순매수한 섹터들의 합이고
+    둘은 다른 숫자다. 0 인 주체는 키가 없다(노드를 그리지 않는다). ``gross`` = Σ노드 높이 = Σleft = Σright.
+    왼쪽 주체와 오른쪽 주체를 잇는 구조는 없다 — 한 간선의 두 끝은 늘 주체 하나와 섹터 하나다.
+    """
+    rows = []
+    for name, row in sums.items():
+        give, take = _split(row)
+        size = max(sum(give.values()), sum(take.values()))
+        if size > EPS:
+            rows.append((size, name, give, take))
+    rows.sort(key=lambda r: -r[0])           # 안정 정렬 — 같은 높이는 입력(페이로드) 순서
+    gross = sum(r[0] for r in rows)
+    k = _n_shown([r[0] for r in rows], gross)
+    left: dict[str, float] = {}
+    right: dict[str, float] = {}
+    for _size, _name, give, take in rows:
+        _add(left, give)
+        _add(right, take)
+    tail = None
+    if rows[k:]:
+        tg: dict[str, float] = {}
+        tt: dict[str, float] = {}
+        for _size, _name, give, take in rows[k:]:
+            _add(tg, give)
+            _add(tt, take)
+        tail = {"names": [r[1] for r in rows[k:]], "give": _ordered(tg), "take": _ordered(tt)}
+    return {"sectors": [{"name": n, "give": g, "take": t} for _s, n, g, t in rows[:k]],
+            "tail": tail, "left": _ordered(left), "right": _ordered(right), "gross": gross}

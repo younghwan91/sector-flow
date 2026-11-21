@@ -12361,6 +12361,54 @@ file = "src/sectorflow/flowmap.py"
 find = "            if not f:\n                continue\n"
 replace = ""
 
+[[mutation]]
+id = "flowmap-exchange-drops-resid"
+why = "잔여를 간선에서 빼면 섹터마다 넘긴 쪽과 넘겨받은 쪽이 안 맞는다 — 잔차를 숨겨 그림을 예쁘게 만드는 반목표(설계 §2)"
+guards = ["tests/test_flowmap.py::test_conservation_per_sector", "tests/test_flowmap.py::test_resid_side_follows_sign"]
+file = "src/sectorflow/flowmap.py"
+find = "NODE_ORDER = (*ACTORS, RESID)"
+replace = "NODE_ORDER = ACTORS"
+
+[[mutation]]
+id = "flowmap-tail-ignores-minimum"
+why = "꼬리 바닥을 무시하면 작은 시장·1일 창에서 모든 섹터가 '기타 N개' 로 들어가 그림이 빈다"
+guards = ["tests/test_flowmap.py::test_tail_keeps_minimum"]
+file = "src/sectorflow/flowmap.py"
+find = "    return min(len(sizes), max(k, MIN_SHOWN))"
+replace = "    return min(len(sizes), k)"
+
+[[mutation]]
+id = "flowmap-tail-ignores-max-shown"
+why = "보이는 섹터 수 상한이 없으면 몫이 고른 날 27섹터가 다 서서 띠가 읽히지 않는다"
+guards = ["tests/test_flowmap.py::test_tail_collapses_small"]
+file = "src/sectorflow/flowmap.py"
+find = "    k = sum(1 for v in sizes[:MAX_SHOWN] if gross > 0 and v / gross >= TAIL_SHARE)"
+replace = "    k = sum(1 for v in sizes if gross > 0 and v / gross >= TAIL_SHARE)"
+
+[[mutation]]
+id = "flowmap-zero-edges-kept"
+why = "0 간선을 남기면 그 주체 노드가 폭 0 으로 서고 '한 주체만 판 날' 에도 네 주체가 다 나온다"
+guards = ["tests/test_flowmap.py::test_zero_edges_dropped"]
+file = "src/sectorflow/flowmap.py"
+find = "    take = {a: row[a] for a in NODE_ORDER if row.get(a, 0.0) > EPS}"
+replace = "    take = {a: row[a] for a in NODE_ORDER if row.get(a, 0.0) >= 0.0}"
+
+[[mutation]]
+id = "flowmap-empty-sector-kept"
+why = "간선이 하나도 없는 섹터를 남기면 높이 0 노드가 서고 꼬리 개수가 부푼다"
+guards = ["tests/test_flowmap.py::test_zero_edges_dropped"]
+file = "src/sectorflow/flowmap.py"
+find = "        if size > EPS:\n"
+replace = "        if True:\n"
+
+[[mutation]]
+id = "flowmap-tail-keyed-by-sector"
+why = "꼬리를 섹터 이름 키로 담으면 데이터에 섹터 키 구조가 생긴다 — 섹터→섹터 짝으로 읽힐 길을 데이터가 연다"
+guards = ["tests/test_flowmap.py::test_no_sector_to_sector_keys"]
+file = "src/sectorflow/flowmap.py"
+find = "        tail = {\"names\": [r[1] for r in rows[k:]], \"give\": _ordered(tg), \"take\": _ordered(tt)}"
+replace = "        tail = {\"names\": {r[1]: r[0] for r in rows[k:]}, \"give\": _ordered(tg), \"take\": _ordered(tt)}"
+
 [[removed]]
 id = "ci-shard-denominator-hardcoded"
 why = "샤드를 없앴다 — 전체 검증은 잡 하나다(tests/test_ci_workflow.py 가 matrix 를 막는다)"
