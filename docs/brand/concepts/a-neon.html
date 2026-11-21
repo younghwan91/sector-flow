@@ -1,0 +1,821 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>오늘, 돈은 어디로 흘렀나 · sector-flow [합성 데모]</title>
+<meta name="description" content="섹터·투자 주체별 순매매 흐름 시각화 (합성 데모 자료)">
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&display=swap">
+<style>
+:root{
+  --bg:#04060c;
+  --ink:#eef1f8;
+  --mute:#8b93a8;
+  --faint:#566078;
+  --line:rgba(255,255,255,.07);
+  --sold:#5b8cff;
+  --bought:#ff5c7a;
+  --indiv:#ffb547;
+  --forgn:#3fe3ff;
+  --inst:#b48cff;
+  --etc:#6df5b0;
+  --kr:"Pretendard Variable",Pretendard,-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",system-ui,sans-serif;
+  --lat:"Space Grotesk","Pretendard Variable",Pretendard,system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--kr);-webkit-font-smoothing:antialiased;overflow-x:hidden}
+body{min-height:100vh}
+.wrap{max-width:1400px;margin:0 auto;padding:20px 20px 28px}
+button{font:inherit;color:inherit}
+
+/* ---------- stage ---------- */
+.stage{position:relative;width:100%;aspect-ratio:16/9;border-radius:22px;overflow:hidden;isolation:isolate;
+  background:
+    radial-gradient(60% 70% at 50% 58%,rgba(84,62,190,.22),transparent 70%),
+    radial-gradient(40% 60% at 6% 60%,rgba(60,110,255,.14),transparent 70%),
+    radial-gradient(40% 60% at 96% 60%,rgba(255,70,120,.12),transparent 70%),
+    linear-gradient(180deg,#070a14 0%,#04060c 100%);
+  border:1px solid var(--line);
+  box-shadow:0 40px 120px -40px rgba(80,60,200,.35),0 0 0 1px rgba(0,0,0,.6) inset}
+.stage::before{content:"";position:absolute;inset:0;z-index:-1;opacity:.06;pointer-events:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
+.stage::after{content:"";position:absolute;inset:0;pointer-events:none;z-index:5;
+  background:radial-gradient(120% 90% at 50% 50%,transparent 60%,rgba(0,0,0,.55) 100%)}
+
+.hud{position:absolute;left:0;right:0;top:0;padding:28px 34px 0;display:flex;justify-content:space-between;gap:24px;z-index:6}
+.brand{display:flex;align-items:center;gap:10px;font-family:var(--lat);font-weight:600;font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:#c9cfe0}
+.brand .dot{width:9px;height:9px;border-radius:50%;background:conic-gradient(from 200deg,var(--sold),var(--inst),var(--bought),var(--indiv),var(--sold));box-shadow:0 0 12px rgba(180,140,255,.8)}
+.badge{font-family:var(--kr);letter-spacing:0;text-transform:none;font-weight:700;font-size:12px;color:#ffd38a;
+  padding:3px 8px;border-radius:999px;border:1px solid rgba(255,190,90,.45);background:rgba(255,180,70,.08)}
+h1{margin:10px 0 6px;font-size:clamp(26px,3.1vw,44px);line-height:1.08;font-weight:760;letter-spacing:-.025em;
+  background:linear-gradient(180deg,#fff 30%,#b9c0d6);-webkit-background-clip:text;background-clip:text;color:transparent}
+.sub{font-size:14px;color:var(--mute)}
+.sub b{color:#d6dbea;font-weight:600}
+.lede{margin-top:8px;font-size:15.5px;color:#cfd5e5}
+.lede em{font-style:normal;font-weight:700}
+.chips{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:12px}
+.chip{display:inline-flex;align-items:center;gap:7px;font-size:13px;color:#c3c9da;font-variant-numeric:tabular-nums}
+.chip i{width:8px;height:8px;border-radius:50%;box-shadow:0 0 10px currentColor}
+.chip b{font-weight:700}
+.ctrl{display:flex;flex-direction:column;align-items:flex-end;gap:10px;flex:none}
+.seg{display:inline-flex;padding:3px;border-radius:999px;background:rgba(255,255,255,.04);border:1px solid var(--line)}
+.seg button{border:0;background:transparent;padding:7px 14px;border-radius:999px;font-size:13px;font-weight:600;color:var(--mute);cursor:pointer;transition:color .2s,background .2s}
+.seg button[aria-pressed="true"]{background:rgba(255,255,255,.1);color:#fff;box-shadow:0 0 0 1px rgba(255,255,255,.08) inset}
+.seg button:focus-visible,.btn:focus-visible{outline:2px solid #9db4ff;outline-offset:2px}
+.btn{display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.04);
+  padding:8px 14px;border-radius:999px;font-size:13px;font-weight:600;cursor:pointer;transition:background .2s,border-color .2s}
+.btn:hover{background:rgba(255,255,255,.09);border-color:rgba(255,255,255,.25)}
+.btn svg{width:15px;height:15px}
+
+.graph{position:absolute;left:34px;right:34px;bottom:12px;z-index:2;transition:opacity .28s ease}
+.graph.fade{opacity:0}
+.graph svg,.graph canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+.graph canvas{pointer-events:none}
+#front{pointer-events:none}
+#front [data-hit]{pointer-events:auto;cursor:pointer}
+#back [data-hit]{cursor:pointer}
+.band{transition:fill-opacity .25s ease}
+.dimmable{transition:opacity .25s ease}
+.lab{font-size:13.5px;fill:#e6eaf4;font-weight:600}
+.lab .v{font-weight:500;font-variant-numeric:tabular-nums}
+.lab.small{font-size:12px}
+.colhead{font-size:11.5px;font-weight:700;letter-spacing:.16em;fill:var(--faint)}
+.stublab{font-size:12px;font-weight:600;font-variant-numeric:tabular-nums}
+.pillname{font-size:17px;font-weight:760;fill:#fff;letter-spacing:-.01em}
+.pillsub{font-size:10.5px;font-weight:600;font-variant-numeric:tabular-nums}
+
+.foot-in{position:absolute;left:34px;right:34px;bottom:12px;display:flex;justify-content:space-between;font-size:11.5px;color:var(--faint);z-index:6;pointer-events:none}
+.foot-in .wm{font-family:var(--lat);letter-spacing:.12em;text-transform:uppercase;font-weight:600;color:#6d7690}
+
+.tip{position:absolute;z-index:8;pointer-events:none;min-width:200px;max-width:280px;padding:12px 14px;border-radius:14px;
+  background:rgba(10,13,26,.88);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.12);
+  box-shadow:0 20px 50px -10px rgba(0,0,0,.7);font-size:13px;opacity:0;transform:translateY(4px);transition:opacity .15s,transform .15s}
+.tip.on{opacity:1;transform:none}
+.tip h4{margin:0 0 8px;font-size:14px;font-weight:700;display:flex;align-items:center;gap:8px}
+.tip h4 i{width:8px;height:8px;border-radius:50%}
+.tip .row{display:flex;justify-content:space-between;gap:16px;padding:2px 0;color:#c8cede;font-variant-numeric:tabular-nums}
+.tip .row b{font-weight:650;color:#fff}
+.tip .note{margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,.08);color:var(--mute);font-size:11.5px;line-height:1.45}
+
+/* ---------- below ---------- */
+.guide{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:22px}
+.guide div{padding:16px 18px;border-radius:16px;border:1px solid var(--line);background:rgba(255,255,255,.02);font-size:13.5px;line-height:1.6;color:#aab2c6}
+.guide b{display:block;color:#e7eaf3;font-size:13px;margin-bottom:4px;letter-spacing:.02em}
+footer{margin-top:22px;padding-top:16px;border-top:1px solid var(--line);font-size:12.5px;color:var(--faint);text-align:center}
+
+/* ---------- share card dialog ---------- */
+dialog{border:0;padding:0;background:transparent;max-width:none;max-height:none;width:100vw;height:100vh;margin:0;color:var(--ink)}
+dialog::backdrop{background:rgba(2,3,8,.82);backdrop-filter:blur(6px)}
+.dlg{width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:16px}
+.dlg canvas{width:min(1200px,calc(100vw - 32px),calc((100vh - 110px) * 16 / 9));aspect-ratio:16/9;height:auto;border-radius:12px;
+  box-shadow:0 30px 100px -20px rgba(90,70,220,.45),0 0 0 1px rgba(255,255,255,.08)}
+.dlg .bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:center}
+.dlg .hint{font-size:12.5px;color:var(--mute)}
+
+body.card-only{overflow:hidden}
+body.card-only .wrap{display:none}
+body.card-only #cardSolo{display:block}
+#cardSolo{display:none;width:1200px;height:675px}
+
+/* ---------- phone ---------- */
+@media (max-width:760px){
+  .wrap{padding:10px 10px 20px}
+  .stage{aspect-ratio:auto;border-radius:18px;display:flex;flex-direction:column}
+  .hud{position:relative;padding:18px 16px 0;flex-direction:column;gap:12px}
+  h1{font-size:27px;margin-top:8px}
+  .sub{font-size:12.5px}
+  .lede{font-size:14px}
+  .chips{display:grid;grid-template-columns:1fr 1fr;gap:6px 10px}
+  .chip{font-size:12.5px}
+  .ctrl{flex-direction:row;align-items:center;justify-content:space-between;width:100%}
+  .seg button{padding:6px 11px;font-size:12.5px}
+  .btn{padding:7px 11px;font-size:12.5px}
+  .graph{position:relative;left:auto;right:auto;bottom:auto;margin:10px 8px 0;height:600px}
+  .foot-in{position:relative;left:auto;right:auto;bottom:auto;padding:4px 16px 14px;flex-direction:column;gap:2px}
+  .guide{grid-template-columns:1fr;gap:10px}
+  .lab{font-size:12px}
+  .lab.small{font-size:10.5px}
+  .pillname{font-size:14px}
+  .colhead{font-size:10px;letter-spacing:.08em}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{transition:none!important;animation:none!important}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <section class="stage" id="stage" aria-label="섹터 자금 흐름 그림">
+    <header class="hud">
+      <div>
+        <div class="brand"><span class="dot"></span>sector-flow <span class="badge">[합성 데모]</span></div>
+        <h1>오늘, 돈은 어디로 흘렀나</h1>
+        <div class="sub" id="sub"></div>
+        <div class="lede" id="lede"></div>
+        <div class="chips" id="chips"></div>
+      </div>
+      <div class="ctrl">
+        <div class="seg" role="group" aria-label="시장 선택">
+          <button type="button" data-m="all" aria-pressed="true">전체</button>
+          <button type="button" data-m="거래소" aria-pressed="false">코스피</button>
+          <button type="button" data-m="코스닥" aria-pressed="false">코스닥</button>
+        </div>
+        <button type="button" class="btn" id="shareBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 15l5-5 4 4 3-3 6 6"/></svg>
+          공유 카드
+        </button>
+      </div>
+    </header>
+    <div class="graph" id="graph">
+      <svg id="back" aria-hidden="true"></svg>
+      <canvas id="fx" aria-hidden="true"></canvas>
+      <svg id="front" role="img" aria-label="왼쪽 순매도된 섹터에서 투자 주체를 거쳐 오른쪽 순매수된 섹터로 이어지는 흐름도"></svg>
+      <div class="tip" id="tip" role="status" aria-live="polite"></div>
+    </div>
+    <div class="foot-in">
+      <span>띠 굵기 = 순매매 금액(억원) · 섹터 간 직접 이동은 관측되지 않아 그리지 않는다</span>
+      <span class="wm">sector-flow</span>
+    </div>
+  </section>
+
+  <section class="guide" aria-label="읽는 법">
+    <div><b>왼쪽 → 가운데</b>투자 주체가 그날 순매도한 섹터. 한 섹터에서 여러 주체로 갈라져 나간다. 띠가 굵을수록 순매도 금액이 크다.</div>
+    <div><b>가운데 → 오른쪽</b>같은 주체가 순매수한 섹터. 같은 섹터가 양쪽에 동시에 나올 수 있다 — 어떤 주체는 팔고 다른 주체는 샀다는 뜻이다.</div>
+    <div><b>점선 꼬리</b>주체마다 순매도한 섹터 합과 순매수한 섹터 합은 같지 않다. 그 차이(시장 전체 순매매)를 꼬리로 따로 적는다. 섹터에서 섹터로 옮겨간 돈은 데이터에 없어 그리지 않는다.</div>
+  </section>
+
+  <footer>sector-flow · 자료: 합성 데모 · 숫자는 동시기 관측이며 예측이 아니다</footer>
+</div>
+
+<canvas id="cardSolo" width="2400" height="1350"></canvas>
+
+<dialog id="dlg" aria-label="공유 카드">
+  <div class="dlg">
+    <canvas id="card" width="2400" height="1350"></canvas>
+    <div class="bar">
+      <button type="button" class="btn" id="savePng">PNG 저장</button>
+      <button type="button" class="btn" id="closeDlg">닫기</button>
+      <span class="hint">1200×675 · 그대로 스크린샷해도 된다</span>
+    </div>
+  </div>
+</dialog>
+
+<script id="data" type="application/json">{"date":"2026-10-30","markets":{"거래소":{"가상건설":{"indiv":-1820.28,"forgn":486.7,"inst":1365.97,"etc":-32.39,"tv":11763.94},"가상금융":{"indiv":-1339.75,"forgn":419.14,"inst":848.98,"etc":71.64,"tv":10743.84},"가상기계":{"indiv":-2138.91,"forgn":514.74,"inst":1718.0,"etc":-93.83,"tv":21508.52},"가상섬유":{"indiv":315.32,"forgn":46.08,"inst":-494.87,"etc":133.47,"tv":29588.84},"가상소재":{"indiv":-738.83,"forgn":166.82,"inst":543.0,"etc":29.02,"tv":8557.26},"가상소형":{"indiv":842.43,"forgn":-342.95,"inst":-464.54,"etc":-34.95,"tv":5507.68},"가상운송":{"indiv":301.77,"forgn":-2126.58,"inst":1864.35,"etc":-39.55,"tv":36024.48},"가상유통":{"indiv":-1014.74,"forgn":122.77,"inst":810.37,"etc":81.6,"tv":19481.07},"가상음식":{"indiv":249.12,"forgn":287.07,"inst":-556.88,"etc":20.68,"tv":22018.23},"가상전자":{"indiv":-3615.87,"forgn":883.38,"inst":3114.46,"etc":-381.97,"tv":66864.48},"가상제약":{"indiv":416.19,"forgn":-13.89,"inst":-369.63,"etc":-32.67,"tv":8457.86},"가상통신":{"indiv":1973.68,"forgn":-240.9,"inst":-1682.6,"etc":-50.18,"tv":5843.31},"가상화학":{"indiv":-1440.02,"forgn":36.28,"inst":1377.81,"etc":25.92,"tv":15002.1}},"코스닥":{"가상건설":{"indiv":-31.68,"forgn":-48.61,"inst":77.16,"etc":3.12,"tv":687.12},"가상금융":{"indiv":49.64,"forgn":-64.03,"inst":24.31,"etc":-9.91,"tv":1229.85},"가상기계":{"indiv":-308.18,"forgn":-104.27,"inst":401.45,"etc":11.0,"tv":2228.12},"가상섬유":{"indiv":163.83,"forgn":-51.36,"inst":-111.12,"etc":-1.35,"tv":2030.03},"가상소재":{"indiv":9.34,"forgn":-62.62,"inst":66.92,"etc":-13.63,"tv":1166.75},"가상소형":{"indiv":33.69,"forgn":16.84,"inst":-45.63,"etc":-4.91,"tv":401.78},"가상운송":{"indiv":246.25,"forgn":114.52,"inst":-346.53,"etc":-14.24,"tv":2178.24},"가상유통":{"indiv":364.62,"forgn":-343.43,"inst":-20.24,"etc":-0.95,"tv":2020.48},"가상음식":{"indiv":-96.85,"forgn":173.35,"inst":-68.92,"etc":-7.58,"tv":2483.44},"가상전자":{"indiv":688.73,"forgn":28.88,"inst":-697.61,"etc":-20.0,"tv":4999.04},"가상제약":{"indiv":-16.42,"forgn":29.11,"inst":-6.97,"etc":-5.73,"tv":459.28},"가상통신":{"indiv":161.88,"forgn":-25.49,"inst":-132.41,"etc":-3.97,"tv":916.01},"가상화학":{"indiv":-180.45,"forgn":95.82,"inst":89.7,"etc":-5.07,"tv":1596.0}}}}</script>
+
+<script>
+(() => {
+'use strict';
+const DATA = JSON.parse(document.getElementById('data').textContent);
+const RM = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const INV = [
+  {k:'indiv', name:'개인',     c:'#ffb547', rgb:[255,181,71]},
+  {k:'forgn', name:'외국인',   c:'#3fe3ff', rgb:[63,227,255]},
+  {k:'inst',  name:'기관',     c:'#b48cff', rgb:[180,140,255]},
+  {k:'etc',   name:'기타법인', c:'#6df5b0', rgb:[109,245,176]},
+];
+const SOLD = '#5b8cff', BOUGHT = '#ff5c7a';
+const MKT = {all:'코스피+코스닥', '거래소':'코스피', '코스닥':'코스닥'};
+const FONT = '"Pretendard Variable", Pretendard, "Noto Sans KR", sans-serif';
+const LAT = '"Space Grotesk", "Pretendard Variable", Pretendard, sans-serif';
+
+/* ---------- format ---------- */
+const nf = new Intl.NumberFormat('ko-KR', {maximumFractionDigits:0});
+const eok = v => nf.format(Math.round(Math.abs(v))) + '억';
+const signed = v => (Math.round(v) > 0 ? '+' : Math.round(v) < 0 ? '−' : '') + eok(v);
+const sum = a => a.reduce((s, x) => s + x, 0);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const josa = w => { const c = w.charCodeAt(w.length - 1) - 0xac00; return (c >= 0 && c % 28) ? '이' : '가'; };
+const dateLabel = d => `${d} (${'일월화수목금토'[new Date(Date.UTC(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10))).getUTCDay()]})`;
+
+/* ---------- data → graph ---------- */
+function aggregate(m) {
+  const ms = m === 'all' ? Object.keys(DATA.markets) : [m];
+  const out = {};
+  for (const mk of ms) for (const [s, v] of Object.entries(DATA.markets[mk])) {
+    const o = out[s] || (out[s] = {indiv:0, forgn:0, inst:0, etc:0, tv:0});
+    for (const k in o) o[k] += v[k] || 0;
+  }
+  return out;
+}
+function buildGraph(m, topN) {
+  const agg = aggregate(m);
+  const secs = Object.keys(agg);
+  const side = sign => {
+    let nodes = secs.map(s => {
+      const vals = {}; let total = 0;
+      for (const iv of INV) { const v = agg[s][iv.k]; const x = sign < 0 ? (v < 0 ? -v : 0) : (v > 0 ? v : 0); vals[iv.k] = x; total += x; }
+      return {id:(sign < 0 ? 'L:' : 'R:') + s, name:s, members:[s], vals, total, group:false};
+    }).filter(n => n.total >= 0.5).sort((a, b) => b.total - a.total);
+    if (nodes.length > topN + 1) {
+      const tail = nodes.slice(topN); nodes = nodes.slice(0, topN);
+      const vals = {}; for (const iv of INV) vals[iv.k] = sum(tail.map(n => n.vals[iv.k]));
+      nodes.push({id:(sign < 0 ? 'L:' : 'R:') + '__rest', name:`기타 ${tail.length}개 섹터`, members:tail.map(n => n.name), vals, total:sum(tail.map(n => n.total)), group:true});
+    }
+    return nodes;
+  };
+  const left = side(-1), right = side(1);
+  const inv = INV.map(iv => ({iv, in:sum(left.map(n => n.vals[iv.k])), out:sum(right.map(n => n.vals[iv.k])), net:sum(secs.map(s => agg[s][iv.k]))}));
+  return {m, agg, left, right, inv};
+}
+
+/* ---------- layout (pure geometry, shared by live view and share card) ---------- */
+function layout(G, W, H, o) {
+  const top = o.top, availH = H - o.top - o.bottom;
+  const xL0 = o.labelW, xL1 = xL0 + o.nodeW, xR1 = W - o.labelW, xR0 = xR1 - o.nodeW;
+  const xM0 = W / 2 - o.pillW / 2, xM1 = W / 2 + o.pillW / 2;
+  const n = G.inv.length;
+  const hv = G.inv.map(i => Math.max(i.in, i.out));
+  let k = (availH - (n - 1) * o.invGap) / Math.max(sum(hv), 1e-9);
+  for (let it = 0; it < 8; it++) {
+    let fixed = 0, free = 0;
+    hv.forEach(h => { if (h * k < o.minPill) fixed += o.minPill; else free += h; });
+    if (free <= 0) break;
+    k = (availH - (n - 1) * o.invGap - fixed) / free;
+  }
+  for (const col of [G.left, G.right]) {
+    const tot = sum(col.map(c => c.total));
+    const need = tot * k + (col.length - 1) * o.sideGapMin;
+    if (need > availH) k = (availH - (col.length - 1) * o.sideGapMin) / tot;
+  }
+  const pills = G.inv.map((g, i) => ({...g, i, hs:hv[i] * k, h:Math.max(hv[i] * k, o.minPill), x:xM0, w:o.pillW}));
+  let y = top + (availH - (sum(pills.map(p => p.h)) + (n - 1) * o.invGap)) / 2;
+  for (const p of pills) { p.y = y; p.sy = y + (p.h - p.hs) / 2; y += p.h + o.invGap; }
+
+  const place = (col, x) => {
+    const nodes = col.map(c => ({...c}));
+    const tot = sum(nodes.map(c => c.total));
+    const g = nodes.length > 1 ? clamp((availH - tot * k) / (nodes.length - 1), o.sideGapMin, o.sideGapMax) : 0;
+    let yy = top + (availH - (tot * k + g * (nodes.length - 1))) / 2;
+    for (const c of nodes) { c.x = x; c.y = yy; c.h = Math.max(c.total * k, 1.5); yy += c.total * k + g; }
+    return nodes;
+  };
+  const L = place(G.left, xL0), R = place(G.right, xR0);
+
+  const inC = pills.map(p => p.sy), outC = pills.map(p => p.sy);
+  const stubs = [];
+  pills.forEach((p, i) => {
+    const sh = Math.abs(p.net) * k, atTop = i < n / 2;
+    if (Math.round(p.net) === 0) return;
+    const wv = Math.max(sh, 1.6);
+    if (p.net > 0) {
+      const yc = atTop ? inC[i] + sh / 2 : p.sy + p.hs - sh / 2; if (atTop) inC[i] += sh;
+      stubs.push({side:'L', p, iv:p.iv, net:p.net, x0:xM0 - o.stubLen, x1:xM0, y:yc, w:wv});
+    } else {
+      const yc = atTop ? outC[i] + sh / 2 : p.sy + p.hs - sh / 2; if (atTop) outC[i] += sh;
+      stubs.push({side:'R', p, iv:p.iv, net:p.net, x0:xM1, x1:xM1 + o.stubLen, y:yc, w:wv});
+    }
+  });
+  const links = [];
+  for (const c of L) { let cy = c.y; INV.forEach((iv, i) => { const v = c.vals[iv.k]; if (v < 0.5) return; const w = v * k;
+    links.push({key:c.id + '>' + iv.k, side:'L', node:c, iv, i, v, w, x0:xL1, x1:xM0, y0:cy + w / 2, y1:inC[i] + w / 2}); cy += w; inC[i] += w; }); }
+  for (const c of R) { let cy = c.y; INV.forEach((iv, i) => { const v = c.vals[iv.k]; if (v < 0.5) return; const w = v * k;
+    links.push({key:iv.k + '>' + c.id, side:'R', node:c, iv, i, v, w, x0:xM1, x1:xR0, y0:outC[i] + w / 2, y1:cy + w / 2}); cy += w; outC[i] += w; }); }
+
+  const relax = (nodes, gap) => {
+    const it = nodes.map(c => ({c, y:c.y + c.h / 2})).sort((a, b) => a.y - b.y);
+    const lo = top + gap / 2, hi = top + availH - gap / 2;
+    for (let i = 0; i < it.length; i++) it[i].y = Math.max(it[i].y, i ? it[i - 1].y + gap : lo);
+    for (let i = it.length - 1; i >= 0; i--) it[i].y = Math.min(it[i].y, i < it.length - 1 ? it[i + 1].y - gap : hi);
+    it.forEach(t => t.c.ly = t.y);
+  };
+  relax(L, o.labelGap); relax(R, o.labelGap);
+  return {W, H, k, o, top, availH, xL0, xL1, xR0, xR1, xM0, xM1, L, R, pills, links, stubs};
+}
+function ribbon(x0, y0, x1, y1, w) {
+  const xm = (x0 + x1) / 2, h = Math.max(w, .9) / 2;
+  return `M${x0},${y0 - h}C${xm},${y0 - h} ${xm},${y1 - h} ${x1},${y1 - h}L${x1},${y1 + h}C${xm},${y1 + h} ${xm},${y0 + h} ${x0},${y0 + h}Z`;
+}
+function stubPath(s) {
+  const h = s.w / 2;
+  return `M${s.x0},${s.y - h}L${s.x1},${s.y - h}L${s.x1},${s.y + h}L${s.x0},${s.y + h}Z`;
+}
+// point on a band at t∈[0,1] with vertical offset
+function bandPt(l, t, off) {
+  if (l.stub) return [l.x0 + (l.x1 - l.x0) * t, l.y + off];
+  const xm = (l.x0 + l.x1) / 2, u = 1 - t;
+  const x = u * u * u * l.x0 + 3 * u * u * t * xm + 3 * u * t * t * xm + t * t * t * l.x1;
+  return [x, l.y0 + (l.y1 - l.y0) * (t * t * (3 - 2 * t)) + off];
+}
+
+/* ---------- live view ---------- */
+const NS = 'http://www.w3.org/2000/svg';
+const $ = s => document.querySelector(s);
+const el = (tag, attrs = {}, parent) => { const e = document.createElementNS(NS, tag); for (const a in attrs) e.setAttribute(a, attrs[a]); if (parent) parent.appendChild(e); return e; };
+const graphEl = $('#graph'), back = $('#back'), front = $('#front'), fx = $('#fx'), tip = $('#tip'), stage = $('#stage');
+const state = {m:'all', G:null, geo:null, focus:null, items:[]};
+
+function opts(W, H) {
+  const phone = W < 560;
+  return phone
+    ? {phone, top:26, bottom:8, labelW:64, nodeW:5, pillW:78, invGap:12, minPill:58, sideGapMin:6, sideGapMax:22, stubLen:22, labelGap:27, topN:6}
+    : {phone, top:30, bottom:30, labelW:clamp(W * .12, 120, 170), nodeW:7, pillW:clamp(W * .095, 104, 132), invGap:clamp(H * .035, 14, 24), minPill:40, sideGapMin:6, sideGapMax:24, stubLen:clamp(W * .07, 60, 96), labelGap:19, topN:8};
+}
+
+function renderHud() {
+  const G = buildGraph(state.m, 8);
+  $('#sub').innerHTML = `<b>${dateLabel(DATA.date)}</b> · ${MKT[G.m]} · 투자 주체별 섹터 순매매, 억원`;
+  const pos = [...G.inv].sort((a, b) => b.net - a.net)[0], neg = [...G.inv].sort((a, b) => a.net - b.net)[0];
+  const parts = [];
+  if (pos.net > 0.5) parts.push(`<em style="color:${pos.iv.c}">${pos.iv.name}</em>${josa(pos.iv.name)} ${eok(pos.net)} 순매수`);
+  if (neg.net < -0.5) parts.push(`<em style="color:${neg.iv.c}">${neg.iv.name}</em>${josa(neg.iv.name)} ${eok(neg.net)} 순매도`);
+  $('#lede').innerHTML = parts.join(', ') + (parts.length ? '했다.' : '');
+  $('#chips').innerHTML = G.inv.map(g => `<span class="chip" style="color:${g.iv.c}"><i style="background:${g.iv.c}"></i><span style="color:#c3c9da">${g.iv.name}</span> <b style="color:${g.iv.c}">${signed(g.net)}</b></span>`).join('');
+  // desktop: the graph fills the stage below the HUD
+  graphEl.style.top = getComputedStyle(graphEl).position === 'absolute' ? ($('.hud').offsetHeight + 6) + 'px' : '';
+}
+
+function renderLive() {
+  const W = graphEl.clientWidth, H = graphEl.clientHeight;
+  if (W < 50 || H < 50) return;
+  const o = opts(W, H);
+  const G = buildGraph(state.m, o.topN);
+  const geo = layout(G, W, H, o);
+  state.G = G; state.geo = geo;
+  for (const s of [back, front]) { s.setAttribute('viewBox', `0 0 ${W} ${H}`); s.innerHTML = ''; }
+
+  // defs
+  const defs = el('defs', {}, back);
+  const f = el('filter', {id:'bloom', x:'-10%', y:'-30%', width:'120%', height:'160%'}, defs);
+  el('feGaussianBlur', {stdDeviation:o.phone ? 5 : 9}, f);
+  for (const iv of INV) for (const side of ['L', 'R']) {
+    const g = el('linearGradient', {id:`g${side}${iv.k}`, gradientUnits:'userSpaceOnUse', x1:side === 'L' ? geo.xL1 : geo.xM1, x2:side === 'L' ? geo.xM0 : geo.xR0, y1:0, y2:0}, defs);
+    const a = side === 'L' ? SOLD : iv.c, b = side === 'L' ? iv.c : BOUGHT;
+    el('stop', {offset:'0', 'stop-color':a}, g); el('stop', {offset:'.55', 'stop-color':iv.c}, g); el('stop', {offset:'1', 'stop-color':b}, g);
+    const sg = el('linearGradient', {id:`s${side}${iv.k}`, x1:0, x2:1, y1:0, y2:0}, defs);
+    el('stop', {offset:'0', 'stop-color':iv.c, 'stop-opacity':side === 'L' ? 0 : .9}, sg);
+    el('stop', {offset:'1', 'stop-color':iv.c, 'stop-opacity':side === 'L' ? .9 : 0}, sg);
+  }
+  const clip = el('clipPath', {id:'reveal'}, defs);
+  const clipRect = el('rect', {x:0, y:0, width:RM ? W : 0, height:H}, clip);
+
+  const root = el('g', {'clip-path':'url(#reveal)'}, back);
+  const glow = el('g', {filter:'url(#bloom)', opacity:.55, style:'mix-blend-mode:screen'}, root);
+  const bands = el('g', {}, root);
+  state.items = [];
+  for (const l of geo.links) {
+    const d = ribbon(l.x0, l.y0, l.x1, l.y1, l.w);
+    const gp = el('path', {d, fill:`url(#g${l.side}${l.iv.k})`, 'fill-opacity':.5, class:'band'}, glow);
+    const bp = el('path', {d, fill:`url(#g${l.side}${l.iv.k})`, 'fill-opacity':.3, class:'band', 'data-hit':'link', 'data-key':l.key}, bands);
+    state.items.push({l, els:[gp, bp], base:[.5, .3]});
+  }
+  for (const s of geo.stubs) {
+    const d = stubPath(s);
+    const bp = el('path', {d, fill:`url(#s${s.side}${s.iv.k})`, 'fill-opacity':.55, class:'band', 'data-hit':'stub', 'data-inv':s.iv.k}, bands);
+    s.stub = true;
+    state.items.push({l:s, els:[bp], base:[.55]});
+  }
+
+  // front: column heads
+  const fh = el('g', {}, front);
+  const hy = 14;
+  el('text', {x:o.phone ? 0 : geo.xL1, y:hy, 'text-anchor':o.phone ? 'start' : 'end', class:'colhead', fill:SOLD}, fh).textContent = '순매도된 섹터';
+  el('text', {x:W / 2, y:hy, 'text-anchor':'middle', class:'colhead'}, fh).textContent = '투자 주체';
+  el('text', {x:o.phone ? W : geo.xR0, y:hy, 'text-anchor':o.phone ? 'end' : 'start', class:'colhead', fill:BOUGHT}, fh).textContent = '순매수된 섹터';
+  [...fh.children].forEach((t, i) => { if (i !== 1) t.style.fill = i === 0 ? SOLD : BOUGHT; t.style.opacity = .85; });
+
+  // sector nodes + labels
+  const drawSide = (nodes, side) => {
+    const col = side === 'L' ? SOLD : BOUGHT;
+    for (const c of nodes) {
+      const g = el('g', {class:'dimmable', 'data-hit':'node', 'data-id':c.id}, front);
+      c.el = g;
+      el('rect', {x:c.x - 2, y:c.y - 2, width:o.nodeW + 4, height:c.h + 4, rx:3, fill:col, opacity:.25, filter:'url(#nglow)'}, g);
+      el('rect', {x:c.x, y:c.y, width:o.nodeW, height:c.h, rx:Math.min(2, o.nodeW / 2), fill:col}, g);
+      const tx = side === 'L' ? c.x - 8 : c.x + o.nodeW + 8, anchor = side === 'L' ? 'end' : 'start';
+      // hit area spanning label + node
+      const hw = o.labelW - 4;
+      el('rect', {x:side === 'L' ? c.x - hw : c.x, y:Math.min(c.y, c.ly - o.labelGap / 2), width:hw + o.nodeW, height:Math.max(c.h, o.labelGap), fill:'transparent'}, g);
+      if (o.phone) {
+        const t = el('text', {x:tx, y:c.ly - 2, 'text-anchor':anchor, class:'lab' + (c.group ? ' small' : '')}, g);
+        t.textContent = c.group ? `기타 ${c.members.length}개` : c.name;
+        const v = el('text', {x:tx, y:c.ly + 11, 'text-anchor':anchor, class:'lab small v', fill:col}, g);
+        v.style.fill = col; v.style.fontWeight = 500; v.textContent = eok(c.total);
+      } else {
+        const t = el('text', {x:tx, y:c.ly + 4.5, 'text-anchor':anchor, class:'lab' + (c.group ? ' small' : '')}, g);
+        const nm = el('tspan', {}, t); nm.textContent = c.name; if (c.group) nm.style.fill = '#aab2c6';
+        const v = el('tspan', {class:'v', dx:7}, t); v.style.fill = col; v.textContent = eok(c.total);
+      }
+    }
+  };
+  const fdefs = el('defs', {}, front);
+  const ng = el('filter', {id:'nglow', x:'-200%', y:'-50%', width:'500%', height:'200%'}, fdefs);
+  el('feGaussianBlur', {stdDeviation:4}, ng);
+  const pg = el('linearGradient', {id:'pillfill', x1:0, y1:0, x2:0, y2:1}, fdefs);
+  el('stop', {offset:0, 'stop-color':'#151a30', 'stop-opacity':.92}, pg); el('stop', {offset:1, 'stop-color':'#0a0d1a', 'stop-opacity':.92}, pg);
+  drawSide(geo.L, 'L'); drawSide(geo.R, 'R');
+
+  // stubs: capsule + label
+  for (const s of geo.stubs) {
+    const g = el('g', {class:'dimmable', 'data-hit':'stub', 'data-inv':s.iv.k}, front);
+    s.el = g;
+    const cx = s.side === 'L' ? s.x0 : s.x1;
+    const ch = Math.max(s.w, 8);
+    el('rect', {x:cx - 2, y:s.y - ch / 2, width:4, height:ch, rx:2, fill:'none', stroke:s.iv.c, 'stroke-width':1, 'stroke-dasharray':'2 2', opacity:.9}, g);
+    if (!o.phone) {
+      const lab = `${s.net > 0 ? '순매수' : '순매도'} 합계 ${signed(s.net)}`;
+      const tx = s.side === 'L' ? cx - 8 : cx + 8;
+      const tw = lab.length * 7.2 + 14;
+      el('rect', {x:s.side === 'L' ? tx - tw + 6 : tx - 6, y:s.y - 11, width:tw, height:22, rx:11, fill:'rgba(8,10,20,.78)', stroke:s.iv.c, 'stroke-opacity':.35}, g);
+      const t = el('text', {x:tx, y:s.y + 4, 'text-anchor':s.side === 'L' ? 'end' : 'start', class:'stublab'}, g);
+      t.style.fill = s.iv.c; t.textContent = lab;
+      el('rect', {x:s.side === 'L' ? tx - tw : cx, y:s.y - 12, width:tw + 8, height:24, fill:'transparent'}, g);
+    }
+  }
+
+  // investor pills
+  for (const p of geo.pills) {
+    const g = el('g', {class:'dimmable', 'data-hit':'inv', 'data-inv':p.iv.k}, front);
+    p.el = g;
+    el('rect', {x:p.x - 3, y:p.y - 3, width:p.w + 6, height:p.h + 6, rx:16, fill:p.iv.c, opacity:.18, filter:'url(#nglow)'}, g);
+    el('rect', {x:p.x, y:p.y, width:p.w, height:p.h, rx:o.phone ? 12 : 14, fill:'url(#pillfill)', stroke:p.iv.c, 'stroke-width':1.3, 'stroke-opacity':.85}, g);
+    el('rect', {x:p.x + 10, y:p.y + 1, width:p.w - 20, height:1, fill:'#fff', opacity:.18}, g);
+    const cy = p.y + p.h / 2;
+    if (o.phone) {
+      const t = el('text', {x:p.x + p.w / 2, y:cy - 9, 'text-anchor':'middle', class:'pillname'}, g); t.textContent = p.iv.name;
+      const a = el('text', {x:p.x + p.w / 2, y:cy + 6, 'text-anchor':'middle', class:'pillsub'}, g);
+      a.style.fill = '#9aa3ba'; a.textContent = Math.round(p.net) === 0 ? '순매매 합계' : (p.net > 0 ? '순매수 합계' : '순매도 합계');
+      const b = el('text', {x:p.x + p.w / 2, y:cy + 19, 'text-anchor':'middle', class:'pillsub'}, g);
+      b.style.fill = p.iv.c; b.textContent = signed(p.net);
+    } else if (p.h >= 130) {
+      const t = el('text', {x:p.x + p.w / 2, y:cy - 26, 'text-anchor':'middle', class:'pillname'}, g); t.textContent = p.iv.name;
+      el('rect', {x:p.x + 22, y:cy - 12, width:p.w - 44, height:1, fill:'#fff', opacity:.1}, g);
+      [['순매도한 섹터', p.in, SOLD, cy + 10], ['순매수한 섹터', p.out, BOUGHT, cy + 46]].forEach(([cap, v, c, yy]) => {
+        const a = el('text', {x:p.x + p.w / 2, y:yy - 1, 'text-anchor':'middle', class:'pillsub'}, g); a.style.fill = '#7f88a0'; a.textContent = cap;
+        const b = el('text', {x:p.x + p.w / 2, y:yy + 15, 'text-anchor':'middle', class:'pillsub'}, g); b.style.fill = c; b.style.fontSize = '12.5px'; b.textContent = eok(v);
+      });
+    } else {
+      const t = el('text', {x:p.x + p.w / 2, y:cy + 6, 'text-anchor':'middle', class:'pillname'}, g); t.textContent = p.iv.name;
+    }
+  }
+
+  fx.width = Math.round(W * devicePixelRatio); fx.height = Math.round(H * devicePixelRatio);
+  flow.setup(geo, state.items, W, H, o);
+  applyFocus();
+  // reveal
+  if (!RM && !state.revealed) {
+    state.revealed = true;
+    const t0 = performance.now(), dur = 1500;
+    const step = now => { const p = clamp((now - t0) / dur, 0, 1); const e = 1 - Math.pow(1 - p, 3); clipRect.setAttribute('width', W * e); flow.revealX = W * e; if (p < 1) requestAnimationFrame(step); };
+    flow.revealX = 0; requestAnimationFrame(step);
+  } else { clipRect.setAttribute('width', W); flow.revealX = W; }
+  if (RM) flow.drawStatic();
+}
+
+/* ---------- particles ---------- */
+function makeSprite(rgb, r = 16) {
+  const c = document.createElement('canvas'); c.width = c.height = r * 2;
+  const g = c.getContext('2d'), gr = g.createRadialGradient(r, r, 0, r, r, r);
+  gr.addColorStop(0, 'rgba(255,255,255,1)');
+  gr.addColorStop(.18, `rgba(${rgb},.95)`);
+  gr.addColorStop(.45, `rgba(${rgb},.25)`);
+  gr.addColorStop(1, `rgba(${rgb},0)`);
+  g.fillStyle = gr; g.fillRect(0, 0, r * 2, r * 2); return c;
+}
+const SPR = Object.fromEntries(INV.map(iv => [iv.k, makeSprite(iv.rgb.join(','))]));
+function rng(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function spawn(items, scale, rand) {
+  const ps = [];
+  for (const it of items) {
+    const l = it.l, len = Math.abs(l.x1 - l.x0), w = l.w;
+    let n = l.stub ? Math.round(clamp(w * len / 90, 2, 40)) : Math.round(clamp(w * len / 230, 1, 90));
+    n = Math.max(1, Math.round(n * scale));
+    for (let i = 0; i < n; i++) {
+      const big = rand() < .07;
+      ps.push({it, l, k:l.iv.k, t:rand(), off:(rand() - .5) * Math.max(w - 1.5, 0) * .9,
+        sp:(l.stub ? 26 : 46) * (.7 + rand() * .6), sz:big ? 2.1 + rand() : .7 + rand() * 1.1, a:big ? 1 : .55 + rand() * .45, len:Math.max(len, 1)});
+    }
+  }
+  return ps;
+}
+function fade(p) {
+  const t = p.t; let a = Math.min(1, t / .06, (1 - t) / .06);
+  if (p.l.stub) a *= p.l.side === 'L' ? t : 1 - t;
+  return Math.max(a, 0);
+}
+function drawParticles(ctx, ps, sprScale, tailPx, dimF, revealX) {
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.lineCap = 'round';
+  for (const iv of INV) {
+    ctx.strokeStyle = iv.c;
+    const spr = SPR[iv.k];
+    for (const p of ps) {
+      if (p.k !== iv.k) continue;
+      const [x, y] = bandPt(p.l, p.t, p.off);
+      if (x > revealX) continue;
+      const a = fade(p) * p.a * dimF(p);
+      if (a < .01) continue;
+      const tb = clamp(p.t - tailPx * (p.sz / 1.6) / p.len, 0, 1);
+      const [bx, by] = bandPt(p.l, tb, p.off);
+      ctx.globalAlpha = a * .55; ctx.lineWidth = p.sz * .9;
+      ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(x, y); ctx.stroke();
+      const s = p.sz * sprScale;
+      ctx.globalAlpha = a; ctx.drawImage(spr, x - s, y - s, s * 2, s * 2);
+    }
+  }
+  ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+}
+const flow = {
+  ps:[], revealX:0, running:false, last:0,
+  setup(geo, items, W, H, o) {
+    this.W = W; this.H = H; this.o = o;
+    this.ps = spawn(items, o.phone ? .6 : 1, Math.random);
+    this.ctx = fx.getContext('2d');
+    if (!RM && !this.running) { this.running = true; this.last = performance.now(); requestAnimationFrame(t => this.tick(t)); }
+  },
+  dim(p) { return p.it.active === false ? .06 : 1; },
+  paint() {
+    const ctx = this.ctx, d = devicePixelRatio;
+    ctx.setTransform(d, 0, 0, d, 0, 0); ctx.clearRect(0, 0, this.W, this.H);
+    drawParticles(ctx, this.ps, 3.2, 14, p => this.dim(p), this.revealX);
+  },
+  tick(now) {
+    if (document.hidden) { this.last = now; requestAnimationFrame(t => this.tick(t)); return; }
+    const dt = Math.min((now - this.last) / 1000, .05); this.last = now;
+    for (const p of this.ps) { p.t += p.sp * dt / p.len; if (p.t > 1) p.t -= 1; }
+    this.paint();
+    requestAnimationFrame(t => this.tick(t));
+  },
+  drawStatic() { this.revealX = this.W; this.paint(); },
+};
+
+/* ---------- focus + tooltip ---------- */
+function matches(f, l) {
+  if (!f) return true;
+  if (f.type === 'inv') return l.iv.k === f.k;
+  if (l.stub) return false;
+  if (f.type === 'link') return l.key === f.key;
+  if (f.type === 'node') return l.node.id === f.id;
+  if (f.type === 'sector') return !l.node.group && l.node.name === f.name;
+  return true;
+}
+function applyFocus() {
+  const f = state.focus, geo = state.geo; if (!geo) return;
+  for (const it of state.items) {
+    const on = matches(f, it.l); it.active = f ? on : undefined;
+    it.els.forEach((e, i) => e.setAttribute('fill-opacity', f ? (on ? Math.min(it.base[i] * 2.1, .85) : .04) : it.base[i]));
+  }
+  const live = new Set(state.items.filter(it => it.active !== false && !it.l.stub).flatMap(it => [it.l.node.id, it.l.iv.k]));
+  state.items.filter(it => it.active !== false && it.l.stub).forEach(it => live.add(it.l.iv.k));
+  for (const c of [...geo.L, ...geo.R]) c.el.style.opacity = !f || live.has(c.id) ? 1 : .22;
+  for (const p of geo.pills) p.el.style.opacity = !f || live.has(p.iv.k) ? 1 : .25;
+  for (const s of geo.stubs) if (s.el) s.el.style.opacity = !f || (f.type === 'inv' && f.k === s.iv.k) ? 1 : .15;
+  if (RM) flow.paint();
+}
+const row = (a, b, c) => `<div class="row"><span>${a}</span><b${c ? ` style="color:${c}"` : ''}>${b}</b></div>`;
+function tipFor(f) {
+  const G = state.G, geo = state.geo;
+  if (f.type === 'inv') {
+    const p = geo.pills.find(x => x.iv.k === f.k);
+    return `<h4><i style="background:${p.iv.c}"></i>${p.iv.name} · ${MKT[G.m]}</h4>` +
+      row('순매도한 섹터 합', eok(p.in), SOLD) + row('순매수한 섹터 합', eok(p.out), BOUGHT) +
+      row(p.net >= 0 ? '순매수 합계' : '순매도 합계', signed(p.net), p.iv.c) +
+      `<div class="note">순매수 합계 = 순매수한 섹터 합 − 순매도한 섹터 합. 이 주체의 그날 시장 전체 순매매다.</div>`;
+  }
+  if (f.type === 'link') {
+    const l = geo.links.find(x => x.key === f.key);
+    const nm = l.node.name;
+    return `<h4><i style="background:${l.iv.c}"></i>${l.side === 'L' ? `${nm} → ${l.iv.name}` : `${l.iv.name} → ${nm}`}</h4>` +
+      row(l.side === 'L' ? '순매도' : '순매수', eok(l.v), l.side === 'L' ? SOLD : BOUGHT) +
+      `<div class="note">${l.iv.name}${josa(l.iv.name)} ${nm}${l.node.group ? '(합산)' : ''}에서 ${l.side === 'L' ? '순매도' : '순매수'}한 금액.</div>`;
+  }
+  // sector / group node
+  const node = [...geo.L, ...geo.R].find(c => f.type === 'node' ? c.id === f.id : c.name === f.name);
+  const names = node.group ? node.members : [node.name];
+  const vals = {}; INV.forEach(iv => vals[iv.k] = sum(names.map(s => G.agg[s][iv.k])));
+  let h = `<h4>${node.name}${node.group ? ` <span style="color:var(--mute);font-weight:500;font-size:12px">${node.id.startsWith('L') ? '순매도 쪽' : '순매수 쪽'}</span>` : ''}</h4>`;
+  if (node.group) {
+    h += INV.map(iv => node.vals[iv.k] >= .5 ? row(iv.name, (node.id.startsWith('L') ? '−' : '+') + eok(node.vals[iv.k]), iv.c) : '').join('');
+    h += `<div class="note">${node.members.join(' · ')}</div>`;
+  } else {
+    h += INV.map(iv => row(iv.name, signed(vals[iv.k]), iv.c)).join('');
+    h += row('거래대금', eok(G.agg[node.name].tv));
+    h += `<div class="note">음수는 왼쪽(순매도) 띠, 양수는 오른쪽(순매수) 띠로 그렸다.</div>`;
+  }
+  return h;
+}
+function stubTip(k) {
+  const p = state.geo.pills.find(x => x.iv.k === k);
+  return `<h4><i style="background:${p.iv.c}"></i>${p.iv.name} ${p.net >= 0 ? '순매수' : '순매도'} 합계</h4>` + row('시장 전체', signed(p.net), p.iv.c) +
+    `<div class="note">순매수한 섹터 합(${eok(p.out)})과 순매도한 섹터 합(${eok(p.in)})의 차이. 돈이 어디서 왔는지·어디로 갔는지는 이 자료로 알 수 없다.</div>`;
+}
+function focusFrom(target) {
+  const h = target.closest && target.closest('[data-hit]'); if (!h) return null;
+  const kind = h.dataset.hit;
+  if (kind === 'link') return {type:'link', key:h.dataset.key};
+  if (kind === 'inv') return {type:'inv', k:h.dataset.inv};
+  if (kind === 'stub') return {type:'inv', k:h.dataset.inv, stub:true};
+  if (kind === 'node') { const c = [...state.geo.L, ...state.geo.R].find(x => x.id === h.dataset.id); return c.group ? {type:'node', id:c.id} : {type:'sector', name:c.name}; }
+  return null;
+}
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+function setFocus(f, ev) {
+  if (!same(f, state.focus)) { state.focus = f; applyFocus(); }
+  if (!f) { tip.classList.remove('on'); return; }
+  tip.innerHTML = f.stub ? stubTip(f.k) : tipFor(f);
+  const r = graphEl.getBoundingClientRect();
+  let x = ev.clientX - r.left + 16, y = ev.clientY - r.top + 16;
+  const tw = tip.offsetWidth, th = tip.offsetHeight;
+  if (x + tw > r.width) x = ev.clientX - r.left - tw - 16;
+  if (y + th > r.height) y = Math.max(0, ev.clientY - r.top - th - 16);
+  tip.style.left = clamp(x, 0, Math.max(0, r.width - tw)) + 'px'; tip.style.top = y + 'px';
+  tip.classList.add('on');
+}
+graphEl.addEventListener('pointermove', e => { if (e.pointerType === 'mouse') setFocus(focusFrom(e.target), e); });
+graphEl.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') setFocus(null); });
+graphEl.addEventListener('pointerdown', e => {
+  if (e.pointerType === 'mouse') return;
+  const f = focusFrom(e.target);
+  setFocus(f && same(f, state.focus) ? null : f, e);
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape') setFocus(null); });
+
+/* ---------- market toggle ---------- */
+document.querySelectorAll('.seg button').forEach(b => b.addEventListener('click', () => {
+  if (b.dataset.m === state.m) return;
+  document.querySelectorAll('.seg button').forEach(x => x.setAttribute('aria-pressed', x === b));
+  state.m = b.dataset.m; state.focus = null; tip.classList.remove('on');
+  const go = () => { renderHud(); renderLive(); graphEl.classList.remove('fade'); };
+  if (RM) go(); else { graphEl.classList.add('fade'); setTimeout(go, 280); }
+}));
+
+/* ---------- share card (canvas, 1200×675) ---------- */
+function rr(ctx, x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+function drawCard(cv, m) {
+  const ctx = cv.getContext('2d'), S = cv.width / 1200, W = 1200, H = 675;
+  ctx.setTransform(S, 0, 0, S, 0, 0); ctx.clearRect(0, 0, W, H);
+  // background
+  ctx.fillStyle = '#05070e'; ctx.fillRect(0, 0, W, H);
+  const glowBg = (x, y, r, c) => { const g = ctx.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, c); g.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H); };
+  glowBg(600, 420, 520, 'rgba(84,62,190,.26)'); glowBg(60, 420, 380, 'rgba(60,110,255,.14)'); glowBg(1140, 420, 380, 'rgba(255,70,120,.13)');
+  const G = buildGraph(m, 7);
+  // header
+  ctx.textBaseline = 'alphabetic';
+  const dg = ctx.createConicGradient(3.5, 48, 46); [SOLD, '#b48cff', BOUGHT, '#ffb547', SOLD].forEach((c, i) => dg.addColorStop(i / 4, c));
+  ctx.fillStyle = dg; ctx.shadowColor = 'rgba(180,140,255,.8)'; ctx.shadowBlur = 10; ctx.beginPath(); ctx.arc(48, 46, 5, 0, 7); ctx.fill(); ctx.shadowBlur = 0;
+  ctx.font = `600 14px ${LAT}`; ctx.fillStyle = '#c9cfe0'; ctx.letterSpacing = '2px'; ctx.fillText('SECTOR-FLOW', 62, 51); const bw = ctx.measureText('SECTOR-FLOW').width; ctx.letterSpacing = '0px';
+  ctx.font = `700 12.5px ${FONT}`; const bt = '[합성 데모]', btw = ctx.measureText(bt).width + 16;
+  rr(ctx, 62 + bw + 12, 35, btw, 22, 11); ctx.fillStyle = 'rgba(255,180,70,.1)'; ctx.fill(); ctx.strokeStyle = 'rgba(255,190,90,.5)'; ctx.lineWidth = 1; ctx.stroke();
+  ctx.fillStyle = '#ffd38a'; ctx.fillText(bt, 62 + bw + 20, 50.5);
+  const tg = ctx.createLinearGradient(0, 70, 0, 112); tg.addColorStop(.3, '#fff'); tg.addColorStop(1, '#b9c0d6');
+  ctx.font = `760 44px ${FONT}`; ctx.fillStyle = tg; ctx.letterSpacing = '-1px'; ctx.fillText('오늘, 돈은 어디로 흘렀나', 40, 112); ctx.letterSpacing = '0px';
+  ctx.textAlign = 'right'; ctx.font = `600 17px ${FONT}`; ctx.fillStyle = '#e3e7f2'; ctx.fillText(dateLabel(DATA.date), W - 40, 52);
+  ctx.font = `500 14px ${FONT}`; ctx.fillStyle = '#8b93a8'; ctx.fillText(`${MKT[m]} · 투자 주체별 섹터 순매매, 억원`, W - 40, 74);
+  // chips (right, under date)
+  ctx.font = `600 14px ${FONT}`;
+  let cx = W - 40; const cy = 108;
+  for (const g of [...G.inv].reverse()) {
+    const v = signed(g.net); ctx.fillStyle = g.iv.c; ctx.fillText(v, cx, cy); const vw = ctx.measureText(v).width;
+    ctx.fillStyle = '#aab2c6'; ctx.font = `500 14px ${FONT}`; ctx.fillText(g.iv.name, cx - vw - 6, cy); const nw = ctx.measureText(g.iv.name).width; ctx.font = `600 14px ${FONT}`;
+    ctx.fillStyle = g.iv.c; ctx.shadowColor = g.iv.c; ctx.shadowBlur = 8; ctx.beginPath(); ctx.arc(cx - vw - nw - 16, cy - 5, 4, 0, 7); ctx.fill(); ctx.shadowBlur = 0;
+    cx -= vw + nw + 40;
+  }
+  ctx.textAlign = 'left';
+  // graph
+  const ox = 40, oy = 140, GW = 1120, GH = 492;
+  const o = {phone:false, top:28, bottom:6, labelW:150, nodeW:7, pillW:118, invGap:18, minPill:38, sideGapMin:6, sideGapMax:22, stubLen:84, labelGap:19};
+  const geo = layout(G, GW, GH, o);
+  ctx.save(); ctx.translate(ox, oy);
+  const grad = (l) => { const g = ctx.createLinearGradient(l.side === 'L' ? geo.xL1 : geo.xM1, 0, l.side === 'L' ? geo.xM0 : geo.xR0, 0);
+    g.addColorStop(0, l.side === 'L' ? SOLD : l.iv.c); g.addColorStop(.55, l.iv.c); g.addColorStop(1, l.side === 'L' ? l.iv.c : BOUGHT); return g; };
+  const paths = geo.links.map(l => ({l, p:new Path2D(ribbon(l.x0, l.y0, l.x1, l.y1, l.w)), g:grad(l)}));
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.filter = 'blur(9px)'; ctx.globalAlpha = .28; for (const q of paths) { ctx.fillStyle = q.g; ctx.fill(q.p); }
+  ctx.filter = 'none'; ctx.globalAlpha = .3; for (const q of paths) { ctx.fillStyle = q.g; ctx.fill(q.p); }
+  ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+  for (const s of geo.stubs) { s.stub = true; const g = ctx.createLinearGradient(s.x0, 0, s.x1, 0);
+    g.addColorStop(0, s.side === 'L' ? 'rgba(0,0,0,0)' : s.iv.c); g.addColorStop(1, s.side === 'L' ? s.iv.c : 'rgba(0,0,0,0)');
+    ctx.globalAlpha = .55; ctx.fillStyle = g; ctx.fill(new Path2D(stubPath(s))); ctx.globalAlpha = 1; }
+  // long-exposure particles
+  const ps = spawn([...geo.links, ...geo.stubs].map(l => ({l})), 1.25, rng(20261030));
+  drawParticles(ctx, ps, 3, 26, () => 1, 1e9);
+  // column heads
+  ctx.font = `700 11.5px ${FONT}`; ctx.letterSpacing = '2px';
+  ctx.fillStyle = SOLD; ctx.textAlign = 'right'; ctx.fillText('순매도된 섹터', geo.xL1, 14);
+  ctx.fillStyle = '#566078'; ctx.textAlign = 'center'; ctx.fillText('투자 주체', GW / 2, 14);
+  ctx.fillStyle = BOUGHT; ctx.textAlign = 'left'; ctx.fillText('순매수된 섹터', geo.xR0, 14);
+  ctx.letterSpacing = '0px';
+  // nodes + labels
+  for (const [nodes, side] of [[geo.L, 'L'], [geo.R, 'R']]) {
+    const col = side === 'L' ? SOLD : BOUGHT;
+    for (const c of nodes) {
+      ctx.shadowColor = col; ctx.shadowBlur = 10; ctx.fillStyle = col; rr(ctx, c.x, c.y, o.nodeW, c.h, 2); ctx.fill(); ctx.shadowBlur = 0;
+      const v = eok(c.total);
+      ctx.font = `500 13px ${FONT}`; const vw = ctx.measureText(v).width;
+      ctx.font = `600 ${c.group ? 12 : 13.5}px ${FONT}`; const nw = ctx.measureText(c.name).width;
+      const y = c.ly + 4.5;
+      if (side === 'L') { const xe = c.x - 8; ctx.textAlign = 'left';
+        ctx.fillStyle = c.group ? '#aab2c6' : '#e6eaf4'; ctx.fillText(c.name, xe - vw - 7 - nw, y); ctx.font = `500 13px ${FONT}`; ctx.fillStyle = col; ctx.fillText(v, xe - vw, y);
+      } else { const xs = c.x + o.nodeW + 8; ctx.textAlign = 'left';
+        ctx.fillStyle = c.group ? '#aab2c6' : '#e6eaf4'; ctx.fillText(c.name, xs, y); ctx.font = `500 13px ${FONT}`; ctx.fillStyle = col; ctx.fillText(v, xs + nw + 7, y); }
+    }
+  }
+  // stubs
+  for (const s of geo.stubs) {
+    const cxs = s.side === 'L' ? s.x0 : s.x1, ch = Math.max(s.w, 8);
+    ctx.setLineDash([2, 2]); ctx.strokeStyle = s.iv.c; ctx.lineWidth = 1; rr(ctx, cxs - 2, s.y - ch / 2, 4, ch, 2); ctx.stroke(); ctx.setLineDash([]);
+    const lab = `${s.net > 0 ? '순매수' : '순매도'} 합계 ${signed(s.net)}`;
+    ctx.font = `600 12px ${FONT}`; const tw = ctx.measureText(lab).width + 20;
+    const tx = s.side === 'L' ? cxs - 8 - tw + 10 : cxs + 8 - 10;
+    rr(ctx, tx, s.y - 11, tw, 22, 11); ctx.fillStyle = 'rgba(8,10,20,.8)'; ctx.fill(); ctx.strokeStyle = s.iv.c; ctx.globalAlpha = .4; ctx.stroke(); ctx.globalAlpha = 1;
+    ctx.fillStyle = s.iv.c; ctx.textAlign = 'left'; ctx.fillText(lab, tx + 10, s.y + 4);
+  }
+  // pills
+  for (const p of geo.pills) {
+    ctx.shadowColor = p.iv.c; ctx.shadowBlur = 18;
+    const pf = ctx.createLinearGradient(0, p.y, 0, p.y + p.h); pf.addColorStop(0, 'rgba(21,26,48,.95)'); pf.addColorStop(1, 'rgba(10,13,26,.95)');
+    rr(ctx, p.x, p.y, p.w, p.h, 14); ctx.fillStyle = pf; ctx.fill(); ctx.shadowBlur = 0;
+    ctx.strokeStyle = p.iv.c; ctx.lineWidth = 1.3; ctx.globalAlpha = .85; ctx.stroke(); ctx.globalAlpha = 1;
+    const mx = p.x + p.w / 2, cy = p.y + p.h / 2;
+    ctx.font = `760 17px ${FONT}`; ctx.fillStyle = '#fff'; ctx.textAlign = 'center';
+    if (p.h >= 130) {
+      ctx.fillText(p.iv.name, mx, cy - 26);
+      ctx.fillStyle = 'rgba(255,255,255,.1)'; ctx.fillRect(p.x + 22, cy - 12, p.w - 44, 1);
+      for (const [cap, v, c, yy] of [['순매도한 섹터', p.in, SOLD, cy + 10], ['순매수한 섹터', p.out, BOUGHT, cy + 46]]) {
+        ctx.font = `600 10.5px ${FONT}`; ctx.fillStyle = '#7f88a0'; ctx.fillText(cap, mx, yy - 1);
+        ctx.font = `600 12.5px ${FONT}`; ctx.fillStyle = c; ctx.fillText(eok(v), mx, yy + 15);
+      }
+    } else ctx.fillText(p.iv.name, mx, cy + 6);
+  }
+  ctx.restore();
+  // footer
+  ctx.textAlign = 'left'; ctx.font = `500 13px ${FONT}`; ctx.fillStyle = '#6d7690';
+  ctx.fillText('sector-flow · 자료: 합성 데모 · 숫자는 동시기 관측이며 예측이 아니다', 40, H - 24);
+  ctx.textAlign = 'right'; ctx.fillStyle = '#566078'; ctx.fillText('띠 굵기 = 순매매 금액(억원) · 섹터 간 직접 이동은 그리지 않음', W - 40, H - 24);
+  ctx.textAlign = 'left';
+  // vignette
+  const vg = ctx.createRadialGradient(600, 337, 300, 600, 337, 760); vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,.5)');
+  ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+}
+async function fontsReady() {
+  const sample = '오늘, 돈은 어디로 흘렀나 가상건설금융기계섬유소재소형운송유통음식전자제약통신화학 기타개섹터 개인외국인기관법인 순매도된순매수된 투자주체 합계 억원 자료합성데모 숫자는동시기관측이며예측이아니다 띠굵기금액간직접이동그리지않음 코스피닥전체 일월화수목금토 0123456789,+−·()[]';
+  try { await Promise.all([400, 500, 600, 700, 760].map(w => document.fonts.load(`${w} 16px "Pretendard Variable"`, sample)).concat(document.fonts.load(`600 14px "Space Grotesk"`, 'SECTOR-FLOW'))); } catch (e) {}
+  await document.fonts.ready;
+}
+const dlg = $('#dlg');
+$('#shareBtn').addEventListener('click', async () => { await fontsReady(); drawCard($('#card'), state.m); dlg.showModal(); });
+$('#closeDlg').addEventListener('click', () => dlg.close());
+dlg.addEventListener('click', e => { if (e.target === dlg || e.target.classList.contains('dlg')) dlg.close(); });
+$('#savePng').addEventListener('click', () => {
+  $('#card').toBlob(b => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `sector-flow-${DATA.date}-${state.m === 'all' ? 'all' : state.m === '거래소' ? 'kospi' : 'kosdaq'}-demo.png`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); }, 'image/png');
+});
+
+/* ---------- boot ---------- */
+const params = new URLSearchParams(location.search);
+if (params.has('card')) {
+  document.body.classList.add('card-only');
+  const m = params.get('card');
+  fontsReady().then(() => { drawCard($('#cardSolo'), ['거래소', '코스닥'].includes(m) ? m : 'all'); document.body.dataset.ready = '1'; });
+} else {
+  let rt;
+  new ResizeObserver(() => { clearTimeout(rt); rt = setTimeout(() => { renderHud(); renderLive(); }, 60); }).observe(stage);
+  renderHud();
+  fontsReady().then(() => { renderHud(); renderLive(); document.body.dataset.ready = '1'; });
+}
+})();
+</script>
+</body>
+</html>

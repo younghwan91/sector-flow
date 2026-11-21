@@ -1,0 +1,775 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>오늘 돈은 어디서 어디로 · 섹터 자금 지도 [합성 데모]</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@500;700;900&display=swap">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<style>
+:root {
+  color-scheme: light;
+  --paper: #f5f0e6;
+  --paper-2: #ece5d7;
+  --ink: #171512;
+  --ink-2: #3d3830;
+  --muted: #776f62;
+  --rule: #d6ccba;
+  --sell: #2f5fa8;
+  --buy: #c8372a;
+  --band-op: .30;
+  --band-op-hi: .78;
+  --band-op-lo: .07;
+  --other: #9a9284;
+  --serif: "Noto Serif KR", "Nanum Myeongjo", serif;
+  --sans: "Pretendard Variable", Pretendard, -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --paper: #17160f;
+    --paper-2: #211f17;
+    --ink: #eee8dc;
+    --ink-2: #cfc7b8;
+    --muted: #a29a8c;
+    --rule: #3b372e;
+    --sell: #5f8fd8;
+    --buy: #e65a45;
+    --band-op: .36;
+    --band-op-hi: .85;
+    --band-op-lo: .08;
+    --other: #7d766a;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--paper); color: var(--ink); }
+body { font-family: var(--sans); -webkit-font-smoothing: antialiased; overflow-x: hidden; }
+.num { font-variant-numeric: tabular-nums; }
+
+/* ---------- page ---------- */
+.page { max-width: 1200px; margin: 0 auto; padding: 22px 40px 40px; }
+.mast { display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  border-top: 4px solid var(--ink); border-bottom: 1px solid var(--ink); padding: 8px 0 7px; }
+.mast .brand { font-family: var(--serif); font-weight: 900; font-size: 15px; letter-spacing: .02em; }
+.mast .brand span { font-family: var(--sans); font-weight: 500; color: var(--muted); font-size: 13px; margin-left: 10px; letter-spacing: 0; }
+.mast .right { display: flex; align-items: center; gap: 12px; font-size: 13px; color: var(--ink-2); }
+.badge { display: inline-block; font-family: var(--sans); font-weight: 700; font-size: 12px; letter-spacing: .04em;
+  color: var(--buy); border: 1.5px solid var(--buy); padding: 2px 7px 1px; border-radius: 2px; transform: rotate(-1.5deg); white-space: nowrap; }
+
+.lede { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 28px; align-items: end; padding: 18px 0 12px; border-bottom: 1px solid var(--rule); }
+.kicker { font-size: 13px; font-weight: 700; color: var(--buy); letter-spacing: .02em; margin-bottom: 8px; }
+h1 { font-family: var(--serif); font-weight: 900; font-size: 42px; line-height: 1.12; letter-spacing: -.025em; margin: 0; word-break: keep-all; }
+h1 .s { color: var(--sell); } h1 .b { color: var(--buy); }
+.deck { font-size: 16px; line-height: 1.55; color: var(--ink-2); margin: 10px 0 0; max-width: 62ch; word-break: keep-all; }
+
+.strip { display: grid; grid-template-columns: repeat(4, auto); gap: 0; border-left: 1px solid var(--rule); }
+.strip > div { padding: 2px 18px 2px 14px; border-right: 1px solid var(--rule); }
+.strip .n { font-size: 12px; color: var(--muted); }
+.strip .v { font-family: var(--serif); font-weight: 700; font-size: 22px; margin-top: 2px; white-space: nowrap; }
+.strip .v small { font-family: var(--sans); font-size: 12px; font-weight: 500; color: var(--muted); margin-left: 2px; }
+.pos { color: var(--buy); } .neg { color: var(--sell); }
+
+.controls { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 14px 0 4px; }
+.seg { display: inline-flex; border: 1px solid var(--ink); border-radius: 999px; overflow: hidden; }
+.seg button { font: 600 13px var(--sans); background: transparent; color: var(--ink); border: 0; padding: 6px 15px; cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--ink); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+.btn { font: 600 13px var(--sans); background: var(--ink); color: var(--paper); border: 0; border-radius: 999px; padding: 7px 16px; cursor: pointer; display: inline-flex; gap: 7px; align-items: center; }
+.btn.ghost { background: transparent; color: var(--ink); border: 1px solid var(--ink); }
+.hint { font-size: 12px; color: var(--muted); }
+
+.figure { position: relative; margin-top: 4px; }
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.notes { display: grid; grid-template-columns: 1.2fr 1fr; gap: 28px; border-top: 1px solid var(--ink); padding-top: 12px; margin-top: 6px; }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 20px; font-size: 13px; color: var(--ink-2); align-items: center; }
+.legend i { display: inline-block; width: 26px; height: 10px; vertical-align: -1px; margin-right: 6px; border-radius: 1px; }
+.legend .ls { background: var(--sell); opacity: .55; }
+.legend .lb { background: var(--buy); opacity: .55; }
+.legend .lh { background: repeating-linear-gradient(135deg, var(--ink) 0 1.5px, transparent 1.5px 5px); opacity: .6; border: 1px solid var(--muted); }
+.method { font-size: 12.5px; line-height: 1.6; color: var(--muted); margin: 0; word-break: keep-all; }
+.method b { color: var(--ink-2); font-weight: 600; }
+.keylist { list-style: none; padding: 0; margin: 10px 0 0; display: none; }
+.keylist li { font-family: var(--serif); font-weight: 700; font-size: 14px; padding: 6px 0; border-bottom: 1px solid var(--rule); display: flex; gap: 10px; align-items: baseline; }
+.keylist li b { display: inline-grid; place-items: center; width: 19px; height: 19px; border-radius: 50%; background: var(--ink); color: var(--paper); font: 700 11px var(--sans); flex: none; transform: translateY(-1px); }
+details.table { margin-top: 16px; font-size: 13px; }
+details.table summary { cursor: pointer; color: var(--ink-2); font-weight: 600; }
+.tablewrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; margin-top: 8px; font-variant-numeric: tabular-nums; }
+th, td { padding: 5px 8px; border-bottom: 1px solid var(--rule); text-align: right; white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+thead th { border-bottom: 1px solid var(--ink); font-weight: 600; color: var(--ink-2); }
+footer { margin-top: 22px; border-top: 4px solid var(--ink); padding-top: 9px; font-size: 12.5px; color: var(--muted); display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+
+/* ---------- svg ---------- */
+.sv text { fill: var(--ink); font-family: var(--sans); }
+.sv .halo { paint-order: stroke; stroke: var(--paper); stroke-linejoin: round; }
+.sv .lnk { transition: fill-opacity .25s; }
+.sv .lnk.L { fill: var(--sell); fill-opacity: var(--band-op); }
+.sv .lnk.R { fill: var(--buy); fill-opacity: var(--band-op); }
+.sv .lnk.key { fill-opacity: calc(var(--band-op) + .16); }
+.sv .node.L { fill: var(--sell); } .sv .node.R { fill: var(--buy); }
+.sv .node.other { fill: var(--other); }
+.sv .node.I { fill: var(--ink); }
+.sv .lbl .v { fill: var(--muted); font-variant-numeric: tabular-nums; }
+.sv .lbl.other .n { fill: var(--muted); }
+.sv .head { fill: var(--muted); font-weight: 600; letter-spacing: .02em; }
+.sv .invname { font-family: var(--serif); font-weight: 900; }
+.sv .stubtxt { fill: var(--ink-2); }
+.sv .stubtxt .v { font-weight: 700; fill: var(--ink); font-variant-numeric: tabular-nums; }
+.sv .ann text { font-family: var(--serif); font-weight: 700; }
+.sv .ann line { stroke: var(--ink); stroke-width: 1; }
+.sv .ann .dot { fill: var(--ink); stroke: var(--paper); stroke-width: 2; }
+.sv .ann .numtxt { fill: var(--paper); font-family: var(--sans); font-weight: 700; }
+.sv .hit { cursor: pointer; }
+.sv .fade { transition: opacity .25s; }
+.sv.hl .lnk { fill-opacity: var(--band-op-lo); }
+.sv.hl .lnk.on { fill-opacity: var(--band-op-hi); }
+.sv.hl .fade { opacity: .22; }
+.sv.hl .fade.on { opacity: 1; }
+.sv.hl .ann { opacity: .15; }
+
+.tip { position: absolute; z-index: 5; pointer-events: none; background: var(--paper); color: var(--ink); border: 1px solid var(--ink);
+  box-shadow: 4px 4px 0 var(--paper-2); padding: 10px 12px; font-size: 13px; min-width: 190px; max-width: 260px; opacity: 0; transition: opacity .15s; }
+.tip.show { opacity: 1; }
+.tip h4 { margin: 0 0 6px; font-family: var(--serif); font-size: 15px; font-weight: 900; }
+.tip h4 small { font-family: var(--sans); font-weight: 500; font-size: 12px; color: var(--muted); margin-left: 6px; }
+.tip table { margin: 0; } .tip td { padding: 3px 0; border-bottom: 1px solid var(--rule); }
+.tip tr:last-child td { border-bottom: 0; }
+.tip td + td { padding-left: 14px; }
+.tip .foot { font-size: 11.5px; color: var(--muted); margin-top: 6px; line-height: 1.45; }
+.tip .sum td { font-weight: 700; border-top: 1px solid var(--ink); }
+
+/* ---------- share card ---------- */
+.card { width: 1080px; height: 1350px; background: var(--paper); color: var(--ink); padding: 54px 60px 40px; display: flex; flex-direction: column; overflow: hidden; }
+.card .mast { padding: 12px 0 10px; border-top-width: 7px; }
+.card .mast .brand { font-size: 24px; } .card .mast .brand span { font-size: 20px; }
+.card .mast .right { font-size: 20px; } .card .badge { font-size: 19px; padding: 3px 10px 2px; border-width: 2px; }
+.card .kicker { font-size: 21px; margin: 26px 0 8px; }
+.card h1 { font-size: 70px; line-height: 1.08; }
+.card .deck { font-size: 23px; margin-top: 14px; max-width: none; }
+.card .strip { margin-top: 20px; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--ink); border-bottom: 1px solid var(--rule); border-left: 0; }
+.card .strip > div { padding: 12px 16px 12px 0; border-right: 0; }
+.card .strip > div + div { padding-left: 18px; border-left: 1px solid var(--rule); }
+.card .strip .n { font-size: 18px; } .card .strip .v { font-size: 32px; margin-top: 0; } .card .strip .v small { font-size: 18px; }
+.card .cchart { flex: 1; min-height: 0; margin-top: 10px; }
+.card .cchart svg { display: block; width: 100%; height: 100%; }
+.card .clegend { display: flex; gap: 26px; font-size: 18px; color: var(--ink-2); border-top: 1px solid var(--ink); padding-top: 12px; }
+.card .clegend i { display: inline-block; width: 34px; height: 13px; vertical-align: -1px; margin-right: 8px; }
+.card .clegend .ls { background: var(--sell); opacity: .55; } .card .clegend .lb { background: var(--buy); opacity: .55; }
+.card .clegend .lh { background: repeating-linear-gradient(135deg, var(--ink) 0 2px, transparent 2px 7px); opacity: .6; border: 1px solid var(--muted); }
+.card .cfoot { margin-top: 12px; border-top: 7px solid var(--ink); padding-top: 12px; font-size: 18px; color: var(--muted); display: flex; justify-content: space-between; }
+
+.overlay { position: fixed; inset: 0; z-index: 20; background: color-mix(in srgb, #0d0c0a 88%, transparent); display: none; }
+.overlay.open { display: block; }
+.overlay .bar { position: absolute; top: 0; left: 0; right: 0; display: flex; justify-content: center; align-items: center; gap: 12px; padding: 12px; color: #f5f0e6; font-size: 13px; }
+@media (max-width: 600px) { .overlay .bar span { font-size: 12px; } }
+.overlay .bar .btn { background: var(--paper); color: var(--ink); }
+.overlay .frame { position: absolute; left: 50%; top: 58px; transform-origin: top center; box-shadow: 0 18px 60px rgba(0,0,0,.35); }
+
+/* raw card mode: exact 1080x1350 for capture (?card) */
+body.raw { width: 1080px; overflow: hidden; }
+body.raw .page { display: none; }
+body.raw .overlay { display: block; position: static; background: none; }
+body.raw .overlay .bar { display: none; }
+body.raw .overlay .frame { position: static; transform: none !important; box-shadow: none; }
+
+/* ---------- responsive ---------- */
+@media (max-width: 980px) {
+  .lede { grid-template-columns: 1fr; gap: 16px; }
+  .strip { grid-template-columns: repeat(4, 1fr); border-left: 0; border-top: 1px solid var(--rule); padding-top: 8px; }
+  .strip > div { padding: 0 10px 0 0; border-right: 0; }
+  .strip > div + div { padding-left: 10px; border-left: 1px solid var(--rule); }
+  .notes { grid-template-columns: 1fr; gap: 12px; }
+}
+@media (max-width: 600px) {
+  .page { padding: 12px 14px 28px; }
+  .mast .brand span { display: none; }
+  .mast .right { font-size: 12px; gap: 8px; }
+  h1 { font-size: 30px; }
+  .deck { font-size: 14px; }
+  .strip .v { font-size: 17px; } .strip .v small { display: none; } .strip .n { font-size: 11px; }
+  .controls { padding-top: 12px; }
+  .seg button { padding: 6px 11px; font-size: 12.5px; }
+  .hint { display: none; }
+  .keylist { display: block; }
+  .legend { font-size: 12px; }
+}
+@media (prefers-reduced-motion: reduce) { .sv .lnk, .sv .fade, .tip { transition: none; } }
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="mast">
+    <div class="brand">sector-flow<span>오늘의 자금 지도</span></div>
+    <div class="right"><span id="date"></span><span class="badge">[합성 데모]</span></div>
+  </header>
+
+  <section class="lede">
+    <div>
+      <div class="kicker" id="kicker"></div>
+      <h1 id="headline"></h1>
+      <p class="deck" id="deck"></p>
+    </div>
+    <div class="strip" id="strip"></div>
+  </section>
+
+  <div class="controls">
+    <div class="seg" role="group" aria-label="시장 선택">
+      <button data-m="all" aria-pressed="true">전체</button>
+      <button data-m="kospi" aria-pressed="false">코스피</button>
+      <button data-m="kosdaq" aria-pressed="false">코스닥</button>
+    </div>
+    <span class="hint">섹터나 투자 주체에 마우스를 올리면(휴대폰은 누르면) 그 흐름만 남는다.</span>
+    <button class="btn" id="openCard" type="button">공유 카드 1080×1350</button>
+  </div>
+
+  <figure class="figure" style="margin-left:0;margin-right:0">
+    <div class="chart" id="chart"></div>
+    <div class="tip" id="tip" role="status"></div>
+    <ol class="keylist" id="keylist"></ol>
+  </figure>
+
+  <section class="notes">
+    <div class="legend">
+      <span><i class="ls"></i>섹터 → 주체: 그 주체가 순매도</span>
+      <span><i class="lb"></i>주체 → 섹터: 그 주체가 순매수</span>
+      <span><i class="lh"></i>양쪽 차이 = 주체의 시장 전체 순매매 합계</span>
+    </div>
+    <p class="method">
+      <b>읽는 법.</b> 띠 굵기는 한 투자 주체가 한 섹터에서 하루 동안 낸 순매매 금액(억원)이다. 같은 섹터가 양쪽에 함께 나올 수 있다 — 어떤 주체는 팔고 다른 주체는 샀기 때문이다.
+      <b>섹터와 섹터를 잇는 띠는 없다.</b> 섹터끼리 직접 오간 돈은 자료에 없다. 색은 국내 시세표 관례(빨강 = 사들인 쪽, 파랑 = 판 쪽)를 따랐다.
+    </p>
+  </section>
+
+  <details class="table">
+    <summary>표로 보기 (섹터 × 투자 주체 순매매, 억원)</summary>
+    <div class="tablewrap" id="tablewrap"></div>
+  </details>
+
+  <footer>
+    <span>sector-flow · 자료: 합성 데모 · 숫자는 동시기 관측이며 예측이 아니다</span>
+    <span class="badge">[합성 데모]</span>
+  </footer>
+</div>
+
+<div class="overlay" id="overlay" aria-hidden="true">
+  <div class="bar"><span>캡처해 올리는 카드 · 1080×1350</span><button class="btn" id="closeCard" type="button">닫기</button></div>
+  <div class="frame" id="frame">
+    <article class="card" id="card">
+      <header class="mast">
+        <div class="brand">sector-flow<span>오늘의 자금 지도</span></div>
+        <div class="right"><span class="cdate"></span><span class="badge">[합성 데모]</span></div>
+      </header>
+      <div class="kicker ckicker"></div>
+      <h1 class="cheadline"></h1>
+      <p class="deck cdeck"></p>
+      <div class="strip cstrip"></div>
+      <div class="cchart" id="cchart"></div>
+      <div class="clegend">
+        <span><i class="ls"></i>섹터 → 주체 순매도</span>
+        <span><i class="lb"></i>주체 → 섹터 순매수</span>
+        <span><i class="lh"></i>주체의 순매매 합계</span>
+      </div>
+      <div class="cfoot"><span>sector-flow · 자료: 합성 데모 · 숫자는 동시기 관측이며 예측이 아니다</span><span>억원</span></div>
+    </article>
+  </div>
+</div>
+
+<script id="data" type="application/json">{"date":"2026-10-30","markets":{"거래소":{"가상건설":{"indiv":-1820.28,"forgn":486.7,"inst":1365.97,"etc":-32.39,"tv":11763.94},"가상금융":{"indiv":-1339.75,"forgn":419.14,"inst":848.98,"etc":71.64,"tv":10743.84},"가상기계":{"indiv":-2138.91,"forgn":514.74,"inst":1718.0,"etc":-93.83,"tv":21508.52},"가상섬유":{"indiv":315.32,"forgn":46.08,"inst":-494.87,"etc":133.47,"tv":29588.84},"가상소재":{"indiv":-738.83,"forgn":166.82,"inst":543.0,"etc":29.02,"tv":8557.26},"가상소형":{"indiv":842.43,"forgn":-342.95,"inst":-464.54,"etc":-34.95,"tv":5507.68},"가상운송":{"indiv":301.77,"forgn":-2126.58,"inst":1864.35,"etc":-39.55,"tv":36024.48},"가상유통":{"indiv":-1014.74,"forgn":122.77,"inst":810.37,"etc":81.6,"tv":19481.07},"가상음식":{"indiv":249.12,"forgn":287.07,"inst":-556.88,"etc":20.68,"tv":22018.23},"가상전자":{"indiv":-3615.87,"forgn":883.38,"inst":3114.46,"etc":-381.97,"tv":66864.48},"가상제약":{"indiv":416.19,"forgn":-13.89,"inst":-369.63,"etc":-32.67,"tv":8457.86},"가상통신":{"indiv":1973.68,"forgn":-240.9,"inst":-1682.6,"etc":-50.18,"tv":5843.31},"가상화학":{"indiv":-1440.02,"forgn":36.28,"inst":1377.81,"etc":25.92,"tv":15002.1}},"코스닥":{"가상건설":{"indiv":-31.68,"forgn":-48.61,"inst":77.16,"etc":3.12,"tv":687.12},"가상금융":{"indiv":49.64,"forgn":-64.03,"inst":24.31,"etc":-9.91,"tv":1229.85},"가상기계":{"indiv":-308.18,"forgn":-104.27,"inst":401.45,"etc":11.0,"tv":2228.12},"가상섬유":{"indiv":163.83,"forgn":-51.36,"inst":-111.12,"etc":-1.35,"tv":2030.03},"가상소재":{"indiv":9.34,"forgn":-62.62,"inst":66.92,"etc":-13.63,"tv":1166.75},"가상소형":{"indiv":33.69,"forgn":16.84,"inst":-45.63,"etc":-4.91,"tv":401.78},"가상운송":{"indiv":246.25,"forgn":114.52,"inst":-346.53,"etc":-14.24,"tv":2178.24},"가상유통":{"indiv":364.62,"forgn":-343.43,"inst":-20.24,"etc":-0.95,"tv":2020.48},"가상음식":{"indiv":-96.85,"forgn":173.35,"inst":-68.92,"etc":-7.58,"tv":2483.44},"가상전자":{"indiv":688.73,"forgn":28.88,"inst":-697.61,"etc":-20.0,"tv":4999.04},"가상제약":{"indiv":-16.42,"forgn":29.11,"inst":-6.97,"etc":-5.73,"tv":459.28},"가상통신":{"indiv":161.88,"forgn":-25.49,"inst":-132.41,"etc":-3.97,"tv":916.01},"가상화학":{"indiv":-180.45,"forgn":95.82,"inst":89.7,"etc":-5.07,"tv":1596.0}}}}</script>
+<script>
+(() => {
+'use strict';
+const RAW = JSON.parse(document.getElementById('data').textContent);
+const INV = [
+  { k: 'indiv', n: '개인' },
+  { k: 'forgn', n: '외국인' },
+  { k: 'inst',  n: '기관' },
+  { k: 'etc',   n: '기타법인' },
+];
+const MKT = {
+  all:    { label: '코스피·코스닥 합산', short: '전체', keys: ['거래소', '코스닥'] },
+  kospi:  { label: '코스피(거래소)', short: '코스피', keys: ['거래소'] },
+  kosdaq: { label: '코스닥', short: '코스닥', keys: ['코스닥'] },
+};
+const SVGNS = 'http://www.w3.org/2000/svg';
+const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const state = { mkt: 'all', sel: null, drawn: false };
+
+const fmt = v => Math.round(Math.abs(v)).toLocaleString('ko-KR');
+const sgn = v => { const r = Math.round(v); return (r > 0 ? '+' : r < 0 ? '−' : '') + fmt(v); };
+const cls = v => Math.round(v) > 0 ? 'pos' : Math.round(v) < 0 ? 'neg' : '';
+const sum = a => a.reduce((x, y) => x + y, 0);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+function dateLabel(iso) {
+  const [y, m, d] = iso.split('-').map(Number);
+  const dow = '일월화수목금토'[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
+  return `${y}년 ${m}월 ${d}일 (${dow})`;
+}
+
+/* ---------- data model ---------- */
+function aggregate(mkt) {
+  const out = {};
+  for (const m of MKT[mkt].keys) {
+    for (const [s, r] of Object.entries(RAW.markets[m] || {})) {
+      const o = out[s] || (out[s] = { indiv: 0, forgn: 0, inst: 0, etc: 0, tv: 0 });
+      for (const k in o) o[k] += +r[k] || 0;
+    }
+  }
+  return out;
+}
+
+function buildModel(agg, K) {
+  const secs = Object.keys(agg);
+  const side = sign => {
+    const pre = sign < 0 ? 'L' : 'R';
+    const rows = secs.map(s => {
+      const by = {};
+      for (const { k } of INV) { const v = agg[s][k] * sign; by[k] = v > 0 ? v : 0; }
+      return { id: pre + ':' + s, side: pre, name: s, by, total: sum(Object.values(by)), members: [s] };
+    }).filter(r => r.total > 0.5).sort((a, b) => b.total - a.total);
+    if (rows.length > K + 1) {
+      const keep = rows.slice(0, K), rest = rows.slice(K);
+      const by = {};
+      for (const { k } of INV) by[k] = sum(rest.map(r => r.by[k]));
+      keep.push({ id: pre + ':__other', side: pre, name: `기타 ${rest.length}개 섹터`, by, total: sum(rest.map(r => r.total)), other: true, members: rest.map(r => r.name) });
+      return keep;
+    }
+    return rows;
+  };
+  const L = side(-1), R = side(1);
+  const inv = INV.map(({ k, n }) => {
+    const inn = sum(L.map(r => r.by[k])), out = sum(R.map(r => r.by[k]));
+    return { id: 'I:' + k, side: 'I', k, name: n, inn, out, net: out - inn };
+  });
+  return { L, R, inv, agg, nSectors: secs.length };
+}
+
+/* ---------- layout ---------- */
+function layout(M, W, H, o) {
+  const colH = H - o.top - o.bottom;
+  const kL = (colH - o.padS * (M.L.length - 1)) / sum(M.L.map(n => n.total));
+  const kR = (colH - o.padS * (M.R.length - 1)) / sum(M.R.map(n => n.total));
+  const kM = (colH - o.padM * (M.inv.length - 1)) / sum(M.inv.map(n => Math.max(n.inn, n.out)));
+  const k = Math.min(kL, kR, kM);
+  const xL = o.labelW, xR = W - o.labelW - o.nodeW, xM = W / 2 - o.invW / 2;
+  const stack = (nodes, val, pad, x, w) => {
+    const h = sum(nodes.map(val)) * k + pad * (nodes.length - 1);
+    let y = o.top + (colH - h) / 2;
+    for (const n of nodes) { n.x = x; n.w = w; n.y0 = y; n.y1 = y + val(n) * k; y = n.y1 + pad; }
+  };
+  stack(M.L, n => n.total, o.padS, xL, o.nodeW);
+  stack(M.R, n => n.total, o.padS, xR, o.nodeW);
+  stack(M.inv, n => Math.max(n.inn, n.out), o.padM, xM, o.invW);
+  const links = [], cin = {}, cout = {};
+  for (const iv of M.inv) { cin[iv.k] = iv.y0; cout[iv.k] = iv.y0; }
+  for (const s of M.L) {
+    let y = s.y0;
+    for (const iv of M.inv) {
+      const v = s.by[iv.k]; if (v <= 0) continue; const h = v * k;
+      links.push({ side: 'L', sec: s, inv: iv, v, x0: s.x + s.w, a0: y, b0: y + h, x1: iv.x, a1: cin[iv.k], b1: cin[iv.k] + h });
+      y += h; cin[iv.k] += h;
+    }
+  }
+  for (const s of M.R) {
+    let y = s.y0;
+    for (const iv of M.inv) {
+      const v = s.by[iv.k]; if (v <= 0) continue; const h = v * k;
+      links.push({ side: 'R', sec: s, inv: iv, v, x0: iv.x + iv.w, a0: cout[iv.k], b0: cout[iv.k] + h, x1: s.x, a1: y, b1: y + h });
+      y += h; cout[iv.k] += h;
+    }
+  }
+  const stubLen = (xM - (xL + o.nodeW)) * o.stubFrac;
+  const stubs = [];
+  for (const iv of M.inv) {
+    if (iv.net > 0.5) stubs.push({ side: 'L', inv: iv, x0: iv.x - stubLen, x1: iv.x, a: cin[iv.k], b: iv.y1 });
+    else if (iv.net < -0.5) stubs.push({ side: 'R', inv: iv, x0: iv.x + iv.w, x1: iv.x + iv.w + stubLen, a: cout[iv.k], b: iv.y1 });
+  }
+  return { links, stubs, k, xL, xR, xM };
+}
+
+const ribbon = (x0, a0, b0, x1, a1, b1) => {
+  const xm = (x0 + x1) / 2;
+  return `M${x0},${a0}C${xm},${a0} ${xm},${a1} ${x1},${a1}L${x1},${b1}C${xm},${b1} ${xm},${b0} ${x0},${b0}Z`;
+};
+
+function el(tag, attrs, parent, text) {
+  const e = document.createElementNS(SVGNS, tag);
+  for (const k in attrs) if (attrs[k] != null) e.setAttribute(k, attrs[k]);
+  if (text != null) e.textContent = text;
+  if (parent) parent.appendChild(e);
+  return e;
+}
+const overlap = (a, b, p = 2) => !(a.x + a.width + p < b.x || b.x + b.width + p < a.x || a.y + a.height + p < b.y || b.y + b.height + p < a.y);
+
+/* ---------- presets ---------- */
+function preset(W, card) {
+  if (card) return { fs: 1.5, labelW: 196, nodeW: 14, invW: 16, padS: 9, padM: 62, top: 84, bottom: 26, K: 9, stubFrac: .36, annotate: 'direct', halo: 5 };
+  if (W < 600) return { fs: .8, labelW: 82, nodeW: 7, invW: 9, padS: 5, padM: 38, top: 50, bottom: 16, K: 7, stubFrac: .42, annotate: 'number', halo: 3 };
+  if (W < 900) return { fs: .92, labelW: 116, nodeW: 9, invW: 11, padS: 6, padM: 44, top: 54, bottom: 8, K: 8, stubFrac: .38, annotate: 'direct', halo: 4 };
+  return { fs: 1, labelW: 136, nodeW: 10, invW: 12, padS: 7, padM: 46, top: 56, bottom: 16, K: 9, stubFrac: .36, annotate: 'direct', halo: 4 };
+}
+
+/* ---------- render ---------- */
+function render(host, W, H, o, M, opts) {
+  host.innerHTML = '';
+  const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, width: W, height: H, class: 'sv', role: 'img',
+    'aria-label': `${MKT[state.mkt].label} 섹터별 투자 주체 순매매 흐름. 왼쪽은 순매도된 섹터, 가운데는 투자 주체, 오른쪽은 순매수된 섹터.` }, host);
+  const uid = opts.uid;
+  const defs = el('defs', {}, svg);
+  const pat = el('pattern', { id: uid + 'hatch', width: 6 * o.fs, height: 6 * o.fs, patternUnits: 'userSpaceOnUse', patternTransform: 'rotate(45)' }, defs);
+  el('rect', { width: 1.6 * o.fs, height: 6 * o.fs, style: 'fill:var(--ink)' }, pat);
+  for (const dir of ['L', 'R']) {
+    const g = el('linearGradient', { id: uid + 'fade' + dir, x1: dir === 'L' ? 1 : 0, x2: dir === 'L' ? 0 : 1, y1: 0, y2: 0 }, defs);
+    el('stop', { offset: 0, 'stop-color': '#fff', 'stop-opacity': 1 }, g);
+    el('stop', { offset: .55, 'stop-color': '#fff', 'stop-opacity': .7 }, g);
+    el('stop', { offset: 1, 'stop-color': '#fff', 'stop-opacity': 0 }, g);
+    const m = el('mask', { id: uid + 'mask' + dir, maskContentUnits: 'objectBoundingBox' }, defs);
+    el('rect', { x: 0, y: 0, width: 1, height: 1, fill: `url(#${uid}fade${dir})` }, m);
+  }
+  const clip = el('clipPath', { id: uid + 'clip' }, defs);
+  const clipRect = el('rect', { x: 0, y: -20, width: opts.animate ? 0 : W, height: H + 40 }, clip);
+
+  const Lo = layout(M, W, H, o);
+  const fs = o.fs;
+  const gLinks = el('g', { 'clip-path': `url(#${uid}clip)` }, svg);
+  const gNodes = el('g', {}, svg);
+  const gText = el('g', {}, svg);
+  const gAnn = el('g', {}, svg);
+  const boxes = [];
+
+  // column heads
+  const hy = 15 * fs;
+  const hs = 11.5 * fs;
+  el('text', { x: Lo.xL + o.nodeW, y: hy, 'text-anchor': 'end', class: 'head', 'font-size': hs }, gText, '← 순매도된 섹터');
+  el('text', { x: W / 2, y: hy, 'text-anchor': 'middle', class: 'head', 'font-size': hs }, gText, '투자 주체');
+  el('text', { x: Lo.xR, y: hy, 'text-anchor': 'start', class: 'head', 'font-size': hs }, gText, '순매수된 섹터 →');
+  el('line', { x1: 0, x2: W, y1: hy + 8 * fs, y2: hy + 8 * fs, style: 'stroke:var(--rule);stroke-width:1' }, gText);
+
+  // links
+  const keyLinks = Lo.links.filter(l => !l.sec.other).sort((a, b) => b.v - a.v).slice(0, 3);
+  for (const l of Lo.links) {
+    l.el = el('path', { d: ribbon(l.x0, l.a0, l.b0, l.x1, l.a1, l.b1), class: `lnk ${l.side} hit${keyLinks.includes(l) ? ' key' : ''}` }, gLinks);
+    l.el.__tip = () => linkTip(l);
+    l.el.__ids = [l.sec.id, l.inv.id];
+  }
+  // stubs
+  for (const s of Lo.stubs) {
+    const g = el('g', { class: 'fade stub hit' }, gLinks);
+    el('rect', { x: s.x0, y: s.a, width: s.x1 - s.x0, height: Math.max(s.b - s.a, .5), fill: `url(#${uid}hatch)`, mask: `url(#${uid}mask${s.side})`, opacity: .55 }, g);
+    s.g = g; g.__ids = [s.inv.id]; g.__tip = () => invTip(s.inv, M);
+  }
+  // nodes
+  const nodeEls = [];
+  for (const n of [...M.L, ...M.R, ...M.inv]) {
+    const r = el('rect', { x: n.x, y: n.y0, width: n.w, height: Math.max(n.y1 - n.y0, 1), class: `node ${n.side}${n.other ? ' other' : ''} fade hit` }, gNodes);
+    r.__ids = [n.id]; r.__tip = () => n.side === 'I' ? invTip(n, M) : secTip(n, M);
+    nodeEls.push(r);
+    boxes.push({ x: n.x - 2, y: n.y0, width: n.w + 4, height: n.y1 - n.y0 });
+  }
+  // sector labels
+  const ls = 13 * fs, vs = 12 * fs;
+  for (const n of [...M.L, ...M.R]) {
+    const left = n.side === 'L';
+    const x = left ? n.x - 6 * fs : n.x + n.w + 6 * fs;
+    const cy = (n.y0 + n.y1) / 2;
+    const t = el('text', { x, y: cy, dy: '0.35em', 'text-anchor': left ? 'end' : 'start', class: `lbl fade hit${n.other ? ' other' : ''}`, 'font-size': ls }, gText);
+    const val = (left ? '−' : '+') + fmt(n.total);
+    if (n.other && o.fs < .9) {
+      // narrow screens: put the value on its own line under "기타 N개 섹터"
+      t.setAttribute('dy', '-0.2em');
+      el('tspan', { class: 'n', 'font-weight': 500 }, t, n.name);
+      el('tspan', { class: 'v', x, dy: '1.2em', 'font-size': vs }, t, val);
+    } else {
+      el('tspan', { class: 'n', 'font-weight': n.other ? 500 : 650 }, t, n.name);
+      el('tspan', { class: 'v', dx: 5 * fs, 'font-size': vs }, t, val);
+    }
+    t.__ids = [n.id]; t.__tip = () => secTip(n, M);
+    boxes.push(t.getBBox());
+  }
+  // investor labels
+  for (const iv of M.inv) {
+    const t = el('text', { x: iv.x + iv.w / 2, y: iv.y0 - 9 * fs, 'text-anchor': 'middle', class: 'invname halo fade hit', 'font-size': 16 * fs, 'stroke-width': o.halo }, gText, iv.name);
+    t.__ids = [iv.id]; t.__tip = () => invTip(iv, M);
+    boxes.push(t.getBBox());
+  }
+  // stub labels
+  for (const s of Lo.stubs) {
+    const left = s.side === 'L';
+    const x = left ? s.x0 - 4 * fs : s.x1 + 4 * fs;
+    const cy = (s.a + s.b) / 2;
+    const word = s.inv.net > 0 ? '순매수 합계' : '순매도 합계';
+    const t = el('text', { x, y: cy, 'text-anchor': left ? 'end' : 'start', class: 'stubtxt halo fade hit', 'font-size': 11 * fs, 'stroke-width': o.halo }, gText);
+    const twoLine = o.fs < .9 || (s.b - s.a) > 26 * fs;
+    if (twoLine) {
+      t.setAttribute('dy', '-0.25em');
+      el('tspan', {}, t, word);
+      el('tspan', { class: 'v', x, dy: '1.2em', 'font-size': 12 * fs }, t, sgn(s.inv.net) + '억');
+    } else {
+      t.setAttribute('dy', '0.35em');
+      el('tspan', {}, t, word + ' ');
+      el('tspan', { class: 'v', 'font-size': 12 * fs }, t, sgn(s.inv.net) + '억');
+    }
+    t.__ids = [s.inv.id]; t.__tip = () => invTip(s.inv, M);
+    s.t = t;
+    // keep stub label clear of the column below/above: nudge if it collides with an investor label
+    let bb = t.getBBox();
+    for (const b of boxes) if (overlap(bb, b, 1)) { /* stubs sit at node bottoms; push down a little */ }
+    boxes.push(bb);
+  }
+
+  // annotations: the three largest single flows, stated as plain fact
+  const keyItems = [];
+  // point on a band's centre line at parameter t (same cubic as ribbon())
+  const along = (l, t) => {
+    const y0 = (l.a0 + l.b0) / 2, y1 = (l.a1 + l.b1) / 2, xm = (l.x0 + l.x1) / 2, u = 1 - t;
+    return { x: u * u * u * l.x0 + 3 * u * u * t * xm + 3 * u * t * t * xm + t * t * t * l.x1,
+             y: u * u * u * y0 + 3 * u * u * t * y0 + 3 * u * t * t * y1 + t * t * t * y1 };
+  };
+  const yMin = 15 * fs + 12 * fs;
+  keyLinks.forEach((l, i) => {
+    const text = l.side === 'L' ? `${l.inv.name}, ${l.sec.name}에서 −${fmt(l.v)}억` : `${l.inv.name}, ${l.sec.name}에 +${fmt(l.v)}억`;
+    keyItems.push({ text, side: l.side });
+    const g = el('g', { class: 'ann' }, gAnn);
+    if (o.annotate === 'number') {
+      const p = along(l, .5);
+      el('circle', { cx: p.x, cy: p.y, r: 8.5, class: 'dot' }, g);
+      el('text', { x: p.x, y: p.y, dy: '0.35em', 'text-anchor': 'middle', class: 'numtxt', 'font-size': 10.5 }, g, String(i + 1));
+      return;
+    }
+    const dot = el('circle', { r: 3.4 * fs, class: 'dot' }, g);
+    const afs = 14.5 * fs;
+    const t = el('text', { class: 'halo', 'font-size': afs, 'stroke-width': o.halo + 1 }, g);
+    const who = `${l.inv.name}, ${l.sec.name}${l.side === 'L' ? '에서' : '에'}`, amt = `${l.side === 'L' ? '−' : '+'}${fmt(l.v)}억`;
+    const setText = two => {
+      t.textContent = '';
+      if (!two) { t.textContent = `${who} ${amt}`; return; }
+      el('tspan', {}, t, who);
+      el('tspan', { dy: '1.15em' }, t, amt);
+    };
+    const ln = el('line', {}, g);
+    const off = 15 * fs;
+    const offs = [
+      [off, -off, 'start'], [-off, -off, 'end'], [off, off * 1.2, 'start'], [-off, off * 1.2, 'end'],
+      [off * 1.4, -off * 2.1, 'start'], [-off * 1.4, -off * 2.1, 'end'], [off * 1.4, off * 2.3, 'start'], [-off * 1.4, off * 2.3, 'end'],
+    ];
+    let placed = null;
+    outer: for (const pad of [3 + 3 * fs, 3]) for (const two of [false, true]) for (const tt of [.5, .4, .6, .3, .7, .22, .78]) {
+      setText(two);
+      const p = along(l, tt);
+      const dotBox = { x: p.x - 5, y: p.y - 5, width: 10, height: 10 };
+      if (boxes.some(b => overlap(dotBox, b, 1))) continue;
+      for (const [dx, dy, anchor] of offs) {
+        t.setAttribute('x', p.x + dx); t.setAttribute('text-anchor', anchor);
+        t.setAttribute('y', p.y + dy - (two && dy < 0 ? afs * 1.15 : 0));
+        t.setAttribute('dy', dy < 0 ? '0' : '0.7em');
+        t.querySelectorAll('tspan + tspan').forEach(ts => ts.setAttribute('x', p.x + dx));
+        const bb = t.getBBox();
+        const inside = bb.x > 2 && bb.x + bb.width < W - 2 && bb.y > yMin && bb.y + bb.height < H - 2;
+        if (inside && !boxes.some(b => overlap(bb, b, pad)) && !overlap(bb, dotBox, 2)) { placed = { p, dx, dy, bb, dotBox }; break outer; }
+      }
+    }
+    if (!placed) { g.remove(); return; }
+    boxes.push(placed.bb, placed.dotBox);
+    const { p } = placed;
+    dot.setAttribute('cx', p.x); dot.setAttribute('cy', p.y);
+    // leader from the dot to the text's near corner
+    const tx = p.x + placed.dx * .8, ty = placed.dy < 0 ? placed.bb.y + placed.bb.height - 1 : placed.bb.y + 1;
+    ln.setAttribute('x1', p.x); ln.setAttribute('y1', p.y); ln.setAttribute('x2', tx); ln.setAttribute('y2', ty);
+  });
+
+  // interaction
+  if (opts.interactive) bindInteraction(svg, host, [...Lo.links.map(l => l.el), ...Lo.stubs.map(s => s.g), ...nodeEls, ...gText.querySelectorAll('.hit')], opts);
+
+  // calm draw-in, once
+  if (opts.animate && !REDUCED) {
+    gNodes.style.opacity = 0; gText.style.opacity = 0; gAnn.style.opacity = 0;
+    const t0 = performance.now(), D = 1500;
+    const ease = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    const step = now => {
+      const p = Math.max(0, Math.min(1, (now - t0) / D)), e = ease(p);
+      clipRect.setAttribute('width', W * e);
+      gNodes.style.opacity = Math.min(1, p * 3);
+      gText.style.opacity = Math.min(1, Math.max(0, p * 2.2 - .3));
+      gAnn.style.opacity = Math.max(0, (p - .75) * 4);
+      if (p < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  } else clipRect.setAttribute('width', W);
+
+  return { svg, keyItems };
+}
+
+/* ---------- tooltips ---------- */
+const row = (a, b, c = '') => `<tr${c ? ` class="${c}"` : ''}><td>${a}</td><td class="num">${b}</td></tr>`;
+function secTip(n, M) {
+  const side = n.side === 'L' ? '순매도된 쪽' : '순매수된 쪽';
+  let rows = '';
+  if (n.other) {
+    for (const { k, n: nm } of INV) if (n.by[k] > 0) rows += row(nm, (n.side === 'L' ? '−' : '+') + fmt(n.by[k]) + '억');
+    rows += row('합계', (n.side === 'L' ? '−' : '+') + fmt(n.total) + '억', 'sum');
+    return `<h4>${esc(n.name)}<small>${side}</small></h4><table>${rows}</table><div class="foot">${esc(n.members.join(' · '))}<br>각 섹터의 주체별 순매매를 더한 값</div>`;
+  }
+  const r = M.agg[n.name];
+  for (const { k, n: nm } of INV) rows += row(nm, `<span class="${cls(r[k])}">${sgn(r[k])}억</span>`);
+  return `<h4>${esc(n.name)}<small>${side}</small></h4><table>${rows}</table><div class="foot">네 주체의 순매매 전부. ${n.side === 'L' ? '음수' : '양수'}인 주체만 이 쪽 띠로 그렸다.${r.tv ? `<br>거래대금 ${fmt(r.tv)}억` : ''}</div>`;
+}
+function invTip(iv, M) {
+  const rows = row('순매도한 섹터 합', '−' + fmt(iv.inn) + '억') + row('순매수한 섹터 합', '+' + fmt(iv.out) + '억') +
+    row('순매매 합계', `<span class="${cls(iv.net)}">${sgn(iv.net)}억</span>`, 'sum');
+  return `<h4>${esc(iv.name)}<small>${MKT[state.mkt].short}</small></h4><table>${rows}</table><div class="foot">순매매 합계는 이 주체의 시장 전체 순매매이며, 빗금 조각으로 그렸다.</div>`;
+}
+function linkTip(l) {
+  const verb = l.side === 'L' ? '순매도' : '순매수';
+  return `<h4>${esc(l.inv.name)} ${l.side === 'L' ? '←' : '→'} ${esc(l.sec.name)}</h4><table>${row(verb, (l.side === 'L' ? '−' : '+') + fmt(l.v) + '억')}</table>`;
+}
+
+function bindInteraction(svg, host, targets, opts) {
+  const tip = document.getElementById('tip');
+  const fig = host.parentElement;
+  const all = svg.querySelectorAll('.lnk, .fade');
+  const apply = ids => {
+    if (!ids) { svg.classList.remove('hl'); all.forEach(e => e.classList.remove('on')); return; }
+    svg.classList.add('hl');
+    all.forEach(e => {
+      const own = e.__ids || [];
+      const on = own.some(id => ids.includes(id)) ||
+        (e.classList.contains('lnk') && own.some(id => ids.includes(id)));
+      e.classList.toggle('on', on);
+    });
+    // sectors/investors at the far end of highlighted links stay lit too
+    const lit = new Set(ids);
+    svg.querySelectorAll('.lnk.on').forEach(p => p.__ids.forEach(id => lit.add(id)));
+    all.forEach(e => { if ((e.__ids || []).some(id => lit.has(id)) && !e.classList.contains('lnk')) e.classList.add('on'); });
+  };
+  const show = (e, html) => {
+    tip.innerHTML = html; tip.classList.add('show');
+    const fr = fig.getBoundingClientRect();
+    let x = e.clientX - fr.left + 14, y = e.clientY - fr.top + 14;
+    const tw = tip.offsetWidth, th = tip.offsetHeight;
+    if (x + tw > fr.width) x = e.clientX - fr.left - tw - 14;
+    if (x < 0) x = 4;
+    if (y + th > fr.height) y = Math.max(4, e.clientY - fr.top - th - 14);
+    tip.style.left = x + 'px'; tip.style.top = y + 'px';
+  };
+  const hide = () => tip.classList.remove('show');
+  targets.forEach(t => {
+    if (!t.__ids) return;
+    t.addEventListener('pointerenter', e => { if (e.pointerType !== 'mouse' || state.sel) return; apply(t.__ids); show(e, t.__tip()); });
+    t.addEventListener('pointermove', e => { if (e.pointerType !== 'mouse' || state.sel) return; show(e, t.__tip()); });
+    t.addEventListener('pointerleave', e => { if (e.pointerType !== 'mouse' || state.sel) return; apply(null); hide(); });
+    t.addEventListener('click', e => {
+      e.stopPropagation();
+      const key = t.__ids.join('|');
+      if (state.sel === key) { state.sel = null; apply(null); hide(); return; }
+      state.sel = key; apply(t.__ids); show(e, t.__tip());
+    });
+  });
+  svg.addEventListener('click', () => { state.sel = null; apply(null); hide(); });
+}
+
+/* ---------- text pieces ---------- */
+function texts(M) {
+  const inv = [...M.inv].sort((a, b) => a.net - b.net);
+  const seller = inv[0], buyer = inv[inv.length - 1];
+  const head = `<span class="s">${seller.name} ${fmt(seller.net)}억</span> 팔고,<br><span class="b">${buyer.name} ${fmt(buyer.net)}억</span> 샀다`;
+  const kicker = `오늘 돈은 어디서 어디로 · ${MKT[state.mkt].label}`;
+  const deck = `${M.nSectors}개 섹터에서 투자 주체 넷이 낸 하루 순매매를 이었다. 왼쪽 섹터에서 나온 띠는 그 주체가 판 금액, 오른쪽 섹터로 들어가는 띠는 산 금액이다.`;
+  const strip = M.inv.map(iv => `<div><div class="n">${iv.name}</div><div class="v num ${cls(iv.net)}">${sgn(iv.net)}<small>억</small></div></div>`).join('');
+  return { head, kicker, deck, strip };
+}
+
+function table(agg) {
+  const secs = Object.keys(agg).sort((a, b) => agg[b].tv - agg[a].tv);
+  let h = '<table><thead><tr><th>섹터</th>' + INV.map(i => `<th>${i.n}</th>`).join('') + '<th>거래대금</th></tr></thead><tbody>';
+  for (const s of secs) h += `<tr><td>${esc(s)}</td>` + INV.map(i => `<td class="${cls(agg[s][i.k])}">${sgn(agg[s][i.k])}</td>`).join('') + `<td>${fmt(agg[s].tv)}</td></tr>`;
+  h += `<tr><td><b>합계</b></td>` + INV.map(i => { const v = sum(secs.map(s => agg[s][i.k])); return `<td class="${cls(v)}"><b>${sgn(v)}</b></td>`; }).join('') + `<td>${fmt(sum(secs.map(s => agg[s].tv)))}</td></tr>`;
+  return h + '</tbody></table>';
+}
+
+/* ---------- page ---------- */
+const chartHost = document.getElementById('chart');
+function drawPage(animate) {
+  const agg = aggregate(state.mkt);
+  const W = Math.round(chartHost.clientWidth);
+  const o = preset(W, false);
+  const M = buildModel(agg, o.K);
+  const T = texts(M);
+  document.getElementById('headline').innerHTML = T.head;
+  document.getElementById('kicker').textContent = T.kicker;
+  document.getElementById('deck').textContent = T.deck;
+  document.getElementById('strip').innerHTML = T.strip;
+  document.getElementById('tablewrap').innerHTML = table(agg);
+  // desktop (measured after the headline is set): fit the whole figure above the fold where possible
+  const topY = chartHost.getBoundingClientRect().top + scrollY;
+  const H = W < 600 ? 640 : W < 900 ? 600 : Math.max(520, Math.min(680, Math.round(innerHeight - topY - 14)));
+  state.sel = null;
+  document.getElementById('tip').classList.remove('show');
+  const { keyItems } = render(chartHost, W, H, o, M, { uid: 'p', animate, interactive: true });
+  document.getElementById('keylist').innerHTML = keyItems.map((k, i) => `<li><b>${i + 1}</b><span>${esc(k.text)}</span></li>`).join('');
+}
+
+function drawCard() {
+  const agg = aggregate(state.mkt);
+  const o = preset(0, true);
+  const M = buildModel(agg, o.K);
+  const T = texts(M);
+  const card = document.getElementById('card');
+  card.querySelector('.cheadline').innerHTML = T.head;
+  card.querySelector('.ckicker').textContent = T.kicker;
+  card.querySelector('.cdeck').textContent = `${M.nSectors}개 섹터 · 투자 주체 넷의 하루 순매매(억원) · 섹터끼리 직접 오간 돈은 잇지 않았다`;
+  card.querySelector('.cstrip').innerHTML = T.strip;
+  card.querySelector('.cdate').textContent = dateLabel(RAW.date);
+  const host = document.getElementById('cchart');
+  host.innerHTML = '';
+  const W = Math.round(host.clientWidth), H = Math.round(host.clientHeight);
+  render(host, W, H, o, M, { uid: 'c', animate: false, interactive: false });
+}
+
+function fitCard() {
+  const f = document.getElementById('frame');
+  const s = Math.min((innerWidth - 24) / 1080, (innerHeight - 70) / 1350, 1);
+  f.style.transform = `translateX(-50%) scale(${s})`;
+}
+
+document.getElementById('date').textContent = dateLabel(RAW.date);
+document.querySelectorAll('.seg button').forEach(b => b.addEventListener('click', () => {
+  state.mkt = b.dataset.m;
+  document.querySelectorAll('.seg button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+  drawPage(false);
+}));
+const overlay = document.getElementById('overlay');
+document.getElementById('openCard').addEventListener('click', () => {
+  overlay.classList.add('open'); overlay.setAttribute('aria-hidden', 'false'); fitCard(); drawCard();
+});
+document.getElementById('closeCard').addEventListener('click', () => { overlay.classList.remove('open'); overlay.setAttribute('aria-hidden', 'true'); });
+overlay.addEventListener('click', e => { if (e.target === overlay) document.getElementById('closeCard').click(); });
+addEventListener('keydown', e => { if (e.key === 'Escape') document.getElementById('closeCard').click(); });
+
+let rz, lastW = 0;
+addEventListener('resize', () => {
+  clearTimeout(rz);
+  rz = setTimeout(() => {
+    if (overlay.classList.contains('open')) fitCard();
+    const w = chartHost.clientWidth;
+    if (Math.abs(w - lastW) > 2) { lastW = w; drawPage(false); }
+  }, 120);
+});
+
+const params = new URLSearchParams(location.search);
+if (MKT[params.get('m')]) {
+  state.mkt = params.get('m');
+  document.querySelectorAll('.seg button').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.m === state.mkt)));
+}
+const start = () => {
+  if (params.has('card')) { document.body.classList.add('raw'); drawCard(); return; }
+  lastW = chartHost.clientWidth;
+  drawPage(true);
+};
+(document.fonts && document.fonts.ready ? Promise.race([document.fonts.ready, new Promise(r => setTimeout(r, 2500))]) : Promise.resolve()).then(start);
+})();
+</script>
+</body>
+</html>
