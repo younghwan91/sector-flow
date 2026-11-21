@@ -9280,6 +9280,30 @@ find = '''f", 기관상위 중앙'''
 replace = '''f", 주도주 중앙'''
 
 [[mutation]]
+id = "brand-contrast-below-bar"
+why = """가이드의 색 값이 기준(띠 3:1) 아래로 바뀌었는데 대비 칸은 옛 숫자 그대로다 — 개발부는 이 표를 CSS 로 옮긴다"""
+guards = ["tests/test_brand.py::test_stated_contrast_matches_the_hex_and_meets_the_bar"]
+file = "docs/brand/README.md"
+find = "| `--forgn` | 외국인 | `#1f9b82` |"
+replace = "| `--forgn` | 외국인 | `#4fc9b0` |"
+
+[[mutation]]
+id = "brand-avoid-table-drops-a-banned-word"
+why = """금칙어 정본에 있는 말이 가이드의 '안 쓰는 말' 표에서 빠진다 — 사람은 가이드를 보고 쓴다"""
+guards = ["tests/test_brand.py::test_avoid_table_lists_every_word_the_wording_table_bans"]
+file = "docs/brand/README.md"
+find = "추천 · 유망 · 수혜 · 주도주 · 대장주 · 목표가"
+replace = "추천 · 유망 · 수혜 · 대장주 · 목표가"
+
+[[mutation]]
+id = "brand-tagline-says-avoided-word"
+why = """한 줄 소개가 '몰림' 을 쓴다 — README 머리·랜딩·레포 설명이 그대로 옮긴다"""
+guards = ["tests/test_brand.py::test_tagline_uses_no_avoided_word"]
+file = "docs/brand/README.md"
+find = "투자 주체별 순매매를 한 장의 지도로 본다."
+replace = "투자 주체별 순매매의 쏠림을 한 장의 지도로 본다."
+
+[[mutation]]
 id = "readme-says-banned-word"
 why = """README 에 금칙어가 들어간다"""
 guards = ["tests/test_wording.py::test_no_output_source_uses_a_banned_word"]
