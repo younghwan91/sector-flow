@@ -179,3 +179,51 @@ def test_unknown_actor_raises():
         FM.actor_graph(S, "foreign")
     with pytest.raises(KeyError):
         FM.actor_graph(S, "가")
+
+
+#: 페이로드 ``detail_labels`` 순서 그대로(``sector_flow.py`` 가 싣는 순서) — 화면 순서는 투신·연기금이 먼저다.
+_LABELS = {"fnnc_invt": "금투", "insrnc": "보험", "invtrt": "투신", "bank": "은행", "penfnd_etc": "연기금", "samo_fund": "사모"}
+
+
+def _payload_detail():
+    """_payload 에 기관 세부를 붙인다 — 거래소 '가' 의 기관(4, 8, 12) 중 일부만 세부로 잡힌다(나머지는 inst_other)."""
+    P = _payload()
+    P["detail_labels"] = dict(_LABELS)
+    P["detail"] = {
+        "거래소": {"가": {"fnnc_invt": [1, 1, 1], "insrnc": [0, 0, 0], "invtrt": [2, 3, None], "bank": [0, 0, 0],
+                         "penfnd_etc": [1, 2, 4], "samo_fund": [0, 1, 0]},
+                  "나": {"invtrt": [-1, -1, -1], "penfnd_etc": [-2, -2, -2]}},
+    }
+    return P
+
+
+def test_detail_plus_other_equals_inst():
+    """세부 6종 + 나머지 = 기관 — 나머지는 안분하지 않고 따로 둔다(잔여와 같은 원칙)."""
+    P = _payload_detail()
+    S = FM.window_sums(P, ["거래소", "코스닥"], 0, 2)
+    D = FM.inst_detail_sums(P, ["거래소", "코스닥"], 0, 2)
+    assert list(D) == ["가", "나"]
+    for s in D:
+        assert sum(D[s].values()) == pytest.approx(S[s]["inst"], abs=1e-12)
+    assert D["가"]["invtrt"] == 5 and D["가"]["penfnd_etc"] == 7 and D["가"]["inst_other"] == 24 - (3 + 5 + 7 + 1)
+    assert D["나"]["inst_other"] == -12 - (-3 - 6) and D["나"]["bank"] == 0, "그 섹터에 없는 세부 키는 0"
+
+
+def test_actor_graph_accepts_detail_key():
+    P = _payload_detail()
+    S = FM.with_detail(FM.window_sums(P, ["거래소"], 0, 2), FM.inst_detail_sums(P, ["거래소"], 0, 2))
+    A = FM.actor_graph(S, "inst:penfnd_etc")
+    assert A["took"] == [["가", 7]] and A["gave"] == [["나", 6]] and A["net"] == 1
+    assert FM.actor_graph(S, "inst:inst_other")["net"] == pytest.approx(24 + (-12) - (16 - 9))
+    assert FM.exchange_graph(S) == FM.exchange_graph(FM.window_sums(P, ["거래소"], 0, 2)), "세부 키는 보기 1 을 바꾸지 않는다"
+    with pytest.raises(KeyError):
+        FM.actor_graph(S, "inst:nope")
+    with pytest.raises(KeyError):
+        FM.actor_graph(FM.window_sums(P, ["거래소"], 0, 2), "inst:invtrt")
+
+
+def test_detail_order_puts_invtrt_penfnd_first():
+    """수급 신뢰 순서 — 기관 안에서는 투신·연기금을 먼저 보인다(CLAUDE.md). 나머지는 페이로드 순서, 끝에 나머지(inst_other)."""
+    D = FM.inst_detail_sums(_payload_detail(), ["거래소"], 0, 2)
+    assert list(D["가"]) == ["invtrt", "penfnd_etc", "fnnc_invt", "insrnc", "bank", "samo_fund", "inst_other"]
+    assert FM.detail_keys(_payload_detail()) == ["invtrt", "penfnd_etc", "fnnc_invt", "insrnc", "bank", "samo_fund"]

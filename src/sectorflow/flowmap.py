@@ -122,9 +122,9 @@ def actor_graph(sums: Sums, actor: str) -> dict:
 
     꼬리 규칙은 :func:`exchange_graph` 와 같은 상수이고, 몫의 분모는 **그 주체의** gross(Σ|순매수|)다. ``net`` = Σtook − Σgave
     (꼬리 포함) = 그 주체의 순매수 합계. 넘긴 섹터와 넘겨받은 섹터를 잇는 구조는 없다 — "A 에서 빼서 B 에 넣었다" 는 관측이 아니다.
-    모르는 주체면 ``KeyError``.
+    ``actor`` 는 :data:`NODE_ORDER` 의 하나이거나 :func:`with_detail` 이 붙인 기관 세부 ``inst:<세부 키>`` 다. 모르는 주체면 ``KeyError``.
     """
-    if actor not in NODE_ORDER:
+    if actor not in NODE_ORDER and not (actor.startswith(DETAIL_PREFIX) and any(actor in r for r in sums.values())):
         raise KeyError(actor)
     vals = [(s, row.get(actor, 0.0)) for s, row in sums.items()]
     gave = sorted(([s, -v] for s, v in vals if v < -EPS), key=lambda t: -t[1])
@@ -134,3 +134,39 @@ def actor_graph(sums: Sums, actor: str) -> dict:
     gave, tail_gave = _cut(gave, gross)
     took, tail_took = _cut(took, gross)
     return {"actor": actor, "gave": gave, "took": took, "net": net, "tail_gave": tail_gave, "tail_took": tail_took}
+
+
+#: 기관 세부를 먼저 보일 키 — 투신·연기금(CLAUDE.md 수급 신뢰 순서). 나머지는 페이로드 ``detail_labels`` 순서.
+DETAIL_FIRST = ("invtrt", "penfnd_etc")
+#: 기관 − Σ세부 — 세부로 잡히지 않은 기관 몫. 세부에 안분하지 않는다(잔여와 같은 원칙).
+INST_OTHER = "inst_other"
+#: :func:`with_detail` 이 합계에 붙이는 세부 키의 머리 — ``actor_graph(sums, "inst:invtrt")``.
+DETAIL_PREFIX = "inst:"
+
+
+def detail_keys(P: dict) -> list[str]:
+    """기관 세부 키의 화면 순서 — :data:`DETAIL_FIRST` 가 먼저, 나머지는 ``P["detail_labels"]`` 순서."""
+    keys = list(P.get("detail_labels") or {})
+    return [k for k in DETAIL_FIRST if k in keys] + [k for k in keys if k not in DETAIL_FIRST]
+
+
+def inst_detail_sums(P: dict, markets: list[str], i0: int, i1: int) -> dict[str, dict[str, float]]:
+    """섹터 → 기관 세부 키(:func:`detail_keys` 순) → 억원, 끝에 :data:`INST_OTHER` = 기관 − Σ세부. 창 규칙은 :func:`window_sums`."""
+    inst = window_sums(P, markets, i0, i1)
+    keys = detail_keys(P)
+    out: dict[str, dict[str, float]] = {}
+    for s in P["sectors"]:
+        row = {k: 0.0 for k in keys}
+        for m in markets:
+            d = ((P.get("detail") or {}).get(m) or {}).get(s) or {}
+            for k in keys:
+                row[k] += _span(d.get(k) or (), i0, i1)
+        row[INST_OTHER] = inst[s]["inst"] - sum(row[k] for k in keys)
+        out[s] = row
+    return out
+
+
+def with_detail(sums: Sums, detail: dict[str, dict[str, float]]) -> Sums:
+    """합계에 기관 세부를 ``inst:<키>`` 로 붙인 새 합계 — :func:`actor_graph` 가 세부를 주체처럼 받게. 보기 1 은 그대로다
+    (:func:`exchange_graph` 는 :data:`NODE_ORDER` 만 본다 — 세부는 기관의 부분이지 다른 주체가 아니다)."""
+    return {s: {**row, **{DETAIL_PREFIX + k: v for k, v in (detail.get(s) or {}).items()}} for s, row in sums.items()}
