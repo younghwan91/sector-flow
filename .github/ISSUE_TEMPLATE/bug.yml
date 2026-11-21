@@ -1,0 +1,44 @@
+name: 버그 제보
+description: 화면·리포트·배치·수집기가 틀리게 동작한다
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **실데이터를 붙이지 마세요.** 실제 리포트 폴더·종목별 수급 숫자·실데이터 스크린샷은 KRX·키움 데이터 이용 범위상
+        재배포할 수 없습니다. 합성 데모(`uv run sw-flow --demo`, `uv run sector-flow-demo --out <폴더>`)로 재현해 주세요.
+        투자 질문(무엇을 살까, 오를까)은 받지 않습니다.
+  - type: checkboxes
+    id: demo
+    attributes:
+      label: 확인
+      options:
+        - label: 실데이터·리포트 폴더·실데이터 스크린샷을 붙이지 않았다 — 데모로 재현했거나 꼴만 적었다
+          required: true
+        - label: 투자 질문이 아니다
+          required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: 무엇이 틀렸나
+      description: 어느 화면·명령·열에서, 무엇이 나와야 했고 무엇이 나왔나
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: 재현
+      description: 합성 데모로 재현하는 명령과 누른 키
+      render: bash
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: 버전
+      description: "`git rev-parse --short HEAD` 또는 설치한 버전"
+  - type: input
+    id: env
+    attributes:
+      label: 환경
+      description: OS · Python · 터미널(또는 브라우저)
