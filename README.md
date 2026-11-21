@@ -33,6 +33,20 @@ scripts/daily_report.sh              # 수급 DB 에 접속할 수 있으면 직
 > 한다. `src/sectorflow/collect/`(`sector-flow-collect`)는 자기 키움 키로 sqlite 를 채우는 BYO 수집기로, 아직 섹터 몇 개 크기의
 > 조각만 받고 일일 배치에 쓰지 않는다([`docs/byo/`](docs/byo/)).
 
+## 수급 지도
+
+![수급 지도(합성 데모) — 왼쪽은 순매도한 주체, 가운데는 섹터, 오른쪽은 순매수한 주체. 띠 굵기는 금액이다](docs/images/map-demo.png)
+
+하루(또는 5·20·60·120거래일) 동안 **누가 어느 섹터를 순매도하고 순매수했나**를 한 장으로 그린다. 띠 하나가 (주체, 섹터) 한 칸이다.
+주체 칸을 누르면 그 주체 하나의 섹터별 순매도·순매수만 남고, 기관은 투신·연기금 등 세부로 펼친다. 타임랩스는 최근 60거래일을 하루씩 넘긴다.
+섹터와 섹터, 주체와 주체는 잇지 않는다 — 누가 누구에게 넘겼는지는 데이터에 없다([정의](docs/formulas.md#8-수급-지도--sectorflowflowmap)).
+
+```bash
+uv run python scripts/sector_map.py --payload <리포트 폴더>/payload.json --html map.html   # 브라우저로 연다
+```
+
+일일 배치는 아직 `map.html` 을 만들지 않는다. 실데이터 지도도 리포트 폴더와 같다 — 본인 기기에서만 본다.
+
 ## 목차
 
 - §1 [무엇을 하나](#1-무엇을-하나) · [다른 자료와 무엇이 다른가](#11-다른-자료와-무엇이-다른가)
@@ -134,6 +148,7 @@ scripts/
 ├── finalize_done.py        # 08:20 확정 모드 — daily_finalize 성공 확인
 ├── sector_flow.py          # DB → payload.json (+ viewer.html)
 ├── sector_numbers.py       # payload → numbers.html (templates/)
+├── sector_map.py           # payload → map.html 수급 지도(templates/, 배치 밖 — 손으로 짓는다)
 ├── verify_report.py        # 리포트 자기 검증 (§9)
 ├── krx_truth.py            # 네이버 시장값과 시장 합계 대조 (내부 전용)
 ├── demo_shots.py           # README 그림·화면 예시를 합성 데모로 다시 만든다

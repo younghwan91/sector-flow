@@ -1088,9 +1088,9 @@ $$\mathrm{give}_{s,a} = -S_{s,a}\ (S_{s,a}<0), \qquad \mathrm{take}_{s,a} = S_{s
 서로 다른 숫자다(개인이 순매도한 섹터들의 합 / 순매수한 섹터들의 합). $\mathrm{gross}=\sum_s h_s=\sum_a L_a=\sum_a R_a$
 (`exchange_graph` `src/sectorflow/flowmap.py:85-96`).
 
-**꼬리.** 섹터를 $h_s$ 큰 순(같으면 페이로드 순서)으로 세우고, 몫 $h_s/\mathrm{gross}$ 가 `TAIL_SHARE`(3%) 미만이거나 순위가 `MAX_SHOWN`(12)
-밖이면 `기타 N개 섹터` 로 묶는다. 단 보이는 섹터는 최소 `MIN_SHOWN`(5)개다 — 작은 시장·1일 창에서 모두 꼬리로 들어가지 않게.
-문턱은 목록 안 몫이다(`_n_shown` `src/sectorflow/flowmap.py:79-82`, `TAIL_SHARE = 0.03` `src/sectorflow/flowmap.py:54`).
+**꼬리.** 섹터를 $h_s$ 큰 순(같으면 페이로드 순서)으로 세우고, 몫 $h_s/\mathrm{gross}$ 가 `TAIL_SHARE`(1%) 미만이거나 순위가 `MAX_SHOWN`(12)
+밖이면 `기타 N개 섹터` 로 묶는다. 단 보이는 섹터는 최소 `MIN_SHOWN`(8)개다 — 작은 시장·1일 창에서 모두 꼬리로 들어가지 않게.
+문턱은 목록 안 몫이다(`_n_shown` `src/sectorflow/flowmap.py:79-82`, `TAIL_SHARE = 0.01` `src/sectorflow/flowmap.py:54`).
 간선이 하나도 없는 섹터는 꼬리에도 넣지 않는다.
 
 ### 8.4 보기 2 — 주체 하나

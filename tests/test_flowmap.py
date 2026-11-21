@@ -107,17 +107,16 @@ def _ladder(n: int, big: float = 1000.0, small: float = 1.0) -> FM.Sums:
 
 
 def test_tail_collapses_small():
-    S = _sums({f"s{i:02d}": dict(indiv=-(100 - i), inst=100 - i) for i in range(15)})   # 몫이 다 3% 이상, 15개
+    S = _sums({f"s{i:02d}": dict(indiv=-(100 - i), inst=100 - i) for i in range(15)})   # 몫이 다 1% 이상, 15개
     G = FM.exchange_graph(S)
     assert [r["name"] for r in G["sectors"]] == [f"s{i:02d}" for i in range(FM.MAX_SHOWN)], "순위가 MAX_SHOWN 을 넘으면 꼬리"
     assert G["tail"]["names"] == ["s12", "s13", "s14"]
     assert G["tail"]["give"] == {"indiv": 88 + 87 + 86} and G["tail"]["take"] == {"inst": 88 + 87 + 86}
-    S2 = _sums({"큰1": dict(indiv=-500, inst=500), "큰2": dict(indiv=-300, forgn=300), "큰3": dict(etc=-100, inst=100),
-                "큰4": dict(indiv=-60, inst=60), "큰5": dict(indiv=-40, inst=40),
-                "작1": dict(indiv=-20, inst=20), "작2": dict(forgn=-5, inst=5)})
-    G2 = FM.exchange_graph(S2)          # gross 1025 — 작1 1.95%, 작2 0.49% 는 문턱 아래
-    assert [r["name"] for r in G2["sectors"]] == ["큰1", "큰2", "큰3", "큰4", "큰5"]
-    assert G2["tail"] == {"names": ["작1", "작2"], "give": {"indiv": 20, "forgn": 5}, "take": {"inst": 25}}
+    S2 = _sums({**{f"큰{i}": dict(indiv=-100, inst=100) for i in range(1, 9)},
+                "작1": dict(indiv=-5, inst=5), "작2": dict(forgn=-2, inst=2)})
+    G2 = FM.exchange_graph(S2)          # gross 807 — 작1 0.62%, 작2 0.25% 는 문턱(1%) 아래, 큰 8개 = MIN_SHOWN
+    assert [r["name"] for r in G2["sectors"]] == [f"큰{i}" for i in range(1, 9)]
+    assert G2["tail"] == {"names": ["작1", "작2"], "give": {"indiv": 5, "forgn": 2}, "take": {"inst": 7}}
 
 
 def test_tail_keeps_minimum():

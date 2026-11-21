@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>sector-flow 수급 지도</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=Noto+Serif+KR:wght@700;900&display=swap">
+<style>
+/* VOICE  밤의 관측 일지 — 사실만, 큰 숫자 한 줄, 해석 없음
+   IDEA   신문 1면 인포그래픽(시안 B)을 밤 하늘에 띄운 것 — 띠 위로 빛 입자가 흐른다(시안 A)
+   PICTURE 넘긴 쪽 주체 → 섹터 → 넘겨받은 쪽 주체. 간선은 (주체, 섹터)뿐, 입자는 노드를 지나지 않는다
+   COLOUR 밤 남색 바탕, 넘긴 쪽 파랑·넘겨받은 쪽 빨강, 주체 4색 + 잔여 회색
+   TYPE   Noto Serif KR 900 헤드라인, Noto Sans KR 본문 */
+:root{color-scheme:dark;--bg:#070b16;--panel:#0d1424;--line:#1f2a40;--ink:#e9eef8;--mute:#8d9ab3;--give:#4c8dff;--take:#ff5a6e;
+  --indiv:#f3b44b;--forgn:#3fd0e0;--inst:#a98bff;--etc:#4fe0a6;--resid:#7d879b}
+*{box-sizing:border-box;min-width:0}
+body{margin:0;background:radial-gradient(1200px 600px at 50% -10%,#14203a 0%,var(--bg) 60%) fixed,var(--bg);color:var(--ink);
+  font:15px/1.55 "Noto Sans KR",system-ui,sans-serif;overflow-x:clip}
+.wrap{max-width:1320px;margin:0 auto;padding:clamp(16px,3vw,36px) max(3vw,16px) 48px}
+.top{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;justify-content:space-between}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:.02em}
+.brand i{width:10px;height:10px;border-radius:50%;background:linear-gradient(135deg,var(--give),var(--take));box-shadow:0 0 12px var(--take)}
+.brand small{color:var(--mute);font-weight:500}
+.chip{border:1px solid var(--line);border-radius:999px;padding:2px 10px;color:var(--mute);font-size:13px;white-space:nowrap}
+.brand{white-space:nowrap;flex-wrap:wrap}h1 .n{white-space:nowrap}
+.demo{border-color:#f3b44b;color:#f3b44b;font-weight:700}
+.tabs{display:flex;flex-wrap:wrap;gap:6px}
+.tabs button,.ctl button{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:999px;padding:6px 12px;
+  font:inherit;font-size:13px;cursor:pointer;min-height:34px}
+.tabs button[aria-pressed=true]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+button:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--forgn);outline-offset:2px}
+h1{font:900 clamp(26px,3.6vw,46px)/1.12 "Noto Serif KR",serif;margin:22px 0 6px;text-wrap:balance}
+.facts{margin:0;padding:0;list-style:none;display:flex;flex-wrap:wrap;gap:6px 18px;color:var(--mute)}
+.facts li::before{content:"▸ ";color:var(--take)}
+.strip{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));border-top:2px solid var(--ink);border-bottom:1px solid var(--line);margin:18px 0 8px}
+.strip div{padding:8px 10px;border-left:1px solid var(--line)}.strip div:first-child{border-left:0}
+.strip b{display:block;font:700 clamp(18px,2.2vw,26px)/1.2 "Noto Serif KR",serif;white-space:nowrap}
+.strip span{font-size:12px;color:var(--mute)}
+.heads{display:grid;grid-template-columns:1fr 1fr 1fr;font-size:12px;color:var(--mute);margin:10px 0 2px}
+.heads span:nth-child(2){text-align:center}.heads span:last-child{text-align:right}
+.heads .g{color:var(--give)}.heads .t{color:var(--take)}
+.fig{position:relative;height:clamp(520px,66vh,760px)}
+.fig svg,.fig canvas{position:absolute;inset:0;width:100%;height:100%}
+.fig canvas{pointer-events:none;mix-blend-mode:screen}
+.crumb{display:none;align-items:center;gap:10px;margin:6px 0;flex-wrap:wrap}.crumb.on{display:flex}
+.ctl{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:12px 0}
+.ctl input[type=range]{flex:1 1 240px;accent-color:var(--take)}
+.ctl output{font-variant-numeric:tabular-nums;color:var(--mute);min-width:96px}
+#tip{position:fixed;pointer-events:none;background:#0b1222ee;border:1px solid var(--line);border-radius:8px;padding:8px 10px;
+  font-size:13px;display:none;z-index:5;max-width:280px;box-shadow:0 8px 30px #0008}
+details{margin-top:18px;border-top:1px solid var(--line);padding-top:10px}
+summary{cursor:pointer;color:var(--mute)}
+table{border-collapse:collapse;width:100%;font-size:13px;margin-top:8px}
+th,td{padding:4px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+.scroll{overflow-x:auto}
+footer{margin-top:22px;color:var(--mute);font-size:12.5px;line-height:1.7}
+.node text{pointer-events:none}
+@media (max-width:600px){.strip{grid-template-columns:repeat(3,minmax(0,1fr))}.strip div:nth-child(4){border-left:0}
+  .fig{height:640px}.facts{font-size:13px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div class="brand"><i></i>sector-flow <small>수급 지도</small> <span class="chip" id="asof"></span><span class="chip demo" id="demo" hidden>[합성 데모]</span></div>
+    <div class="tabs" id="mkt" aria-label="시장"></div>
+  </div>
+  <h1 id="lead"></h1>
+  <ul class="facts" id="facts"></ul>
+  <div class="strip" id="strip"></div>
+  <div class="ctl">
+    <div class="tabs" id="win" aria-label="구간"></div>
+    <button id="play" type="button" aria-pressed="false">▶ 타임랩스</button>
+    <input id="day" type="range" min="0" max="0" value="0" aria-label="타임랩스 날짜">
+    <output id="dayout"></output>
+  </div>
+  <div class="crumb" id="crumb"><button type="button" id="back">← 전체 보기</button><span id="crumbtxt"></span><span class="tabs" id="detail"></span></div>
+  <div class="heads" id="heads"><span class="g">◀ 넘긴 쪽 · 순매도</span><span>섹터</span><span class="t">넘겨받은 쪽 · 순매수 ▶</span></div>
+  <div class="fig" id="fig"><svg id="svg" role="img" aria-label="수급 지도"></svg><canvas id="cv"></canvas></div>
+  <details><summary>표로 보기</summary><div class="scroll"><table id="tbl"></table></div></details>
+  <footer>
+    <div id="basis">__BASIS__ · 단위 억원(종가 환산 근사)</div>
+    <div>띠 하나는 (주체, 섹터) 한 칸의 순매수다. 섹터와 섹터, 주체와 주체를 잇지 않는다 — 누가 누구에게 넘겼는지는 관측되지 않는다.
+      잔여 = −(개인+외국인+기관+기타법인), 4주체 밖의 몫이다. 숫자는 동시기 관측이며 예측이 아니다.</div>
+    <div id="demonote" hidden>__DEMO_NOTICE__</div>
+  </footer>
+</div>
+<div id="tip"></div>
+<script>
+const D = __DATA__;
+{
+const $ = id => document.getElementById(id);
+const ACT = ["indiv","forgn","inst","etc","resid"];
+const COL = k => getComputedStyle(document.documentElement).getPropertyValue("--" + (k.startsWith("inst:") ? "inst" : k)).trim() || "#999";
+const lab = k => D.labels[k] || k;
+const fmt = v => { const a = Math.abs(v); return a >= 10000 ? (a / 10000).toFixed(1) + "조" : Math.round(a).toLocaleString("ko-KR") + "억"; };
+const sfmt = v => (v > 0 ? "+" : v < 0 ? "−" : "") + fmt(v);
+const S = {m: D.markets[0], w: String(D.windows[0]), actor: null, day: null, playing: false, hi: null};
+const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const svg = $("svg"), cv = $("cv"), ctx = cv.getContext("2d"), tip = $("tip");
+let particles = [], geo = null;
+
+$("asof").textContent = "기준일 " + (D.asof || "-");
+if (D.demo) { $("demo").hidden = false; $("demonote").hidden = false; }
+
+function tabs(el, items, cur, on) {
+  el.innerHTML = items.map(([v, t]) => `<button type="button" data-v="${v}" aria-pressed="${v === cur}">${t}</button>`).join("");
+  el.onclick = e => { const b = e.target.closest("button"); if (b) on(b.dataset.v); };
+}
+function view() { return D.views[S.m][S.w]; }
+function graph() {
+  if (S.day !== null) { const t = D.timelapse[S.m]; return t.frames[S.day]; }
+  return view().exchange;
+}
+
+/* ── 그래프 → 세 열의 노드와 간선 ─────────────────────────────── */
+function model() {
+  if (S.actor) {
+    const A = view().actors[S.actor];
+    const left = A.gave.map(([s, v]) => ({id: "g:" + s, label: s, val: v, side: "give"}));
+    if (A.tail_gave) left.push({id: "g:~", label: `기타 ${A.tail_gave[0].length}개 섹터`, val: A.tail_gave[1], side: "give", tail: A.tail_gave[0]});
+    const right = A.took.map(([s, v]) => ({id: "t:" + s, label: s, val: v, side: "take"}));
+    if (A.tail_took) right.push({id: "t:~", label: `기타 ${A.tail_took[0].length}개 섹터`, val: A.tail_took[1], side: "take", tail: A.tail_took[0]});
+    const mid = [{id: "a", label: lab(S.actor), actor: S.actor, net: A.net}];
+    const edges = [...left.map((n, i) => ({s: [0, i], t: [1, 0], v: n.val, c: "give"})),
+                   ...right.map((n, i) => ({s: [1, 0], t: [2, i], v: n.val, c: "take"}))];
+    return {cols: [left, mid, right], edges};
+  }
+  const G = graph();
+  const L = ACT.filter(a => (G.left[a] || 0) > 0).map(a => ({id: "L" + a, label: lab(a), actor: a, val: G.left[a]}));
+  const R = ACT.filter(a => (G.right[a] || 0) > 0).map(a => ({id: "R" + a, label: lab(a), actor: a, val: G.right[a]}));
+  const secs = G.sectors.map(s => ({...s}));
+  if (G.tail) secs.push({name: `기타 ${G.tail.names.length}개 섹터`, give: G.tail.give, take: G.tail.take, tail: G.tail.names});
+  const mid = secs.map(s => ({id: "S" + s.name, label: s.name, sector: s, tail: s.tail}));
+  const edges = [];
+  secs.forEach((s, j) => {
+    for (const [a, v] of Object.entries(s.give)) { const i = L.findIndex(n => n.actor === a); if (i >= 0 && v > 0) edges.push({s: [0, i], t: [1, j], v, c: a}); }
+    for (const [a, v] of Object.entries(s.take)) { const i = R.findIndex(n => n.actor === a); if (i >= 0 && v > 0) edges.push({s: [1, j], t: [2, i], v, c: a}); }
+  });
+  return {cols: [L, mid, R], edges};
+}
+
+/* ── 배치: 노드 높이 ∝ 금액(라벨용 최소 높이만 키운다 — 띠 두께는 금액 그대로) ─────── */
+function layout(M, W, H) {
+  const narrow = W < 600, GAP = narrow ? 5 : 8, MINH = narrow ? 20 : 26;
+  const tw = narrow ? [74, 96, 74] : [128, 168, 128];
+  M.cols.forEach((col, c) => col.forEach((n, i) => {
+    n.in = M.edges.filter(e => e.t[0] === c && e.t[1] === i).reduce((s, e) => s + e.v, 0);
+    n.out = M.edges.filter(e => e.s[0] === c && e.s[1] === i).reduce((s, e) => s + e.v, 0);
+    n.size = Math.max(n.in, n.out, 1e-9);
+  }));
+  let k = Infinity;
+  for (const col of M.cols) {
+    if (!col.length) continue;
+    const room = H - (col.length - 1) * GAP;
+    let kk = room / col.reduce((s, n) => s + n.size, 0);
+    for (let it = 0; it < 4; it++) {
+      const fixed = col.filter(n => n.size * kk < MINH);
+      const free = col.filter(n => n.size * kk >= MINH).reduce((s, n) => s + n.size, 0);
+      if (!free) break;
+      kk = (room - fixed.length * MINH) / free;
+    }
+    k = Math.min(k, kk);
+  }
+  if (!isFinite(k) || k <= 0) k = 0;
+  const xs = [0, (W - tw[1]) / 2, W - tw[2]];
+  M.cols.forEach((col, c) => {
+    const hs = col.map(n => Math.max(n.size * k, MINH));
+    let y = (H - hs.reduce((s, h) => s + h, 0) - (col.length - 1) * GAP) / 2;
+    col.forEach((n, i) => { n.x = xs[c]; n.w = tw[c]; n.y = y; n.h = hs[i]; n.c = c; n.i = i; y += hs[i] + GAP; });
+  });
+  // 간선을 노드 안에 쌓는다 — 상대 노드 순서로 정렬해 엇갈림을 줄인다. 묶음은 노드 가운데에 둔다.
+  M.cols.forEach((col, c) => col.forEach((n, i) => {
+    const outs = M.edges.filter(e => e.s[0] === c && e.s[1] === i).sort((a, b) => a.t[1] - b.t[1]);
+    const ins = M.edges.filter(e => e.t[0] === c && e.t[1] === i).sort((a, b) => a.s[1] - b.s[1]);
+    let y = n.y + (n.h - outs.reduce((s, e) => s + e.v * k, 0)) / 2;
+    outs.forEach(e => { e.y0 = y; y += e.v * k; });
+    y = n.y + (n.h - ins.reduce((s, e) => s + e.v * k, 0)) / 2;
+    ins.forEach(e => { e.y1 = y; y += e.v * k; });
+  }));
+  M.edges.forEach(e => {
+    const a = M.cols[e.s[0]][e.s[1]], b = M.cols[e.t[0]][e.t[1]];
+    e.x0 = a.x + a.w; e.x1 = b.x; e.th = e.v * k;
+  });
+  M.k = k;
+  return M;
+}
+
+function ribbon(e) {
+  const xm = (e.x0 + e.x1) / 2, t = e.th;
+  return `M${e.x0},${e.y0}C${xm},${e.y0} ${xm},${e.y1} ${e.x1},${e.y1}L${e.x1},${e.y1 + t}C${xm},${e.y1 + t} ${xm},${e.y0 + t} ${e.x0},${e.y0 + t}Z`;
+}
+const ecol = e => e.c === "give" ? "var(--give)" : e.c === "take" ? "var(--take)" : `var(--${e.c.startsWith("inst:") ? "inst" : e.c})`;
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+
+function nodeText(n) {
+  if (n.sector) {
+    const g = Object.values(n.sector.give).reduce((s, v) => s + v, 0);
+    return [n.label, fmt(g)];
+  }
+  if (n.net !== undefined) return [n.label, "순매수 합계 " + sfmt(n.net)];
+  if (n.actor) return [n.label, (n.c === 0 ? "−" : "+") + fmt(n.val)];
+  return [n.label, (n.side === "give" ? "−" : "+") + fmt(n.val)];
+}
+
+function draw() {
+  const W = svg.clientWidth, H = svg.clientHeight;
+  geo = layout(model(), W, H);
+  let out = `<defs><pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="2" height="6" fill="#ffffff30"/></pattern></defs><g id="edges">`;
+  geo.edges.forEach((e, i) => { out += `<path class="edge" data-e="${i}" d="${ribbon(e)}" fill="${ecol(e)}" fill-opacity=".42"/>`; });
+  out += `</g><g id="nodes">`;
+  const small = W < 600;
+  geo.cols.forEach(col => col.forEach(n => {
+    const [t1, t2] = nodeText(n);
+    const stroke = n.actor ? `var(--${n.actor.startsWith("inst:") ? "inst" : n.actor})` : n.side ? `var(--${n.side})` : "#ffffff30";
+    const fill = n.tail ? "url(#hatch)" : "#0d1424";
+    const fs = small ? 10.5 : 13, two = n.h >= (small ? 30 : 36);
+    out += `<g class="node" tabindex="0" role="button" data-n="${n.c}:${n.i}" aria-label="${esc(t1 + " " + t2)}">` +
+      `<rect x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}" rx="6" fill="${fill}" stroke="${stroke}" stroke-width="1.5"/>` +
+      (n.sector ? `<rect x="${n.x}" y="${n.y}" width="4" height="${n.h}" rx="2" fill="var(--give)"/><rect x="${n.x + n.w - 4}" y="${n.y}" width="4" height="${n.h}" rx="2" fill="var(--take)"/>` : "") +
+      `<text x="${n.x + n.w / 2}" y="${n.y + n.h / 2 + (two ? -2 : 4)}" text-anchor="middle" font-size="${fs}" font-weight="700" fill="#e9eef8">${esc(t1)}</text>` +
+      (two ? `<text x="${n.x + n.w / 2}" y="${n.y + n.h / 2 + fs}" text-anchor="middle" font-size="${fs - 1.5}" fill="#8d9ab3">${esc(t2)}</text>` : "") + `</g>`;
+  }));
+  svg.innerHTML = out + "</g>";
+  seed();
+  head();
+}
+
+/* ── 입자: 간선마다 따로 돈다. 한 간선의 끝(노드 가장자리)에서 사라지고 다시 시작한다 — 노드를 지나 다른 간선으로 이어지지 않는다 ── */
+function seed() {
+  const dpr = devicePixelRatio || 1;
+  cv.width = cv.clientWidth * dpr; cv.height = cv.clientHeight * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  particles = [];
+  if (reduce) return;
+  geo.edges.forEach((e, i) => {
+    const n = Math.max(1, Math.min(28, Math.round(e.th / 5)));
+    for (let j = 0; j < n; j++) particles.push({e: i, t: Math.random(), o: Math.random() * 2 - 1, sp: .0025 + Math.random() * .004});
+  });
+}
+function bez(a, b, c, d, t) { const u = 1 - t; return u * u * u * a + 3 * u * u * t * b + 3 * u * t * t * c + t * t * t * d; }
+const colorCache = {};
+function tick() {
+  if (!reduce && geo && !document.hidden) {
+    ctx.clearRect(0, 0, cv.clientWidth, cv.clientHeight);
+    for (const p of particles) {
+      const e = geo.edges[p.e]; p.t += p.sp; if (p.t > 1) p.t -= 1;
+      if (S.hi && !S.hi.has(p.e)) continue;
+      const xm = (e.x0 + e.x1) / 2, x = bez(e.x0, xm, xm, e.x1, p.t);
+      const yc = bez(e.y0, e.y0, e.y1, e.y1, p.t) + e.th / 2 + p.o * e.th * .36;
+      const key = e.c; colorCache[key] = colorCache[key] || COL(key === "give" ? "give" : key === "take" ? "take" : key);
+      ctx.fillStyle = colorCache[key]; ctx.globalAlpha = .9 * Math.sin(Math.PI * p.t);
+      ctx.beginPath(); ctx.arc(x, yc, 1.6, 0, 7); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+  requestAnimationFrame(tick);
+}
+
+/* ── 머리글·숫자 띠·표 ──────────────────────────────────────── */
+function head() {
+  const G = graph();
+  if (S.day !== null) {
+    const d = D.timelapse[S.m].dates[S.day];
+    $("lead").textContent = `${d} ${S.m} — 하루 순매수`;
+    $("facts").innerHTML = "";
+  } else {
+    const h = view().headline;
+    $("lead").innerHTML = esc(h.lead).replace(/[+−-]?[\d,.]+(조|억)/g, m => `<span class="n">${m}</span>`);
+    $("facts").innerHTML = h.facts.map(f => `<li>${esc(f)}</li>`).join("");
+  }
+  $("strip").innerHTML = ACT.map(a => {
+    const v = (G.right[a] || 0) - (G.left[a] || 0);
+    return `<div><span style="color:var(--${a})">● ${lab(a)}</span><b style="color:${v >= 0 ? "var(--take)" : "var(--give)"}">${sfmt(v)}</b></div>`;
+  }).join("");
+  const rows = [...G.sectors, ...(G.tail ? [{name: `기타 ${G.tail.names.length}개 섹터`, give: G.tail.give, take: G.tail.take}] : [])];
+  $("tbl").innerHTML = `<tr><th>섹터</th>${ACT.map(a => `<th>${lab(a)}</th>`).join("")}</tr>` + rows.map(r =>
+    `<tr><td>${esc(r.name)}</td>${ACT.map(a => { const v = (r.take[a] || 0) - (r.give[a] || 0); return `<td>${v ? sfmt(v) : "·"}</td>`; }).join("")}</tr>`).join("");
+  $("crumb").classList.toggle("on", !!S.actor);
+  $("heads").innerHTML = S.actor
+    ? `<span class="g">◀ ${esc(lab(S.actor))}이(가) 넘긴 섹터</span><span>${esc(lab(S.actor))}</span><span class="t">넘겨받은 섹터 ▶</span>`
+    : `<span class="g">◀ 넘긴 쪽 · 순매도</span><span>섹터</span><span class="t">넘겨받은 쪽 · 순매수 ▶</span>`;
+  if (S.actor) {
+    $("crumbtxt").textContent = `${lab(S.actor)} 한 주체의 섹터별 순매도·순매수 — 넘긴 섹터와 넘겨받은 섹터는 서로 잇지 않는다`;
+    const det = Object.keys(view().actors).filter(k => k.startsWith("inst:"));
+    $("detail").innerHTML = (S.actor === "inst" || S.actor.startsWith("inst:")) && det.length
+      ? ["inst", ...det].map(k => `<button type="button" data-v="${k}" aria-pressed="${k === S.actor}">${esc(lab(k))}</button>`).join("") : "";
+  }
+}
+
+/* ── 강조·툴팁·조작 ─────────────────────────────────────────── */
+function highlight(set) {
+  S.hi = set;
+  svg.querySelectorAll(".edge").forEach(p => p.setAttribute("fill-opacity", !set ? .42 : set.has(+p.dataset.e) ? .78 : .07));
+}
+function showTip(ev, html) { tip.innerHTML = html; tip.style.display = "block";
+  const x = Math.min(ev.clientX + 14, innerWidth - 290), y = Math.min(ev.clientY + 14, innerHeight - 120);
+  tip.style.left = x + "px"; tip.style.top = y + "px"; }
+function nodeOf(el) { const [c, i] = el.dataset.n.split(":").map(Number); return geo.cols[c][i]; }
+function edgesOf(n) { const s = new Set(); geo.edges.forEach((e, i) => { if ((e.s[0] === n.c && e.s[1] === n.i) || (e.t[0] === n.c && e.t[1] === n.i)) s.add(i); }); return s; }
+function edgeTip(e) {
+  const a = geo.cols[e.s[0]][e.s[1]], b = geo.cols[e.t[0]][e.t[1]];
+  if (S.actor) return e.c === "give" ? `${esc(lab(S.actor))} · ${esc(a.label)} <b style="color:var(--give)">−${fmt(e.v)}</b>` : `${esc(lab(S.actor))} · ${esc(b.label)} <b style="color:var(--take)">+${fmt(e.v)}</b>`;
+  return e.s[0] === 0 ? `${esc(a.label)} · ${esc(b.label)} <b style="color:var(--give)">순매도 −${fmt(e.v)}</b>` : `${esc(b.label)} · ${esc(a.label)} <b style="color:var(--take)">순매수 +${fmt(e.v)}</b>`;
+}
+svg.addEventListener("pointermove", ev => {
+  const p = ev.target.closest(".edge"), g = ev.target.closest(".node");
+  if (p) { const i = +p.dataset.e; highlight(new Set([i])); showTip(ev, edgeTip(geo.edges[i])); }
+  else if (g) { const n = nodeOf(g); highlight(edgesOf(n)); const [t1, t2] = nodeText(n);
+    showTip(ev, `<b>${esc(t1)}</b> ${esc(t2)}` + (n.tail ? `<br><span style="color:#8d9ab3">${esc(n.tail.join(" · "))}</span>` : "") + (n.actor && !S.actor ? `<br><span style="color:#8d9ab3">눌러서 이 주체만 보기</span>` : "")); }
+  else { highlight(null); tip.style.display = "none"; }
+});
+svg.addEventListener("pointerleave", () => { highlight(null); tip.style.display = "none"; });
+function activate(g) {
+  const n = nodeOf(g);
+  if (!S.actor && n.actor && S.day === null && view().actors[n.actor]) { S.actor = n.actor; route(); draw(); }
+  else if (S.actor && n.net !== undefined) { S.actor = null; route(); draw(); }
+  else highlight(edgesOf(n));
+}
+svg.addEventListener("click", ev => { const g = ev.target.closest(".node"); if (g) activate(g); });
+svg.addEventListener("keydown", ev => { const g = ev.target.closest(".node"); if (g && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); activate(g); } });
+$("back").onclick = () => { S.actor = null; route(); draw(); };
+$("detail").onclick = e => { const b = e.target.closest("button"); if (b) { S.actor = b.dataset.v; route(); draw(); } };
+
+function controls() {
+  tabs($("mkt"), D.markets.map(m => [m, m === "거래소" ? "코스피" : m]), S.m, v => { S.m = v; syncDay(); route(); controls(); draw(); });
+  tabs($("win"), D.windows.map(w => [String(w), w === 1 ? "1일" : w + "일"]), S.day === null ? S.w : "", v => { stop(); S.day = null; S.w = v; route(); controls(); draw(); });
+}
+function syncDay() {
+  const t = D.timelapse[S.m]; const n = t.frames.length;
+  $("day").max = Math.max(0, n - 1); $("play").disabled = !n;
+  if (S.day !== null) S.day = Math.min(S.day, n - 1);
+  $("dayout").textContent = S.day !== null ? t.dates[S.day] : n ? `${n}거래일` : "";
+}
+let timer = null;
+function stop() { clearInterval(timer); timer = null; S.playing = false; $("play").textContent = "▶ 타임랩스"; $("play").setAttribute("aria-pressed", "false"); }
+$("play").onclick = () => {
+  if (S.playing) return stop();
+  const n = D.timelapse[S.m].frames.length; if (!n) return;
+  S.actor = null; S.playing = true; $("play").textContent = "❚❚ 멈춤"; $("play").setAttribute("aria-pressed", "true");
+  if (S.day === null || S.day >= n - 1) S.day = 0;
+  controls(); syncDay(); $("day").value = S.day; draw();
+  timer = setInterval(() => { if (S.day >= n - 1) return stop(); S.day++; $("day").value = S.day; syncDay(); draw(); }, reduce ? 1400 : 700);
+};
+$("day").oninput = e => { stop(); S.actor = null; S.day = +e.target.value; controls(); syncDay(); draw(); };
+
+/* 주소: #m<시장 순번>-w<창>[-a<주체>] — 다시 열면 같은 그림 */
+function route() { const mi = D.markets.indexOf(S.m); history.replaceState(null, "", `#m${mi}-w${S.w}${S.actor ? "-a" + S.actor.replace(":", "_") : ""}`); }
+(function fromHash() {
+  const m = /^#m(\d+)-w(\d+)(?:-a([\w]+))?$/.exec(location.hash); if (!m) return;
+  if (D.markets[+m[1]]) S.m = D.markets[+m[1]];
+  if (D.windows.includes(+m[2])) S.w = m[2];
+  const a = m[3] && m[3].replace("_", ":"); if (a && view().actors[a]) S.actor = a;
+})();
+
+controls(); syncDay();
+new ResizeObserver(() => draw()).observe(svg);
+requestAnimationFrame(tick);
+}
+</script>
+</body>
+</html>

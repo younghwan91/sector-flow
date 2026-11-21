@@ -51,9 +51,9 @@ def window_sums(P: dict, markets: list[str], i0: int, i1: int) -> Sums:
 
 #: 꼬리 묶기 — 섹터 몫(노드 높이 ÷ gross)이 이보다 작거나 순위가 :data:`MAX_SHOWN` 을 넘으면 ``기타 N개 섹터`` 로 묶는다.
 #: 단 보이는 섹터는 최소 :data:`MIN_SHOWN` 개(그만큼 있으면). 문턱은 목록 안 몫이다(CLAUDE.md 비율 열 규칙).
-TAIL_SHARE = 0.03
+TAIL_SHARE = 0.01
 MAX_SHOWN = 12
-MIN_SHOWN = 5
+MIN_SHOWN = 8
 #: 이보다 작은 |값| 은 간선이 아니다 — 합의 부동소수 찌꺼기(1e-13 따위)가 폭 0 인 잔여 간선이 되지 않게.
 EPS = 1e-9
 #: 노드 순서 — 양쪽 주체 노드가 같은 순서로 선다(개인·외국인·기관·기타법인·잔여).

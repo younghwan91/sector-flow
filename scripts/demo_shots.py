@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import json
 import os
 import re
 import shutil
@@ -222,6 +223,24 @@ def shoot(report: Path, out: Path) -> None:
                 pg.screenshot(path=str(out / name), full_page=True, clip={"x": 0, "y": 0, "width": w, "height": bottom})
                 _quantize(out / name, 64)       # 쪽이 커서 터미널보다 색을 더 줄인다 — 그림당 100KB 안
                 ctx.close()
+            # 수급 지도 — 데모 페이로드로 그 자리에서 짓는다(배치가 아직 map.html 을 만들지 않는다). 머리부터 그림 아래 끝까지.
+            sm = importlib.util.spec_from_file_location("_shots_sector_map", REPO / "scripts" / "sector_map.py")
+            smod = importlib.util.module_from_spec(sm)
+            sm.loader.exec_module(smod)
+            payload = json.loads((report / "payload.json").read_text("utf-8"))
+            map_path = tmp / "map.html"
+            map_path.write_text(smod.render(smod.build_map_data(payload), Path(smod.TEMPLATE).read_text("utf-8")), "utf-8")
+            ctx = browser.new_context(viewport={"width": 1440, "height": 1100}, device_scale_factor=1,
+                                      reduced_motion="reduce")
+            ctx.route("http*://**", lambda r: r.fulfill(status=200, body="", content_type="text/css"))
+            pg = ctx.new_page()
+            pg.goto(map_path.as_uri(), wait_until="load")
+            pg.wait_for_timeout(400)
+            bottom = pg.evaluate("(()=>{const r=document.getElementById('fig').getBoundingClientRect();"
+                                 "return Math.ceil(r.bottom+scrollY)+8;})()")
+            pg.screenshot(path=str(out / "map-demo.png"), full_page=True, clip={"x": 0, "y": 0, "width": 1440, "height": bottom})
+            _quantize(out / "map-demo.png", 64)
+            ctx.close()
             browser.close()
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

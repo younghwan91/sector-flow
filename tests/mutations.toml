@@ -12558,6 +12558,30 @@ file = "src/sectorflow/flowmap.py"
 find = "    if not keys:\n        for by_sec"
 replace = "    if False:\n        for by_sec"
 
+[[mutation]]
+id = "map-basis-slot-left-empty"
+why = "지도 페이지가 데이터 기준 표지(KRX 단독·종가 환산)를 안 채운다 — 자리표시자가 그대로 화면에 나온다."
+guards = ["tests/test_map_page.py::test_map_html_slots_filled_and_no_remote_scripts"]
+file = "scripts/sector_map.py"
+find = "            .replace(\"__BASIS__\", DATA_BASIS_SHORT)"
+replace = "            .replace(\"__BASIS__\", \"__BASIS__\")"
+
+[[mutation]]
+id = "map-data-not-embedded"
+why = "지도 데이터를 템플릿에 심지 않는다 — 페이지가 빈 그림으로 뜬다."
+guards = ["tests/test_map_page.py::test_map_html_embeds_data_once"]
+file = "scripts/sector_map.py"
+find = "    return (template.replace(\"__DATA__\", blob)"
+replace = "    return (template.replace(\"__DATA__\", \"{}\")"
+
+[[mutation]]
+id = "map-page-says-inflow"
+why = "지도 글이 '유입' 을 말한다 — 순매수는 소유권 이전이지 시장으로 들어온 돈이 아니다(원장 설계 §1.2)."
+guards = ["tests/test_map_page.py::test_map_page_wording"]
+file = "scripts/templates/sector_map.html"
+find = "<div class=\"heads\" id=\"heads\"><span class=\"g\">"
+replace = "<div class=\"heads\" id=\"heads\"><span class=\"g\">유입 "
+
 [[removed]]
 id = "ci-shard-denominator-hardcoded"
 why = "샤드를 없앴다 — 전체 검증은 잡 하나다(tests/test_ci_workflow.py 가 matrix 를 막는다)"
