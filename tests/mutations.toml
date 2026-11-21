@@ -5324,6 +5324,48 @@ find = '''    if os.path.realpath(sib) == os.path.realpath(folder):'''
 replace = '''    if False:'''
 
 [[mutation]]
+id = "bug-form-real-data-check-optional"
+why = """버그 템플릿의 '실데이터를 붙이지 않았다' 체크가 required 에서 풀린다 — 체크 없이 리포트 폴더가 이슈로 들어온다"""
+guards = ["tests/test_github_templates.py::test_issue_forms_require_the_no_real_data_check"]
+file = ".github/ISSUE_TEMPLATE/bug.yml"
+find = """        - label: 실데이터·리포트 폴더·실데이터 스크린샷을 붙이지 않았다 — 데모로 재현했거나 꼴만 적었다
+          required: true"""
+replace = """        - label: 실데이터·리포트 폴더·실데이터 스크린샷을 붙이지 않았다 — 데모로 재현했거나 꼴만 적었다
+          required: false"""
+
+[[mutation]]
+id = "bug-form-forgets-the-demo"
+why = """버그 템플릿이 데모로 재현하는 명령을 잃는다 — 재현할 길이 실데이터뿐인 것처럼 읽힌다"""
+guards = ["tests/test_github_templates.py::test_bug_form_points_at_the_demo"]
+file = ".github/ISSUE_TEMPLATE/bug.yml"
+find = "합성 데모(`uv run sw-flow --demo`, `uv run sector-flow-demo --out <폴더>`)로"
+replace = "합성 데모로"
+
+[[mutation]]
+id = "blank-issues-back-on"
+why = """빈 이슈가 다시 열린다 — 템플릿의 체크를 건너뛴다"""
+guards = ["tests/test_github_templates.py::test_blank_issues_are_off"]
+file = ".github/ISSUE_TEMPLATE/config.yml"
+find = "blank_issues_enabled: false"
+replace = "blank_issues_enabled: true"
+
+[[mutation]]
+id = "pr-template-drops-real-data-check"
+why = """PR 템플릿에서 실데이터 확인 줄이 빠진다"""
+guards = ["tests/test_github_templates.py::test_pr_template_asks_about_real_data"]
+file = ".github/pull_request_template.md"
+find = "- [ ] 실데이터·리포트 폴더·실데이터 스크린샷이 이 PR(코드·문서·그림·본문)에 없다\n"
+replace = ""
+
+[[mutation]]
+id = "feature-form-says-banned-word"
+why = """기능 제안 템플릿이 금칙어를 쓴다 — 고르기 기능을 받는 것처럼 읽힌다"""
+guards = ["tests/test_github_templates.py::test_templates_use_no_banned_word"]
+file = ".github/ISSUE_TEMPLATE/feature.yml"
+find = "      label: 제안"
+replace = "      label: 추천 섹터 제안"
+
+[[mutation]]
 id = "verify-revision-blind"
 why = "잠정 화면의 '최근 N일 … 중앙 x%, 부호 뒤집힘 n회' 가 옆 폴더들의 확정 기록과 달라도 검증이 모른다"
 guards = ["tests/test_streaks_revisions.py::test_the_verifier_recounts_revision_stats_from_the_sibling_folders"]
