@@ -87,3 +87,18 @@ def test_verifier_fails_a_built_page_with_a_banned_word(tmp_path):
     VR.FAILS.clear()
     VR._w_wording(str(tmp_path))
     assert [f for f in VR.FAILS] == ["W/금칙어 — viewer.html 의 글에 권유·전망처럼 읽히는 말이 없는가"]
+
+
+def test_map_hits_catches_flow_words():
+    """지도·카드·랜딩은 기존 금칙어에 더해 흐름을 꼬리표 달린 돈처럼 읽히게 하는 말(:data:`MAP_AVOID`)을 피한다."""
+    assert W.map_hits("돈이 가상전자로 유입") == ["유입"]
+    assert W.map_hits("가상전자 — 개인 −2,927억") == []
+    assert W.map_hits("추천") == ["추천"]
+    assert W.map_hits("가상 기계로 몰.렸다 · 가상화학 쏠림") == ["몰렸", "쏠림"]
+    assert W.page_hits("돈이 가상전자로 유입") == [], "기존 화면은 MAP_AVOID 를 검사하지 않는다"
+
+
+def test_map_avoid_not_in_banned():
+    """기존 화면을 깨지 않게 — 같은 말이 BANNED 에 들어가면 로그 회전 같은 다른 뜻까지 막힌다."""
+    assert set(W.MAP_AVOID).isdisjoint(W.BANNED)
+    assert W.MAP_AVOID == ("유입", "유출", "몰림", "몰렸", "쏠림", "회전", "성지")

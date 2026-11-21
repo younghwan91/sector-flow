@@ -12255,6 +12255,22 @@ file = "scripts/verify_merge.py"
 find = "_COPY_SKIP_ROOT & set(names) if d == root else set())"
 replace = "_COPY_SKIP_ROOT & set(names))"
 
+[[mutation]]
+id = "map-hits-skips-map-avoid"
+why = "지도 검사가 MAP_AVOID 를 안 보면 '유입'·'몰렸다' 가 지도·카드·랜딩에 그대로 나간다 — 기존 금칙어만으로는 초록이다"
+guards = ["tests/test_wording.py::test_map_hits_catches_flow_words"]
+file = "src/sectorflow/wording.py"
+find = "    return banned_hits(t) + _hits(t, MAP_AVOID)"
+replace = "    return banned_hits(t)"
+
+[[mutation]]
+id = "map-avoid-word-leaks-into-banned"
+why = "지도용 말을 BANNED 에 넣으면 기존 화면의 다른 뜻(로그 회전 등)까지 막혀 리포트 검사가 엉뚱하게 빨개진다"
+guards = ["tests/test_wording.py::test_map_avoid_not_in_banned"]
+file = "src/sectorflow/wording.py"
+find = '"전망", "기대", "적중")'
+replace = '"전망", "기대", "적중", "회전")'
+
 [[removed]]
 id = "ci-shard-denominator-hardcoded"
 why = "샤드를 없앴다 — 전체 검증은 잡 하나다(tests/test_ci_workflow.py 가 matrix 를 막는다)"
