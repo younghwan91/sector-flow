@@ -13193,3 +13193,51 @@ why = "사업화를 접어 docs/strategy(질의서·약관·성적표·경쟁사
 [[removed]]
 id = "shots-attachment-format-unchecked"
 why = "질의서 첨부 A(docs/strategy)를 지워 첨부 갱신 코드도 지웠다"
+
+[[mutation]]
+id = "public-html-ignores-vendor-sector-data"
+why = "업종명 판정이 죽으면 데모 표지만 붙인 실데이터 페이지(표지 + 실 섹터 데이터)가 공개 경로로 나간다"
+guards = ["tests/test_public_surface.py::test_html_judge_passes_demo_and_fails_real"]
+file = "tests/test_public_surface.py"
+find = "_VENDOR_VALUE = re.compile(r\"\"\"(?<!\"insrnc\":)"
+replace = "_VENDOR_VALUE = re.compile(r\"\"\"(?!)(?<!\"insrnc\":)"
+
+[[mutation]]
+id = "public-html-skips-demo-notice"
+why = "표지 검사를 빼면 실 리포트 폴더에서 그대로 복사한 페이지(업종명 없는 trust.html 등)가 공개 경로를 지나간다"
+guards = ["tests/test_public_surface.py::test_html_judge_passes_demo_and_fails_real"]
+file = "tests/test_public_surface.py"
+find = "    out = [] if DEMO_NOTICE in text else [\"데모 표지(DEMO_NOTICE)가 없다\"]"
+replace = "    out = []"
+
+[[mutation]]
+id = "public-html-insurance-label-false-positive"
+why = "기관 세부 라벨 '보험' 을 섹터로 읽으면 데모 뷰어마다 실패해 검사를 끄고 싶어진다"
+guards = ["tests/test_public_surface.py::test_html_judge_passes_demo_and_fails_real"]
+file = "tests/test_public_surface.py"
+find = "(?<!\"insrnc\":)(?<!\"insrnc\": )([\"'])("
+replace = "([\"'])("
+
+[[mutation]]
+id = "public-tracking-judge-dead"
+why = "추적 판정이 죽으면 랜딩에 분석 스크립트·쿠키가 들어가도 초록이다"
+guards = ["tests/test_public_surface.py::test_tracking_judge_catches_scripts"]
+file = "tests/test_public_surface.py"
+find = "_TRACKING = re.compile(r\"gtag|analytics|plausible|document\\.cookie\", re.I)"
+replace = "_TRACKING = re.compile(r\"(?!)\")"
+
+[[mutation]]
+id = "public-ledger-row-misread"
+why = "원장 줄을 잘못 읽으면(확장자를 떼어 읽기) 모든 공개 그림이 '원장에 없다' 가 되거나 엉뚱한 줄이 맞는다"
+guards = ["tests/test_public_surface.py::test_ledger_rows_are_read", "tests/test_public_surface.py::test_public_png_has_demo_sidecar"]
+file = "tests/test_public_surface.py"
+find = "_LEDGER_ROW = re.compile(r\"^\\|\\s*(\\S+?\\.png)\\s*\\|\", re.M)"
+replace = "_LEDGER_ROW = re.compile(r\"^\\|\\s*(\\S+?)\\.png\\s*\\|\", re.M)"
+
+[[mutation]]
+id = "public-globs-miss-images"
+why = "공개 경로 목록에서 README 그림 폴더가 빠지면 검사가 빈 목록을 돌며 초록이다"
+guards = ["tests/test_public_surface.py::test_public_png_has_demo_sidecar"]
+file = "tests/test_public_surface.py"
+find = "PUBLIC_GLOBS = (\"README.md\", \"README.en.md\", \"docs/images/**\", \"docs/brand/**\", \"site/**\")"
+replace = "PUBLIC_GLOBS = (\"README.md\", \"README.en.md\", \"docs/brand/**\", \"site/**\")"
