@@ -148,3 +148,34 @@ def test_no_sector_to_sector_keys():
     for r in _sector_rows(G):
         assert set(r["give"]) | set(r["take"]) <= {*FM.ACTORS, FM.RESID}
     assert set(G) == {"sectors", "tail", "left", "right", "gross"}
+
+
+def test_actor_graph_splits_by_sign():
+    """보기 2 — 한 주체가 순매도한 섹터(gave)와 순매수한 섹터(took), 금액 큰 순. 0 인 섹터는 어느 쪽에도 없다."""
+    S = _sums({"가": dict(forgn=-30, indiv=30), "나": dict(forgn=50, indiv=-50), "다": dict(forgn=-10, indiv=10),
+               "라": dict(indiv=5, etc=-5)})
+    A = FM.actor_graph(S, "forgn")
+    assert A["actor"] == "forgn"
+    assert A["gave"] == [["가", 30], ["다", 10]] and A["took"] == [["나", 50]]
+    assert A["tail_gave"] is None and A["tail_took"] is None
+    R = FM.actor_graph(S, FM.RESID)
+    assert R["gave"] == [] and R["took"] == [] and R["net"] == 0, "잔여도 주체처럼 누를 수 있다 — 여기선 전부 0"
+
+
+def test_net_equals_took_minus_gave():
+    S = _sums({f"s{i:02d}": dict(inst=(-1) ** i * (200 - 10 * i), indiv=-((-1) ** i) * (200 - 10 * i)) for i in range(16)}
+              | {f"t{i}": dict(inst=1 + i * 0.1, indiv=-(1 + i * 0.1)) for i in range(4)})
+    A = FM.actor_graph(S, "inst")
+    shown = sum(v for _s, v in A["took"]) - sum(v for _s, v in A["gave"])
+    tails = (A["tail_took"][1] if A["tail_took"] else 0) - (A["tail_gave"][1] if A["tail_gave"] else 0)
+    assert A["net"] == pytest.approx(shown + tails) == pytest.approx(sum(r["inst"] for r in S.values()))
+    assert A["tail_took"] is not None and set(A["tail_took"][0]) >= {f"t{i}" for i in range(4)}, "주체의 gross 대비 작은 섹터는 꼬리"
+    assert len(A["took"]) <= FM.MAX_SHOWN and len(A["gave"]) >= FM.MIN_SHOWN
+
+
+def test_unknown_actor_raises():
+    S = _sums({"가": dict(indiv=-1, inst=1)})
+    with pytest.raises(KeyError):
+        FM.actor_graph(S, "foreign")
+    with pytest.raises(KeyError):
+        FM.actor_graph(S, "가")

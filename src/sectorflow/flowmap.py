@@ -108,3 +108,29 @@ def exchange_graph(sums: Sums) -> dict:
         tail = {"names": [r[1] for r in rows[k:]], "give": _ordered(tg), "take": _ordered(tt)}
     return {"sectors": [{"name": n, "give": g, "take": t} for _s, n, g, t in rows[:k]],
             "tail": tail, "left": _ordered(left), "right": _ordered(right), "gross": gross}
+
+
+def _cut(items: list[list], gross: float) -> tuple[list[list], "list | None"]:
+    """[섹터, 금액>0] 큰 순 목록을 (보이는 것, 꼬리 ``[이름들, 합]`` 또는 None) 로 — :func:`exchange_graph` 와 같은 규칙."""
+    k = _n_shown([v for _s, v in items], gross)
+    rest = items[k:]
+    return items[:k], ([[s for s, _v in rest], sum(v for _s, v in rest)] if rest else None)
+
+
+def actor_graph(sums: Sums, actor: str) -> dict:
+    """보기 2 — 주체 하나가 순매도한 섹터(``gave``)와 순매수한 섹터(``took``), 각각 금액 큰 순(같으면 입력 순서).
+
+    꼬리 규칙은 :func:`exchange_graph` 와 같은 상수이고, 몫의 분모는 **그 주체의** gross(Σ|순매수|)다. ``net`` = Σtook − Σgave
+    (꼬리 포함) = 그 주체의 순매수 합계. 넘긴 섹터와 넘겨받은 섹터를 잇는 구조는 없다 — "A 에서 빼서 B 에 넣었다" 는 관측이 아니다.
+    모르는 주체면 ``KeyError``.
+    """
+    if actor not in NODE_ORDER:
+        raise KeyError(actor)
+    vals = [(s, row.get(actor, 0.0)) for s, row in sums.items()]
+    gave = sorted(([s, -v] for s, v in vals if v < -EPS), key=lambda t: -t[1])
+    took = sorted(([s, v] for s, v in vals if v > EPS), key=lambda t: -t[1])
+    gross = sum(v for _s, v in gave) + sum(v for _s, v in took)
+    net = sum(v for _s, v in took) - sum(v for _s, v in gave)
+    gave, tail_gave = _cut(gave, gross)
+    took, tail_took = _cut(took, gross)
+    return {"actor": actor, "gave": gave, "took": took, "net": net, "tail_gave": tail_gave, "tail_took": tail_took}
