@@ -9304,6 +9304,22 @@ find = "투자 주체별 순매매를 한 장의 지도로 본다."
 replace = "투자 주체별 순매매의 쏠림을 한 장의 지도로 본다."
 
 [[mutation]]
+id = "wordmark-depends-on-a-font"
+why = """워드마크에 <text> 가 들어간다 — 글꼴이 없는 기기·README 미리보기에서 다른 모양이 된다"""
+guards = ["tests/test_brand.py::test_logo_has_no_font_dependency"]
+file = "docs/brand/wordmark.svg"
+find = "<title>sector-flow · 수급 지도</title>"
+replace = "<title>sector-flow · 수급 지도</title><text x=\"0\" y=\"40\">sector-flow</text>"
+
+[[mutation]]
+id = "favicon-colour-off-the-table"
+why = """파비콘이 가이드 색 표에 없는 바탕색을 쓴다 — 브랜드 색이 두 곳에서 갈린다"""
+guards = ["tests/test_brand.py::test_logo_colours_come_from_the_table"]
+file = "docs/brand/favicon.svg"
+find = 'fill="#0a0d16"'
+replace = 'fill="#000000"'
+
+[[mutation]]
 id = "readme-says-banned-word"
 why = """README 에 금칙어가 들어간다"""
 guards = ["tests/test_wording.py::test_no_output_source_uses_a_banned_word"]
