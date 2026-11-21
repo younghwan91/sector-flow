@@ -99,6 +99,15 @@ def _seed(db: Path, today_kosdaq: int) -> None:
     con.close()
 
 
+#: 수급 지도 생성기 대역 — 페이로드를 읽고 map.html 을 쓴다(진짜는 ``tests/test_map_page.py`` 가 본다).
+FAKE_SECTOR_MAP = """
+import json, pathlib, sys
+a = sys.argv
+json.loads(pathlib.Path(a[a.index("--payload") + 1]).read_text())
+pathlib.Path(a[a.index("--html") + 1]).write_text("<html>map</html>")
+"""
+
+
 @pytest.fixture
 def repo(tmp_path):
     r = tmp_path / "sector-flow"
@@ -107,6 +116,7 @@ def repo(tmp_path):
                  "finalize_done.py", "freshness_check.sh", "freshness_check.py", "ops_ledger.py", "krx_calendar.py"):
         shutil.copy(REPO / "scripts" / name, r / "scripts" / name)
     (r / "scripts" / "sector_flow.py").write_text(FAKE_SECTOR_FLOW)
+    (r / "scripts" / "sector_map.py").write_text(FAKE_SECTOR_MAP)
     (r / "scripts" / "sector_numbers.py").write_text(FAKE_NUMBERS)
     (r / "scripts" / "verify_report.py").write_text(FAKE_VERIFY)
     (r / "scripts" / "trust_page.py").write_text(FAKE_TRUST)
@@ -1017,3 +1027,21 @@ def test_cron_timeout_between_the_two_moves_does_not_lose_the_report(repo, tmp_p
     report = [json.loads(ln) for ln in (repo / "reports" / "events.jsonl").read_text().splitlines()
               if '"report"' in ln][-1]
     assert report["outcome"] == "published" and report["rc"] == 143, report
+
+
+def test_map_is_built_into_the_report(repo, tmp_path):
+    """수급 지도는 배치가 리포트 폴더에 짓는다 — 비공개 웹이 /latest/map.html 로 잇는다."""
+    _seed(repo.parent / "db.sqlite", today_kosdaq=50)
+    r = _run(repo)
+    assert r.returncode == 0, r.stderr
+    assert (repo / "reports" / "latest" / "map.html").read_text() == "<html>map</html>"
+
+
+def test_map_failure_warns_without_blocking(repo, tmp_path):
+    _seed(repo.parent / "db.sqlite", today_kosdaq=50)
+    (repo / "scripts" / "sector_map.py").write_text("import sys\nsys.exit(1)\n")
+    r = _run(repo)
+    assert r.returncode == 75 and "수급 지도(map.html)를 못 만들었다" in r.stderr, r.stderr
+    dest = repo / "reports" / TODAY
+    assert (dest / "numbers.html").exists() and "부속 산출물 실패: map.html" in (dest / "VERIFY.txt").read_text()
+    assert not (dest / "VERIFY_FAILED.txt").exists(), "리포트 숫자의 실패가 아니다"
