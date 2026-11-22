@@ -66,7 +66,7 @@ def slice_kr_quant(dsn: str, out: str, sectors: list[str], start: str, end: str,
     cur.execute("SELECT code, name, market, sector, kind FROM stocks WHERE sector = ANY(%s)", (sectors,))
     stocks = cur.fetchall()
     codes = sorted(r[0] for r in stocks)
-    dst.executemany("INSERT INTO stocks VALUES (?,?,?,?,?)", stocks)
+    dst.executemany("INSERT INTO stocks (code, name, market, sector, kind) VALUES (?,?,?,?,?)", stocks)
     n: dict = {"stocks": len(stocks)}
 
     def copy(table: str, cols: tuple[str, ...], where: str, params: tuple, dst_cols=None) -> None:

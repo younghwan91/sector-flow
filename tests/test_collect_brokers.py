@@ -45,8 +45,9 @@ def _patch(monkeypatch, rec: Recorder, now: str) -> None:
     monkeypatch.setattr(R, "_today", lambda: TD.kst(now).strftime("%Y%m%d"))
 
 
-#: 기록에서 빼는 칸 — 벽시계 시각이라 실행마다 다르다.
-_CLOCK = {"collect_runs": ("started_at", "finished_at"), "collect_done": ("done_at",)}
+#: 기록에서 빼는 칸 — 벽시계 시각이라 실행마다 다르다. 그리고 기록 뒤에 더한 열(그 열의 검사는 따로 있다):
+#: ``stocks.sector_source``(Task 56, ``test_sector_source_*``).
+_CLOCK = {"collect_runs": ("started_at", "finished_at"), "collect_done": ("done_at",), "stocks": ("sector_source",)}
 
 
 def _dump(db: Path) -> dict:

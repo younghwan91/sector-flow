@@ -27,6 +27,7 @@ import argparse
 import json
 import os
 import re
+import sqlite3
 import sys
 import warnings
 from datetime import datetime, timedelta, timezone
@@ -97,14 +98,20 @@ def load(con, days: int, asof: "str | None" = None, *, returns: bool = True) -> 
         sources=("kiwoom",), allow_individual_survivorship=True, require_delisted=False,
     )
     sd["date"] = sd["date"].astype(str)
-    meta = pd.read_sql_query("SELECT code, name, sector, market FROM stocks", con)
+    byo_source = _has_sector_source(con)
+    meta = pd.read_sql_query("SELECT code, name, sector, market" + (", sector_source" if byo_source else "")
+                             + " FROM stocks", con)
     df = sd.merge(meta, on="code", how="inner")
     df["close"] = df["close"].abs()
     raw = df["sector"].fillna("")
-    df["sector"] = apply_sector_override(df["code"], df["sector"])
     OVERRIDE_APPLIED.clear()
-    OVERRIDE_APPLIED.update({c: SECTOR_OVERRIDE[c] for c in
-                             set(df.loc[raw.eq("") & df["code"].isin(list(SECTOR_OVERRIDE)), "code"])})
+    # 덮어쓰기 표는 키움 업종명 체계다 — 다른 분류(사용자 표·다른 증권사 업종)가 섞인 BYO 마스터에 넣으면 두 체계가 섞인다.
+    if not byo_source or set(meta["sector_source"].dropna()) <= {"kiwoom"}:
+        df["sector"] = apply_sector_override(df["code"], df["sector"])
+        OVERRIDE_APPLIED.update({c: SECTOR_OVERRIDE[c] for c in
+                                 set(df.loc[raw.eq("") & df["code"].isin(list(SECTOR_OVERRIDE)), "code"])})
+    else:
+        df["sector"] = df["sector"].fillna("").replace("", UNCLASSIFIED)
 
     for raw, short in ACTORS:
         df[short] = df[raw].astype(float) * df["close"] / EOK
@@ -114,6 +121,21 @@ def load(con, days: int, asof: "str | None" = None, *, returns: bool = True) -> 
     # 수급만(--flows-only)은 조정 종가를 읽지 않는다 — 지도 전용 수집(ka10099·ka10059)에는 일봉이 없다.
     df["ret"] = adjusted_returns(con, df[["code", "date"]], dates) if returns else float("nan")
     return df, dates
+
+
+def _has_sector_source(con) -> bool:
+    """BYO sqlite 의 ``stocks.sector_source``(섹터 출처, ``sectorflow.collect.write``)가 있나. kr_quant(Postgres)에는 없다."""
+    if not isinstance(con, sqlite3.Connection):
+        return False
+    return "sector_source" in {r[1] for r in con.execute("PRAGMA table_info(stocks)").fetchall()}
+
+
+def sector_source_counts(df: pd.DataFrame) -> "dict[str, int] | None":
+    """페이로드 종목의 섹터 출처별 종목 수(``{"kiwoom": 90, "csv:내 표": 6}``, 모르면 ``""``). 출처 열이 없으면 ``None``."""
+    if "sector_source" not in df.columns:
+        return None
+    by = df.drop_duplicates("code")["sector_source"].fillna("")
+    return {k: int(v) for k, v in by.value_counts().sort_index().items()}
 
 
 def apply_sector_override(codes: pd.Series, sectors: pd.Series) -> pd.Series:
@@ -386,13 +408,14 @@ def name_block(df: pd.DataFrame, dates: list[str], caps: "pd.DataFrame | None") 
 #: 수급만 페이로드(``--flows-only``)의 키 — 수급 지도(``sectorflow.flowmap.build_map_data``)가 읽는 것과 종목 집계.
 #: 수익률·시총·오늘 블록이 없다. 수치표·TUI 는 ``flows_only`` 를 보고 :data:`sectorflow.basis.FLOWS_ONLY_NOTICE` 로 끝낸다.
 FLOWS_ONLY_KEYS = ("dates", "sectors", "markets", "n_by_sector", "flows", "detail", "detail_labels", "names",
-                   "n_names", "flows_only")
+                   "n_names", "flows_only", "sector_source")
 
 
 def build_flows_payload(df: pd.DataFrame, dates: list[str]) -> dict:
     """수급만 페이로드 — 지도 전용 수집(ka10099·ka10059) sqlite 로 선다. ``flows``·``detail`` 은 :func:`build_payload` 와 같다."""
     out = {"dates": dates, **flow_blocks(df, dates), "detail_labels": {k: ko for k, ko in INST_DETAIL},
-           "names": name_block(df, dates, None), "n_names": int(df["code"].nunique()), "flows_only": True}
+           "names": name_block(df, dates, None), "n_names": int(df["code"].nunique()), "flows_only": True,
+           "sector_source": sector_source_counts(df)}
     return {k: out[k] for k in FLOWS_ONLY_KEYS}
 
 

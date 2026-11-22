@@ -93,7 +93,11 @@ class Broker(Protocol):
     def total_calls(self) -> int: ...
 
     def universe(self) -> list[dict]:
-        """코스피·코스닥 보통주 — ``stocks`` 행(``code``·``name``·``market``·``sector``·``kind``). ``sector`` 는 빈 값일 수 있다."""
+        """코스피·코스닥 보통주 — ``stocks`` 행(``code``·``name``·``market``·``sector``·``kind``·``sector_source``).
+
+        ``sector`` 는 빈 값일 수 있다(그 증권사가 업종을 주지 않거나 쓰지 않는다 — 토스의 다중 소속 섹터). 주면
+        ``sector_source`` 는 어댑터 이름이다. 저장된 다른 출처의 섹터는 ``write.upsert_stocks`` 가 지킨다.
+        """
         ...
 
     def investor_daily(self, code: str, start: str, end: str, *, days: "int | None" = None,

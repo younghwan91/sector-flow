@@ -71,7 +71,7 @@ def test_restrict_keeps_only_the_slice_sectors():
 
 def _db(path, close, inst):
     con = write.open_db(path)
-    con.execute("INSERT INTO stocks VALUES ('000810','삼성화재','거래소','보험','')")
+    con.execute("INSERT INTO stocks (code, name, market, sector, kind) VALUES ('000810','삼성화재','거래소','보험','')")
     con.execute("INSERT INTO supply_demand(code,date,close,institution,source) VALUES (?,?,?,?,?)",
                 ("000810", "2026-11-06", close, inst, "kiwoom"))
     con.execute("INSERT INTO daily_bars_adjusted(code, date, close) VALUES ('000810','2026-11-06',?)",
