@@ -110,6 +110,16 @@ json.loads(pathlib.Path(a[a.index("--payload") + 1]).read_text())
 pathlib.Path(a[a.index("--html") + 1]).write_text("<html>map</html>")
 """
 
+#: 지도 카드 대역 — 짓는 폴더에 카드 두 장을 쓴다(진짜는 ``tests/test_map_card.py`` 가 Chromium 으로 본다).
+FAKE_MAP_CARD = """
+import os, pathlib, sys
+if os.environ.get("FAKE_MAP_CARD_RC"):
+    sys.exit(int(os.environ["FAKE_MAP_CARD_RC"]))
+b = pathlib.Path(sys.argv[sys.argv.index("--dir") + 1])
+(b / "map.png").write_bytes(b"png")
+(b / "map_wide.png").write_bytes(b"png")
+"""
+
 
 @pytest.fixture
 def repo(tmp_path):
@@ -120,6 +130,7 @@ def repo(tmp_path):
         shutil.copy(REPO / "scripts" / name, r / "scripts" / name)
     (r / "scripts" / "sector_flow.py").write_text(FAKE_SECTOR_FLOW)
     (r / "scripts" / "sector_map.py").write_text(FAKE_SECTOR_MAP)
+    (r / "scripts" / "map_card.py").write_text(FAKE_MAP_CARD)
     (r / "scripts" / "sector_numbers.py").write_text(FAKE_NUMBERS)
     (r / "scripts" / "verify_report.py").write_text(FAKE_VERIFY)
     (r / "scripts" / "trust_page.py").write_text(FAKE_TRUST)
@@ -1063,3 +1074,25 @@ def test_map_is_checked_by_the_m_layer_and_withheld_when_it_disagrees(repo, tmp_
     assert not (dest / "map.html").exists(), "검증에 걸린 지도가 게시됐다"
     assert (dest / "numbers.html").exists() and "부속 산출물 실패: map-verify" in (dest / "VERIFY.txt").read_text()
     assert not (dest / "VERIFY_FAILED.txt").exists(), "리포트 숫자의 실패가 아니다"
+
+
+def test_map_card_is_shot_after_the_map_passes_and_failure_warns_without_blocking(repo, tmp_path):
+    """검증을 통과한 지도만 카드로 찍는다(map.png·map_wide.png, 짓는 폴더 안). 못 찍어도 지도·리포트는 게시하고 75 로 알린다."""
+    _seed(repo.parent / "db.sqlite", today_kosdaq=50)
+    r = _run(repo)
+    assert r.returncode == 0, r.stderr
+    latest = repo / "reports" / "latest"
+    assert (latest / "map.png").exists() and (latest / "map_wide.png").exists()
+    r = _run(repo, KR_QUANT_FORCE="1", FAKE_MAP_CARD_RC="1")
+    assert r.returncode == 75 and "수급 지도 카드(map.png)를 못 찍었다" in r.stderr, r.stderr
+    dest = repo / "reports" / TODAY
+    assert (dest / "map.html").exists() and not (dest / "map.png").exists()
+    assert "부속 산출물 실패: map.png" in (dest / "VERIFY.txt").read_text()
+    r = _run(repo, KR_QUANT_FORCE="1", FAKE_VERIFY_M_RC="1")
+    assert r.returncode == 75 and not (dest / "map.png").exists(), "검증에 걸린 지도를 카드로 찍었다"
+
+
+def test_map_card_runs_offline_with_the_pinned_playwright():
+    """카드는 다이제스트 카드와 같은 Chromium 을 쓴다 — 판을 박고(받아 둔 브라우저와 드라이버가 맞게) 오프라인·상한으로 부른다."""
+    line = next(ln for ln in (REPO / "scripts" / "daily_report.sh").read_text("utf-8").splitlines() if "python scripts/map_card.py" in ln)
+    assert "UV_OFFLINE=1 _bounded" in line and "--with 'playwright==1.48.0' python scripts/map_card.py" in line

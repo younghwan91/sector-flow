@@ -411,6 +411,14 @@ if [ -f "$BUILD/map.html" ]; then
     SIDE_FAIL+="map-verify "
   fi
 fi
+# 수급 지도 공유 카드(scripts/map_card.py) — map.html?card=tall|wide 를 찍어 map.png(1080×1350)·map_wide.png(1200×675).
+# 검증을 통과한 지도만 찍는다. 폴더에만 쓴다(밖으로 보내지 않는다). 상한 3분·오프라인·판 고정(다이제스트 카드와 같은 Chromium).
+if [ -f "$BUILD/map.html" ]; then
+  if ! UV_OFFLINE=1 _bounded "${KR_QUANT_MAP_CARD_TIMEOUT:-3m}" "${UVR[@]}" --with 'playwright==1.48.0' python scripts/map_card.py --dir "$BUILD"; then
+    echo "[$(date '+%F %T')] ⚠️ 수급 지도 카드(map.png)를 못 찍었다 — 지도(map.html)는 게시한다" >&2
+    SIDE_FAIL+="map.png "
+  fi
+fi
 # 오늘의 수급 다이제스트(scripts/digest.py, 끄려면 KR_QUANT_DIGEST=0) — 폴더에만 쓴다(밖으로 보내지 않는다). 상한 5분·오프라인·판 고정.
 if [ "${KR_QUANT_DIGEST:-1}" != "0" ]; then UV_OFFLINE=1 _bounded "${KR_QUANT_DIGEST_TIMEOUT:-5m}" "${UVR[@]}" --with 'playwright==1.48.0' python scripts/digest.py --dir "$BUILD" || { echo "[$(date '+%F %T')] ⚠️ 다이제스트를 못 만들었다(실패 또는 시간 초과) — 리포트는 그대로 게시한다" >&2; SIDE_FAIL+="digest "; }; fi
 # 다이제스트 검증(verify_report.py X 층) — 글의 시장 줄·요약·가장 큰 주체·상·하위·극단·부호 바뀜·20일 변동이 페이로드·화면과

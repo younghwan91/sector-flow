@@ -45,6 +45,8 @@ FILES = {
     "numbers.html": "text/html; charset=utf-8",
     "viewer.html": "text/html; charset=utf-8",
     "map.html": "text/html; charset=utf-8",  # 수급 지도 — 배치가 짓는다(scripts/sector_map.py), 옛 폴더엔 없다
+    "map.png": "image/png",                  # 수급 지도 공유 카드 1080×1350·1200×675(scripts/map_card.py)
+    "map_wide.png": "image/png",
     "trust.html": "text/html; charset=utf-8",  # 검증·품질 — 배치가 짓는 폴더 안에서 만든다(scripts/trust_page.py)
     "digest.md": "text/plain; charset=utf-8",  # 오늘의 수급 글 — 비공개 웹에서만 읽는다
     "digest.png": "image/png",
@@ -60,7 +62,7 @@ DOC_RE = re.compile(r"^\w[\w.\-]*\.md$")
 DOC_TYPE = "text/plain; charset=utf-8"
 PAGES = (("numbers.html", "수치표"), ("viewer.html", "흐름"))
 #: 있을 때만 잇는 산출물 — 다이제스트를 끄거나 페이지를 못 만든 날은 단추도 없다.
-EXTRAS = (("map.html", "수급 지도"), ("trust.html", "검증·품질"), ("digest.md", "다이제스트 글"), ("digest.png", "다이제스트 카드"))
+EXTRAS = (("map.html", "수급 지도"), ("map.png", "지도 카드"), ("map_wide.png", "지도 카드(가로)"), ("trust.html", "검증·품질"), ("digest.md", "다이제스트 글"), ("digest.png", "다이제스트 카드"))
 #: 화면(`flow_view.STALE_DAYS`)·페이지(`staleChip`)와 같은 문턱.
 STALE_DAYS = 4
 #: 폴더를 바꿔 끼우는 순간(배치가 옆에 짓고 옮긴다)을 넘기는 짧은 재시도.

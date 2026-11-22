@@ -58,6 +58,20 @@ th:first-child,td:first-child{text-align:left}
 .scroll{overflow-x:auto}
 footer{margin-top:22px;color:var(--mute);font-size:12.5px;line-height:1.7}
 .node text{pointer-events:none}
+/* 카드 배치(map.html?card=tall|wide) — 정지, 조작 없음, 입자 없음. scripts/map_card.py 가 이 배치를 찍는다(1080×1350·1200×675). */
+.cardfoot{display:none}
+html.card,html.card body{width:var(--cw);height:var(--ch);overflow:hidden}
+html.card-tall{--cw:1080px;--ch:1350px}html.card-wide{--cw:1200px;--ch:675px}
+html.card .wrap{max-width:none;height:100%;display:flex;flex-direction:column;padding:40px 48px 30px}
+html.card #mkt,html.card .ctl,html.card .crumb,html.card details,html.card footer,html.card #tip,html.card canvas{display:none}
+html.card .fig{flex:1 1 auto;height:auto;min-height:0}
+html.card .cardfoot{display:block;margin-top:14px;color:var(--mute);font-size:15px;line-height:1.6;border-top:1px solid var(--line);padding-top:10px}
+html.card .cardfoot b{color:var(--ink);font-weight:700}
+html.card-tall h1{font-size:46px;margin-top:26px}html.card-tall .facts{font-size:17px}
+html.card-wide .wrap{padding:22px 32px 16px}html.card-wide h1{font-size:27px;margin:10px 0 4px}
+html.card-wide .facts{font-size:14px}
+html.card-wide .strip{display:none}html.card-wide .heads{margin:4px 0 0}
+html.card-wide .cardfoot{font-size:12.5px;margin-top:6px;padding-top:6px;line-height:1.45}
 @media (max-width:600px){.strip{grid-template-columns:repeat(3,minmax(0,1fr))}.strip div:nth-child(4){border-left:0}
   .fig{height:640px}.facts{font-size:13px}}
 </style>
@@ -87,6 +101,12 @@ footer{margin-top:22px;color:var(--mute);font-size:12.5px;line-height:1.7}
       잔여 = −(개인+외국인+기관+기타법인), 4주체 밖의 몫이다. 숫자는 동시기 관측이며 예측이 아니다.</div>
     <div id="demonote" hidden>__DEMO_NOTICE__</div>
   </footer>
+  <div class="cardfoot" id="cardfoot">
+    <div><b>sector-flow 수급 지도</b> · <span id="cardasof"></span> · __BASIS__ · 단위 억원(종가 환산 근사)</div>
+    <div>띠 하나는 (주체, 섹터) 한 칸의 순매수다 — 섹터와 섹터, 주체와 주체를 잇지 않는다. 동시기 관측이며 예측이 아니다.</div>
+    <div id="cardsrc">__SOURCE__</div>
+    <div id="carddemo" hidden><b>[합성 데모]</b> __DEMO_NOTICE__</div>
+  </div>
 </div>
 <div id="tip"></div>
 <script>
@@ -99,12 +119,16 @@ const lab = k => D.labels[k] || k;
 const fmt = v => { const a = Math.abs(v); return a >= 10000 ? (a / 10000).toFixed(1) + "조" : Math.round(a).toLocaleString("ko-KR") + "억"; };
 const sfmt = v => (v > 0 ? "+" : v < 0 ? "−" : "") + fmt(v);
 const S = {m: D.markets[0], w: String(D.windows[0]), actor: null, day: null, playing: false, hi: null};
-const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+/* 카드 배치 — ?card=tall|wide. 정지 그림(입자 없음)·조작 없음, 꼬리에 단위·근사·출처 줄(scripts/map_card.py 가 찍는다). */
+const CARD = ["tall", "wide"].find(c => c === new URLSearchParams(location.search).get("card")) || null;
+if (CARD) document.documentElement.classList.add("card", "card-" + CARD);
+const reduce = !!CARD || matchMedia("(prefers-reduced-motion: reduce)").matches;
 const svg = $("svg"), cv = $("cv"), ctx = cv.getContext("2d"), tip = $("tip");
 let particles = [], geo = null;
 
 $("asof").textContent = "기준일 " + (D.asof || "-");
-if (D.demo) { $("demo").hidden = false; $("demonote").hidden = false; }
+$("cardasof").textContent = "기준일 " + (D.asof || "-");
+if (D.demo) { $("demo").hidden = false; $("demonote").hidden = false; $("carddemo").hidden = false; }
 
 function tabs(el, items, cur, on) {
   el.innerHTML = items.map(([v, t]) => `<button type="button" data-v="${v}" aria-pressed="${v === cur}">${t}</button>`).join("");
@@ -145,7 +169,11 @@ function model() {
 
 /* ── 배치: 노드 높이 ∝ 금액(라벨용 최소 높이만 키운다 — 띠 두께는 금액 그대로) ─────── */
 function layout(M, W, H) {
-  const narrow = W < 600, GAP = narrow ? 5 : 8, MINH = narrow ? 20 : 26;
+  const narrow = W < 600, tight = narrow || CARD === "wide";
+  let GAP = tight ? 5 : 8, MINH = tight ? 20 : 26;
+  // 노드가 많고 그림이 낮으면(가로 카드·작은 창) 최소 높이를 줄여 열이 그림 안에 들게 한다 — 위아래로 넘친 노드는 잘려 안 보인다.
+  const most = Math.max(1, ...M.cols.map(col => col.length));
+  if (most * MINH + (most - 1) * GAP > H * .9) { GAP = Math.min(GAP, 3); MINH = Math.max(10, (H * .9 - (most - 1) * GAP) / most); }
   const tw = narrow ? [74, 96, 74] : [128, 168, 128];
   M.cols.forEach((col, c) => col.forEach((n, i) => {
     n.in = M.edges.filter(e => e.t[0] === c && e.t[1] === i).reduce((s, e) => s + e.v, 0);
