@@ -9,9 +9,11 @@
 
 from __future__ import annotations
 
+import math
 from collections import Counter
 from dataclasses import dataclass
-from typing import Callable, Protocol, runtime_checkable
+from datetime import date, timedelta
+from typing import Any, Callable, Protocol, runtime_checkable
 
 from sectorflow.storage import INVESTOR_COLUMNS
 
@@ -24,8 +26,13 @@ VENUES = (VENUE_KRX, VENUE_KRX_NXT)
 #: ``supply_demand`` 한 행의 열 순서 — ``write.upsert_supply_demand`` 의 튜플 순서와 같다.
 SD_FIELDS: tuple[str, ...] = ("code", "date", "close", "flu_rt", "acc_trde_qty", *INVESTOR_COLUMNS, "source")
 
-#: ``transport(url, headers, body, timeout) -> (status, response_headers, json_body)`` — 키움 클라이언트와 같은 모양.
-Transport = Callable[[str, dict, dict, float], "tuple[int, dict[str, str], dict]"]
+#: ``transport(method, url, headers, body, timeout) -> (status, response_headers, json_body)`` — GET 이면 ``body`` 가 쿼리다.
+#: 키움 어댑터는 이것을 키움 클라이언트의 4인자 전송(POST)으로 감싼다.
+Transport = Callable[[str, str, dict, dict, float], "tuple[int, dict[str, str], dict]"]
+
+
+class NoListing(RuntimeError):
+    """이 증권사는 전 종목 목록 API 가 없다(:attr:`Broker.lists_stocks` 거짓) — 저장된 ``stocks`` 를 쓴다."""
 
 
 @dataclass(frozen=True)
@@ -85,6 +92,8 @@ class Broker(Protocol):
     #: 원장(``collect_runs`` 의 failed·notes)의 요청 칸 이름 — 종목 목록·수급 요청(키움 ``ka10099``·``ka10059``).
     list_label: str
     flow_label: str
+    #: 전 종목 목록을 API 로 주나. 거짓이면 :meth:`universe` 가 :class:`NoListing` 이고 ``run.py`` 가 저장된 ``stocks`` 를 쓴다.
+    lists_stocks: bool
     calls: Counter
     retries: Counter
     reissues: int
@@ -123,3 +132,66 @@ def sd_row(code: str, date: str, *, close: "int | None", flu_rt: "float | None",
 def sd_tuple(row: dict) -> tuple:
     """수급 행 dict → ``write.upsert_supply_demand`` 튜플(:data:`SD_FIELDS` 순서)."""
     return tuple(row[k] for k in SD_FIELDS)
+
+
+def opt_int(s: object) -> "int | None":
+    """숫자(문자열이어도) → int. 빈 값·못 읽는 값은 ``None``(모름) — 0 으로 채우지 않는다(키움 ``fetch.to_int`` 와 다르다)."""
+    if isinstance(s, bool):
+        return None
+    if isinstance(s, (int, float)):
+        return int(s)
+    text = str(s if s is not None else "").replace(",", "").replace("+", "").strip()
+    if not text:
+        return None
+    try:
+        return int(float(text))
+    except ValueError:
+        return None
+
+
+def iso8(d: str) -> str:
+    """``YYYYMMDD`` → ``YYYY-MM-DD``."""
+    return f"{d[:4]}-{d[4:6]}-{d[6:]}"
+
+
+def day_before(d: str) -> str:
+    """``YYYYMMDD`` 의 앞 달력일(``YYYYMMDD``)."""
+    return (date(int(d[:4]), int(d[4:6]), int(d[6:])) - timedelta(days=1)).strftime("%Y%m%d")
+
+
+#: ``fetch(anchor YYYYMMDD, cont) -> (행들, 그 행들의 날짜 YYYYMMDD, 다음 연속조회 상태 또는 None)``.
+PageFetch = Callable[[str, Any], "tuple[list[dict], list[str], Any]"]
+
+
+def walk_back(fetch: PageFetch, start: str, end: str, *, days: "int | None", rows_per_page: int,
+              info: "dict | None" = None) -> list[dict]:
+    """일별 행을 ``end`` 부터 과거로 ``start``(YYYY-MM-DD)까지 잇는다 — 한 응답의 행 수를 모르는 증권사용.
+
+    두 길: 서버가 연속조회 상태(``cont``)를 주면 그것으로 다음 쪽을, 아니면 받은 가장 오래된 날의 앞 달력일로 기준일을 옮긴다.
+    멈춤: ``start`` 에 닿았다 · 빈 쪽 · 더 오래된 날이 안 온다(이력 끝 — 신규 상장). 쪽 상한은 ``days`` 를
+    ``rows_per_page`` 로 나눈 것 + 2 이고, 거기서 멈추면 ``info["more"]`` 가 참(잘림)이다.
+    """
+    need = days if days is not None else (date.fromisoformat(end) - date.fromisoformat(start)).days + 1
+    max_pages = math.ceil(need / rows_per_page) + 2
+    start8, anchor, cont = start.replace("-", ""), end.replace("-", ""), None
+    got: list[dict] = []
+    oldest: "str | None" = None
+    more = False
+    page = 0
+    for page in range(1, max_pages + 1):
+        rows, dts, nxt = fetch(anchor, cont)
+        got.extend(rows)
+        dts = sorted(d for d in dts if len(d) == 8 and d.isdigit())
+        if not dts or dts[0] <= start8 or (oldest is not None and dts[0] >= oldest):
+            break
+        oldest = dts[0]
+        if page == max_pages:
+            more = True
+            break
+        if nxt is not None:
+            cont = nxt
+        else:
+            cont, anchor = None, day_before(oldest)
+    if info is not None:
+        info.update(pages=page, more=more)
+    return got

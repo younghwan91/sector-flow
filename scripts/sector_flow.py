@@ -34,7 +34,7 @@ from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 
-from sectorflow.basis import BASIS_SLOT, DATA_BASIS, PCT_HI, PCT_LO, pct_side
+from sectorflow.basis import BASIS_SLOT, BROKER_LABEL, DATA_BASIS, PCT_HI, PCT_LO, pct_side
 from sectorflow.sector_override import SECTOR_OVERRIDE, SOURCE as OVERRIDE_SOURCE, UNCLASSIFIED, fingerprint
 from sectorflow.storage import (
     _is_pg,
@@ -95,7 +95,8 @@ def load(con, days: int, asof: "str | None" = None, *, returns: bool = True) -> 
              + tuple(c for c, _ in INST_DETAIL),
         start=dates[0], end=dates[-1],
         # 개인·기관세부는 키움에만 있다. 소스를 안 좁히면 지표마다 유니버스가 달라진다.
-        sources=("kiwoom",), allow_individual_survivorship=True, require_delisted=False,
+        # BYO sqlite 는 그 sqlite 를 채운 증권사 어댑터(sectorflow.collect.brokers)의 이름이 소스다.
+        sources=_sd_sources(con), allow_individual_survivorship=True, require_delisted=False,
     )
     sd["date"] = sd["date"].astype(str)
     byo_source = _has_sector_source(con)
@@ -121,6 +122,15 @@ def load(con, days: int, asof: "str | None" = None, *, returns: bool = True) -> 
     # 수급만(--flows-only)은 조정 종가를 읽지 않는다 — 지도 전용 수집(ka10099·ka10059)에는 일봉이 없다.
     df["ret"] = adjusted_returns(con, df[["code", "date"]], dates) if returns else float("nan")
     return df, dates
+
+
+def _sd_sources(con) -> tuple[str, ...]:
+    """읽을 수급 소스 — kr_quant 는 키움만(네이버 폐지 백필은 개인·기관 세부가 없다). BYO sqlite(``stocks.sector_source``
+    가 있다)는 그 파일을 채운 증권사 어댑터 이름(``basis.BROKER_LABEL`` 의 키) 중 있는 것 — 키움 밖 어댑터의 행도 읽는다."""
+    if not _has_sector_source(con):
+        return ("kiwoom",)
+    have = {r[0] for r in con.execute("SELECT DISTINCT source FROM supply_demand").fetchall()}
+    return tuple(b for b in BROKER_LABEL if b in have) or ("kiwoom",)
 
 
 def _has_sector_source(con) -> bool:

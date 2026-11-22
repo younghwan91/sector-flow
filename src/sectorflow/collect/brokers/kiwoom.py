@@ -13,12 +13,13 @@ from datetime import date
 from sectorflow.storage import INVESTOR_COLUMNS
 
 from .. import fetch
-from ..auth import load_keys
+from ..auth import KEY_ENV, SECRET_ENV, load_keys
 from ..kiwoom import KiwoomRest
 from .base import SD_FIELDS, VENUE_KRX, Capability, Settings
 
 #: ka10059 한 쪽의 거래일 수(실측 약 100).
 SD_PAGE_DAYS = 100
+__all__ = ["KEY_ENV", "SECRET_ENV", "CAPABILITY", "KiwoomBroker", "make", "rest", "sd_pages"]
 #: TR 하나의 기본 속도[req/s] — quant-airflow ``--rate`` 와 같다.
 DEFAULT_RATE = 0.9
 
@@ -42,6 +43,7 @@ class KiwoomBroker:
     capability = CAPABILITY
     list_label = "ka10099"
     flow_label = "ka10059"
+    lists_stocks = True
 
     def __init__(self, api: KiwoomRest):
         self.api = api
@@ -83,8 +85,10 @@ def _calendar_days(start: str, end: str) -> int:
 def rest(s: Settings, only: "tuple[str, ...] | None" = None) -> KiwoomRest:
     """설정 → 키움 세션. ``only`` 는 TR 제한(지도 전용 수집은 ka10099·ka10059 만)."""
     key, secret = load_keys(s.env_file)
+    t = s.transport
+    transport = (lambda url, h, b, timeout: t("POST", url, h, b, timeout)) if t is not None else None
     return KiwoomRest(key, secret, rate=DEFAULT_RATE if s.rate is None else s.rate, max_calls=s.max_calls,
-                      guard=s.guard, only=only, notice=s.notice, transport=s.transport)
+                      guard=s.guard, only=only, notice=s.notice, transport=transport)
 
 
 def make(s: Settings) -> KiwoomBroker:

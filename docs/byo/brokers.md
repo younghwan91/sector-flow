@@ -255,6 +255,23 @@ sector-flow `storage.INVESTOR_COLUMNS` 는 11칸이다(키움 `etc_fnnc` 기타�
 
 ---
 
+## 6.1 어댑터 — 구현한 것(`src/sectorflow/collect/brokers/`)
+
+키움 밖 어댑터는 공개 문서의 응답 모양을 보고 손으로 쓴 최소 표본으로만 시험했다 — 실제 키로 키움과 대조하기 전까지 **미검증**이다.
+수집은 지도 전용(`--map-only`, 종목 목록 + 종목별 일별 투자자 순매매)만 한다. 주지 않는 주체 칸은 NULL(모름)이다.
+
+| `--broker` | 키 환경변수 | 수급 TR | 주체(11칸 중) | 거래소 | 기본 속도 | 종목 목록 | 검증 |
+|---|---|---|---|---|---|---|---|
+| `kiwoom` | `KIWOOM_APP_KEY`·`KIWOOM_APP_SECRET` | `ka10059` | 11 | KRX | TR당 0.9/초 + 초 5·분 100·시간 1,000 | `ka10099`(업종 포함) | 기준(Phase 1 차 0) |
+| `kis` | `KIS_APP_KEY`·`KIS_APP_SECRET` | `FHPTJ04160001` | 10 — 국가 없음 | KRX(`J`) | 5/초(공지 상한 18 을 넘지 않는다) | 없음 → 저장된 `stocks` | 미검증 |
+
+- `kis`: 실전 앱키 전용(이 TR 은 모의투자 미지원 — 시작할 때 경고). 한 응답의 행 수가 미확인이라 응답 헤더 `tr_cont`(M·F) 연속조회와
+  날짜 옮기기 두 길로 잇는다. 등락률은 키움 `flu_rt` 와 단위가 달라 싣지 않는다. 종목 목록 API 가 없어 먼저
+  `sector-flow-collect universe --db data/byo.db --broker kiwoom`(키움 키가 있으면) 또는
+  `sector-flow-collect sectors --db data/byo.db --csv krx.csv --add-missing`(KRX '업종분류 현황' 을 각자 내려받은 CSV)으로 목록을 넣는다.
+
+---
+
 ## 7. 출처
 
 키움
