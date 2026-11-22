@@ -1,6 +1,6 @@
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/brand/banner-dark.svg">
-  <img alt="sector-flow" src="docs/images/brand/banner-light.svg" width="100%">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/brand/logo-dark.svg">
+  <img alt="sector-flow" src="docs/brand/logo.svg" height="52">
 </picture>
 
 [한국어](README.md) · **English**
