@@ -1,5 +1,5 @@
 # sw-flow · sw-ledger 화면 값의 수식 정의
-<!-- refs-verified-at: c5e5e86229b4f6d357deebd37825584bce826e65 -->
+<!-- refs-verified-at: b372244430d49ad2b55f00133570f463c2f5483c -->
 
 두 터미널 화면(`sw-flow`·`sw-ledger`)에 뜨는 모든 값의 정의를 코드 위치와 함께 모은 **정본**이다. 식마다 그것을
 계산하는 `파일:줄` 이 붙어 있고, 지표마다 **근거 수준**(앞날 수익률에 대해 검증된 것이 있나)을 적었다.
@@ -156,8 +156,8 @@ $V$ 는 통합 세션 VWAP 다. 5% 를 넘으면 화면·웹이 `종가·VWAP �
 
 **(2)** $\quad f^A_{m,s,i} = \sum_{c\in(m,s)} f^A_{c,i}$
 
-`scripts/sector_flow.py:338-347`. 섹터가 비어 있는 종목은 `(미분류)` 로 묶인다(`scripts/sector_flow.py:106`).
-기관 세부 6개(금투·보험·투신·은행·연기금·사모)도 같은 식으로 환산해 `detail` 에 싣는다(`scripts/sector_flow.py:118-119`, `scripts/sector_flow.py:349-358`).
+`scripts/sector_flow.py:388-397`. 섹터가 비어 있는 종목은 `(미분류)` 로 묶인다(`scripts/sector_flow.py:106`).
+기관 세부 6개(금투·보험·투신·은행·연기금·사모)도 같은 식으로 환산해 `detail` 에 싣는다(`scripts/sector_flow.py:118-119`, `scripts/sector_flow.py:399-408`).
 `natn`(국가)은 90일 내내 0 이라 뺐다(`scripts/sector_flow.py:61-63`).
 
 ### 1.2 거래대금
@@ -170,7 +170,7 @@ $V$ 는 통합 세션 VWAP 다. 5% 를 넘으면 화면·웹이 `종가·VWAP �
 
 **(4)** $\quad r_{c,i} = \left(\dfrac{P^{adj}_{c,i}}{P^{adj}_{c,\,\text{직전}}}-1\right)\times100$ [%]
 
-`adjusted_returns` `scripts/sector_flow.py:175-201`(직전 거래일 종가 확보 `scripts/sector_flow.py:190`, 비율 `scripts/sector_flow.py:198`).
+`adjusted_returns` `scripts/sector_flow.py:225-251`(직전 거래일 종가 확보 `scripts/sector_flow.py:240`, 비율 `scripts/sector_flow.py:248`).
 $P^{adj}$ 는 `daily_bars_adjusted.close`, "직전" 은 그 종목의 바로 앞 조정 종가 행이다. 분할·병합은 그 표에서 백조정돼 있다.
 
 - **그날 조정 종가가 없으면 $r=$ NaN** 이다 — 0 으로 채우지 않는다. 완전성 관문이 기준일 조정 종가 커버리지 97% 를
@@ -184,7 +184,7 @@ $P^{adj}$ 는 `daily_bars_adjusted.close`, "직전" 은 그 종목의 바로 앞
   15:30)와 같은 날 갈린다 — 11-06 거래소 자체 바구니 −4.37% vs 코스피 −6.02%. 정규장 종가(`regular_close`)로 다시 재면 0.01%p
   안에서 맞고, 09-14 전 차이는 ~0.01%p, 뒤로는 평균 ~0.8%p·최대 2.3%p 다. 화면·웹은 수익률에 `~20시`(통합 종가) 라벨을 달고
   첫 화면·오늘 패널에 `KRX 지수(정규장)` 를 나란히 적는다(§2.18). 09-14 이전 날이 섞인 긴 구간은 그 날들만 정규장 종가다.
-- 단위 함정: $r$ 은 **퍼센트**다. $1+r$ 을 곱하면 하루 +2.5% 가 +250% 가 된다(`scripts/sector_flow.py:419-421`).
+- 단위 함정: $r$ 은 **퍼센트**다. $1+r$ 을 곱하면 하루 +2.5% 가 +250% 가 된다(`scripts/sector_flow.py:469-471`).
 
 ### 1.4 시가총액
 
@@ -214,8 +214,8 @@ $P^{adj}$ 는 `daily_bars_adjusted.close`, "직전" 은 그 종목의 바로 앞
 | $C_c$ (종목 시총) | 페이로드 기준일의 그 종목 시총 | 시총대비·시총 열(§3.8) |
 | $C_{c,i-1}$ (전일 시총) | 종목별 일별 시총의 1일 지연 | 섹터 수익률의 가중치(§2.6) |
 
-`sector_cap` `scripts/sector_flow.py:262-280` · `attach_daily_cap` `scripts/sector_flow.py:204-216`(`cap_lag` `scripts/sector_flow.py:215`) ·
-페이로드 `cap` `scripts/sector_flow.py:456-458`(`caps`) · `names[c]["cap"]` `scripts/sector_flow.py:396`.
+`sector_cap` `scripts/sector_flow.py:312-330` · `attach_daily_cap` `scripts/sector_flow.py:254-266`(`cap_lag` `scripts/sector_flow.py:265`) ·
+페이로드 `cap` `scripts/sector_flow.py:512-514`(`caps`) · `names[c]["cap"]` `scripts/sector_flow.py:446`.
 블록은 언제나 페이로드 기준일에서 끝나므로(§2.1) $C_s$ 는 곧 **구간말** 시총이다.
 
 전일 시총으로 가중하는 이유: 같은 날 거래대금이나 같은 날 시총으로 가중하면 그날 급등한 종목이 가중치도 커서 섹터 수익률이
@@ -247,7 +247,7 @@ $P^{adj}$ 는 `daily_bars_adjusted.close`, "직전" 은 그 종목의 바로 앞
 
 **(8)** $\quad \nu^{W}_c[\mathrm{ret}] = \Big(\prod_{i=N-W}^{N-1}(1+r_{c,i}/100)-1\Big)\times100$ [%]
 
-`scripts/sector_flow.py:409-428`(기하 누적 `scripts/sector_flow.py:422-423`) · `NAME_WINDOWS` `scripts/sector_flow.py:54`.
+`scripts/sector_flow.py:459-478`(기하 누적 `scripts/sector_flow.py:472-473`) · `NAME_WINDOWS` `scripts/sector_flow.py:54`.
 **결측일($r$=NaN)은 1 배로 본다**(그날 0%). 조정 종가가 하루 비어도 다음 유효일의 수익률이 직전 유효 종가에서 재므로 구간
 누적은 보존된다. 그 구간에 한 번도 거래가 없으면 그 창의 키 자체가 없다 — 이것이 §2.13·§3.1 의 "그 구간에 거래된 종목" 이다.
 
@@ -336,7 +336,7 @@ z-점수를 안 쓰는 이유: 창이 겹쳐 자기상관이 크고 260일 안�
 
 **(17)** $\quad \Delta v_s = \Big(\prod_{i=i_0}^{i_1}\big(1+\bar r_{s,i}/100\big)-1\Big)\times100$ [%], 여기서 $\bar r_{s,i}$ 는 고른 시장들의 가중합 $\sum_m w_{m,s,i}\bar r_{m,s,i}/\sum_m w_{m,s,i}$
 
-일별 가중평균 `scripts/sector_flow.py:466-475`(유효 종목만 `scripts/sector_flow.py:472`) · 구간 기하누적 `scripts/sector_numbers.py:149-162` ·
+일별 가중평균 `scripts/sector_flow.py:522-531`(유효 종목만 `scripts/sector_flow.py:528`) · 구간 기하누적 `scripts/sector_numbers.py:149-162` ·
 열 `src/sectorflow/tui/flow_view.py:2189`.
 
 - **수익률이 없는 종목은 분자에서도 가중치에서도 뺀다.** 남기면 평균이 0 쪽으로 끌린다.
@@ -962,7 +962,7 @@ KRX 주체(기타외국인 등)의 순매수 추정치에 결측과 식 (1)의 �
 |---|---|---|
 | `장중·미확정` | 기준일이 오늘이고 KST 17시 전 | `_finalized` `scripts/sector_flow.py:67-74`, `FINALIZED_KST_HOUR = 17` `scripts/sector_flow.py:58` |
 | `마감·잠정` | 수집 창이 지났다(시계만 본다). 당일 수급은 잠정치다 | `src/sectorflow/tui/flow_view.py:2000-2009`(`status_chip`) |
-| `마감·확정` | 화~토 08:20 확정 모드가 `daily_finalize`(`finalize_both`·`rebuild_adjusted`) 성공을 확인하고 확정치로 다시 만든 리포트. 페이로드에 `final: true`, 폴더에 `FINAL.txt` | `scripts/daily_report.sh:209-266`(`FINAL_OK`), `scripts/daily_report.sh:442-477`, `scripts/finalize_done.py:100-148`(`def finalize_done`), `scripts/sector_flow.py:2069-2071` |
+| `마감·확정` | 화~토 08:20 확정 모드가 `daily_finalize`(`finalize_both`·`rebuild_adjusted`) 성공을 확인하고 확정치로 다시 만든 리포트. 페이로드에 `final: true`, 폴더에 `FINAL.txt` | `scripts/daily_report.sh:209-266`(`FINAL_OK`), `scripts/daily_report.sh:442-477`, `scripts/finalize_done.py:100-148`(`def finalize_done`), `scripts/sector_flow.py:2125-2127` |
 | `⚠ 검증 실패(VERIFY_FAILED.txt)` | 저장 직후 자기 검증에 걸렸다. 게시는 하고 다음 크론이 다시 만든다 — 다만 같은 기준일에 검증을 통과한 게시본이 있으면 바꿔 끼우지 않고 걸린 판을 `.rejected/` 에 비켜 둔다(1 로 알림) | `report_warnings` `src/sectorflow/tui/flow_view.py:2011-2029`, `scripts/daily_report.sh:370-392`(`VERIFY_RC`) |
 | `⚠ MM-DD 수집 미완` | 더 뒤 기준일 폴더에 `INCOMPLETE.txt` — 완전성 관문이 막아 `latest` 가 전날에 머문다 | `src/sectorflow/tui/flow_view.py:2027-2028`, `scripts/daily_report.sh:295-331`(`GATE_RC`) |
 | `⚠ N일 지난 리포트` | 기준일이 달력 4일 이상 지났다 | `STALE_DAYS = 4` `src/sectorflow/tui/flow_view.py:2034`, `staleness_warning` `src/sectorflow/tui/flow_view.py:2047-2053` |
@@ -1072,9 +1072,9 @@ $x$ 는 OLS 잔차의 부호 반전이고 회귀 설명력이 낮다. 순위상�
 
 $$S_{s,a} = \sum_{m\in M}\sum_{i=i_0}^{i_1} f_{m,s,a,i}, \qquad S_{s,\mathrm{resid}} = -\sum_{a\in\{\text{개인},\text{외국인},\text{기관},\text{기타법인}\}} S_{s,a}$$
 
-결측(`None`)과 그 시장에 없는 섹터는 0 으로 센다 — 합계 자리라서다(`window_sums` `src/sectorflow/flowmap.py:32-49`,
-잔여 `RESID` `src/sectorflow/flowmap.py:47`). 창 $w$ 는 마지막 $w$ 거래일 $i_0=N-w$, $i_1=N-1$ 이고, 창은 `MAP_WINDOWS`
-(1·5·20·60·120) 중 $w\le N$ 인 것만 싣는다(`MAP_WINDOWS` `src/sectorflow/flowmap.py:306`).
+결측(`None`)과 그 시장에 없는 섹터는 0 으로 센다 — 합계 자리라서다(`window_sums` `src/sectorflow/flowmap.py:50-70`,
+잔여 `RESID` `src/sectorflow/flowmap.py:67`). 창 $w$ 는 마지막 $w$ 거래일 $i_0=N-w$, $i_1=N-1$ 이고, 창은 `MAP_WINDOWS`
+(1·5·20·60·120) 중 $w\le N$ 인 것만 싣는다(`MAP_WINDOWS` `src/sectorflow/flowmap.py:328`).
 
 ### 8.3 보기 1 — 넘긴 쪽 → 섹터 → 넘겨받은 쪽
 
@@ -1084,37 +1084,37 @@ $$\mathrm{give}_{s,a} = -S_{s,a}\ (S_{s,a}<0), \qquad \mathrm{take}_{s,a} = S_{s
 
 잔여가 4주체 합의 부호를 뒤집은 값이라 **보존식** $\sum_a \mathrm{give}_{s,a} = \sum_a \mathrm{take}_{s,a}$ 이 섹터마다 성립하고, 그 값이
 섹터 노드 높이 $h_s$ 다. $|S|\le 10^{-9}$ 은 간선이 아니다(`EPS`, 키가 없다 — 노드를 그리지 않는다)
-(`_split` `src/sectorflow/flowmap.py:63-67`). 주체 노드 높이는 왼쪽 $L_a=\sum_s \mathrm{give}_{s,a}$, 오른쪽 $R_a=\sum_s \mathrm{take}_{s,a}$ 로
+(`_split` `src/sectorflow/flowmap.py:84-88`). 주체 노드 높이는 왼쪽 $L_a=\sum_s \mathrm{give}_{s,a}$, 오른쪽 $R_a=\sum_s \mathrm{take}_{s,a}$ 로
 서로 다른 숫자다(개인이 순매도한 섹터들의 합 / 순매수한 섹터들의 합). $\mathrm{gross}=\sum_s h_s=\sum_a L_a=\sum_a R_a$
-(`exchange_graph` `src/sectorflow/flowmap.py:85-96`).
+(`exchange_graph` `src/sectorflow/flowmap.py:106-117`).
 
 **꼬리.** 섹터를 $h_s$ 큰 순(같으면 페이로드 순서)으로 세우고, 몫 $h_s/\mathrm{gross}$ 가 `TAIL_SHARE`(1%) 미만이거나 순위가 `MAX_SHOWN`(12)
 밖이면 `기타 N개 섹터` 로 묶는다. 단 보이는 섹터는 최소 `MIN_SHOWN`(8)개다 — 작은 시장·1일 창에서 모두 꼬리로 들어가지 않게.
-문턱은 목록 안 몫이다(`_n_shown` `src/sectorflow/flowmap.py:79-82`, `TAIL_SHARE = 0.01` `src/sectorflow/flowmap.py:54`).
+문턱은 목록 안 몫이다(`_n_shown` `src/sectorflow/flowmap.py:100-103`, `TAIL_SHARE = 0.01` `src/sectorflow/flowmap.py:75`).
 간선이 하나도 없는 섹터는 꼬리에도 넣지 않는다.
 
 ### 8.4 보기 2 — 주체 하나
 
 주체 $a$ 를 누르면 $S_{s,a}<0$ 인 섹터(넘긴 섹터)와 $S_{s,a}>0$ 인 섹터(넘겨받은 섹터)를 금액 큰 순으로 나란히 둔다.
 꼬리 규칙은 §8.3 과 같은 상수이고 몫의 분모는 **그 주체의** gross $\sum_s|S_{s,a}|$ 다. 순매수 합계
-$\mathrm{net}_a=\sum_s S_{s,a}$ 는 꼬리까지 더한 값이다(`actor_graph` `src/sectorflow/flowmap.py:140-156`).
+$\mathrm{net}_a=\sum_s S_{s,a}$ 는 꼬리까지 더한 값이다(`actor_graph` `src/sectorflow/flowmap.py:161-177`).
 "A 를 넘기고 B 를 넘겨받았다" 까지가 관측이다 — "A 에서 빼서 B 에 넣었다" 는 아니다.
 
-기관은 세부 6종으로 펼친다. 순서는 투신·연기금이 먼저(수급 신뢰 순서, `DETAIL_FIRST` `src/sectorflow/flowmap.py:160`), 나머지는
+기관은 세부 6종으로 펼친다. 순서는 투신·연기금이 먼저(수급 신뢰 순서, `DETAIL_FIRST` `src/sectorflow/flowmap.py:181`), 나머지는
 `detail_labels` 순서다. 세부로 잡히지 않은 몫 `기관 나머지` = 기관 − Σ세부를 따로 둔다 — 세부에 안분하지 않는다
-(`INST_OTHER` `src/sectorflow/flowmap.py:189`, 기관 ≠ 세부 합의 크기는 §6). 세부는 기관의 부분이라 보기 1 에는 들어가지 않는다.
+(`INST_OTHER` `src/sectorflow/flowmap.py:210`, 기관 ≠ 세부 합의 크기는 §6). 세부는 기관의 부분이라 보기 1 에는 들어가지 않는다.
 
 ### 8.5 타임랩스
 
 마지막 $n$ 거래일(기본 60, 날짜가 모자라면 그만큼) 각각의 보기 1 을, 그날까지 span 일 합으로 짓는다(1 이면 하루, 5 면 5일 이동합).
 노드 순서는 구간 전체 합의 보기 1 로 **한 번** 정한다 — 프레임마다 다시 줄세우면 띠가 깜빡인다. 프레임의 섹터는 늘 그 순서 전부이고
 (그날 간선이 없으면 빈 간선), 꼬리는 그 순서 밖 섹터 중 그날 간선이 있는 것이다
-(`frames` `src/sectorflow/flowmap.py:200-220`, 고정 순서 `order` `src/sectorflow/flowmap.py:213`).
+(`frames` `src/sectorflow/flowmap.py:221-241`, 고정 순서 `order` `src/sectorflow/flowmap.py:234`).
 
 ### 8.6 머리글
 
 `lead` 는 창 합계에서 순매도가 가장 큰 주체와 순매수가 가장 큰 주체 — 고르는 규칙은 `summary.dominant`(|값| 큰 4주체, 같으면 키가
-큰 쪽)를 부호별로 부른 것이다(`map_headline` `src/sectorflow/flowmap.py:278-302`). 두 주체를 잇는 말은 쓰지 않는다. `facts` 는 4주체
+큰 쪽)를 부호별로 부른 것이다(`map_headline` `src/sectorflow/flowmap.py:299-324`). 두 주체를 잇는 말은 쓰지 않는다. `facts` 는 4주체
 간선 큰 순 3개(`가상전자 — 개인 −2,927억`, 금액 꼴은 `summary.fmt_big`). 지도·카드·랜딩의 글은 `wording.map_hits`
 (금칙어 + `MAP_AVOID`: 유입·유출·몰림·쏠림·회전·성지)로 검사한다.
 
@@ -1122,15 +1122,15 @@ $\mathrm{net}_a=\sum_s S_{s,a}$ 는 꼬리까지 더한 값이다(`actor_graph` 
 
 `build_map_data` 가 시장(전체·각 시장) × 창마다 보기 1·보기 2(4주체·잔여·기관 세부)·머리글, 시장별 타임랩스, 시간 흐름(§8.8)을 한 JSON 으로 묶는다.
 `MAP_JSON_MAX`(600,000바이트)를 넘으면 타임랩스 프레임을 10개씩 줄인다 — 보기 1·2 는 줄이지 않는다
-(`build_map_data` `src/sectorflow/flowmap.py:331-366`).
+(`build_map_data` `src/sectorflow/flowmap.py:372-408`).
 
 ### 8.8 시간 흐름(두 번째 보기)
 
 주체 $a$ 하나의 섹터별 **하루** 순매수 $x_{s,t} = \sum_{m} f_{m,s,a,t}$(시장을 더하고 결측은 0)를 마지막 $n$ 거래일(기본 120,
 날짜가 모자라면 그만큼) 늘어놓는다. 구간 $\sum_t |x_{s,t}|$ 큰 순 10개 섹터는 따로, 나머지는 날마다 더해 `기타 N개 섹터` 한 띠로 둔다
 (구간 내내 0 인 섹터는 뺀다). 값은 소수 1자리로 싣고, 화면은 그 값으로 5일 합 $\sum_{k=0}^{4} x_{s,t-k}$ 과 누적 $\sum_{k \le t} x_{s,k}$(보이는
-구간 첫날부터)을 셈한다(`stream_series` `src/sectorflow/flowmap.py:229-259`,
-묶음 `stream_data` `src/sectorflow/flowmap.py:324-328`). 위는 순매수, 아래는 순매도로 쌓고 날마다의 값을 직선으로 잇는다.
+구간 첫날부터)을 셈한다(`stream_series` `src/sectorflow/flowmap.py:250-280`,
+묶음 `stream_data` `src/sectorflow/flowmap.py:347-351`). 위는 순매수, 아래는 순매도로 쌓고 날마다의 값을 직선으로 잇는다.
 섹터와 섹터를 잇는 구조는 데이터에도 그림에도 없다 — 같은 날 한 섹터의 순매도와 다른 섹터의 순매수는 같은 돈이라는 관측이 아니다.
 검증기 M 층이 이 띠를 일별 배열에서 다시 센다(허용오차 0.06억, `_vm_stream` `scripts/verify_report.py:5436`).
 
