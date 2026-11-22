@@ -10383,6 +10383,14 @@ find = "  <div>__DISCLAIMER__</div>\n"
 replace = ""
 
 [[mutation]]
+id = "english-quick-start-drifts"
+why = """영어 README 의 Quick start 명령이 한국어와 갈린다 — 영어로 온 사람이 낡은 명령을 친다"""
+guards = ["tests/test_first_reader.py::test_english_quick_start_runs_the_same_commands"]
+file = "README.en.md"
+find = "uv run sw-ledger --demo    # flow ledger"
+replace = "uv run sw-ledger           # flow ledger"
+
+[[mutation]]
 id = "card-buy-sell-colors-swapped"
 why = "범례는 빨강 = 순매수인데 막대 색이 반대다"
 guards = ["tests/test_digest.py::test_card_colors_match_its_legend"]
