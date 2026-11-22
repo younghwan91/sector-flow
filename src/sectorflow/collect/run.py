@@ -60,8 +60,9 @@ DAY_DONE_HOUR_KST = 20
 
 
 def _settings(args, windows: list) -> Settings:
+    accepted = frozenset({"ls"} if getattr(args, "i_understand_ls_terms", False) else ())
     return Settings(env_file=args.env_file, rate=args.rate, max_calls=args.max_calls,
-                    guard=busy.make_guard(windows), notice=lambda m: print(m, file=sys.stderr))
+                    guard=busy.make_guard(windows), notice=lambda m: print(m, file=sys.stderr), accepted_terms=accepted)
 
 
 def _client(args, only: "tuple[str, ...] | None" = None) -> KiwoomRest:
@@ -633,6 +634,8 @@ def cmd_dart_shares(args) -> int:
 def _broker_arg(p) -> None:
     p.add_argument("--broker", choices=list(BROKERS), default=DEFAULT_BROKER,
                    help=f"수급을 받을 증권사 어댑터(기본 {DEFAULT_BROKER}). 키움 밖은 지도 전용(--map-only)만 — docs/byo/brokers.md")
+    p.add_argument("--i-understand-ls-terms", action="store_true",
+                   help="LS 약관 경고(3개월 주문체결 20회 이하는 해지 사유)를 읽고 받아들인다 — --broker ls 에 필요")
 
 
 def main(argv: "list[str] | None" = None) -> int:

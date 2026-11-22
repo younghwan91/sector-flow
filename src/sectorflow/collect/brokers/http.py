@@ -27,7 +27,7 @@ from ..auth import mask
 from ..kiwoom import CallBudgetExceeded
 
 #: ``transport(method, url, headers, body, timeout) -> (status, response_headers, json_body)``.
-#: GET 이면 ``body`` 를 쿼리 문자열로, POST 면 JSON 본문으로 보낸다.
+#: GET 이면 ``body`` 를 쿼리 문자열로, POST 면 JSON 본문(폼 머리면 폼)으로 보낸다.
 HttpTransport = Callable[[str, str, dict, dict, float], "tuple[int, dict[str, str], dict]"]
 
 
@@ -41,12 +41,20 @@ class ForbiddenPath(BrokerError):
     """허용 목록 밖의 경로 — 요청을 보내지 않았다."""
 
 
+def is_form(headers: dict) -> bool:
+    """본문을 폼(``application/x-www-form-urlencoded``)으로 보내나 — LS 토큰 발급이 그렇다."""
+    return any(k.lower() == "content-type" and str(v).startswith("application/x-www-form-urlencoded")
+               for k, v in headers.items())
+
+
 def urllib_transport(method: str, url: str, headers: dict, body: dict, timeout: float) -> tuple[int, dict, dict]:
     """기본 전송. 4xx/5xx 도 예외 대신 ``(status, headers, body)`` 로 돌려준다."""
     data = None
     if method == "GET":
         if body:
             url = url + "?" + urllib.parse.urlencode(body)
+    elif is_form(headers):
+        data = urllib.parse.urlencode(body).encode("utf-8")
     else:
         data = json.dumps(body).encode("utf-8")
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
