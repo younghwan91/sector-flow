@@ -144,3 +144,83 @@ def test_card_layout_is_still_and_carries_its_labels(tmp_path):
                 pg.close()
         finally:
             b.close()
+
+
+# mutation-exempt: CI 에 Playwright 가 없어 가짜 브라우저로 shoot·main 분기 커버리지를 보장한다
+def test_shoot_and_main_with_fake_playwright(tmp_path, monkeypatch):
+    import sys
+    import types
+
+    d = tmp_path / "demo"
+    d.mkdir()
+    (d / "map.html").write_text("<html></html>", "utf-8")
+
+    state = {"nodes": 3, "outside": 0, "extent": [400, 400]}
+
+    class _Pg:
+        def on(self, *a): pass
+        def route(self, *a): pass
+        def set_default_timeout(self, *a): pass
+        def goto(self, *a, **kw): pass
+        def evaluate(self, js):
+            if "document.fonts" in js:
+                return None
+            if "cardMode" in js or "node" in js and "getBoundingClientRect" not in js:
+                return state["nodes"]
+            if "getBoundingClientRect" in js:
+                return state["outside"]
+            return state["extent"]
+        def screenshot(self, path, **kw):
+            Path(path).write_bytes(b"\x89PNG\r\n\x1a\n")
+        def close(self): pass
+
+    class _Browser:
+        def new_page(self, **kw): return _Pg()
+        def close(self): pass
+
+    class _P:
+        def __init__(self, fail_first=False):
+            self.calls = 0
+            self.fail_first = fail_first
+            self.chromium = self
+        def launch(self, **kw):
+            self.calls += 1
+            if self.fail_first and self.calls == 1:
+                raise RuntimeError("no default")
+            return _Browser()
+
+    class _SyncPW:
+        def __init__(self, fail_first=False): self.fail_first = fail_first
+        def __enter__(self): return _P(self.fail_first)
+        def __exit__(self, *a): pass
+
+    pw_mod = types.ModuleType("playwright")
+    pw_sync = types.ModuleType("playwright.sync_api")
+    pw_sync.sync_playwright = lambda: _SyncPW(fail_first=True)
+    pw_mod.sync_api = pw_sync
+    monkeypatch.setitem(sys.modules, "playwright", pw_mod)
+    monkeypatch.setitem(sys.modules, "playwright.sync_api", pw_sync)
+
+    fake_dg = types.SimpleNamespace(
+        RENDER_TIMEOUT_MS=5000,
+        FONTS_READY_JS="1",
+        CONTENT_EXTENT_JS="[100,100]",
+        _cached_chromium=lambda: "/usr/bin/chromium",
+    )
+    monkeypatch.setattr(MC, "_digest", lambda: fake_dg)
+
+    assert MC.main(["--dir", str(d)]) == 0
+    for _, name, _, _ in MC.CARDS:
+        assert (d / name).exists()
+
+    state["nodes"] = -1
+    assert MC.main(["--dir", str(d)]) == 1
+    state["nodes"] = 0
+    assert MC.main(["--dir", str(d)]) == 1
+    state["nodes"] = 3
+    state["outside"] = 2
+    assert MC.main(["--dir", str(d)]) == 1
+    state["outside"] = 0
+    state["extent"] = [9999, 9999]
+    assert MC.main(["--dir", str(d)]) == 1
+    assert not (d / MC.OUTPUTS[0]).exists()
