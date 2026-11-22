@@ -1,6 +1,7 @@
-"""``sector-flow-collect`` — 자기 키움 키로 sqlite 를 채운다. 서브커맨드 ``smoke`` · ``backfill`` · ``reseed`` · ``dart-shares``.
+"""``sector-flow-collect`` — 자기 키움 키로 sqlite 를 채운다. 서브커맨드 ``smoke`` · ``universe`` · ``backfill`` · ``reseed`` · ``dart-shares``.
 
     sector-flow-collect smoke --code 005930
+    sector-flow-collect universe --db data/byo.db                # 코스피·코스닥 전 종목·업종(ka10099, 호출 2 + 쪽)
     sector-flow-collect backfill --db data/byo.db --sectors "운송/창고,오락/문화" --days 300
     sector-flow-collect dart-shares --db data/byo.db          # 선택: DART 분기 주식수(본인 DART_API_KEY)
     sector-flow-collect --busy-file deploy/kiwoom_busy.simnode.toml backfill ... --resume
@@ -18,6 +19,7 @@ import json
 import math
 import os
 import sys
+from collections import Counter
 from datetime import datetime, timedelta, timezone
 
 from . import dart, fetch, write
@@ -47,6 +49,51 @@ def _client(args) -> KiwoomRest:
 
 def _today() -> str:
     return datetime.now(KST).strftime("%Y%m%d")
+
+
+def universe(api: KiwoomRest) -> list[dict]:
+    """ka10099 두 시장(거래소·코스닥) → 보통주만. ``backfill``·``universe`` 가 같은 목록을 쓴다."""
+    return [s for m in fetch.MARKETS for s in fetch.stock_list(api, m) if fetch.is_common_stock(s)]
+
+
+def cmd_universe(args) -> int:
+    """전 시장 종목·업종 목록 → ``stocks``. 호출은 시장마다 1회 + 연속조회 쪽(토큰 1)."""
+    api = _client(args)
+    con = write.open_db(args.db)
+    run_id = write.start_run(con, "universe")
+    rows: dict = {}
+    failed: list = []
+    notes: list = []
+    ok = False
+    interrupted = ""
+    try:
+        stocks = universe(api)
+        rows["stocks"] = write.upsert_stocks(con, stocks)
+        con.commit()
+        ok = True
+        by_market = Counter(s["market"] for s in stocks)
+        no_sector = [s["code"] for s in stocks if not s["sector"]]
+        if no_sector:
+            notes.append(["-", "ka10099", f"업종 없음 {len(no_sector)}종목(앞 5: {','.join(no_sector[:5])})"])
+        print(f"🧺 {' · '.join(f'{m} {n}' for m, n in sorted(by_market.items()))}종목, "
+              f"업종 {len({s['sector'] for s in stocks if s['sector']})}개")
+    except (fetch.EmptyResponse, fetch.TruncatedResponse) as e:
+        con.rollback()
+        failed.append(["-", "ka10099", str(e)])
+        print(f"⏹ {e}", file=sys.stderr)
+    except BusyWindow as e:
+        con.rollback()
+        interrupted = str(e)
+        notes.append(["-", "busy", interrupted])
+        print(f"⏸ {interrupted}", file=sys.stderr)
+    finally:
+        write.finish_run(con, run_id, calls=dict(api.calls), rows=rows, failed=failed, ok=ok, notes=notes)
+        con.close()
+        print(json.dumps({"ok": ok, "interrupted": bool(interrupted), "calls": dict(api.calls), "rows": rows,
+                          "failed": failed, "notes": notes}, ensure_ascii=False, indent=1))
+    if interrupted:
+        return EXIT_BUSY
+    return 0 if ok else 1
 
 
 def cmd_smoke(args) -> int:
@@ -112,8 +159,7 @@ def cmd_backfill(args) -> int:
         print(f"📅 {fetch.iso(oldest)} ~ {asof} ({args.days}거래일)")
 
         # 2) 종목 마스터 → 조각
-        stocks = [s for m in ("kospi", "kosdaq") for s in fetch.stock_list(api, m)]
-        stocks = [s for s in stocks if fetch.is_common_stock(s)]
+        stocks = universe(api)
         sectors = {s.strip() for s in (args.sectors or "").split(",") if s.strip()}
         codes = {c.strip() for c in (args.codes or "").split(",") if c.strip()}
         if sectors or codes:
@@ -279,6 +325,8 @@ def main(argv: "list[str] | None" = None) -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
     sm = sub.add_parser("smoke", help="TR 6개를 한 번씩 불러 응답 모양만 찍는다")
     sm.add_argument("--code", default="005930")
+    un = sub.add_parser("universe", help="코스피·코스닥 전 종목·업종 목록(ka10099) → stocks")
+    un.add_argument("--db", required=True, help="sqlite 경로")
     bf = sub.add_parser("backfill", help="조각 백필")
     bf.add_argument("--db", required=True, help="sqlite 경로")
     bf.add_argument("--days", type=int, default=300)
@@ -297,7 +345,7 @@ def main(argv: "list[str] | None" = None) -> int:
     ds.add_argument("--dart-rate", type=float, default=1.0, help="DART 속도[req/s] (기본 1.0)")
     ds.add_argument("--dart-max-calls", type=int, default=1000, help="이 실행의 DART 호출 상한(기본 1000)")
     args = ap.parse_args(argv)
-    return {"smoke": cmd_smoke, "backfill": cmd_backfill, "reseed": cmd_reseed,
+    return {"smoke": cmd_smoke, "universe": cmd_universe, "backfill": cmd_backfill, "reseed": cmd_reseed,
             "dart-shares": cmd_dart_shares}[args.cmd](args)
 
 

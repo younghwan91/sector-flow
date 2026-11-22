@@ -15,6 +15,8 @@ from .kiwoom import KiwoomRest
 
 #: ka10099 시장 구분.
 MARKETS = {"kospi": "0", "kosdaq": "10"}
+#: ka10099 한 시장의 쪽 상한. 실측은 시장마다 1쪽(2026-11-08, docs/byo/phase1-equivalence.md) — 넉넉히 둔다.
+STOCK_LIST_MAX_PAGES = 20
 SD_KEY = "stk_invsr_orgn"            # ka10059
 CHART_KEY = "stk_dt_pole_chart_qry"  # ka10081
 INDEX_CHART_KEY = "inds_dt_pole_qry"  # ka20006
@@ -26,6 +28,10 @@ SHARES_UNIT = 1_000
 
 class EmptyResponse(RuntimeError):
     """행이 0개 — 성공으로 넘기지 않는다(quant-airflow ``CLAUDE.md`` §5 "rows=0 무실패")."""
+
+
+class TruncatedResponse(RuntimeError):
+    """서버는 다음 쪽이 있다는데 쪽 상한에서 멈췄다 — 잘린 목록을 성공으로 넘기지 않는다."""
 
 
 def to_int(s: object) -> int:
@@ -59,8 +65,15 @@ def is_common_stock(row: dict) -> bool:
     return row["market"] in ("거래소", "코스닥") and row["code"].endswith("0")
 
 
-def stock_list(api: KiwoomRest, market: str, *, max_pages: int = 5) -> list[dict]:
-    rows = api.request_pages("ka10099", {"mrkt_tp": MARKETS[market]}, "list", max_pages=max_pages)
+def stock_list(api: KiwoomRest, market: str, *, max_pages: int = STOCK_LIST_MAX_PAGES) -> list[dict]:
+    """한 시장의 전 종목(ETF·우선주 포함 — 거르는 것은 :func:`is_common_stock`). 연속조회로 쪽을 잇는다.
+
+    ``max_pages`` 에서 잘리면 :class:`TruncatedResponse` — 일부만 담긴 목록은 섹터 합계를 조용히 줄인다.
+    """
+    info: dict = {}
+    rows = api.request_pages("ka10099", {"mrkt_tp": MARKETS[market]}, "list", max_pages=max_pages, info=info)
+    if info.get("more"):
+        raise TruncatedResponse(f"ka10099 {market}: {max_pages}쪽에서 잘렸다({len(rows)}행) — 쪽 상한을 늘린다")
     if not rows:
         raise EmptyResponse(f"ka10099 {market}: 종목 0개")
     return [{"code": str(r.get("code", "")).strip(), "name": str(r.get("name", "")).strip(),
