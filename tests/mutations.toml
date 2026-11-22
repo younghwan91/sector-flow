@@ -13400,6 +13400,14 @@ file = "src/sectorflow/collect/run.py"
 find = "    except CallBudgetExceeded as e:\n        # 끝낸 종목은"
 replace = "    except ImportError as e:\n        # 끝낸 종목은"
 
+[[mutation]]
+id = "selftest-keeps-base-mutations"
+why = "자기 검증의 변이 시나리오가 기준선 mutations.toml 을 비우지 않아 '변이 사라짐' 오탐이 난다"
+guards = ["tests/test_verify_merge.py::test_self_test_clears_base_mutations_for_mutation_scenarios"]
+file = "scripts/verify_merge.py"
+find = '        if only == {"mutations"}:'
+replace = '        if False:'
+
 [[removed]]
 id = "ci-shard-denominator-hardcoded"
 why = "샤드를 없앴다 — 전체 검증은 잡 하나다(tests/test_ci_workflow.py 가 matrix 를 막는다)"

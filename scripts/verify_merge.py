@@ -1740,6 +1740,10 @@ def self_test(py: str, report: str) -> int:
         (예: 하네스 자신이 레포 검사를 깨서 pytest 가 빨개진 것)."""
         wt = root / tag
         _scratch_repo(wt, "HEAD", mail, name)
+        if only == {"mutations"}:
+            # 변이 시나리오는 1건만 주입하므로 기준선 mutations.toml 도 비워 '변이 사라짐' 오탐을 막는다.
+            (wt / "tests/mutations.toml").write_text("", "utf-8")
+            commit(wt, "empty mutations base")
         base_branch = "base"
         subprocess.run(["git", "branch", "-f", base_branch], cwd=str(wt),
                        capture_output=True, timeout=60)

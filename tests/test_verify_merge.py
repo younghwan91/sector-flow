@@ -686,3 +686,28 @@ def test_render_smoke_expects_the_rights_mark_on_the_cap_share_column():
     for row in ({"a": 0.43, "cap_pending": True}, {"a": 0.43}, {"a": None}):
         assert ns["want"](row, "시총대비[%p]") == col.fn(row, None), row
     assert ns["want"]({"a": 0.43, "cap_pending": True}, "시총대비[%p]").endswith(FV.CAP_PENDING_MARK)
+
+
+def test_self_test_clears_base_mutations_for_mutation_scenarios(mini, monkeypatch):
+    """변이 시나리오는 기준선 mutations.toml 을 비워 '변이 사라짐' 오탐 없이 1건만 본다."""
+    wt, _ = mini
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    (wt / "README.md").write_text("# demo\n", "utf-8")
+    (wt / "tests/test_tui_flow_view.py").write_text("def test_data_cells_sit_under_their_headers(): pass\n", "utf-8")
+    _commit(wt, "with tui test")
+    monkeypatch.setattr(VM, "REPO", wt)
+    seen = {}
+
+    def fake_verify(sc_wt, base_branch, report, only, py, m_path):
+        if only == {"mutations"}:
+            seen[sc_wt.name] = _git(sc_wt, "show", f"{base_branch}:tests/mutations.toml")
+        want_reject = sc_wt.name in {"broken-test", "bad-identity", "blind-guard", "dead-anchor", "undeclared-test", "bare-exempt-test"}
+        st = VM.REJECT if want_reject else VM.PASS
+        sec = next(iter(only)) if len(only) == 1 else "tests"
+        return st, [VM.Section(sec, st)]
+
+    monkeypatch.setattr(VM, "verify", fake_verify)
+    assert VM.self_test(sys.executable, "") == 0
+    assert seen["real-guard"] == ""
+    assert seen["exempt-test"] == ""
