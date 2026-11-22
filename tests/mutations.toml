@@ -13599,6 +13599,22 @@ file = ".github/workflows/release.yml"
 find = 'dist/* docs/images/map-demo.gif --title'
 replace = 'dist/* docs/images/map-demo.gif reports/* --title'
 
+[[mutation]]
+id = "release-runs-on-main-pushes"
+why = "릴리스가 태그가 아니라 main 푸시마다 돈다 — 머지할 때마다 Release 가 새로 나간다."
+guards = ["tests/test_release.py::test_release_runs_only_on_version_tags"]
+file = ".github/workflows/release.yml"
+find = '    tags: ["v*"]'
+replace = '    branches: [main]'
+
+[[mutation]]
+id = "changelog-misses-current-version"
+why = "판을 올렸는데 CHANGELOG 에 그 판 절이 없다 — 태그를 밀면 Release 가 본문 없이 멈춘다."
+guards = ["tests/test_release.py::test_changelog_has_a_section_for_the_current_version"]
+file = "CHANGELOG.md"
+find = "## [0.2.0] - 2026-11-23"
+replace = "## [0.1.9] - 2026-11-23"
+
 [[removed]]
 id = "ci-shard-denominator-hardcoded"
 why = "샤드를 없앴다 — 전체 검증은 잡 하나다(tests/test_ci_workflow.py 가 matrix 를 막는다)"
