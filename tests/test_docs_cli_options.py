@@ -111,6 +111,7 @@ def test_documented_console_commands_parse(monkeypatch, capsys):
     capsys.readouterr()
 
 
+# mutation-exempt: console_drift 검사기 자신이 눈멀지 않았는지 보는 자가 검사다
 def test_console_drift_reads_a_typo_and_a_good_command(monkeypatch, capsys):
     """검사 자신이 눈멀지 않았는가."""
     assert console_drift("`sector-flow-collect backfill --db x.db --mapp-only`", monkeypatch)
