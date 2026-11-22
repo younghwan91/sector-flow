@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Callable
 
-from . import kis, kiwoom, ls, toss
+from . import db, kis, kiwoom, ls, nh, toss
 from .base import Broker, Capability, NoListing, Settings
 
 #: 이름 → 어댑터 생성기. 순서가 CLI ``--broker`` 선택지 순서다(키움이 기본·처음).
@@ -20,6 +20,8 @@ BROKERS: dict[str, Callable[[Settings], Broker]] = {
     "kis": kis.make,
     "ls": ls.make,
     "toss": toss.make,
+    "db": db.make,
+    "nh": nh.make,
 }
 DEFAULT = "kiwoom"
 
@@ -35,6 +37,8 @@ CAPABILITIES: dict[str, Capability] = {
     "kis": kis.CAPABILITY,
     "ls": ls.CAPABILITY,
     "toss": toss.CAPABILITY,
+    "db": db.CAPABILITY,
+    "nh": nh.CAPABILITY,
 }
 
 def venue_of(source: str) -> str:

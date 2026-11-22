@@ -14111,6 +14111,78 @@ file = "src/sectorflow/flowmap.py"
 find = "DATA_BASIS_INTEGRATED_SHORT if P.get(\"venue\") == \"KRX+NXT\" else DATA_BASIS_SHORT"
 replace = "DATA_BASIS_INTEGRATED_SHORT if P.get(\"venue\") != \"KRX\" else DATA_BASIS_SHORT"
 
+[[mutation]]
+id = "db-etc-corp-filled-as-residual"
+why = "기관계만 주는 DB 의 기타법인을 잔여 −(개인+외국인+기관)로 메운다 — 미등록외국인·국가가 섞인 값이 기타법인으로 지도에 실린다."
+guards = ["tests/test_collect_db_nh.py::test_only_three_actors_and_the_rest_unknown", "tests/test_collect_db_nh.py::test_backfill_leaves_unsupplied_actors_null"]
+file = "src/sectorflow/collect/brokers/db.py"
+find = "                        actors={col: _net(r, keys) for col, keys in FIELDS.items()}, source=NAME)"
+replace = "                        actors={**{col: _net(r, keys) for col, keys in FIELDS.items()}, \"etc_corp\": -sum(_net(r, k) or 0 for k in FIELDS.values())}, source=NAME)"
+
+[[mutation]]
+id = "nh-missing-actors-zero"
+why = "NH 가 주지 않는 주체를 0 으로 채운다 — '모름'이 '순매매 없음'이 된다."
+guards = ["tests/test_collect_db_nh.py::test_only_three_actors_and_the_rest_unknown", "tests/test_collect_db_nh.py::test_backfill_leaves_unsupplied_actors_null"]
+file = "src/sectorflow/collect/brokers/nh.py"
+find = "                        actors={col: opt_int(r.get(key)) for col, key in FIELDS.items()}, source=NAME)"
+replace = "                        actors={**{c: 0 for c in (\"fnnc_invt\", \"insrnc\", \"invtrt\", \"bank\", \"penfnd_etc\", \"samo_fund\", \"natn\", \"etc_corp\")}, **{col: opt_int(r.get(key)) for col, key in FIELDS.items()}}, source=NAME)"
+
+[[mutation]]
+id = "db-half-blank-net-guessed"
+why = "매수·매도 중 하나가 빈 날의 순매수를 있는 쪽만으로 낸다 — 모르는 값을 지어낸다."
+guards = ["tests/test_collect_db_nh.py::test_db_net_is_buy_minus_sell_and_unknown_if_either_is_blank"]
+file = "src/sectorflow/collect/brokers/db.py"
+find = "    return None if buy is None or sell is None else buy - sell\n"
+replace = "    return (buy or 0) - (sell or 0)\n"
+
+[[mutation]]
+id = "db-continuation-key-dropped"
+why = "DB 다음 쪽 요청에 cont_key 를 싣지 않는다."
+guards = ["tests/test_collect_db_nh.py::test_db_pages_back_both_ways"]
+file = "src/sectorflow/collect/brokers/db.py"
+find = "\"cont_yn\": \"Y\" if cont else \"N\", \"cont_key\": cont or \"\"}"
+replace = "\"cont_yn\": \"N\", \"cont_key\": \"\"}"
+
+[[mutation]]
+id = "db-listing-keeps-preferred"
+why = "DB 종목 목록이 우선주까지 넣는다."
+guards = ["tests/test_collect_db_nh.py::test_db_listing_keeps_common_stocks"]
+file = "src/sectorflow/collect/brokers/db.py"
+find = "            if market and len(code) == 6 and code.isdigit() and fetch.is_common_stock(s):\n"
+replace = "            if market and len(code) == 6 and code.isdigit():\n"
+
+[[mutation]]
+id = "nh-cts-not-sent"
+why = "NH 응답 머리의 cts 를 다음 요청에 싣지 않는다 — 기준일을 줄 수 없어 최신 한 쪽 뒤로 못 간다."
+guards = ["tests/test_collect_db_nh.py::test_nh_reaches_back_only_through_the_cts_header"]
+file = "src/sectorflow/collect/brokers/nh.py"
+find = "                headers.update(cts=cts[0], cts_flag=cts[1])\n"
+replace = "                pass\n"
+
+[[mutation]]
+id = "nh-empty-block-is-success"
+why = "NH 가 블록 없이 메시지만 주면(조회 자료 없음·실패) 조용히 0행으로 넘긴다 — 원인이 원장에 안 남는다."
+guards = ["tests/test_collect_db_nh.py::test_nh_without_a_data_block_fails_with_its_message"]
+file = "src/sectorflow/collect/brokers/nh.py"
+find = "                if rows:\n                    break\n"
+replace = "                break\n"
+
+[[mutation]]
+id = "nh-rate-over-published-cap"
+why = "--rate 를 NH 공지 상한(초당 5건) 위로 받아들인다."
+guards = ["tests/test_collect_db_nh.py::test_nh_token_notice_and_rate"]
+file = "src/sectorflow/collect/brokers/nh.py"
+find = "    rate = DEFAULT_RATE if s.rate is None else min(s.rate, float(LIMITS[0][0]))\n"
+replace = "    rate = DEFAULT_RATE if s.rate is None else s.rate\n"
+
+[[mutation]]
+id = "broker-registry-missing-one"
+why = "계획의 어댑터 하나(NH)가 등록부에서 빠진다 — --broker 선택지와 지도 능력 표가 비어 있다."
+guards = ["tests/test_collect_brokers.py::test_broker_registry_names"]
+file = "src/sectorflow/collect/brokers/__init__.py"
+find = "    \"nh\": nh.make,\n"
+replace = ""
+
 [[removed]]
 id = "ci-shard-denominator-hardcoded"
 why = "샤드를 없앴다 — 전체 검증은 잡 하나다(tests/test_ci_workflow.py 가 matrix 를 막는다)"

@@ -266,6 +266,8 @@ sector-flow `storage.INVESTOR_COLUMNS` 는 11칸이다(키움 `etc_fnnc` 기타�
 | `kis` | `KIS_APP_KEY`·`KIS_APP_SECRET` | `FHPTJ04160001` | 10 — 국가 없음 | KRX(`J`) | 5/초(공지 상한 18 을 넘지 않는다) | 없음 → 저장된 `stocks` | 미검증 |
 | `ls` | `LS_APP_KEY`·`LS_APP_SECRET` | `t1702` | 11 | KRX(`K`) | 1/초(t1702 개인 상한 — 넘지 않는다) | `t8436`(업종 없음 → 저장된 섹터) | 미검증 |
 | `toss` | `TOSS_CLIENT_ID`·`TOSS_CLIENT_SECRET` | `investor-trading` + 원 종가 일봉 `candles` | 10 — 국가 없음, 외국인은 등록외국인만 | **KRX+NXT 통합** | 5/초(그룹 상한 10 을 넘지 않는다) | `stocks/all`(보통주, 토스 섹터는 쓰지 않는다) | 미검증 |
+| `db` | `DB_APP_KEY`·`DB_APP_SECRET` | `DAYSTOCKTJJ` | 3 — 개인·외국인(등록)·기관계 | KRX(`J`) | 2/초(공지 상한) | `JCODES`(업종 없음 → 저장된 섹터) | 미검증 |
+| `nh` | `NH_APP_KEY`·`NH_APP_SECRET` | `currentInvestor` | 3 — 개인·외국인·기관계 | KRX(`KRX`) | 4/초(공지 상한 5 아래) | 없음 → 저장된 `stocks` | 미검증 |
 
 - `kis`: 실전 앱키 전용(이 TR 은 모의투자 미지원 — 시작할 때 경고). 한 응답의 행 수가 미확인이라 응답 헤더 `tr_cont`(M·F) 연속조회와
   날짜 옮기기 두 길로 잇는다. 등락률은 키움 `flu_rt` 와 단위가 달라 싣지 않는다. 종목 목록 API 가 없어 먼저
@@ -279,6 +281,11 @@ sector-flow `storage.INVESTOR_COLUMNS` 는 11칸이다(키움 `etc_fnnc` 기타�
   넣지 않고(수집 전에 거부 — 다른 `--db` 를 준다), 지도 머리 표지가 `자료 범위: KRX+NXT 통합` 으로 바뀐다(`basis.DATA_BASIS_INTEGRATED`).
   매매동향에 종가가 없어 원 종가 일봉(`adjusted=false`)을 날짜로 붙인다 — 종목당 요청이 둘이다. 당일 잠정 기록의 개인·기관 세부·기타법인은
   null(NULL 로 둔다). 섹터는 자체 분류·다중 소속이라 쓰지 않는다. 허용 IP 등록이 필요하다.
+- `db`·`nh`: 기관 세부·기타법인·국가가 없다 — 그 칸은 NULL 이고 **기타법인을 잔여(−(개인+외국인+기관))로 메우지 않는다**(잔여에는 미등록외국인·국가·
+  기타법인이 섞인다, §4). 투신·연기금 기반 보기는 이 둘로는 서지 않는다. DB 는 매수·매도 수량의 차로 순매수를 내고(하나라도 비면 NULL),
+  `InputDate1`~`InputDate2` 의 뜻(시작·끝)은 미확인이다. NH 는 기준일을 줄 수 없어 최신일부터 응답 머리 `cts` 로만 과거로 가고, 토큰을
+  실행마다 한 번 받는다(NH 는 재발급마다 보안 알림을 보낼 수 있다 — 토큰을 디스크에 두지 않으므로 피할 수 없다). NH 는 종목 목록 API 가
+  없어 한국투자처럼 저장된 `stocks` 를 쓴다.
 
 ---
 
