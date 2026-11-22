@@ -85,7 +85,8 @@ def test_public_html_is_demo_only():
 
 def test_public_png_has_demo_sidecar():
     pics = public_files(*PICTURES)
-    assert pics, "공개 그림을 하나도 못 찾았다 — PUBLIC_GLOBS 가 헛돈다"
+    # README 그림 폴더를 꼭 본다 — _site/ 의 사본만 보고 초록이면 docs/images 의 새 그림이 검사 밖이다.
+    assert any(p.parent == REPO / "docs" / "images" for p in pics), "docs/images 그림을 못 찾았다 — PUBLIC_GLOBS 가 헛돈다"
     missing = unlisted_pictures(pics, ledger_pngs())
     assert not missing, f"docs/SCREENSHOTS.md 원장에 없는 공개 그림(데모로 찍은 기록이 없다): {missing}"
 

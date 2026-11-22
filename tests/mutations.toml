@@ -13977,8 +13977,8 @@ id = "public-globs-miss-images"
 why = "공개 경로 목록에서 README 그림 폴더가 빠지면 검사가 빈 목록을 돌며 초록이다"
 guards = ["tests/test_public_surface.py::test_public_png_has_demo_sidecar"]
 file = "tests/test_public_surface.py"
-find = "PUBLIC_GLOBS = (\"README.md\", \"README.en.md\", \"docs/images/**\", \"docs/brand/**\", \"site/**\")"
-replace = "PUBLIC_GLOBS = (\"README.md\", \"README.en.md\", \"docs/brand/**\", \"site/**\")"
+find = "PUBLIC_GLOBS = (\"README.md\", \"README.en.md\", \"docs/images/**\", \"docs/brand/**\", \"site/**\", \"_site/**\")"
+replace = "PUBLIC_GLOBS = (\"README.md\", \"README.en.md\", \"docs/brand/**\", \"site/**\", \"_site/**\")"
 
 [[mutation]]
 id = "map-shot-drops-to-64-colours"
@@ -13988,6 +13988,3 @@ file = "scripts/demo_shots.py"
 find = 'MIN_COLORS = {"map-demo.png": 128}'
 replace = 'MIN_COLORS = {}'
 
-[[mutation]]
-find = "PUBLIC_GLOBS = (\"README.md\", \"README.en.md\", \"docs/images/**\", \"docs/brand/**\", \"site/**\", \"_site/**\")"
-replace = "PUBLIC_GLOBS = (\"README.md\", \"README.en.md\", \"docs/brand/**\", \"site/**\", \"_site/**\")"
