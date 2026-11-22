@@ -173,6 +173,7 @@ scripts/
 ├── diff_coverage.py        # 변경 줄 커버리지 관문 (CI)
 └── docs_refs.py            # docs/formulas.md 의 `파일:줄` 인용 검사·--fix (§10)
 deploy/crontab.simnode      # 크론 정본
+site/                       # 공개 랜딩(GitHub Pages) — build.py 가 합성 데모로 _site/ 를 짓는다(생성물은 커밋 안 함)
 tests/conftest.py           # 세션 시간·메모리 상한, 겹친 pytest --cov 를 실패로 끝낸다 — 서로의 측정을 지운다
 docs/                       # §11 표 참고
 research/validation/        # docs/validation 결과의 재현 스크립트 (CI 밖)

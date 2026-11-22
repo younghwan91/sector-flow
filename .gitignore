@@ -40,3 +40,6 @@ coverage.json
 
 # 비공개 사업·질의 문서 — 공개 레포에 두지 않는다(원본은 비공개 sector-flow-archive)
 docs/strategy/
+
+# 공개 랜딩 빌드 산출물(site/build.py → GitHub Pages) — 생성물이지 소스가 아니다
+/_site/
