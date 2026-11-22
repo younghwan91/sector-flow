@@ -40,3 +40,23 @@ GIF 는 `scripts/map_video.py`(가짜 시계로 타임랩스를 30fps 로 찍어
 | docs/images/map-demo.gif | scripts/map_video.py | 34024ca073e5888d16b3fcd4fb3df8c4d681c4f6 |
 | docs/images/map-demo.gif | src/sectorflow/flowmap.py | 34024ca073e5888d16b3fcd4fb3df8c4d681c4f6 |
 | docs/images/map-demo.gif | src/sectorflow/demo.py | 34024ca073e5888d16b3fcd4fb3df8c4d681c4f6 |
+
+## 소셜 미리보기
+
+`docs/brand/social-preview.png`(1280×640, GitHub 레포 링크 카드)는 따로 찍는다 — 지도 페이지·데모·워드마크·브랜드 가이드(한 줄 소개)가
+바뀌면 위 표처럼 `스크린샷 재촬영` 으로 실패한다. 합성 데모 지도의 그림 칸(Chromium 900폭, DPR 2)을 워드마크·한 줄 소개 옆에 놓고
+색을 줄이지 않는다(1MB 안, `tests/test_social_preview.py`). 레포 설정에 올리는 것은 소유자가 웹에서 한다(Settings → Social preview).
+
+```
+uv run --with playwright --with pillow python scripts/social_preview.py
+```
+
+| 이미지 | 감시 경로 | 찍은 커밋 |
+|---|---|---|
+| docs/brand/social-preview.png | scripts/social_preview.py | 438068b0d54b68f180f2757a2c524d6923c41f50 |
+| docs/brand/social-preview.png | scripts/templates/sector_map.html | 438068b0d54b68f180f2757a2c524d6923c41f50 |
+| docs/brand/social-preview.png | scripts/sector_map.py | 438068b0d54b68f180f2757a2c524d6923c41f50 |
+| docs/brand/social-preview.png | src/sectorflow/flowmap.py | 438068b0d54b68f180f2757a2c524d6923c41f50 |
+| docs/brand/social-preview.png | src/sectorflow/demo.py | 438068b0d54b68f180f2757a2c524d6923c41f50 |
+| docs/brand/social-preview.png | docs/brand/wordmark-dark.svg | 438068b0d54b68f180f2757a2c524d6923c41f50 |
+| docs/brand/social-preview.png | docs/brand/README.md | 438068b0d54b68f180f2757a2c524d6923c41f50 |

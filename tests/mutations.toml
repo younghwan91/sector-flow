@@ -14012,3 +14012,35 @@ file = "scripts/demo_shots.py"
 find = 'MIN_COLORS = {"map-demo.png": 128}'
 replace = 'MIN_COLORS = {}'
 
+
+[[mutation]]
+id = "social-card-picture-loses-demo-mark"
+why = """소셜 미리보기의 그림 칸에서 [합성 데모] 표지가 빠진다 — 그림만 잘라 가면 실데이터 지도로 읽힌다"""
+guards = ["tests/test_social_preview.py::test_card_shows_the_demo_mark_on_the_picture_and_under_the_text"]
+file = "scripts/social_preview.py"
+find = '<div class="r"><img alt="" src="data:image/png;base64,{fig}"><span class="chip">{notice}</span></div>'
+replace = '<div class="r"><img alt="" src="data:image/png;base64,{fig}"></div>'
+
+[[mutation]]
+id = "social-preview-shoots-a-real-folder"
+why = """소셜 미리보기가 합성 데모가 아닌 폴더(실 리포트)로도 찍힌다 — 공개 레포 카드에 실데이터가 실린다"""
+guards = ["tests/test_social_preview.py::test_refuses_a_folder_that_is_not_the_synthetic_demo"]
+file = "scripts/social_preview.py"
+find = '    if not (report / "DEMO.txt").exists():'
+replace = '    if False:'
+
+[[mutation]]
+id = "social-card-writes-its-own-headline"
+why = """카드가 가이드의 한 줄 소개 대신 따로 지은 제목을 쓴다 — README·레포 설명과 말이 갈린다"""
+guards = ["tests/test_social_preview.py::test_card_quotes_the_guide_tagline"]
+file = "scripts/social_preview.py"
+find = "<h1>{head}</h1>"
+replace = "<h1>섹터 수급을 한눈에</h1>"
+
+[[mutation]]
+id = "social-stamp-rewrites-image-rows"
+why = """소셜 미리보기를 찍으면 docs/images 줄까지 HEAD 로 고쳐 낡은 README 그림이 새것으로 적힌다"""
+guards = ["tests/test_social_preview.py::test_stamp_rewrites_only_the_preview_rows"]
+file = "scripts/social_preview.py"
+find = 'ROW = re.compile(r"^(\|\s*docs/brand/social-preview\.png\s*\|'
+replace = 'ROW = re.compile(r"^(\|\s*docs/\S+?\.(?:png|gif)\s*\|'

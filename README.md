@@ -155,6 +155,7 @@ scripts/
 ├── verify_report.py        # 리포트 자기 검증 (§9)
 ├── krx_truth.py            # 네이버 시장값과 시장 합계 대조 (내부 전용)
 ├── demo_shots.py           # README 그림·화면 예시를 합성 데모로 다시 만든다
+├── social_preview.py       # GitHub 소셜 미리보기(1280×640, 합성 데모)
 ├── krx_calendar.py         # KRX 휴장 달력 — 거래일 판정·SLO 분모
 ├── digest.py               # (선택) 다이제스트 글·카드 — 폴더에만 쓴다
 ├── trust_page.py           # 검증·품질 페이지 trust.html
