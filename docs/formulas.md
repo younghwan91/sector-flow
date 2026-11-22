@@ -1,5 +1,5 @@
 # sw-flow · sw-ledger 화면 값의 수식 정의
-<!-- refs-verified-at: 8ee73780f17ad6fdae598ab4cc4d06c462f5daa1 -->
+<!-- refs-verified-at: 353b7494e5b9795d7021211a72014a80f3cec577 -->
 
 두 터미널 화면(`sw-flow`·`sw-ledger`)에 뜨는 모든 값의 정의를 코드 위치와 함께 모은 **정본**이다. 식마다 그것을
 계산하는 `파일:줄` 이 붙어 있고, 지표마다 **근거 수준**(앞날 수익률에 대해 검증된 것이 있나)을 적었다.
@@ -1074,7 +1074,7 @@ $$S_{s,a} = \sum_{m\in M}\sum_{i=i_0}^{i_1} f_{m,s,a,i}, \qquad S_{s,\mathrm{res
 
 결측(`None`)과 그 시장에 없는 섹터는 0 으로 센다 — 합계 자리라서다(`window_sums` `src/sectorflow/flowmap.py:32-49`,
 잔여 `RESID` `src/sectorflow/flowmap.py:47`). 창 $w$ 는 마지막 $w$ 거래일 $i_0=N-w$, $i_1=N-1$ 이고, 창은 `MAP_WINDOWS`
-(1·5·20·60·120) 중 $w\le N$ 인 것만 싣는다(`MAP_WINDOWS` `src/sectorflow/flowmap.py:267`).
+(1·5·20·60·120) 중 $w\le N$ 인 것만 싣는다(`MAP_WINDOWS` `src/sectorflow/flowmap.py:306`).
 
 ### 8.3 보기 1 — 넘긴 쪽 → 섹터 → 넘겨받은 쪽
 
@@ -1114,7 +1114,7 @@ $\mathrm{net}_a=\sum_s S_{s,a}$ 는 꼬리까지 더한 값이다(`actor_graph` 
 ### 8.6 머리글
 
 `lead` 는 창 합계에서 순매도가 가장 큰 주체와 순매수가 가장 큰 주체 — 고르는 규칙은 `summary.dominant`(|값| 큰 4주체, 같으면 키가
-큰 쪽)를 부호별로 부른 것이다(`map_headline` `src/sectorflow/flowmap.py:239-263`). 두 주체를 잇는 말은 쓰지 않는다. `facts` 는 4주체
+큰 쪽)를 부호별로 부른 것이다(`map_headline` `src/sectorflow/flowmap.py:278-302`). 두 주체를 잇는 말은 쓰지 않는다. `facts` 는 4주체
 간선 큰 순 3개(`가상전자 — 개인 −2,927억`, 금액 꼴은 `summary.fmt_big`). 지도·카드·랜딩의 글은 `wording.map_hits`
 (금칙어 + `MAP_AVOID`: 유입·유출·몰림·쏠림·회전·성지)로 검사한다.
 
@@ -1122,7 +1122,7 @@ $\mathrm{net}_a=\sum_s S_{s,a}$ 는 꼬리까지 더한 값이다(`actor_graph` 
 
 `build_map_data` 가 시장(전체·각 시장) × 창마다 보기 1·보기 2(4주체·잔여·기관 세부)·머리글, 시장별 타임랩스, 시간 흐름(§8.8)을 한 JSON 으로 묶는다.
 `MAP_JSON_MAX`(600,000바이트)를 넘으면 타임랩스 프레임을 10개씩 줄인다 — 보기 1·2 는 줄이지 않는다
-(`build_map_data` `src/sectorflow/flowmap.py:285-316`).
+(`build_map_data` `src/sectorflow/flowmap.py:331-363`).
 
 ### 8.8 시간 흐름(두 번째 보기)
 
