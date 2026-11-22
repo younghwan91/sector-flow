@@ -8,8 +8,8 @@ name: CI
 #   PR(코드)   3.13 + 커버리지 + 3.11 문법    mutations-pr: --scope direct, 직접 건드린 변이만
 #   main(코드) gate 하나(3.11)               gate: 전체 변이. 기준선이 전체 pytest 라 검사 한 벌을 겸한다, 동시 2
 #
-# 코드 머지당 **58분 이하**(상한 60, 표 scripts/ci_plan.py `--minutes`, tests/test_ci_workflow.py 가 대조한다). 예상 약 48분:
-#   PR 약 16 = plan 1 + 신원 1 + test 약 10 + 직접 변이 약 4 / main 약 32 = plan 1 + 신원 1 + gate 약 30.
+# 코드 머지당 **60분 이하**(상한 60, 표 scripts/ci_plan.py `--minutes`, tests/test_ci_workflow.py 가 대조한다). 예상 약 50분:
+#   PR 약 16 = plan 1 + 신원 1 + test 약 10 + 직접 변이 약 4 / main 약 34 = plan 1 + 신원 1 + gate 약 30 + 공개 랜딩 약 2(pages.yml).
 #   gate 는 기준선 약 8.5(전체 pytest 4410건 로컬 6.7분 × 러너 1.07 + 부하) + 주입 약 20(1367건 로컬 28.7분 × 1.15 ÷ 동시 2, 몫 차이 포함).
 #   이전: 2026-11-08 main 한 번 37.3분(변이 681개·4샤드)이고 변이 1367개·8샤드면 머지당 109~141분이었다. 실측은 이 설계가 처음 돈 뒤 다시 적는다.
 #   쓴 근거(같은 공통 변이 681개, a2f31f3): 러너 pytest 184초 대 로컬 172초 = 1.07배. 주입은 18.3분 대 9.4분 = 1.95배였는데 러너의 새 venv 에서
