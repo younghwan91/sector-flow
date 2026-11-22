@@ -152,11 +152,22 @@ def build_db(path: str | Path, seed: int = SEED) -> None:
     con.close()
 
 
+def _script_or_none(name: str) -> Path | None:
+    """설치본(wheel)에는 웹 전용 생성기(``sector_map.py``)가 없다 — 그때는 그 산출물만 빠진다."""
+    try:
+        return script_path(name)
+    except SystemExit:
+        return None
+
+
 def _fingerprint() -> str:
     """이 코드와 생성기·템플릿의 지문 — 바뀌면 만들어 둔 데모가 옛 형식이다."""
     h = hashlib.sha256(Path(__file__).read_bytes())
-    for name in ("sector_flow.py", "sector_numbers.py"):
-        p = script_path(name)
+    h.update((Path(__file__).parent / "flowmap.py").read_bytes())
+    for name in ("sector_flow.py", "sector_numbers.py", "sector_map.py"):
+        p = _script_or_none(name)
+        if p is None:
+            continue
         h.update(p.read_bytes())
         for t in sorted((p.parent / "templates").glob("sector_*.html")):
             h.update(t.read_bytes())
@@ -230,6 +241,14 @@ def _stamp(out: Path) -> None:
             raise SystemExit(f"{name} 에 합성 데모 표지를 못 박았다 — 템플릿 형식이 바뀌었나?")
         (out / name).write_text(html, "utf-8")
     (out / "trust.html").write_text(trust_page(), "utf-8")
+    # 수급 지도 — 배치와 같은 생성기로, 표지(demo)를 박은 페이로드에서 짓는다. 머리의 [합성 데모] 칩은 그 표지로 켜진다.
+    # 설치본에는 생성기가 없어(웹 전용) 지도만 빠진다 — 체크아웃의 Quick start 는 지도까지 연다.
+    if _script_or_none("sector_map.py"):
+        _run("sector_map.py", "--payload", str(out / "payload.json"), "--html", str(out / "map.html"))
+        html, n_t = re.subn(r"<title>", "<title>[합성 데모] ", (out / "map.html").read_text("utf-8"), count=1)
+        if not n_t or '"demo":true' not in html:
+            raise SystemExit("map.html 에 합성 데모 표지를 못 박았다 — 템플릿 형식이 바뀌었나?")
+        (out / "map.html").write_text(html, "utf-8")
     (out / MARKER).write_text(f"{DEMO_NOTICE}\nfingerprint: {_fingerprint()}\n", "utf-8")
 
 

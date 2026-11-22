@@ -236,6 +236,12 @@ def test_web_pages_carry_the_banner_and_title(built, page):
     assert "<title>[합성 데모]" in html
 
 
+def test_demo_has_map(built):
+    """README Quick start 의 웹 줄이 수급 지도까지 연다 — 데모 폴더에 map.html 이 없으면 첫 그림이 문서에만 있다."""
+    html = (built["dir"] / "map.html").read_text("utf-8")
+    assert "<title>[합성 데모]" in html and '"demo":true' in html and DEMO_NOTICE in html
+
+
 def test_fixed_date_demo_does_not_warn_about_age(built):
     """고정 기준일이라 '며칠 지난 리포트' 는 뜻이 없다 — 받은 폴더를 위한 경고가 데모를 고장처럼 보이게 한다."""
     assert flow_app.load(str(built["dir"]))["report_warnings"] == []

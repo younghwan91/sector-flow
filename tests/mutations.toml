@@ -14259,3 +14259,15 @@ guards = ["tests/test_social_preview.py::test_stamp_rewrites_only_the_preview_ro
 file = "scripts/social_preview.py"
 find = 'ROW = re.compile(r"^(\|\s*docs/brand/social-preview\.png\s*\|'
 replace = 'ROW = re.compile(r"^(\|\s*docs/\S+?\.(?:png|gif)\s*\|'
+
+[[mutation]]
+find = "PUBLIC_GLOBS = (\"README.md\", \"README.en.md\", \"docs/images/**\", \"docs/brand/**\", \"site/**\")"
+replace = "PUBLIC_GLOBS = (\"README.md\", \"README.en.md\", \"docs/brand/**\", \"site/**\")"
+
+[[mutation]]
+id = "demo-folder-without-map"
+why = """데모 폴더에 수급 지도가 빠진다 — README Quick start 의 웹 줄로는 첫 그림을 볼 수 없다"""
+guards = ["tests/test_demo.py::test_demo_has_map"]
+file = "src/sectorflow/demo.py"
+find = 'if _script_or_none("sector_map.py"):'
+replace = 'if False:'
