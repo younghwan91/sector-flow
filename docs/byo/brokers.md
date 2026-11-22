@@ -264,11 +264,16 @@ sector-flow `storage.INVESTOR_COLUMNS` 는 11칸이다(키움 `etc_fnnc` 기타�
 |---|---|---|---|---|---|---|---|
 | `kiwoom` | `KIWOOM_APP_KEY`·`KIWOOM_APP_SECRET` | `ka10059` | 11 | KRX | TR당 0.9/초 + 초 5·분 100·시간 1,000 | `ka10099`(업종 포함) | 기준(Phase 1 차 0) |
 | `kis` | `KIS_APP_KEY`·`KIS_APP_SECRET` | `FHPTJ04160001` | 10 — 국가 없음 | KRX(`J`) | 5/초(공지 상한 18 을 넘지 않는다) | 없음 → 저장된 `stocks` | 미검증 |
+| `ls` | `LS_APP_KEY`·`LS_APP_SECRET` | `t1702` | 11 | KRX(`K`) | 1/초(t1702 개인 상한 — 넘지 않는다) | `t8436`(업종 없음 → 저장된 섹터) | 미검증 |
 
 - `kis`: 실전 앱키 전용(이 TR 은 모의투자 미지원 — 시작할 때 경고). 한 응답의 행 수가 미확인이라 응답 헤더 `tr_cont`(M·F) 연속조회와
   날짜 옮기기 두 길로 잇는다. 등락률은 키움 `flu_rt` 와 단위가 달라 싣지 않는다. 종목 목록 API 가 없어 먼저
   `sector-flow-collect universe --db data/byo.db --broker kiwoom`(키움 키가 있으면) 또는
   `sector-flow-collect sectors --db data/byo.db --csv krx.csv --add-missing`(KRX '업종분류 현황' 을 각자 내려받은 CSV)으로 목록을 넣는다.
+- `ls`: 시작할 때 약관 제9조① "고객이 3개월간 상품별 구분 없이 OPEN API를 통한 주문체결이 20회 이하인 경우"(해지 사유)를 찍고,
+  `--i-understand-ls-terms` 가 없으면 요청 전에 멈춘다(sqlite 도 만들지 않는다). 토큰은 폼(`appkey`·`appsecretkey`·`scope=oob`)으로 받는다.
+  외국인은 외인계(`tjj0016`, 등록+미등록), 국가는 국가외(`tjj0011`). 연속조회 방식이 미확인이라 응답 머리 `tr_cont: Y`(+`tr_cont_key`)와
+  `todt` 옮기기 두 길로 잇는다. 섹터가 없어 키움 키로 받은 업종이나 `sectors --csv` 의 표를 둔다.
 
 ---
 

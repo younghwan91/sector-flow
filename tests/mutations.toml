@@ -13927,6 +13927,86 @@ file = "src/sectorflow/collect/run.py"
 find = "    rows = broker.universe() if broker.lists_stocks else stored_listing(con, broker.name)\n"
 replace = "    rows = broker.universe()\n"
 
+[[mutation]]
+id = "ls-terms-not-required"
+why = "LS 약관 경고를 받아들이지 않아도 수집한다 — 3개월 주문체결 20회 이하 해지 조항을 모르는 채 키를 쓴다."
+guards = ["tests/test_collect_ls.py::test_terms_warning_is_printed_and_nothing_runs_without_the_flag", "tests/test_collect_ls.py::test_cli_stops_before_any_request_without_the_flag"]
+file = "src/sectorflow/collect/brokers/ls.py"
+find = "    if NAME not in s.accepted_terms:\n"
+replace = "    if False:\n"
+
+[[mutation]]
+id = "ls-terms-warning-silent"
+why = "LS 약관 조항을 찍지 않는다 — 플래그만 요구하고 무엇을 받아들이는지 보여 주지 않는다."
+guards = ["tests/test_collect_ls.py::test_terms_warning_is_printed_and_nothing_runs_without_the_flag"]
+file = "src/sectorflow/collect/brokers/ls.py"
+find = "        s.notice(TERMS_WARNING)\n"
+replace = "        pass\n"
+
+[[mutation]]
+id = "ls-integrated-venue"
+why = "KRX 단독(K) 대신 통합(U)을 부른다 — KRX 단독 리포트와 다른 기준의 숫자가 섞인다."
+guards = ["tests/test_collect_ls.py::test_walks_back_with_todt_until_fromdt"]
+file = "src/sectorflow/collect/brokers/ls.py"
+find = "EXCHANGE = \"K\""
+replace = "EXCHANGE = \"U\""
+
+[[mutation]]
+id = "ls-amount-not-quantity"
+why = "수량 대신 금액(volvalgb=0)을 받는다 — 리포트는 수량 × 종가로 금액을 복원하므로 두 번 곱해진다."
+guards = ["tests/test_collect_ls.py::test_walks_back_with_todt_until_fromdt"]
+file = "src/sectorflow/collect/brokers/ls.py"
+find = "\"volvalgb\": \"1\""
+replace = "\"volvalgb\": \"0\""
+
+[[mutation]]
+id = "ls-foreign-registered-only"
+why = "외국인을 외인계(등록+미등록) 대신 등록외국인만으로 읽는다 — 키움 외국인과 기준이 달라진다."
+guards = ["tests/test_collect_ls.py::test_sample_row_maps_one_to_one"]
+file = "src/sectorflow/collect/brokers/ls.py"
+find = "    \"foreign_\": \"tjj0016\","
+replace = "    \"foreign_\": \"tjj0009\","
+
+[[mutation]]
+id = "ls-natn-dropped"
+why = "LS 가 주는 국가외(tjj0011)를 버린다 — 1:1 로 맞는 칸이 결측이 된다."
+guards = ["tests/test_collect_ls.py::test_sample_row_maps_one_to_one", "tests/test_collect_ls.py::test_backfill_with_ls_fills_all_eleven_actors"]
+file = "src/sectorflow/collect/brokers/ls.py"
+find = "    \"natn\": \"tjj0011\",\n"
+replace = ""
+
+[[mutation]]
+id = "ls-rate-over-published-cap"
+why = "--rate 를 t1702 개인 상한(초당 1건) 위로 받아들인다 — 과부하는 이용 중지 사유다."
+guards = ["tests/test_collect_ls.py::test_terms_warning_is_printed_and_nothing_runs_without_the_flag"]
+file = "src/sectorflow/collect/brokers/ls.py"
+find = "min(s.rate, DEFAULT_RATE)"
+replace = "s.rate"
+
+[[mutation]]
+id = "ls-listing-keeps-etf"
+why = "LS 종목 목록이 ETF·ETN 까지 넣는다 — 섹터 합계에 지수 상품 수급이 섞인다."
+guards = ["tests/test_collect_ls.py::test_listing_keeps_common_stocks_and_leaves_sectors_to_the_stored_set"]
+file = "src/sectorflow/collect/brokers/ls.py"
+find = "\n                and str(r.get(\"etfgubun\", \"0\")).strip() == \"0\")"
+replace = ")"
+
+[[mutation]]
+id = "ls-continuation-key-dropped"
+why = "다음 쪽 요청에 tr_cont_key 를 싣지 않는다 — 서버가 첫 쪽을 다시 준다."
+guards = ["tests/test_collect_ls.py::test_follows_the_continuation_header"]
+file = "src/sectorflow/collect/brokers/ls.py"
+find = "\"tr_cont_key\": cont[1] if cont else \"\""
+replace = "\"tr_cont_key\": \"\""
+
+[[mutation]]
+id = "broker-http-form-sent-as-json"
+why = "폼 머리의 요청(LS 토큰 발급)을 JSON 본문으로 보낸다 — 토큰을 못 받는다."
+guards = ["tests/test_collect_ls.py::test_default_transport_sends_the_token_request_as_a_form"]
+file = "src/sectorflow/collect/brokers/http.py"
+find = "    elif is_form(headers):\n"
+replace = "    elif False:\n"
+
 [[removed]]
 id = "ci-shard-denominator-hardcoded"
 why = "샤드를 없앴다 — 전체 검증은 잡 하나다(tests/test_ci_workflow.py 가 matrix 를 막는다)"

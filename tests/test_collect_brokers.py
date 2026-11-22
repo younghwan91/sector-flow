@@ -123,7 +123,7 @@ def test_broker_registry_names(monkeypatch):
         monkeypatch.setenv(mod.KEY_ENV, "k")
         monkeypatch.setenv(mod.SECRET_ENV, "s")
     for name, make in BROKERS.items():
-        b = make(Settings(transport=lambda *a: (500, {}, {})))
+        b = make(Settings(transport=lambda *a: (500, {}, {}), accepted_terms=frozenset(BROKERS)))
         assert isinstance(b, Broker) and b.name == name and b.capability is CAPABILITIES[name], name
         assert b.total_calls == 0, "만들기만 해서는 부르지 않는다"
 
