@@ -282,11 +282,15 @@ def test_smoke_opens_the_map_at_three_widths_and_both_card_layouts(tmp_path, mon
     base = {k: v for k, v in CLEAN.items() if k not in ("console", "errors")}
     facts = {("map.html", w): dict(base, today=None, map=MAP_OK) for w in WS.MAP_WIDTHS}
     facts.update({(f"map.html?card={c}", w): dict(base, today=None, map=MAP_OK) for c, w, _h in WS.MAP_CARDS})
+    facts.update({(f"map.html{WS.MAP_STREAM}", w): dict(base, today=None, map=dict(MAP_OK, stream=30)) for w in (1440, 390)})
     facts[("map.html?card=wide", 1200)] = dict(base, today=None, map=dict(MAP_OK, overlaps=["개인 / 가상전자"]))
+    facts[(f"map.html{WS.MAP_STREAM}", 390)] = dict(base, today=None, map=dict(MAP_OK, stream=0))
     pw = _FakePW(facts=facts)
     _fake(monkeypatch, pw)
     problems = WS.smoke(str(tmp_path), shots=str(tmp_path / "shots"))
-    assert problems == ["map.html?card=wide@1200 노드 라벨 겹침: 개인 / 가상전자"], problems
-    assert {"map-1440.png", "map-600.png", "map-390.png", "map-card-tall-1080.png", "map-card-wide-1200.png"} <= set(pw.shots)
+    assert problems == ["map.html?card=wide@1200 노드 라벨 겹침: 개인 / 가상전자",
+                        f"map.html{WS.MAP_STREAM}@390 시간 흐름에 띠가 없다(빈 그림)"], problems
+    assert {"map-1440.png", "map-600.png", "map-390.png", "map-card-tall-1080.png", "map-card-wide-1200.png",
+            "map-stream-1440.png", "map-stream-390.png"} <= set(pw.shots)
     (tmp_path / "map.html").unlink()
     assert WS.smoke(str(tmp_path)) == [], "지도는 선택 쪽이다 — 옛 폴더엔 없다"

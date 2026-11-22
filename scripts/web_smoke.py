@@ -11,7 +11,8 @@ numbers.html·viewer.html 은 늘, 검증·품질(trust.html)·수급 지도(map
 * numbers.html 이 접힌 채 :data:`MAX_SCREENS` 화면 안인가 — 요약을 얹고도 길어져(1440폭 4.8화면) 섹터 표·설명을 접었다.
 * 합성 데모 폴더면 쪽 안의 상대 링크가 다 열리는가 — 면책 문구의 근거 링크가 404 였다.
 * 수급 지도(map.html)는 폭 1440·600·390 과 카드 배치 둘(``?card=tall`` 1080×1350·``?card=wide`` 1200×675)에서 — 노드 라벨끼리
-  겹치지 않고(글꼴이 없거나 좁은 폭에서 글자가 포개지면 읽을 수 없다) 노드가 그림 밖으로 나가 잘리지 않는가.
+  겹치지 않고(글꼴이 없거나 좁은 폭에서 글자가 포개지면 읽을 수 없다) 노드가 그림 밖으로 나가 잘리지 않는가. 두 번째 보기
+  '시간 흐름'(``#m0-w1-ts``)은 1440·390 에서 띠가 그려지는가.
 
 외부 글꼴(fonts.googleapis.com) 요청은 빈 응답으로 막는다 — 네트워크 사정이 콘솔 오류로 섞이지 않게.
 
@@ -46,6 +47,8 @@ MAP_PAGE = "map.html"
 MAP_WIDTHS = (1440, 600, 390)
 #: 지도 카드 배치 — (``?card=`` 값, 폭, 높이). ``scripts/map_card.py`` 가 찍는 크기와 같다.
 MAP_CARDS = (("tall", 1080, 1350), ("wide", 1200, 675))
+#: 지도 두 번째 보기(시간 흐름)의 주소 — 폰 폭에서 띠가 그려지고 가로로 넘치지 않는가.
+MAP_STREAM = "#m0-w1-ts"
 #: 라벨 겹침 여유[px] — 글자 상자의 소수 픽셀 반올림.
 OVERLAP_SLACK = 0.5
 #: 기준일 목록의 표시 이름 — 파일이 아니라 ``serve_reports.index_html`` 이 만든다.
@@ -86,7 +89,8 @@ _MAP_MEASURE = """() => {
   }
   const outside = [...svg.querySelectorAll(".node rect:first-child")].filter(r => { const q = r.getBoundingClientRect();
     return q.top < b.top - 1 || q.bottom > b.bottom + 1 || q.left < b.left - 1 || q.right > b.right + 1; }).length;
-  return {map: {nodes: svg.querySelectorAll(".node").length, labels: boxes.length, overlaps: over, outside}};
+  return {map: {nodes: svg.querySelectorAll(".node").length, labels: boxes.length, overlaps: over, outside,
+                stream: document.querySelectorAll("#st-svg .band").length}};
 }""".replace("OVERLAP", str(OVERLAP_SLACK))
 
 
@@ -98,7 +102,10 @@ def judge(page: str, width: int, facts: dict) -> list[str]:
     if facts.get("scroll_w", 0) > facts.get("inner_w", 0) + OVERFLOW_SLACK:
         out.append(f"{tag} 가로 넘침: 문서 폭 {facts['scroll_w']}px > 창 {facts['inner_w']}px")
     out += [f"{tag} 깨진 링크: {x}" for x in facts.get("dead_links") or []]
-    if page.startswith(MAP_PAGE):
+    if page.startswith(MAP_PAGE) and page.endswith(MAP_STREAM):
+        if not (facts.get("map") or {}).get("stream"):
+            out.append(f"{tag} 시간 흐름에 띠가 없다(빈 그림)")
+    elif page.startswith(MAP_PAGE):
         m = facts.get("map")
         if not m or not m.get("nodes"):
             out.append(f"{tag} 지도에 노드가 없다(빈 그림)")
@@ -181,11 +188,12 @@ def smoke(folder: str, widths=WIDTHS, shots: "str | None" = None) -> list[str]:
 
 
 def _views(page_name: str, widths) -> list[tuple[str, int, int, str]]:
-    """한 쪽을 열 (판정 이름, 폭, 높이, 주소 뒤 질의) — 지도는 :data:`MAP_WIDTHS` 와 카드 배치 둘을 더 본다."""
+    """한 쪽을 열 (판정 이름, 폭, 높이, 주소 뒤 질의) — 지도는 :data:`MAP_WIDTHS`·카드 배치 둘·시간 흐름(1440·390)을 본다."""
     if page_name != MAP_PAGE:
         return [(page_name, w, 900 if w > 600 else 844, "") for w in widths]
     return ([(page_name, w, 900 if w > 600 else 844, "") for w in MAP_WIDTHS]
-            + [(f"{page_name}?card={c}", w, h, f"?card={c}") for c, w, h in MAP_CARDS])
+            + [(f"{page_name}?card={c}", w, h, f"?card={c}") for c, w, h in MAP_CARDS]
+            + [(f"{page_name}{MAP_STREAM}", w, 900 if w > 600 else 844, MAP_STREAM) for w in (1440, 390)])
 
 
 def _smoke(sync_playwright, folder: str, widths, shots: "str | None", list_page: "Path | None") -> list[str]:
@@ -219,7 +227,8 @@ def _smoke(sync_playwright, folder: str, widths, shots: "str | None", list_page:
                     problems += judge(name, w, facts)
                     if shots:
                         os.makedirs(shots, exist_ok=True)
-                        pg.screenshot(path=os.path.join(shots, f"{name.split('.')[0]}{query.replace('?card=', '-card-')}-{w}.png"))
+                        tail = query.replace("?card=", "-card-").replace(MAP_STREAM, "-stream")
+                        pg.screenshot(path=os.path.join(shots, f"{name.split('.')[0]}{tail}-{w}.png"))
                     ctx.close()
         finally:
             browser.close()

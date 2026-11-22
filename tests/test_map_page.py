@@ -45,3 +45,15 @@ def test_map_page_wording():
     assert rendered_page_hits(html) == []
     text = re.sub(r"^const D = .*$", "", html, flags=re.M)
     assert map_hits(text) == [], "지도 글에 유입·유출·몰림 같은 말"
+
+
+def test_time_flow_view_keeps_its_reason_and_draws_straight_lines():
+    """두 번째 보기 '시간 흐름' — 화면 아래에 섹터와 섹터를 잇지 않는 이유가 있고, 값 사이를 곡선으로 메우지 않는다(직선 L 만)."""
+    _data, html = _html()
+    assert 'data-v="stream"' in html or '["stream", "시간 흐름"]' in html
+    why = re.search(r'<p class="why">(.*?)</p>', html, re.S)
+    assert why and "섹터와 섹터를 잇는 선은 긋지 않는다" in why.group(1) and "꼬리표가 없고" in why.group(1)
+    js = html[html.index("두 번째 보기: 시간 흐름"):]
+    line = re.search(r"const line = pts => (.*?);\n", js).group(1)
+    assert '"L"' in line and "C" not in line.replace("toFixed", ""), "곡선 보간은 없는 값을 만든다"
+    assert map_hits(why.group(1)) == []

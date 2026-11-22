@@ -5287,6 +5287,10 @@ VM_DETAIL = "inst:"
 VM_INST_OTHER = "inst:inst_other"
 #: 이보다 작은 |값| 은 간선이 아니다(부동소수 찌꺼기).
 VM_EPS = 1e-9
+#: 시간 흐름(두 번째 보기) — 따로 그리는 섹터 수, 날짜 수 상한, 값 허용오차(지도가 소수 1자리로 반올림해 싣는다 → 0.05 + 여유).
+VM_STREAM_TOP = 10
+VM_STREAM_N = 120
+VM_STREAM_TOL = 0.06
 #: 이런 이름의 키는 두 끝을 잇는 구조다 — 지도 데이터 어디에도 없어야 한다(간선은 주체 하나·섹터 하나의 칸뿐).
 VM_LINK_KEYS = ("links", "pairs", "source", "target", "matrix", "between")
 
@@ -5429,6 +5433,47 @@ def _vm_headline(tag: str, H: dict, sums: dict, market: str, win: int, out: dict
         out["headline"].append(f"{tag} 사실 {((H or {}).get('facts') or [])[:1]} vs {facts[:1]}")
 
 
+def _vm_stream(P: dict, M: dict, out: dict) -> None:
+    """시간 흐름 — 시장 × 4주체마다 섹터별 하루 순매수 띠. 구간 Σ|값| 큰 순 :data:`VM_STREAM_TOP` 개 + 나머지를 날마다 더한 '기타' 띠."""
+    dates = P.get("dates") or []
+    n = min(VM_STREAM_N, len(dates))
+    S = M.get("stream") or {}
+    if S.get("dates") != dates[len(dates) - n:]:
+        out["stream"].append(f"날짜 {(S.get('dates') or [])[:1]}…{len(S.get('dates') or [])}일 vs 페이로드 끝 {n}일")
+        return
+    for m in M.get("markets") or []:
+        ms = list(P.get("markets") or []) if m == VM_ALL else [m]
+        got_m = (S.get("views") or {}).get(m) or {}
+        if list(got_m) != list(VM_ACTORS):
+            out["stream"].append(f"{m} 주체 {list(got_m)} vs {list(VM_ACTORS)}")
+        for a in VM_ACTORS:
+            rows = []
+            for k, s in enumerate(P["sectors"]):
+                v = [0.0] * n
+                for mk in ms:
+                    f = ((P["flows"].get(mk) or {}).get(s) or {}).get(a) or ()
+                    for j, x in enumerate(f[len(dates) - n:]):
+                        v[j] += x or 0.0
+                if sum(abs(x) for x in v) > VM_EPS:
+                    rows.append((sum(abs(x) for x in v), k, s, v))
+            rows.sort(key=lambda r: (-r[0], r[1]))
+            want = [(s, v) for _g, _k, s, v in rows[:VM_STREAM_TOP]]
+            rest = rows[VM_STREAM_TOP:]
+            if rest:
+                want.append((f"기타 {len(rest)}개 섹터", [sum(r[3][j] for r in rest) for j in range(n)]))
+            got = got_m.get(a) or []
+            tag = f"{m}/{VM_LABEL[a]}"
+            if [g.get("name") for g in got] != [w[0] for w in want]:
+                out["stream"].append(f"{tag} 띠 {[g.get('name') for g in got][:3]}… vs 다시 셈 {[w[0] for w in want][:3]}…")
+                continue
+            if rest and sorted(got[-1].get("names") or []) != sorted(r[2] for r in rest):
+                out["stream"].append(f"{tag} '기타' 이름 {len(got[-1].get('names') or [])}개 vs {len(rest)}개")
+            for g, (name, v) in zip(got, want):
+                bad = [j for j, (x, y) in enumerate(zip(g.get("v") or [], v)) if abs(x - y) > VM_STREAM_TOL]
+                if len(g.get("v") or []) != n or bad:
+                    out["stream"].append(f"{tag}/{name} {len(bad)}일 다름(첫 {dates[len(dates) - n + bad[0]] if bad else '길이'})")
+
+
 def _vm_no_links(M: dict, sectors: set, out: dict) -> None:
     """섹터→섹터·주체→주체 구조가 없는가 — 간선 칸의 키는 주체뿐, 목록 칸은 [섹터, 금액], 섹터 아래 섹터 없음, 잇는 이름 없음."""
     nodes = set(VM_NODES)
@@ -5449,6 +5494,12 @@ def _vm_no_links(M: dict, sectors: set, out: dict) -> None:
 
     walk(M.get("views") or {}, "views", False)
     walk(M.get("timelapse") or {}, "timelapse", False)
+    walk(M.get("stream") or {}, "stream", False)
+    for m, by_a in ((M.get("stream") or {}).get("views") or {}).items():
+        for a, series in by_a.items():
+            extra = sorted({k for x in series for k in x} - {"name", "v", "rest", "names"})
+            if extra:
+                out["structure"].append(f"stream/{m}/{a} 띠의 칸 {extra[:3]} — 띠는 (섹터, 날짜) 값뿐이다")
     for m, by_w in (M.get("views") or {}).items():
         for w, V in by_w.items():
             for a, A in (V.get("actors") or {}).items():
@@ -5534,6 +5585,7 @@ def map_mismatches(P: dict, html: str) -> dict[str, list[str]]:
                                               {a: sum(g.get(a, 0.0) for g, _t in day.values()) for a in VM_NODES})
             out["timelapse"] += _vm_dict_diff(f"{tag}/오른쪽 주체", F.get("right"),
                                               {a: sum(t.get(a, 0.0) for _g, t in day.values()) for a in VM_NODES})
+    _vm_stream(P, M, out)
     _vm_no_links(M, sectors, out)
     out["wording"] = _vm_text(html, M)
     return out
@@ -5546,6 +5598,7 @@ VM_CHECKS = (("frame", "창·시장·기준일·데모 표지 = 페이로드"),
              ("tail", "꼬리 '기타 N개 섹터' = 숨긴 섹터들의 합, 보이는 섹터보다 크지 않다"),
              ("actors", "보기 2 주체별 넘긴·넘겨받은 섹터 = 다시 센 값"),
              ("timelapse", "타임랩스 하루 값 = 그날 일별 배열"),
+             ("stream", "시간 흐름 띠(주체별 섹터 하루 순매수·'기타' 합) = 일별 배열"),
              ("headline", "머리글 = 다시 센 가장 큰 주체(summary.dominant)·|간선| 큰 순 사실"),
              ("structure", "섹터→섹터·주체→주체 구조가 데이터에 없다"),
              ("wording", "글에 금칙어·지도용 피할 말(wording.map_hits)이 없다"))
