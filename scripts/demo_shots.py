@@ -3,7 +3,7 @@
 
     uv run --with playwright --with pillow --with imageio-ffmpeg python scripts/demo_shots.py   # docs/images 그림 + 원장 sha
 
-터미널은 tmux 160×45 ``capture-pane -e`` → ANSI → HTML → Chromium(128색), 웹은 Chromium 1440·390(DPR 2, 64색).
+터미널은 tmux 160×45 ``capture-pane -e`` → ANSI → HTML → Chromium(128색), 웹은 Chromium 1440·390(DPR 2, 64색 — 수급 지도는 128색).
 수급 지도 타임랩스 GIF(``map-demo.gif``)는 ``scripts/map_video.py`` 로 — ffmpeg 가 없으면 아무것도 찍기 전에 멈춘다.
 그림은 **HEAD 의 화면 코드**여야 뜻이 있다 — ``docs/SCREENSHOTS.md`` 의 감시 경로에 커밋 안 한 변경이 있으면 찍지 않는다.
 원장 sha 를 HEAD 로 고쳐 쓰고 ``tests/test_screenshots_fresh.py`` 가 그 뒤의 화면 변경을 잡는다.
@@ -177,9 +177,14 @@ def capture(cmd: list[str], keys: tuple) -> str:
         subprocess.run(["tmux", "-L", f"sf-shots-{os.getpid()}", "kill-server"], capture_output=True, timeout=30)
 
 
+#: 이보다 색을 줄이지 않는 그림 — 수급 지도는 64색이면 머리 워드마크의 파랑이 청록으로 바랜다(브랜드 색이 그림에서 갈린다).
+MIN_COLORS = {"map-demo.png": 128}
+
+
 def _quantize(path: Path, colors: int = 128) -> None:
     from PIL import Image  # noqa: PLC0415 — 그림을 찍을 때만
 
+    colors = max(colors, MIN_COLORS.get(path.name, 0))
     Image.open(path).convert("RGB").quantize(colors=colors, method=Image.MEDIANCUT).save(path, optimize=True)
     print(f"{path.name}: {Image.open(path).size}, {path.stat().st_size:,} bytes")
 

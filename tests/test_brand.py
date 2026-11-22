@@ -88,3 +88,44 @@ def test_tagline_uses_no_avoided_word():
     flat = re.sub(r"\s+", "", tagline)
     hits = [w for w in _avoid_words() if re.sub(r"\s+", "", w) in flat]
     assert not hits, f"한 줄 소개에 안 쓰는 말: {hits}"
+
+
+# ── 워드마크·파비콘 ──────────────────────────────────────────────────────────
+
+BRAND = REPO / "docs/brand"
+SVGS = {"wordmark.svg": 0, "wordmark-dark.svg": 1, "favicon.svg": 1}  # 파일 → 색 표의 열(0 라이트·1 다크)
+
+
+@pytest.mark.parametrize("name", SVGS)
+def test_logo_has_no_font_dependency(name):
+    """글자는 아웃라인 path 다 — 글꼴이 없는 기기·README 미리보기에서도 같은 모양이어야 한다."""
+    import xml.etree.ElementTree as ET
+    text = (BRAND / name).read_text("utf-8")
+    root = ET.fromstring(text)
+    assert root.get("viewBox"), name
+    tags = {el.tag.split("}")[-1] for el in root.iter()}
+    assert not tags & {"text", "tspan", "style", "script", "image", "foreignObject"}, (name, tags)
+    assert not re.search(r"font-family|@import|@font-face|href=|url\(", text), name
+    assert root.find("{http://www.w3.org/2000/svg}title") is not None, f"{name}: 화면 낭독용 <title> 이 없다"
+
+
+@pytest.mark.parametrize("name", SVGS)
+def test_logo_colours_come_from_the_table(name):
+    """로고가 표에 없는 색을 쓰면 가이드와 갈린다 — 색은 그 모드 열의 토큰 값만."""
+    col = SVGS[name]
+    allowed = {cells[2 * col] for cells in _rows().values()}
+    used = set(re.findall(r'fill="(#[0-9a-f]{6})"', (BRAND / name).read_text("utf-8")))
+    assert used and used <= allowed, f"{name}: 표에 없는 색 {sorted(used - allowed)}"
+
+
+def test_map_page_carries_the_same_wordmark_and_favicon():
+    """지도 페이지 머리의 워드마크·파비콘은 이 폴더 파일의 사본이다 — 파일만 고치고 페이지를 잊으면 둘이 갈린다."""
+    from urllib.parse import unquote
+    page = (REPO / "scripts/templates/sector_map.html").read_text("utf-8")
+    body = (BRAND / "wordmark-dark.svg").read_text("utf-8").strip()
+    body = body[body.index("<title>"):]                      # 여는 태그(크기·xmlns)만 페이지에 맞게 다르다
+    assert body in page, "지도 페이지 머리의 워드마크가 docs/brand/wordmark-dark.svg 와 다르다"
+    m = re.search(r'<link rel="icon" type="image/svg\+xml" href="data:image/svg\+xml,([^"]+)">', page)
+    assert m, "지도 페이지에 파비콘 링크가 없다"
+    fav = (BRAND / "favicon.svg").read_text("utf-8").strip().replace('"', "'")
+    assert unquote(m.group(1)) == fav, "지도 페이지 파비콘이 docs/brand/favicon.svg 와 다르다"

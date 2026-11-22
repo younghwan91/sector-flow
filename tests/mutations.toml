@@ -9547,6 +9547,30 @@ find = "투자 주체별 순매매를 한 장의 지도로 본다."
 replace = "투자 주체별 순매매의 쏠림을 한 장의 지도로 본다."
 
 [[mutation]]
+id = "wordmark-depends-on-a-font"
+why = """워드마크에 <text> 가 들어간다 — 글꼴이 없는 기기·README 미리보기에서 다른 모양이 된다"""
+guards = ["tests/test_brand.py::test_logo_has_no_font_dependency"]
+file = "docs/brand/wordmark.svg"
+find = "<title>sector-flow · 수급 지도</title>"
+replace = "<title>sector-flow · 수급 지도</title><text x=\"0\" y=\"40\">sector-flow</text>"
+
+[[mutation]]
+id = "map-page-wordmark-drifts"
+why = """지도 페이지 머리의 워드마크 사본만 색이 바뀐다 — docs/brand 의 파일과 페이지가 갈린다"""
+guards = ["tests/test_brand.py::test_map_page_carries_the_same_wordmark_and_favicon"]
+file = "scripts/templates/sector_map.html"
+find = '<rect x="297.0" y="15" width="1.5" height="26" fill="#8b93a8"/>'
+replace = '<rect x="297.0" y="15" width="1.5" height="26" fill="#8d9ab3"/>'
+
+[[mutation]]
+id = "favicon-colour-off-the-table"
+why = """파비콘이 가이드 색 표에 없는 바탕색을 쓴다 — 브랜드 색이 두 곳에서 갈린다"""
+guards = ["tests/test_brand.py::test_logo_colours_come_from_the_table"]
+file = "docs/brand/favicon.svg"
+find = 'fill="#0a0d16"'
+replace = 'fill="#000000"'
+
+[[mutation]]
 id = "readme-says-banned-word"
 why = """README 에 금칙어가 들어간다"""
 guards = ["tests/test_wording.py::test_no_output_source_uses_a_banned_word"]
@@ -13770,3 +13794,11 @@ guards = ["tests/test_public_surface.py::test_public_png_has_demo_sidecar"]
 file = "tests/test_public_surface.py"
 find = "PUBLIC_GLOBS = (\"README.md\", \"README.en.md\", \"docs/images/**\", \"docs/brand/**\", \"site/**\")"
 replace = "PUBLIC_GLOBS = (\"README.md\", \"README.en.md\", \"docs/brand/**\", \"site/**\")"
+
+[[mutation]]
+id = "map-shot-drops-to-64-colours"
+why = """수급 지도 그림을 64색으로 줄여 머리 워드마크의 파랑이 청록으로 바랜다 — README 의 브랜드 색이 가이드와 갈린다"""
+guards = ["tests/test_screenshots_fresh.py::test_map_shot_keeps_enough_colours_for_the_wordmark"]
+file = "scripts/demo_shots.py"
+find = 'MIN_COLORS = {"map-demo.png": 128}'
+replace = 'MIN_COLORS = {}'
