@@ -117,3 +117,8 @@ def truth_gap_label(kt: "dict | None") -> str:
 #: (검정 범위는 ``docs/validation/`` — 섹터 20·60일 수급 지표). 1년 %ile 을 "검정함 — 증거 없음" 에 묶어 적으면
 #: 검정하지 않은 것을 검정했다고 말하는 셈이다.
 NOT_TESTED_NOTE = "1일 값·1년 %ile·연속 일수는 앞날 검정 안 함"
+
+#: 수급만 페이로드(``sector_flow.py --flows-only``, ``"flows_only": true``)를 받은 수치표·TUI 가 끝내며 적는 말 —
+#: 지도 전용 수집(ka10099·ka10059)에는 일봉·주식수가 없어 수익률·시총 칸을 지을 수 없다. 조용히 빈 표를 내지 않는다.
+FLOWS_ONLY_NOTICE = ("수익률 없음(지도 전용 수집) — 이 폴더는 수급만이라 수치표·터미널 화면을 짓지 않는다. "
+                     "map.html 을 연다. 수익률까지 보려면 sector-flow-collect backfill 을 --map-only 없이 받는다.")

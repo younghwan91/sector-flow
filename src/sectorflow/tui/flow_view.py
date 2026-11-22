@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import unicodedata
@@ -3567,3 +3568,16 @@ def footer_line(width: int, drill: bool = False, allv: bool = False,
     안 되기 때문이다. 나머지 키는 ``?`` 뒤에 전부 적혀 있다.
     """
     return tier_for(footer_tiers(drill, allv, combined, explore), width)
+
+
+def flows_only_folder(report_dir: str) -> bool:
+    """폴더의 ``payload.json`` 이 수급만(``sector_flow.py --flows-only``)인가 — 지도 전용 수집(BYO) 폴더.
+
+    그런 폴더에는 수치표가 없다. "리포트를 찾을 수 없다" 대신 :data:`sectorflow.basis.FLOWS_ONLY_NOTICE` 로 끝내려고 본다.
+    """
+    try:
+        with open(os.path.join(os.path.expanduser(report_dir), "payload.json"), encoding="utf-8") as f:
+            d = json.load(f)
+    except (OSError, ValueError):
+        return False
+    return isinstance(d, dict) and bool(d.get("flows_only"))

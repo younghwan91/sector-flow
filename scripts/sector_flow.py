@@ -73,7 +73,7 @@ def _finalized(date: str) -> bool:
     return date != now.strftime("%Y-%m-%d") or now.hour >= FINALIZED_KST_HOUR
 
 
-def load(con, days: int, asof: "str | None" = None) -> tuple[pd.DataFrame, list[str]]:
+def load(con, days: int, asof: "str | None" = None, *, returns: bool = True) -> tuple[pd.DataFrame, list[str]]:
     """``asof`` 를 주면 그날까지의 거래일만 본다 — 지난 기준일을 지금 코드로 다시 만드는 재구성.
 
     아래 읽기는 전부 이 ``dates`` 의 끝(=기준일) 안에 묶인다: 수급·조정 종가는 날짜 구간, 시총은
@@ -111,7 +111,8 @@ def load(con, days: int, asof: "str | None" = None) -> tuple[pd.DataFrame, list[
     for raw, _ in INST_DETAIL:
         df[raw] = df[raw].astype(float) * df["close"] / EOK
     df["tv"] = df["acc_trde_qty"].astype(float) * df["close"] / EOK
-    df["ret"] = adjusted_returns(con, df[["code", "date"]], dates)
+    # 수급만(--flows-only)은 조정 종가를 읽지 않는다 — 지도 전용 수집(ka10099·ka10059)에는 일봉이 없다.
+    df["ret"] = adjusted_returns(con, df[["code", "date"]], dates) if returns else float("nan")
     return df, dates
 
 
@@ -276,8 +277,11 @@ def sector_cap_monthly(con, df: pd.DataFrame, dates: list[str]) -> dict:
     return out
 
 
-def build_payload(df: pd.DataFrame, dates: list[str], caps: pd.DataFrame,
-                  cap_monthly: dict | None = None) -> dict:
+def flow_blocks(df: pd.DataFrame, dates: list[str]) -> dict:
+    """(시장, 섹터)별 일별 4주체·거래대금(``flows``)·기관 세부(``detail``)와 종목 수 — 수익률·시총 없이 수급만으로 서는 몫.
+
+    :func:`build_payload` 와 ``--flows-only``(:func:`build_flows_payload`)가 같이 쓴다.
+    """
     sectors = sorted(df["sector"].unique())
     markets = sorted(df["market"].dropna().unique())
     di = {d: i for i, d in enumerate(dates)}
@@ -308,10 +312,17 @@ def build_payload(df: pd.DataFrame, dates: list[str], caps: pd.DataFrame,
         for k, _ in INST_DETAIL:
             detail[m][s][k][i] = round(float(row[k]), 2)
 
-    cap = {m: {s: round(float(v), 1) for s, v in
-               caps[caps["market"] == m].groupby("sector")["cap"].sum().items()}
-           for m in markets}
+    # (시장, 섹터)별 실제 종목 수 — 표에서 "섹터로 읽을 만한가" 를 가리는 기준.
+    counts = {m: {} for m in markets}
+    for (m, sec), g in df.groupby(["market", "sector"], sort=False):
+        if m in counts:
+            counts[m][sec] = int(g["code"].nunique())
+    return {"sectors": sectors, "markets": markets, "flows": flows, "detail": detail, "n_by_sector": counts}
 
+
+def name_block(df: pd.DataFrame, dates: list[str], caps: "pd.DataFrame | None") -> dict:
+    """종목 드릴다운 ``names`` — 전 종목의 프리셋 창 합계. ``caps`` 가 없으면(수급만) 시총·수익률은 ``None`` 이다."""
+    n = len(dates)
     # 종목 드릴다운 — **전 종목**의 구간별 집계.
     #
     # ⚠️ 이전 판본은 (시장,섹터)당 거래대금 상위 8 ∪ 기관 순매수 상위 4 를 **1년
@@ -326,13 +337,13 @@ def build_payload(df: pd.DataFrame, dates: list[str], caps: pd.DataFrame,
     # 실측 ``names`` 1.94MB(payload 3.49MB 의 56%, 2,646종목 × 5창 × 8값 — 키가 반복된다). 같은 블롭이 numbers.html·
     # viewer.html 에도 실린다. 창·값을 더하면 세 파일이 같이 커진다.
     name_cap = (caps.set_index("code")["cap"].to_dict()
-                if "cap" in getattr(caps, "columns", []) else {})
+                if caps is not None and "cap" in getattr(caps, "columns", []) else {})
     meta = df.drop_duplicates("code").set_index("code")[["name", "sector", "market"]]
     names: dict = {}
     for code in meta.index:
         row = meta.loc[code]
-        # ⚠️ `cap` 은 위에서 만든 **섹터 시총 dict** 다. 여기서 같은 이름을 쓰면
-        # 조용히 덮어써서 페이로드의 cap 이 float 하나가 된다(실제로 밟았다).
+        # ⚠️ `cap` 은 build_payload 의 **섹터 시총 dict** 이름이다. 한 함수였을 때 같은 이름을 써서
+        # 조용히 덮어써 페이로드의 cap 이 float 하나가 됐다(실제로 밟았다).
         ncap = name_cap.get(code)
         names[code] = {
             "name": row["name"], "sector": row["sector"], "market": row["market"],
@@ -366,9 +377,40 @@ def build_payload(df: pd.DataFrame, dates: list[str], caps: pd.DataFrame,
                  .groupby("code")["_r"].prod() - 1.0) * 100.0
         for code, r in agg.iterrows():
             w = {k: round(float(r[k]), 1) for k in _WIN_KEYS}
-            v = rr.get(code)
+            v = rr.get(code) if caps is not None else None
             w["ret"] = round(float(v), 2) if v is not None and v == v else None
             names[code]["win"][str(win)] = w
+    return names
+
+
+#: 수급만 페이로드(``--flows-only``)의 키 — 수급 지도(``sectorflow.flowmap.build_map_data``)가 읽는 것과 종목 집계.
+#: 수익률·시총·오늘 블록이 없다. 수치표·TUI 는 ``flows_only`` 를 보고 :data:`sectorflow.basis.FLOWS_ONLY_NOTICE` 로 끝낸다.
+FLOWS_ONLY_KEYS = ("dates", "sectors", "markets", "n_by_sector", "flows", "detail", "detail_labels", "names",
+                   "n_names", "flows_only")
+
+
+def build_flows_payload(df: pd.DataFrame, dates: list[str]) -> dict:
+    """수급만 페이로드 — 지도 전용 수집(ka10099·ka10059) sqlite 로 선다. ``flows``·``detail`` 은 :func:`build_payload` 와 같다."""
+    out = {"dates": dates, **flow_blocks(df, dates), "detail_labels": {k: ko for k, ko in INST_DETAIL},
+           "names": name_block(df, dates, None), "n_names": int(df["code"].nunique()), "flows_only": True}
+    return {k: out[k] for k in FLOWS_ONLY_KEYS}
+
+
+def build_payload(df: pd.DataFrame, dates: list[str], caps: pd.DataFrame,
+                  cap_monthly: dict | None = None) -> dict:
+    fb = flow_blocks(df, dates)
+    sectors, markets, flows, detail, counts = (fb[k] for k in ("sectors", "markets", "flows", "detail",
+                                                                "n_by_sector"))
+    di = {d: i for i, d in enumerate(dates)}
+    n = len(dates)
+
+    def zeros():
+        return [0.0] * n
+
+    cap = {m: {s: round(float(v), 1) for s, v in
+               caps[caps["market"] == m].groupby("sector")["cap"].sum().items()}
+           for m in markets}
+    names = name_block(df, dates, caps)
 
     # 섹터 수익률 — **자체 바구니**(자금흐름과 같은 종목집합), 전일 시총 가중. 화면·웹의 섹터 수익률은 이 값이다
     # (``sector_numbers.agg``·뷰어 ``retOf``). KRX 업종지수(``iret``)는 화면이 읽지 않는다 — 검증기 D 층·BYO 대조용으로만
@@ -383,12 +425,6 @@ def build_payload(df: pd.DataFrame, dates: list[str], caps: pd.DataFrame,
         w = float(g["cap_lag"].sum())
         ret[m][s][di[d]] = round(float((g["ret"] * g["cap_lag"]).sum() / w) if w else 0.0, 3)
         rw[m][s][di[d]] = round(w, 1)
-
-    # (시장, 섹터)별 실제 종목 수 — 표에서 "섹터로 읽을 만한가" 를 가리는 기준.
-    counts = {m: {} for m in markets}
-    for (m, sec), g in df.groupby(["market", "sector"], sort=False):
-        if m in counts:
-            counts[m][sec] = int(g["code"].nunique())
 
     out = {
         "dates": dates,
@@ -1934,7 +1970,21 @@ def main():
                     help="재구성인데 daily_finalize 창(달력 3일) 밖이라 확정 기록이 없다 — 값은 지금 DB 의 마감 값이다")
     ap.add_argument("--reports-root",
                     help="직전 리포트를 찾을 리포트 루트(기본: --json 이 <루트>/<기준일>[.building.N]/ 안이면 그 루트)")
+    ap.add_argument("--flows-only", action="store_true",
+                    help="수급만(수익률·시총 없이) — 지도 전용 수집 sqlite 로 수급 지도 페이로드를 짓는다(--json 만)")
     a = ap.parse_args()
+
+    if a.flows_only:
+        if not a.json or a.html or a.from_json or a.final or a.rebuilt:
+            ap.error("--flows-only 는 --json 하고만 쓴다(뷰어·확정·재구성은 수익률이 있어야 한다)")
+        con = connect(a.db)
+        df, dates = load(con, a.days, asof=a.asof, returns=False)
+        con.close()
+        payload = build_flows_payload(df, dates)
+        with open(a.json, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False)
+        print(f"wrote {a.json}  ({dates[0]} ~ {dates[-1]}, {len(dates)}거래일, {payload['n_names']}종목, 수급만)")
+        return
 
     if a.from_json:
         with open(a.from_json, encoding="utf-8") as f:

@@ -3,6 +3,7 @@
     sector-flow-collect smoke --code 005930
     sector-flow-collect universe --db data/byo.db                # 코스피·코스닥 전 종목·업종(ka10099, 호출 2 + 쪽)
     sector-flow-collect backfill --db data/byo.db --sectors "운송/창고,오락/문화" --days 300
+    sector-flow-collect backfill --db data/byo.db --map-only     # 지도 전용: TR 2개, 기본 120거래일
     sector-flow-collect daily --db data/byo.db --map-only        # 마지막 저장일부터 오늘까지(지도 전용: TR 2개)
     sector-flow-collect dart-shares --db data/byo.db          # 선택: DART 분기 주식수(본인 DART_API_KEY)
     sector-flow-collect --busy-file deploy/kiwoom_busy.simnode.toml backfill ... --resume
@@ -45,6 +46,9 @@ SD_PAGE_DAYS = 100
 #: 지도 전용 수집이 부르는 TR — 종목·업종 목록과 수급뿐(설계 §5). ``daily --map-only`` 와 ``backfill --map-only`` 가
 #: 같이 쓴다. 클라이언트가 이 밖의 TR 을 요청 전에 막는다(``_client(args, only=map_only_trs)``).
 map_only_trs = ("ka10099", "ka10059")
+#: ``backfill --days`` 기본값 — 전체 수집 300거래일, 지도 전용 120거래일(설계 §9: 빠른 길을 기본으로).
+BACKFILL_DAYS = 300
+MAP_ONLY_DAYS = 120
 #: 그날 수급·통합 종가가 다 찬 시각(KST 시) — 애프터마켓(16:00~20:00)이 끝난 뒤. 그 전이면 오늘은 받지 않는다.
 DAY_DONE_HOUR_KST = 20
 
@@ -88,6 +92,22 @@ def target_day(now: datetime) -> str:
     if prev is None:
         raise SystemExit(f"{today} 앞 거래일이 KRX 달력(scripts/krx_calendar.py) 밖이다")
     return prev
+
+
+def window_start(end: str, days: int) -> str:
+    """``end`` 에서 끝나는 ``days`` 거래일 창의 첫날(YYYY-MM-DD) — KRX 휴장 달력 정본으로 센다.
+
+    달력 밖 해의 평일은 거래일로 친다 — 창이 그만큼(휴장일 수) 앞으로 넓어질 뿐 모자라지 않는다(``_gap_days`` 와 같다).
+    지도 전용 백필은 업종지수(ka20006)를 부르지 않으니 001 일봉 대신 이 달력이 하한을 정한다.
+    """
+    span = days * 2 + 14
+    while True:
+        start = (datetime.fromisoformat(end) - timedelta(days=span)).date()
+        found, unknown = krx_calendar().trading_days(start, end)
+        cal = sorted(found + unknown)
+        if len(cal) >= days:
+            return cal[-days]
+        span *= 2
 
 
 def _gap_days(since: str, end: str) -> int:
@@ -238,9 +258,13 @@ def cmd_smoke(args) -> int:
 
 
 def cmd_backfill(args) -> int:
-    api = _client(args)
+    """조각 백필. ``--map-only`` 면 종목 목록·수급(:data:`map_only_trs`)만 — 하한은 KRX 달력, 끝날은 :func:`target_day`."""
+    map_only = args.map_only
+    if args.days is None:
+        args.days = MAP_ONLY_DAYS if map_only else BACKFILL_DAYS
+    api = _client(args, only=map_only_trs if map_only else None)
     con = write.open_db(args.db)
-    run_id = write.start_run(con, "backfill")
+    run_id = write.start_run(con, "backfill-map" if map_only else "backfill")
     anchor = _today()
     rows: dict = {}
     failed: list = []
@@ -254,15 +278,21 @@ def cmd_backfill(args) -> int:
     interrupted = ""
     try:
         # 1) 업종 목록과 거래일 달력(코스피 종합 001 일봉) — 백필 하한(oldest)을 정한다.
-        inds = fetch.industry_list(api)
-        names = {i["code"]: i["name"] for i in inds}
-        cal_rows = fetch.industry_daily(api, "001", anchor)
-        cal = sorted({str(r["dt"]) for r in cal_rows if r.get("dt")})
-        if len(cal) < args.days:
-            raise SystemExit(f"001 일봉이 {len(cal)}개뿐이다 — --days {args.days} 를 덮지 못한다")
-        oldest = cal[-args.days]
-        asof = fetch.iso(cal[-1])
-        print(f"📅 {fetch.iso(oldest)} ~ {asof} ({args.days}거래일)")
+        #    지도 전용은 KRX 휴장 달력 정본으로 — 업종 TR 을 부르지 않는다.
+        if map_only:
+            asof = target_day(_now_kst())
+            anchor = asof.replace("-", "")
+            oldest = window_start(asof, args.days).replace("-", "")
+        else:
+            inds = fetch.industry_list(api)
+            names = {i["code"]: i["name"] for i in inds}
+            cal_rows = fetch.industry_daily(api, "001", anchor)
+            cal = sorted({str(r["dt"]) for r in cal_rows if r.get("dt")})
+            if len(cal) < args.days:
+                raise SystemExit(f"001 일봉이 {len(cal)}개뿐이다 — --days {args.days} 를 덮지 못한다")
+            oldest = cal[-args.days]
+            asof = fetch.iso(cal[-1])
+        print(f"📅 {fetch.iso(oldest)} ~ {asof} ({args.days}거래일){' · 지도 전용' if map_only else ''}")
 
         # 2) 종목 마스터 → 조각
         stocks = universe(api)
@@ -278,10 +308,11 @@ def cmd_backfill(args) -> int:
         con.commit()
         print(f"🧺 {len(stocks)}종목 ({', '.join(sorted(sectors)) or '전체'})")
 
-        # 3) 업종지수
-        _collect_indexes(api, con, {s["sector"] for s in stocks}, anchor, oldest=oldest, add=add, failed=failed,
-                         names=names, cal_rows=cal_rows)
-        con.commit()
+        # 3) 업종지수(지도 전용은 없다)
+        if not map_only:
+            _collect_indexes(api, con, {s["sector"] for s in stocks}, anchor, oldest=oldest, add=add, failed=failed,
+                             names=names, cal_rows=cal_rows)
+            con.commit()
 
         # 4) 종목별: 수급(ka10059 여러 쪽) · 수정·무수정 일봉(ka10081) · 주식수(ka10001)
         pages = math.ceil(args.days / SD_PAGE_DAYS) + 1
@@ -302,8 +333,9 @@ def cmd_backfill(args) -> int:
                     else:
                         notes.append([code, "ka10059", f"이력 시작 {first}(상장·이전상장 이후분)"])
                 add("supply_demand", n_sd)
-                _collect_prices(api, con, code, anchor, oldest=oldest, snap=snap, no_raw=args.no_raw, add=add,
-                                failed=failed)
+                if not map_only:
+                    _collect_prices(api, con, code, anchor, oldest=oldest, snap=snap, no_raw=args.no_raw, add=add,
+                                    failed=failed)
                 write.mark_done(con, code, asof, run_id)
                 con.commit()
             except (CallBudgetExceeded, TokenConflict, BusyWindow):
@@ -491,9 +523,12 @@ def main(argv: "list[str] | None" = None) -> int:
     sm.add_argument("--code", default="005930")
     un = sub.add_parser("universe", help="코스피·코스닥 전 종목·업종 목록(ka10099) → stocks")
     un.add_argument("--db", required=True, help="sqlite 경로")
-    bf = sub.add_parser("backfill", help="조각 백필")
+    bf = sub.add_parser("backfill", help="조각 백필(--sectors 를 안 주면 전 시장)")
     bf.add_argument("--db", required=True, help="sqlite 경로")
-    bf.add_argument("--days", type=int, default=300)
+    bf.add_argument("--days", type=int, default=None,
+                    help=f"거래일 수(기본 {BACKFILL_DAYS}, --map-only 면 {MAP_ONLY_DAYS})")
+    bf.add_argument("--map-only", action="store_true",
+                    help="지도 전용 — 종목 목록·수급(ka10099·ka10059)만 부른다(종목당 약 1~3회). 끝날은 KRX 달력")
     bf.add_argument("--sectors", default="", help="쉼표로 준 키움 업종명(stocks.sector)")
     bf.add_argument("--codes", default="", help="쉼표로 준 종목코드(섹터와 합집합)")
     bf.add_argument("--limit", type=int, default=0)
