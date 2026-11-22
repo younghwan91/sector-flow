@@ -198,7 +198,7 @@ PLAN = D.periods("2025-08-13", "2026-11-06")
 def _db(tmp_path, first="2025-08-13", snap=("2026-11-08", 10_300_000)) -> sqlite3.Connection:
     con = write.open_db(tmp_path / "d.db")
     con.row_factory = None
-    con.execute("INSERT INTO stocks VALUES ('012170','아센디오','KOSPI','운송/창고','stock')")
+    con.execute("INSERT INTO stocks (code, name, market, sector, kind) VALUES ('012170','아센디오','KOSPI','운송/창고','stock')")
     con.execute("INSERT INTO supply_demand(code, date, close, source) VALUES ('012170', ?, 1000, 'kiwoom')",
                 (first,))
     write.upsert_shares(con, [("012170", *snap)], "kiwoom")

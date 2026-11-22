@@ -13036,8 +13036,8 @@ id = "flows-only-flag-missing"
 why = "수급만 페이로드에 flows_only 표지가 없다 — 수치표·TUI 가 빈 표를 조용히 낸다"
 guards = ["tests/test_flows_only.py::test_flows_only_payload_builds_map", "tests/test_flows_only.py::test_numbers_and_tui_end_with_the_flows_only_notice"]
 file = "scripts/sector_flow.py"
-find = "\"n_names\": int(df[\"code\"].nunique()), \"flows_only\": True}"
-replace = "\"n_names\": int(df[\"code\"].nunique()), \"flows_only\": False}"
+find = "\"n_names\": int(df[\"code\"].nunique()), \"flows_only\": True,"
+replace = "\"n_names\": int(df[\"code\"].nunique()), \"flows_only\": False,"
 
 [[mutation]]
 id = "flows-only-accepts-viewer"
@@ -13662,6 +13662,102 @@ guards = ["tests/test_collect_brokers.py::test_kiwoom_is_the_full_verified_krx_r
 file = "src/sectorflow/collect/brokers/kiwoom.py"
 find = "    verified=True,\n"
 replace = "    verified=False,\n"
+
+[[mutation]]
+id = "sector-user-table-overwritten"
+why = "증권사 목록이 사용자 섹터 표(csv:)를 덮는다 — 사용자가 고른 분류가 다음 universe 에 조용히 사라진다."
+guards = ["tests/test_collect_sectors.py::test_resolve_sector_keeps_one_set", "tests/test_collect_sectors.py::test_user_table_wins_over_later_listings"]
+file = "src/sectorflow/collect/write.py"
+find = "        if o_src.startswith(CSV_SOURCE) or (not sector"
+replace = "        if False or (not sector"
+
+[[mutation]]
+id = "sector-empty-listing-wipes-other-source"
+why = "섹터를 안 주는 증권사로 목록을 받으면 키움 키로 받아 둔 업종이 지워진다 — 지도가 통째로 (미분류)가 된다."
+guards = ["tests/test_collect_sectors.py::test_resolve_sector_keeps_one_set", "tests/test_collect_sectors.py::test_listing_without_sectors_does_not_wipe_stored_ones"]
+file = "src/sectorflow/collect/write.py"
+find = " or (not sector and o_sec and o_src != (source or \"\")):"
+replace = " or False:"
+
+[[mutation]]
+id = "sector-old-db-source-unmarked"
+why = "판 3 BYO sqlite 를 열 때 옛 행(키움만 썼다)의 출처를 비워 둔다 — 지도에 '출처 미기록'이 뜨고 덮어쓰기 표 판단이 흔들린다."
+guards = ["tests/test_collect_sectors.py::test_open_db_marks_old_rows_as_kiwoom"]
+file = "src/sectorflow/collect/write.py"
+find = "        con.execute(\"UPDATE stocks SET sector_source = 'kiwoom' WHERE COALESCE(sector, '') != ''\")\n"
+replace = ""
+
+[[mutation]]
+id = "sector-override-into-other-taxonomy"
+why = "키움 업종명 체계의 덮어쓰기 표를 사용자 표가 섞인 마스터에도 넣는다 — 두 분류 체계가 한 지도에 섞인다."
+guards = ["tests/test_collect_sectors.py::test_kiwoom_override_table_stays_out_of_other_taxonomies"]
+file = "scripts/sector_flow.py"
+find = "    if not byo_source or set(meta[\"sector_source\"].dropna()) <= {\"kiwoom\"}:\n"
+replace = "    if True:\n"
+
+[[mutation]]
+id = "sector-source-not-in-payload"
+why = "수급만 페이로드에 섹터 출처를 싣지 않는다 — 지도 머리의 섹터 출처 표지가 사라진다."
+guards = ["tests/test_collect_sectors.py::test_sector_source_labelled"]
+file = "scripts/sector_flow.py"
+find = "           \"sector_source\": sector_source_counts(df)}"
+replace = "           \"sector_source\": None}"
+
+[[mutation]]
+id = "sector-source-not-in-map-data"
+why = "지도 데이터가 페이로드의 섹터 출처를 버린다."
+guards = ["tests/test_collect_sectors.py::test_sector_source_labelled"]
+file = "src/sectorflow/flowmap.py"
+find = "           \"sector_source\": sector_source_label(P.get(\"sector_source\")),"
+replace = "           \"sector_source\": None,"
+
+[[mutation]]
+id = "sector-mix-not-flagged"
+why = "섹터 출처가 둘 이상인데 '분류 체계 섞임'을 적지 않는다 — 섞인 지도가 한 분류처럼 보인다."
+guards = ["tests/test_collect_sectors.py::test_sector_source_label_names_each_source_and_flags_a_mix"]
+file = "src/sectorflow/basis.py"
+find = " for s, n in items) + \" (분류 체계 섞임)\""
+replace = " for s, n in items)"
+
+[[mutation]]
+id = "sector-kiwoom-source-unrecorded"
+why = "키움 목록이 섹터 출처를 적지 않는다 — 다른 증권사 목록이 키움 업종을 지울지 판단할 근거가 없어진다."
+guards = ["tests/test_collect_sectors.py::test_kiwoom_listing_records_its_source"]
+file = "src/sectorflow/collect/brokers/kiwoom.py"
+find = "        return [{**s, \"sector_source\": self.name}"
+replace = "        return [{**s}"
+
+[[mutation]]
+id = "sector-csv-cp949-unread"
+why = "KRX 내려받기 CSV(CP949)를 못 읽어 깨진 글자로 섹터를 넣는다."
+guards = ["tests/test_collect_sectors.py::test_sector_csv_reads_the_krx_download_headers_in_cp949"]
+file = "src/sectorflow/collect/run.py"
+find = "        return raw.decode(\"cp949\")\n"
+replace = "        return raw.decode(\"utf-8\", \"replace\")\n"
+
+[[mutation]]
+id = "sector-csv-code-not-padded"
+why = "스프레드시트가 지운 앞 0 을 채우지 않는다 — 044490 이 44490 으로 남아 어떤 종목과도 안 맞는다."
+guards = ["tests/test_collect_sectors.py::test_sector_csv_reads_the_krx_download_headers_in_cp949", "tests/test_collect_sectors.py::test_user_table_wins_over_later_listings"]
+file = "src/sectorflow/collect/run.py"
+find = "        code = code.zfill(6) if code.isdigit() else code\n"
+replace = ""
+
+[[mutation]]
+id = "sector-csv-header-unchecked"
+why = "머리줄이 틀린 CSV 를 갈 길 없이 KeyError 로 죽는다."
+guards = ["tests/test_collect_sectors.py::test_sectors_without_a_listing_fails_loudly"]
+file = "src/sectorflow/collect/run.py"
+find = "    if set(cols) != {\"code\", \"sector\"}:\n"
+replace = "    if False:\n"
+
+[[mutation]]
+id = "sector-csv-nothing-updated-is-success"
+why = "목록이 없어 아무 종목도 안 바꿨는데 성공(0)으로 끝난다 — 지도는 그대로 (미분류)다."
+guards = ["tests/test_collect_sectors.py::test_sectors_without_a_listing_fails_loudly"]
+file = "src/sectorflow/collect/run.py"
+find = "    if not got[\"updated\"]:\n"
+replace = "    if False:\n"
 
 [[removed]]
 id = "ci-shard-denominator-hardcoded"

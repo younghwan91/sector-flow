@@ -122,3 +122,33 @@ NOT_TESTED_NOTE = "1일 값·1년 %ile·연속 일수는 앞날 검정 안 함"
 #: 지도 전용 수집(ka10099·ka10059)에는 일봉·주식수가 없어 수익률·시총 칸을 지을 수 없다. 조용히 빈 표를 내지 않는다.
 FLOWS_ONLY_NOTICE = ("수익률 없음(지도 전용 수집) — 이 폴더는 수급만이라 수치표·터미널 화면을 짓지 않는다. "
                      "map.html 을 연다. 수익률까지 보려면 sector-flow-collect backfill 을 --map-only 없이 받는다.")
+
+
+# ── BYO 증권사·섹터 출처 표지 ───────────────────────────────────────────────
+#: 어댑터 이름(``sectorflow.collect.brokers.BROKERS``·수급 행 ``source``) → 화면 이름.
+BROKER_LABEL = {"kiwoom": "키움", "kis": "한국투자", "ls": "LS증권", "toss": "토스증권", "db": "DB증권", "nh": "NH투자증권"}
+#: 사용자 섹터 표의 출처 머리(``sectorflow.collect.write.CSV_SOURCE`` 와 같다 — 이 모듈은 수집기를 import 하지 않는다).
+CSV_SECTOR_SOURCE = "csv:"
+
+
+def _sector_source_name(src: str) -> str:
+    if src.startswith(CSV_SECTOR_SOURCE):
+        return f"사용자 표({src[len(CSV_SECTOR_SOURCE):]})"
+    if src == "kiwoom":
+        return "키움 업종명"
+    if src in BROKER_LABEL:
+        return f"{BROKER_LABEL[src]} 업종"
+    return src or "출처 미기록"
+
+
+def sector_source_label(counts: "dict[str, int] | None") -> "str | None":
+    """BYO 수급만 페이로드의 ``sector_source``(출처 → 종목 수) → 지도 머리의 한 줄. 출처 기록이 없으면(배치) ``None``.
+
+    출처가 둘 이상이면 종목 수를 붙인다 — 분류 체계가 섞였다는 뜻이라 숨기지 않는다.
+    """
+    if not counts:
+        return None
+    items = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+    if len(items) == 1:
+        return "섹터: " + _sector_source_name(items[0][0])
+    return "섹터: " + " · ".join(f"{_sector_source_name(s)} {n:,}종목" for s, n in items) + " (분류 체계 섞임)"

@@ -1,4 +1,4 @@
-"""``sector-flow-collect`` — 자기 키움 키로 sqlite 를 채운다. 서브커맨드 ``smoke`` · ``universe`` · ``backfill`` · ``reseed`` · ``dart-shares``.
+"""``sector-flow-collect`` — 자기 증권사 키로 sqlite 를 채운다. 서브커맨드 ``smoke`` · ``universe`` · ``backfill`` · ``daily`` · ``sectors`` · ``reseed`` · ``dart-shares``.
 
     sector-flow-collect smoke --code 005930
     sector-flow-collect universe --db data/byo.db                # 코스피·코스닥 전 종목·업종(ka10099, 호출 2 + 쪽)
@@ -6,6 +6,7 @@
     sector-flow-collect backfill --db data/byo.db --map-only     # 지도 전용: TR 2개, 기본 120거래일
     sector-flow-collect daily --db data/byo.db --map-only        # 마지막 저장일부터 오늘까지(지도 전용: TR 2개)
     sector-flow-collect dart-shares --db data/byo.db          # 선택: DART 분기 주식수(본인 DART_API_KEY)
+    sector-flow-collect sectors --db data/byo.db --csv my_sectors.csv   # 선택: 자기 섹터 표(code,sector)
     sector-flow-collect --busy-file deploy/kiwoom_busy.simnode.toml backfill ... --resume
 
 같은 앱키를 다른 프로그램과 나눠 쓰면 ``--busy-file`` 로 그 프로그램의 운영 창을 준다(:mod:`.busy`). 요청 직전마다
@@ -14,11 +15,16 @@
 ``daily`` 는 백필한 종목(과 같은 섹터의 신규 상장)을 종목마다 자기 마지막 저장일부터 오늘까지 받는다. 끝날은 KRX 휴장
 달력 정본(``scripts/krx_calendar.py``)이 정하고, 애프터마켓이 끝난 20:00 KST 전이면 오늘은 받지 않는다. 마지막
 저장일은 다시 받아 덮는다 — 그날 잠정치가 다음 실행에서 새 값이 된다.
+
+증권사는 ``--broker``(:mod:`.brokers`, 기본 키움). 섹터는 증권사와 떼어 한 벌로 둔다(``stocks.sector_source``) — 키움 업종명,
+그 증권사의 업종, 또는 ``sectors --csv`` 의 자기 표. 섹터를 안 주는 증권사로 목록을 받아도 저장된 섹터는 지워지지 않는다.
 """
 
 from __future__ import annotations
 
 import argparse
+import csv
+import io
 import functools
 import importlib.util
 import json
@@ -205,7 +211,7 @@ def cmd_universe(args) -> int:
     ok = False
     interrupted = ""
     try:
-        stocks = broker.universe()
+        stocks = write.with_stored_sectors(con, broker.universe())
         rows["stocks"] = write.upsert_stocks(con, stocks)
         con.commit()
         ok = True
@@ -309,7 +315,8 @@ def cmd_backfill(args) -> int:
         print(f"📅 {fetch.iso(oldest)} ~ {asof} ({args.days}거래일){' · 지도 전용' if map_only else ''}")
 
         # 2) 종목 마스터 → 조각
-        stocks = broker.universe()
+        # 섹터는 저장된 한 벌을 따른다(사용자 표·다른 키로 받은 업종) — 조각(--sectors)도 그 섹터로 고른다.
+        stocks = write.with_stored_sectors(con, broker.universe())
         sectors = {s.strip() for s in (args.sectors or "").split(",") if s.strip()}
         codes = {c.strip() for c in (args.codes or "").split(",") if c.strip()}
         if sectors or codes:
@@ -418,7 +425,7 @@ def cmd_daily(args) -> int:
     interrupted = ""
     targets: list = []
     try:
-        listing = {s["code"]: s for s in broker.universe()}
+        listing = {s["code"]: s for s in write.with_stored_sectors(con, broker.universe())}
         for code in sorted(c for c in stale if c not in listing):
             notes.append([code, broker.list_label, "상장 목록에 없다(폐지·이전상장?) — 받지 않는다"])
             write.mark_done(con, code, end, run_id)
@@ -469,6 +476,56 @@ def cmd_daily(args) -> int:
     if interrupted:
         return EXIT_BUSY
     return 0 if ok else 1
+
+
+#: 섹터 표 CSV 의 머리 이름 → 열. 영문(``code,sector``) 또는 KRX 정보데이터시스템 '업종분류 현황' 내려받기의 한글 머리.
+SECTOR_CSV_HEADERS = {"code": "code", "종목코드": "code", "sector": "sector", "업종명": "sector"}
+
+
+def _read_text(path: str) -> str:
+    """UTF-8(BOM 허용), 아니면 CP949 — KRX 내려받기 CSV 는 CP949 다."""
+    raw = open(path, "rb").read()
+    try:
+        return raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return raw.decode("cp949")
+
+
+def read_sector_csv(path: str) -> dict[str, str]:
+    """섹터 표 CSV → ``{6자리 코드: 섹터}``. 머리는 :data:`SECTOR_CSV_HEADERS`(``code,sector`` 또는 ``종목코드,업종명``).
+
+    숫자 코드는 앞 0 을 채운다(스프레드시트가 ``000120`` 을 ``120`` 으로 만든다).
+    """
+    reader = csv.DictReader(io.StringIO(_read_text(path)))
+    cols = {SECTOR_CSV_HEADERS[h.strip()]: h for h in (reader.fieldnames or []) if h and h.strip() in SECTOR_CSV_HEADERS}
+    if set(cols) != {"code", "sector"}:
+        raise SystemExit(f"⏹ {path}: 머리줄에 code,sector(또는 종목코드,업종명)가 있어야 한다")
+    out: dict[str, str] = {}
+    for row in reader:
+        code, sec = (row.get(cols["code"]) or "").strip(), (row.get(cols["sector"]) or "").strip()
+        code = code.zfill(6) if code.isdigit() else code
+        if code and sec:
+            out[code] = sec
+    return out
+
+
+def cmd_sectors(args) -> int:
+    """사용자 섹터 표 → ``stocks.sector``(출처 ``csv:<이름>``). 증권사를 부르지 않는다. 먼저 ``universe`` 로 목록을 받는다."""
+    table = read_sector_csv(args.csv)
+    label = args.label or os.path.splitext(os.path.basename(args.csv))[0]
+    con = write.open_db(args.db)
+    try:
+        got = write.import_sectors(con, table, label)
+        con.commit()
+    finally:
+        con.close()
+    print(json.dumps({"ok": got["updated"] > 0, "source": write.CSV_SOURCE + label, "rows": len(table),
+                      "updated": got["updated"], "unknown": len(got["unknown"]),
+                      "unknown_head": got["unknown"][:5]}, ensure_ascii=False, indent=1))
+    if not got["updated"]:
+        print("⏹ 바꾼 종목이 없다 — 먼저 universe 로 종목 목록을 받는다(코드가 stocks 에 있어야 한다)", file=sys.stderr)
+        return 1
+    return 0
 
 
 def cmd_reseed(args) -> int:
@@ -561,6 +618,10 @@ def main(argv: "list[str] | None" = None) -> int:
     dl.add_argument("--map-only", action="store_true",
                     help="지도 전용 — 종목 목록·수급(ka10099·ka10059)만 부른다(종목당 약 1회)")
     dl.add_argument("--no-raw", action="store_true", help="무수정 일봉(daily_bars_raw)을 건너뛴다")
+    sc = sub.add_parser("sectors", help="자기 섹터 표(CSV: code,sector) → stocks.sector. 증권사 목록이 덮지 않는다(호출 없음)")
+    sc.add_argument("--db", required=True, help="sqlite 경로(먼저 universe)")
+    sc.add_argument("--csv", required=True, help="머리줄 code,sector(또는 KRX 내려받기의 종목코드,업종명)인 CSV")
+    sc.add_argument("--label", help="섹터 출처 이름(지도에 '사용자 표(이름)'으로 나온다, 기본: 파일 이름)")
     rs = sub.add_parser("reseed", help="저장된 스냅숏·기업행동으로 주식수 시드를 다시 만든다(호출 없음)")
     rs.add_argument("--db", required=True)
     ds = sub.add_parser("dart-shares", help="DART 분기 발행주식총수로 주식수 이력을 채운다(본인 DART_API_KEY, 선택)")
@@ -573,7 +634,7 @@ def main(argv: "list[str] | None" = None) -> int:
     args = ap.parse_args(argv)
     try:
         return {"smoke": cmd_smoke, "universe": cmd_universe, "backfill": cmd_backfill, "daily": cmd_daily,
-                "reseed": cmd_reseed, "dart-shares": cmd_dart_shares}[args.cmd](args)
+                "reseed": cmd_reseed, "dart-shares": cmd_dart_shares, "sectors": cmd_sectors}[args.cmd](args)
     except MissingKeys as e:
         # 처음 치는 사람이 가장 먼저 만나는 실패다 — 트레이스백 대신 갈 길 한 줄(docs/byo/quickstart.md §1).
         raise SystemExit(f"⏹ {e} --env-file 로 키 파일을 주거나 환경변수를 둔다(docs/byo/quickstart.md)") from None

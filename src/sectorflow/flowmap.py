@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 
 from sectorflow import summary
-from sectorflow.basis import DATA_BASIS_SHORT
+from sectorflow.basis import DATA_BASIS_SHORT, sector_source_label
 from sectorflow.josa import josa
 
 #: 페이로드 ``flows[시장][섹터]`` 의 주체 키 — 순서가 화면의 주체 노드 순서다(양쪽 같게).
@@ -351,6 +351,7 @@ def build_map_data(P: dict) -> dict:
                                 "actors": {a: actor_graph(full, a) for a in keys},
                                 "headline": map_headline(P, m, w)}
     out = {"asof": P["dates"][-1] if N else None, "demo": bool(P.get("demo")), "basis": DATA_BASIS_SHORT,
+           "sector_source": sector_source_label(P.get("sector_source")),
            "markets": markets, "windows": windows, "labels": {**ACTOR_LABEL, **{DETAIL_PREFIX + k: v for k, v in
                                                                                   (P.get("detail_labels") or {}).items()},
                                                                DETAIL_PREFIX + INST_OTHER: "기관 나머지"},

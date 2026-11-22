@@ -122,13 +122,13 @@ html.card-wide .cardfoot{font-size:12.5px;margin-top:6px;padding-top:6px;line-he
       그래서 섹터와 섹터를 잇는 선은 긋지 않는다. 날마다의 값을 직선으로 이을 뿐 곡선으로 메우지 않는다.</p>
   </section>
   <footer>
-    <div id="basis">__BASIS__ · 단위 억원(종가 환산 근사)</div>
+    <div id="basis">__BASIS__ · 단위 억원(종가 환산 근사)<span id="secsrc"></span></div>
     <div>띠 하나는 (주체, 섹터) 한 칸의 순매수다. 섹터와 섹터, 주체와 주체를 잇지 않는다 — 누가 누구에게 넘겼는지는 관측되지 않는다.
       잔여 = −(개인+외국인+기관+기타법인), 4주체 밖의 몫이다. 숫자는 동시기 관측이며 예측이 아니다.</div>
     <div id="demonote" hidden>__DEMO_NOTICE__</div>
   </footer>
   <div class="cardfoot" id="cardfoot">
-    <div><b>sector-flow 수급 지도</b> · <span id="cardasof"></span> · __BASIS__ · 단위 억원(종가 환산 근사)</div>
+    <div><b>sector-flow 수급 지도</b> · <span id="cardasof"></span> · __BASIS__ · 단위 억원(종가 환산 근사)<span id="cardsecsrc"></span></div>
     <div>띠 하나는 (주체, 섹터) 한 칸의 순매수다 — 섹터와 섹터, 주체와 주체를 잇지 않는다. 동시기 관측이며 예측이 아니다.</div>
     <div id="cardsrc">__SOURCE__</div>
     <div id="carddemo" hidden><b>[합성 데모]</b> __DEMO_NOTICE__</div>
@@ -155,6 +155,8 @@ let particles = [], geo = null;
 $("asof").textContent = "기준일 " + (D.asof || "-");
 $("cardasof").textContent = "기준일 " + (D.asof || "-");
 if (D.demo) { $("demo").hidden = false; $("demonote").hidden = false; $("carddemo").hidden = false; }
+// BYO 마스터의 섹터 출처(키움 업종명·다른 증권사 업종·사용자 표) — 배치 리포트는 키움 업종 하나라 없다.
+if (D.sector_source) { $("secsrc").textContent = " · " + D.sector_source; $("cardsecsrc").textContent = " · " + D.sector_source; }
 
 function tabs(el, items, cur, on) {
   el.innerHTML = items.map(([v, t]) => `<button type="button" data-v="${v}" aria-pressed="${v === cur}">${t}</button>`).join("");

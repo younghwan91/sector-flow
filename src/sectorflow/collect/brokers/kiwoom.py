@@ -63,8 +63,9 @@ class KiwoomBroker:
         return self.api.total_calls
 
     def universe(self) -> list[dict]:
-        """ka10099 두 시장(거래소·코스닥) → 보통주만. 업종은 키움 업종명(``upName``)."""
-        return [s for m in fetch.MARKETS for s in fetch.stock_list(self.api, m) if fetch.is_common_stock(s)]
+        """ka10099 두 시장(거래소·코스닥) → 보통주만. 업종은 키움 업종명(``upName``), 출처 ``kiwoom``."""
+        return [{**s, "sector_source": self.name}
+                for m in fetch.MARKETS for s in fetch.stock_list(self.api, m) if fetch.is_common_stock(s)]
 
     def investor_daily(self, code: str, start: str, end: str, *, days: "int | None" = None,
                        info: "dict | None" = None) -> list[dict]:

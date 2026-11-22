@@ -8,6 +8,9 @@
   ``shares_outstanding_history`` 에는 source 열이 없어 옆 표로 둔다.
 - ``dart_fetch`` — DART 주식 총수 조회 원장((종목, 사업연도, 보고서)마다 status·값·접수번호). 다시 돌리면 확정된
   칸은 건너뛴다(:mod:`.dart`).
+- ``stocks.sector_source`` — 섹터가 어디서 왔나(``kiwoom`` 키움 업종명 · 증권사 이름 · ``csv:<이름>`` 사용자 표).
+  리포트 공용 ``storage.SCHEMA`` 에는 없는 BYO 전용 열이다(kr_quant 는 키움 업종 하나라 필요 없다). 판 4 에서 더했고,
+  그 전 행은 키움만 쓸 수 있었으므로 섹터가 있는 행을 ``kiwoom`` 으로 채운다. 쓰는 규칙은 :func:`upsert_stocks`.
 - ``PRAGMA user_version`` — 스키마 판. 전진 마이그레이션만 한다.
 """
 
@@ -20,7 +23,9 @@ from pathlib import Path
 
 from sectorflow.storage import INVESTOR_COLUMNS, connect
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
+#: 사용자 섹터 표(``sector-flow-collect sectors --csv``)의 출처 머리. 이 출처의 섹터는 증권사 목록이 덮지 않는다.
+CSV_SOURCE = "csv:"
 
 BYO_DDL = """
 CREATE TABLE IF NOT EXISTS collect_runs (
@@ -72,6 +77,10 @@ def open_db(path: "str | Path") -> sqlite3.Connection:
             con.execute(f"ALTER TABLE daily_bars_adjusted ADD COLUMN {col} REAL")
     if "notes" not in {r[1] for r in con.execute("PRAGMA table_info(collect_runs)").fetchall()}:
         con.execute("ALTER TABLE collect_runs ADD COLUMN notes TEXT")   # 판 1 → 2
+    if "sector_source" not in {r[1] for r in con.execute("PRAGMA table_info(stocks)").fetchall()}:
+        con.execute("ALTER TABLE stocks ADD COLUMN sector_source TEXT")  # 판 3 → 4
+        # 판 4 전에는 키움(ka10099 upName)만 stocks 를 썼다.
+        con.execute("UPDATE stocks SET sector_source = 'kiwoom' WHERE COALESCE(sector, '') != ''")
     ver = con.execute("PRAGMA user_version").fetchone()[0]
     if ver < SCHEMA_VERSION:
         con.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
@@ -87,9 +96,61 @@ def _upsert(con: sqlite3.Connection, table: str, cols: tuple[str, ...], rows: li
     return len(rows)
 
 
+def resolve_sector(old: "tuple[str | None, str | None] | None", sector: str,
+                   source: "str | None") -> "tuple[str, str | None]":
+    """저장된 ``(섹터, 출처)`` 와 들어온 섹터·출처 → 쓸 ``(섹터, 출처)``. 섹터는 한 벌로 지킨다(``docs/byo/brokers.md`` §1.3):
+
+    1. 사용자 표(``csv:…``)에서 온 섹터는 덮지 않는다 — 사용자가 고른 분류다.
+    2. 들어온 섹터가 있으면 그것(과 그 출처).
+    3. 들어온 섹터가 없고 **다른 출처**가 준 섹터가 저장돼 있으면 그대로 — 섹터를 안 주는 증권사로 목록을 받아도 키움 키로
+       받아 둔 업종이 지워지지 않는다.
+    4. 같은 출처가 이제 섹터를 비웠으면 비운다(옛 동작).
+    """
+    sector = sector or ""
+    if old is not None:
+        o_sec, o_src = old[0] or "", old[1] or ""
+        if o_src.startswith(CSV_SOURCE) or (not sector and o_sec and o_src != (source or "")):
+            return o_sec, (o_src or None)
+    return sector, (source if sector else None)
+
+
+def stored_sectors(con, codes) -> dict[str, tuple]:
+    """``{code: (sector, sector_source)}`` — ``codes`` 중 ``stocks`` 에 있는 것."""
+    codes = list(codes)
+    out: dict[str, tuple] = {}
+    for k in range(0, len(codes), 500):
+        part = codes[k:k + 500]
+        q = f"SELECT code, sector, sector_source FROM stocks WHERE code IN ({','.join('?' * len(part))})"
+        out.update({c: (sec, src) for c, sec, src in con.execute(q, part).fetchall()})
+    return out
+
+
+def with_stored_sectors(con, rows: list[dict]) -> list[dict]:
+    """종목 목록 행의 섹터·출처를 :func:`resolve_sector` 로 고친 사본 — ``--sectors`` 조각을 고르기 전에 쓴다."""
+    old = stored_sectors(con, [r["code"] for r in rows])
+    out = []
+    for r in rows:
+        sec, src = resolve_sector(old.get(r["code"]), r["sector"], r.get("sector_source"))
+        out.append({**r, "sector": sec, "sector_source": src})
+    return out
+
+
 def upsert_stocks(con, rows: list[dict]) -> int:
-    return _upsert(con, "stocks", ("code", "name", "market", "sector", "kind"),
-                   [(r["code"], r["name"], r["market"], r["sector"], r["kind"]) for r in rows])
+    """종목 목록 → ``stocks``. 이름·시장·종류는 늘 새 값, 섹터·출처는 :func:`resolve_sector`."""
+    rows = with_stored_sectors(con, rows)
+    return _upsert(con, "stocks", ("code", "name", "market", "sector", "kind", "sector_source"),
+                   [(r["code"], r["name"], r["market"], r["sector"], r["kind"], r["sector_source"]) for r in rows])
+
+
+def import_sectors(con, table: dict[str, str], label: str) -> dict:
+    """사용자 섹터 표(종목코드 → 섹터) → ``stocks``. 출처 ``csv:<label>`` — 뒤의 증권사 목록이 덮지 않는다.
+
+    ``stocks`` 에 있는 종목만 바꾼다(이름·시장은 종목 목록이 준다). ``{"updated": n, "unknown": [코드…]}``.
+    """
+    have = {r[0] for r in con.execute("SELECT code FROM stocks").fetchall()}
+    hit = [(sec, CSV_SOURCE + label, code) for code, sec in table.items() if code in have and sec]
+    con.executemany("UPDATE stocks SET sector = ?, sector_source = ? WHERE code = ?", hit)
+    return {"updated": len(hit), "unknown": sorted(c for c in table if c not in have)}
 
 
 def upsert_supply_demand(con, rows: list[tuple]) -> int:
