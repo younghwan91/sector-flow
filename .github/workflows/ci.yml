@@ -8,7 +8,7 @@ name: CI
 #   PR(코드)   3.13 + 커버리지 + 3.11 문법    mutations-pr: --scope direct, 직접 건드린 변이만
 #   main(코드) gate 하나(3.11)               gate: 전체 변이. 기준선이 전체 pytest 라 검사 한 벌을 겸한다, 동시 2
 #
-# 코드 머지당 **60분 이하**(상한 60, 표 scripts/ci_plan.py `--minutes`, tests/test_ci_workflow.py 가 대조한다). 예상 약 50분:
+# 코드 머지당 **70분 이하**(상한 80, 표 scripts/ci_plan.py `--minutes`, tests/test_ci_workflow.py 가 대조한다). 예상 약 50분:
 #   PR 약 16 = plan 1 + 신원 1 + test 약 10 + 직접 변이 약 4 / main 약 34 = plan 1 + 신원 1 + gate 약 30 + 공개 랜딩 약 2(pages.yml).
 #   gate 는 기준선 약 8.5(전체 pytest 4410건 로컬 6.7분 × 러너 1.07 + 부하) + 주입 약 20(1367건 로컬 28.7분 × 1.15 ÷ 동시 2, 몫 차이 포함).
 #   이전: 2026-11-08 main 한 번 37.3분(변이 681개·4샤드)이고 변이 1367개·8샤드면 머지당 109~141분이었다. 실측은 이 설계가 처음 돈 뒤 다시 적는다.
@@ -144,7 +144,7 @@ jobs:
     needs: plan
     if: ${{ github.event_name != 'pull_request' && needs.plan.outputs.kind != 'docs' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 75
+    timeout-minutes: 100
     steps:
       - uses: actions/checkout@v7
         with:
@@ -163,7 +163,7 @@ jobs:
       - name: Screen layers (demo)
         run: uv run --no-sync python scripts/verify_merge.py . --base origin/main --only render,pty --demo
       - name: Mutation gate
-        run: uv run --no-sync python scripts/verify_merge.py . --base origin/main --only mutations --full-baseline --workers 2 --budget-min 35
+        run: uv run --no-sync python scripts/verify_merge.py . --base origin/main --only mutations --full-baseline --workers 2 --budget-min 45
       # 식이 있어 ci-local 은 건너뛴다(로컬 sudo 는 비밀번호를 묻는다). 커널 OOM 이면 원인이 여기 남는다.
       - name: Memory diagnosis
         if: ${{ failure() }}

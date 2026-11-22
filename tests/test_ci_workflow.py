@@ -39,7 +39,7 @@ def _timeout(job: str) -> int:
 def test_code_merge_stays_under_the_minutes_ceiling():
     """정지 재발 방지 — 머지 한 번(PR + main)의 청구 분 표가 상한 이하이고, 머리말의 숫자가 그 표와 같다."""
     plan = _load_plan()
-    assert plan.MERGE_MINUTES_MAX == 60
+    assert plan.MERGE_MINUTES_MAX == 80
     assert plan.merge_minutes() <= plan.MERGE_MINUTES_MAX, plan.MERGE_JOBS
     assert f"코드 머지당 **{plan.merge_minutes()}분 이하**(상한 {plan.MERGE_MINUTES_MAX}" in CI, "ci.yml 머리말이 표와 다르다"
     assert "37.3분" not in CI.split("on:\n", 1)[0] or "이전:" in CI.split("on:\n", 1)[0]

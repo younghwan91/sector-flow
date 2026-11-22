@@ -27,15 +27,16 @@ PY_DOCS = ["3.13"]
 PY_GATE = "3.11"
 PY_ALL = sorted({*PY_PR, *PY_DOCS, PY_GATE})
 
-#: 코드 머지 한 번(PR 실행 + main 실행)의 청구 분 상한. Free 포함량 약 2000분에 월 33건, Pro 약 3000분에 월 50건.
-MERGE_MINUTES_MAX = 60
+#: 코드 머지 한 번(PR 실행 + main 실행)의 분 상한. 비공개 시절엔 청구 분(Free 약 2000분)이라 60이었다. 2026-11-21 공개 전환 뒤
+#: 표준 러너 분은 무료라 상한은 청구가 아니라 피드백 속도다 — 변이가 1,768개로 늘어 gate 가 35분 예산을 넘어(39분, 2026-11-23) 80 으로 올렸다.
+MERGE_MINUTES_MAX = 80
 #: 잡마다 청구될 분(GitHub 은 잡마다 분 단위로 올림한다). ``tests/test_ci_workflow.py`` 가 잡 목록·``--budget-min``·``timeout-minutes`` 와 대조한다.
 #: test 10분 = pytest+커버리지 약 8.2 + 설치·린트·화면 층. mutations-pr 7분 = 예산의 두 배(거기서 멈춘다) + 설치.
-#: gate 37분 = 하네스 예산 35 + 설치·린트·화면 층. 실측 근거는 ci.yml 머리말.
+#: gate 47분 = 하네스 예산 45 + 설치·린트·화면 층. 실측 근거는 ci.yml 머리말.
 #: pages 2분 = 공개 랜딩(``.github/workflows/pages.yml``) — 설치·데모 짓기·공개 표면 검사·배포, 잡 하나.
 MERGE_JOBS = {
     "pull_request": {"plan": 1, "check-identity": 1, "test": 10 * len(PY_PR), "mutations-pr": 7},
-    "push": {"plan": 1, "check-identity": 1, "gate": 37, "pages": 2},
+    "push": {"plan": 1, "check-identity": 1, "gate": 47, "pages": 2},
 }
 
 
