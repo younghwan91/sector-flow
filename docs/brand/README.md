@@ -17,6 +17,9 @@
 | [`wordmark.svg`](wordmark.svg) | 라이트(종이) | README·문서 |
 | [`wordmark-dark.svg`](wordmark-dark.svg) | 다크(밤) | 지도 페이지 머리(인라인 사본) |
 | [`favicon.svg`](favicon.svg) | 밤 바탕 칸 포함 | 브라우저 탭·작은 자리 |
+| [`logo.svg`](logo.svg) | 라이트(종이) | 앱 아이콘·정사각 심볼 |
+| [`logo-dark.svg`](logo-dark.svg) | 다크(밤) | 다크 배경 심볼 |
+| [`logo-mark.svg`](logo-mark.svg) | 투명(라이트 색) | 문서·배지 단독 마크 |
 
 - 표지는 수급 지도를 줄인 것이다 — 왼쪽 파랑 띠(넘긴 쪽)는 가운데 막대(섹터)에서 끝나고, 오른쪽 빨강 띠(넘겨받은 쪽)는 막대에서 난다.
   띠가 막대를 지나 이어지지 않는다(주체끼리의 짝을 그리지 않는다).
