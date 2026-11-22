@@ -133,6 +133,20 @@ def _sd_sources(con) -> tuple[str, ...]:
     return tuple(b for b in BROKER_LABEL if b in have) or ("kiwoom",)
 
 
+def byo_venue(con) -> "str | None":
+    """BYO sqlite 수급의 거래소 기준(``KRX``·``KRX+NXT``) — kr_quant 는 ``None``(키움 KRX 단독, 표지는 ``DATA_BASIS``).
+
+    기준이 둘 섞였으면 멈춘다 — 수집기가 막지만(``collect.run.guard_venue``) 손으로 합친 파일도 있을 수 있다.
+    """
+    if not _has_sector_source(con):
+        return None
+    from sectorflow.collect.brokers import venue_of
+    venues = {venue_of(s) for s in _sd_sources(con)}
+    if len(venues) > 1:
+        raise SystemExit(f"수급의 거래소 기준이 섞였다({', '.join(sorted(venues))}) — 한 지도에 더하지 않는다. 기준마다 sqlite 를 나눈다.")
+    return venues.pop()
+
+
 def _has_sector_source(con) -> bool:
     """BYO sqlite 의 ``stocks.sector_source``(섹터 출처, ``sectorflow.collect.write``)가 있나. kr_quant(Postgres)에는 없다."""
     if not isinstance(con, sqlite3.Connection):
@@ -418,14 +432,14 @@ def name_block(df: pd.DataFrame, dates: list[str], caps: "pd.DataFrame | None") 
 #: 수급만 페이로드(``--flows-only``)의 키 — 수급 지도(``sectorflow.flowmap.build_map_data``)가 읽는 것과 종목 집계.
 #: 수익률·시총·오늘 블록이 없다. 수치표·TUI 는 ``flows_only`` 를 보고 :data:`sectorflow.basis.FLOWS_ONLY_NOTICE` 로 끝낸다.
 FLOWS_ONLY_KEYS = ("dates", "sectors", "markets", "n_by_sector", "flows", "detail", "detail_labels", "names",
-                   "n_names", "flows_only", "sector_source")
+                   "n_names", "flows_only", "sector_source", "venue")
 
 
-def build_flows_payload(df: pd.DataFrame, dates: list[str]) -> dict:
+def build_flows_payload(df: pd.DataFrame, dates: list[str], venue: "str | None" = None) -> dict:
     """수급만 페이로드 — 지도 전용 수집(ka10099·ka10059) sqlite 로 선다. ``flows``·``detail`` 은 :func:`build_payload` 와 같다."""
     out = {"dates": dates, **flow_blocks(df, dates), "detail_labels": {k: ko for k, ko in INST_DETAIL},
            "names": name_block(df, dates, None), "n_names": int(df["code"].nunique()), "flows_only": True,
-           "sector_source": sector_source_counts(df)}
+           "sector_source": sector_source_counts(df), "venue": venue}
     return {k: out[k] for k in FLOWS_ONLY_KEYS}
 
 
@@ -2012,8 +2026,9 @@ def main():
             ap.error("--flows-only 는 --json 하고만 쓴다(뷰어·확정·재구성은 수익률이 있어야 한다)")
         con = connect(a.db)
         df, dates = load(con, a.days, asof=a.asof, returns=False)
+        venue = byo_venue(con)
         con.close()
-        flows = build_flows_payload(df, dates)
+        flows = build_flows_payload(df, dates, venue)
         with open(a.json, "w", encoding="utf-8") as f:
             json.dump(flows, f, ensure_ascii=False)
         print(f"wrote {a.json}  ({dates[0]} ~ {dates[-1]}, {len(dates)}거래일, {flows['n_names']}종목, 수급만)")

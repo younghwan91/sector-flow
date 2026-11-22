@@ -12804,7 +12804,7 @@ id = "map-basis-slot-left-empty"
 why = "지도 페이지가 데이터 기준 표지(KRX 단독·종가 환산)를 안 채운다 — 자리표시자가 그대로 화면에 나온다."
 guards = ["tests/test_map_page.py::test_map_html_slots_filled_and_no_remote_scripts"]
 file = "scripts/sector_map.py"
-find = "            .replace(\"__BASIS__\", DATA_BASIS_SHORT)"
+find = "            .replace(\"__BASIS__\", data.get(\"basis\") or DATA_BASIS_SHORT)"
 replace = "            .replace(\"__BASIS__\", \"__BASIS__\")"
 
 [[mutation]]
@@ -13700,8 +13700,8 @@ id = "sector-source-not-in-payload"
 why = "수급만 페이로드에 섹터 출처를 싣지 않는다 — 지도 머리의 섹터 출처 표지가 사라진다."
 guards = ["tests/test_collect_sectors.py::test_sector_source_labelled"]
 file = "scripts/sector_flow.py"
-find = "           \"sector_source\": sector_source_counts(df)}"
-replace = "           \"sector_source\": None}"
+find = "           \"sector_source\": sector_source_counts(df), \"venue\": venue}"
+replace = "           \"sector_source\": None, \"venue\": venue}"
 
 [[mutation]]
 id = "sector-source-not-in-map-data"
@@ -13844,7 +13844,7 @@ id = "broker-http-forbidden-path-sent"
 why = "허용 목록 밖 경로(주문 등)를 막지 않는다 — 시세·수급 조회만 부른다는 약속이 코드에서 사라진다."
 guards = ["tests/test_collect_kis.py::test_paths_outside_the_allow_list_never_leave"]
 file = "src/sectorflow/collect/brokers/http.py"
-find = "        if (method, path) not in self.allowed:\n"
+find = "        if not path_allowed(self.allowed, method, path):\n"
 replace = "        if False:\n"
 
 [[mutation]]
@@ -14006,6 +14006,110 @@ guards = ["tests/test_collect_ls.py::test_default_transport_sends_the_token_requ
 file = "src/sectorflow/collect/brokers/http.py"
 find = "    elif is_form(headers):\n"
 replace = "    elif False:\n"
+
+[[mutation]]
+id = "toss-venue-krx-only"
+why = "토스 어댑터를 KRX 단독으로 표시한다 — 통합 숫자가 KRX 단독 표지로 나가고 섞임 거부도 꺼진다."
+guards = ["tests/test_collect_toss.py::test_capability_is_integrated_and_unverified", "tests/test_collect_toss.py::test_integrated_rows_never_join_a_krx_only_sqlite"]
+file = "src/sectorflow/collect/brokers/toss.py"
+find = "    venue=VENUE_KRX_NXT,\n"
+replace = "    venue=\"KRX\",\n"
+
+[[mutation]]
+id = "broker-venue-mix-allowed"
+why = "KRX 단독 행이 든 sqlite 에 KRX+NXT 통합 수급을 받아 넣는다 — 같은 날 다른 기준의 숫자를 한 지도에 더한다."
+guards = ["tests/test_collect_toss.py::test_integrated_rows_never_join_a_krx_only_sqlite"]
+file = "src/sectorflow/collect/run.py"
+find = "    if bad:\n        con.close()\n        raise SystemExit(f\"⏹ 이 sqlite 에는 거래소 기준이 다른"
+replace = "    if False:\n        con.close()\n        raise SystemExit(f\"⏹ 이 sqlite 에는 거래소 기준이 다른"
+
+[[mutation]]
+id = "byo-payload-venue-mix-allowed"
+why = "손으로 합친 sqlite 의 섞인 거래소 기준을 페이로드가 그대로 더한다."
+guards = ["tests/test_collect_toss.py::test_a_hand_mixed_sqlite_refuses_to_build_a_payload"]
+file = "scripts/sector_flow.py"
+find = "    if len(venues) > 1:\n"
+replace = "    if False:\n"
+
+[[mutation]]
+id = "map-integrated-basis-ignored"
+why = "통합 기준 페이로드의 지도에 KRX 단독 표지를 단다 — 머리 표지가 숫자의 기준과 다르게 말한다."
+guards = ["tests/test_collect_toss.py::test_toss_sqlite_map_says_integrated_not_krx_only"]
+file = "src/sectorflow/flowmap.py"
+find = "    basis = DATA_BASIS_INTEGRATED_SHORT if P.get(\"venue\") == \"KRX+NXT\" else DATA_BASIS_SHORT\n"
+replace = "    basis = DATA_BASIS_SHORT\n"
+
+[[mutation]]
+id = "map-page-basis-constant"
+why = "지도 페이지가 데이터의 표지 대신 KRX 단독 상수를 심는다."
+guards = ["tests/test_collect_toss.py::test_toss_sqlite_map_says_integrated_not_krx_only"]
+file = "scripts/sector_map.py"
+find = ".replace(\"__BASIS__\", data.get(\"basis\") or DATA_BASIS_SHORT)"
+replace = ".replace(\"__BASIS__\", DATA_BASIS_SHORT)"
+
+[[mutation]]
+id = "toss-provisional-null-is-zero"
+why = "당일 잠정 기록의 null(개인·기관 세부·기타법인)을 0 으로 읽는다 — '모름'이 '순매매 없음'이 된다."
+guards = ["tests/test_collect_toss.py::test_records_map_and_provisional_nulls_stay_unknown"]
+file = "src/sectorflow/collect/brokers/toss.py"
+find = "    return opt_int(cur.get(\"netBuyVolume\")) if isinstance(cur, dict) else None\n"
+replace = "    return opt_int(cur.get(\"netBuyVolume\")) if isinstance(cur, dict) else 0\n"
+
+[[mutation]]
+id = "toss-missing-candle-close-zero"
+why = "일봉이 없는 날의 종가를 0 으로 둔다 — 수량 × 종가 금액이 0 이 되어 그날 섹터 수급이 줄어든다."
+guards = ["tests/test_collect_toss.py::test_records_map_and_provisional_nulls_stay_unknown", "tests/test_collect_toss.py::test_pages_back_with_next_until_and_joins_raw_closes"]
+file = "src/sectorflow/collect/brokers/toss.py"
+find = "        close, vol = candles.get(d, (None, None))\n"
+replace = "        close, vol = candles.get(d, (0, 0))\n"
+
+[[mutation]]
+id = "toss-adjusted-closes"
+why = "수정주가 일봉의 종가를 쓴다 — 키움 supply_demand.close(원 종가)와 뜻이 달라 과거 금액이 배수로 틀린다."
+guards = ["tests/test_collect_toss.py::test_pages_back_with_next_until_and_joins_raw_closes"]
+file = "src/sectorflow/collect/brokers/toss.py"
+find = "\"count\": CANDLE_COUNT, \"adjusted\": \"false\","
+replace = "\"count\": CANDLE_COUNT, \"adjusted\": \"true\","
+
+[[mutation]]
+id = "toss-next-until-ignored"
+why = "nextUntil 로 과거로 가지 않는다 — 첫 쪽 100일 뒤로 창이 조용히 짧아진다."
+guards = ["tests/test_collect_toss.py::test_pages_back_with_next_until_and_joins_raw_closes"]
+file = "src/sectorflow/collect/brokers/toss.py"
+find = "            until = str(nxt)[:10]\n"
+replace = "            until = end\n"
+
+[[mutation]]
+id = "toss-truncation-hidden"
+why = "쪽 상한에서 멈춘 것을 알리지 않는다 — 잘린 이력이 신규 상장처럼 보인다."
+guards = ["tests/test_collect_toss.py::test_truncation_is_reported"]
+file = "src/sectorflow/collect/brokers/toss.py"
+find = "                more = True\n"
+replace = "                more = False\n"
+
+[[mutation]]
+id = "toss-listing-keeps-preferred"
+why = "토스 목록이 우선주(isCommonShare=false)까지 넣는다."
+guards = ["tests/test_collect_toss.py::test_listing_takes_common_stocks_and_never_toss_sectors"]
+file = "src/sectorflow/collect/brokers/toss.py"
+find = "                    if r.get(\"securityType\") == \"STOCK\" and r.get(\"isCommonShare\") is True]\n            rows = [r for r in rows if fetch.is_common_stock(r)]\n"
+replace = "                    ]\n"
+
+[[mutation]]
+id = "broker-http-slot-matches-any-path"
+why = "허용 경로의 {symbol} 자리가 슬래시까지 받는다 — 허용 경로 아래의 다른 경로가 빠져나간다."
+guards = ["tests/test_collect_toss.py::test_symbol_slot_is_allowed_but_orders_are_not"]
+file = "src/sectorflow/collect/brokers/http.py"
+find = "        rx = \"^\" + \"[A-Za-z0-9.-]+\".join(re.escape(p) for p in parts) + \"$\"\n"
+replace = "        rx = \"^\" + \".+\".join(re.escape(p) for p in parts) + \"$\"\n"
+
+[[mutation]]
+id = "map-batch-payload-labelled-integrated"
+why = "venue 가 없는 배치(kr_quant) 페이로드까지 통합 표지를 단다 — KRX 단독 리포트가 거꾸로 표시된다."
+guards = ["tests/test_collect_toss.py::test_kr_quant_style_payload_keeps_the_krx_only_label"]
+file = "src/sectorflow/flowmap.py"
+find = "DATA_BASIS_INTEGRATED_SHORT if P.get(\"venue\") == \"KRX+NXT\" else DATA_BASIS_SHORT"
+replace = "DATA_BASIS_INTEGRATED_SHORT if P.get(\"venue\") != \"KRX\" else DATA_BASIS_SHORT"
 
 [[removed]]
 id = "ci-shard-denominator-hardcoded"

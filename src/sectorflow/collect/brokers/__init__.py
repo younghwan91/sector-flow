@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Callable
 
-from . import kis, kiwoom, ls
+from . import kis, kiwoom, ls, toss
 from .base import Broker, Capability, NoListing, Settings
 
 #: 이름 → 어댑터 생성기. 순서가 CLI ``--broker`` 선택지 순서다(키움이 기본·처음).
@@ -19,6 +19,7 @@ BROKERS: dict[str, Callable[[Settings], Broker]] = {
     "kiwoom": kiwoom.make,
     "kis": kis.make,
     "ls": ls.make,
+    "toss": toss.make,
 }
 DEFAULT = "kiwoom"
 
@@ -33,6 +34,13 @@ CAPABILITIES: dict[str, Capability] = {
     "kiwoom": kiwoom.CAPABILITY,
     "kis": kis.CAPABILITY,
     "ls": ls.CAPABILITY,
+    "toss": toss.CAPABILITY,
 }
 
-__all__ = ["BROKERS", "CAPABILITIES", "DEFAULT", "Broker", "Capability", "NoListing", "Settings", "capability"]
+def venue_of(source: str) -> str:
+    """수급 행 ``source`` 의 거래소 기준 — 등록부 밖(옛 행)은 키움과 같은 KRX 단독으로 본다."""
+    cap = CAPABILITIES.get(source)
+    return cap.venue if cap is not None else kiwoom.CAPABILITY.venue
+
+
+__all__ = ["venue_of", "BROKERS", "CAPABILITIES", "DEFAULT", "Broker", "Capability", "NoListing", "Settings", "capability"]

@@ -171,7 +171,10 @@ def test_paths_outside_the_allow_list_never_leave():
     for name in BROKERS:
         mod = __import__(f"sectorflow.collect.brokers.{name}", fromlist=["ALLOWED"])
         for _m, path in getattr(mod, "ALLOWED", ()):
-            assert not any(w in path.lower() for w in ("order", "trading", "acnt", "balance", "ordr")), (name, path)
+            segs = path.lower().strip("/").split("/")
+            assert not any(any(w in seg for w in ("order", "ordr", "acnt", "account", "balance", "holding",
+                                                  "buying", "sellable", "transaction"))
+                           or seg == "trading" for seg in segs), (name, path)
 
 
 def test_call_budget_counts_the_token_and_stops_before_sending():

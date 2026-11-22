@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 
 from sectorflow import summary
-from sectorflow.basis import DATA_BASIS_SHORT, sector_source_label
+from sectorflow.basis import DATA_BASIS_INTEGRATED_SHORT, DATA_BASIS_SHORT, sector_source_label
 from sectorflow.josa import josa
 
 #: 페이로드 ``flows[시장][섹터]`` 의 주체 키 — 순서가 화면의 주체 노드 순서다(양쪽 같게).
@@ -350,7 +350,9 @@ def build_map_data(P: dict) -> dict:
             views[m][str(w)] = {"exchange": exchange_graph(sums),
                                 "actors": {a: actor_graph(full, a) for a in keys},
                                 "headline": map_headline(P, m, w)}
-    out = {"asof": P["dates"][-1] if N else None, "demo": bool(P.get("demo")), "basis": DATA_BASIS_SHORT,
+    # 거래소 기준 표지 — KRX+NXT 통합(토스 어댑터 BYO)이면 KRX 단독 문구 대신 통합 문구(basis.DATA_BASIS_INTEGRATED).
+    basis = DATA_BASIS_INTEGRATED_SHORT if P.get("venue") == "KRX+NXT" else DATA_BASIS_SHORT
+    out = {"asof": P["dates"][-1] if N else None, "demo": bool(P.get("demo")), "basis": basis,
            "sector_source": sector_source_label(P.get("sector_source")),
            "markets": markets, "windows": windows, "labels": {**ACTOR_LABEL, **{DETAIL_PREFIX + k: v for k, v in
                                                                                   (P.get("detail_labels") or {}).items()},
