@@ -206,6 +206,7 @@ def real_repo(tmp_path):
     for name in ("daily_report.sh", "_env.sh", "completeness_gate.py", "finalize_done.py"):
         shutil.copy(REPO / "scripts" / name, r / "scripts" / name)
     (r / "scripts" / "sector_flow.py").write_text(FLOW.FAKE_SECTOR_FLOW)
+    (r / "scripts" / "sector_map.py").write_text(FLOW.FAKE_SECTOR_MAP)
     (r / "scripts" / "sector_numbers.py").write_text(FLOW.FAKE_NUMBERS)
     (r / "scripts" / "verify_report.py").write_text(FAKE_VERIFY_COUNTS)
     (r / "scripts" / "trust_page.py").write_text(FLOW.FAKE_TRUST)

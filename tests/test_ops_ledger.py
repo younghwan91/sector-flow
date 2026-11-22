@@ -615,6 +615,7 @@ def repo(tmp_path):
                  "finalize_done.py", "serve.sh", "ops_ledger.py", "krx_calendar.py"):
         shutil.copy(REPO / "scripts" / name, r / "scripts" / name)
     (r / "scripts" / "sector_flow.py").write_text(drf.FAKE_SECTOR_FLOW)
+    (r / "scripts" / "sector_map.py").write_text(drf.FAKE_SECTOR_MAP)
     (r / "scripts" / "sector_numbers.py").write_text(drf.FAKE_NUMBERS)
     (r / "scripts" / "verify_report.py").write_text(drf.FAKE_VERIFY)
     (r / "scripts" / "trust_page.py").write_text(drf.FAKE_TRUST)
