@@ -177,9 +177,14 @@ def capture(cmd: list[str], keys: tuple) -> str:
         subprocess.run(["tmux", "-L", f"sf-shots-{os.getpid()}", "kill-server"], capture_output=True, timeout=30)
 
 
+#: 이보다 색을 줄이지 않는 그림 — 수급 지도는 64색이면 머리 워드마크의 파랑이 청록으로 바랜다(브랜드 색이 그림에서 갈린다).
+MIN_COLORS = {"map-demo.png": 128}
+
+
 def _quantize(path: Path, colors: int = 128) -> None:
     from PIL import Image  # noqa: PLC0415 — 그림을 찍을 때만
 
+    colors = max(colors, MIN_COLORS.get(path.name, 0))
     Image.open(path).convert("RGB").quantize(colors=colors, method=Image.MEDIANCUT).save(path, optimize=True)
     print(f"{path.name}: {Image.open(path).size}, {path.stat().st_size:,} bytes")
 
@@ -242,7 +247,7 @@ def shoot(report: Path, out: Path) -> None:
             bottom = pg.evaluate("(()=>{const r=document.getElementById('fig').getBoundingClientRect();"
                                  "return Math.ceil(r.bottom+scrollY)+8;})()")
             pg.screenshot(path=str(out / "map-demo.png"), full_page=True, clip={"x": 0, "y": 0, "width": 1440, "height": bottom})
-            _quantize(out / "map-demo.png", 128)   # 64색이면 머리 표지의 파랑이 청록으로 바랜다
+            _quantize(out / "map-demo.png", 64)
             ctx.close()
             browser.close()
     finally:

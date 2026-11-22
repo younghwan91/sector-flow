@@ -13706,3 +13706,11 @@ guards = ["tests/test_public_surface.py::test_public_png_has_demo_sidecar"]
 file = "tests/test_public_surface.py"
 find = "PUBLIC_GLOBS = (\"README.md\", \"README.en.md\", \"docs/images/**\", \"docs/brand/**\", \"site/**\")"
 replace = "PUBLIC_GLOBS = (\"README.md\", \"README.en.md\", \"docs/brand/**\", \"site/**\")"
+
+[[mutation]]
+id = "map-shot-drops-to-64-colours"
+why = """수급 지도 그림을 64색으로 줄여 머리 워드마크의 파랑이 청록으로 바랜다 — README 의 브랜드 색이 가이드와 갈린다"""
+guards = ["tests/test_screenshots_fresh.py::test_map_shot_keeps_enough_colours_for_the_wordmark"]
+file = "scripts/demo_shots.py"
+find = 'MIN_COLORS = {"map-demo.png": 128}'
+replace = 'MIN_COLORS = {}'

@@ -97,3 +97,38 @@ def test_ansi_to_html_keeps_color_width_and_trims_only_when_asked():
     assert '<span class="g2">빨</span>' in page, "한글은 2칸 격자에 넣어야 표 열이 안 어긋난다"
     assert page.count('class="r"') == 3
     assert S.ansi_html(raw, trim=True).count('class="r"') == 2
+
+
+def test_map_shot_keeps_enough_colours_for_the_wordmark(tmp_path, monkeypatch):
+    """수급 지도 그림은 64색으로 불러도 128색 아래로 줄이지 않는다 — 머리 워드마크의 파랑이 청록으로 바랬다."""
+    import sys
+    import types
+
+    used = {}
+
+    class _Img:
+        size = (1, 1)
+
+        def convert(self, _mode):
+            return self
+
+        def quantize(self, colors, method):
+            used[self.name] = colors
+            return self
+
+        def save(self, *_a, **_k):
+            pass
+
+    def _open(path):
+        img = _Img()
+        img.name = Path(path).name
+        return img
+
+    fake = types.ModuleType("PIL")
+    fake.Image = types.SimpleNamespace(open=_open, MEDIANCUT=0)
+    monkeypatch.setitem(sys.modules, "PIL", fake)
+    S = _shots()
+    for name in ("map-demo.png", "web-today.png"):
+        (tmp_path / name).write_bytes(b"")
+        S._quantize(tmp_path / name, 64)
+    assert used == {"map-demo.png": 128, "web-today.png": 64}
