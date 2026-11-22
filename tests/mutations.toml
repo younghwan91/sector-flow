@@ -7341,7 +7341,7 @@ find = "(\"code\", \"date\", \"upd_stkpc_tp\", \"upd_rt\"), list(seen.values()))
 replace = "(\"code\", \"date\", \"upd_stkpc_tp\", \"upd_rt\"), rows)"
 [[mutation.edits]]
 file = "src/sectorflow/collect/run.py"
-find = "                events = list({(r[0], r[1]): r for r in events}.values())\n"
+find = "    events = list({(r[0], r[1]): r for r in events}.values())\n"
 replace = ""
 
 [[mutation]]
@@ -7520,6 +7520,158 @@ guards = ["tests/test_collect_universe.py::test_universe_writes_both_markets_wit
 file = "src/sectorflow/collect/run.py"
 find = "for m in fetch.MARKETS for s in fetch.stock_list(api, m)"
 replace = "for m in (\"kospi\",) for s in fetch.stock_list(api, m)"
+
+[[mutation]]
+id = "byo-hourly-cap-off-by-one"
+why = "시간 창이 1,001건을 허용한다 — 키움 시간당 1,000건 상한을 넘긴다"
+guards = ["tests/test_collect_kiwoom.py::test_hourly_cap_blocks_1001st"]
+file = "src/sectorflow/collect/kiwoom.py"
+find = "(1000, 3600.0))"
+replace = "(1001, 3600.0))"
+
+[[mutation]]
+id = "byo-minute-cap-loose"
+why = "분 창이 101건을 허용한다"
+guards = ["tests/test_collect_kiwoom.py::test_second_and_minute_windows_hold_across_trs"]
+file = "src/sectorflow/collect/kiwoom.py"
+find = "(100, 60.0),"
+replace = "(101, 60.0),"
+
+[[mutation]]
+id = "byo-second-cap-loose"
+why = "초 창이 6건을 허용한다"
+guards = ["tests/test_collect_kiwoom.py::test_second_and_minute_windows_hold_across_trs"]
+file = "src/sectorflow/collect/kiwoom.py"
+find = "((5, 1.0),"
+replace = "((6, 1.0),"
+
+[[mutation]]
+id = "byo-window-sends-not-recorded"
+why = "보낸 시각을 적지 않아 분·시간 창이 늘 비어 있다"
+guards = ["tests/test_collect_kiwoom.py::test_hourly_cap_blocks_1001st"]
+file = "src/sectorflow/collect/kiwoom.py"
+find = "        self._sent.append(self._clock())\n"
+replace = ""
+
+[[mutation]]
+id = "byo-only-trs-ignored"
+why = "지도 전용 클라이언트가 ka10081 등 다른 TR 도 보낸다"
+guards = ["tests/test_collect_kiwoom.py::test_only_restricts_trs_before_sending"]
+file = "src/sectorflow/collect/kiwoom.py"
+find = "        if self.only is not None and api_id not in self.only:\n"
+replace = "        if False:\n"
+
+[[mutation]]
+id = "byo-daily-takes-today-before-close"
+why = "20시(애프터마켓 끝) 전에도 오늘을 끝날로 받아 잠정치 도중 값을 쓴다"
+guards = ["tests/test_collect_daily.py::test_target_day_follows_the_krx_calendar_and_the_close"]
+file = "src/sectorflow/collect/run.py"
+find = "if known and now.hour >= DAY_DONE_HOUR_KST:"
+replace = "if known:"
+
+[[mutation]]
+id = "byo-daily-weekday-is-trading-day"
+why = "달력 대신 평일이면 거래일로 본다 — 휴장일 저녁에 그날을 끝날로 잡는다"
+guards = ["tests/test_collect_daily.py::test_target_day_follows_the_krx_calendar_and_the_close"]
+file = "src/sectorflow/collect/run.py"
+find = "    known = cal.is_trading_day(today)\n"
+replace = "    known = today.weekday() < 5\n"
+
+[[mutation]]
+id = "byo-daily-refetches-when-current"
+why = "이미 최신이어도 키움을 부른다(목록·수급 호출을 매번 쓴다)"
+guards = ["tests/test_collect_daily.py::test_daily_when_up_to_date_makes_no_call_at_all"]
+file = "src/sectorflow/collect/run.py"
+find = "if d < end and c not in done}"
+replace = "if c not in done or True}"
+
+[[mutation]]
+id = "byo-daily-last-day-not-refreshed"
+why = "마지막 저장일을 다시 받지 않아 그날 잠정치가 남는다"
+guards = ["tests/test_collect_daily.py::test_daily_map_only_fills_from_the_last_saved_day_with_two_trs"]
+file = "src/sectorflow/collect/run.py"
+find = "oldest=since.replace(\"-\", \"\"),"
+replace = "oldest=since.replace(\"-\", \"\") + \"~\","
+
+[[mutation]]
+id = "byo-daily-gap-not-filled"
+why = "끝날 하루만 받아 사이의 거래일이 빈다"
+guards = ["tests/test_collect_daily.py::test_daily_map_only_fills_from_the_last_saved_day_with_two_trs", "tests/test_collect_daily.py::test_daily_skips_weekends_and_holidays"]
+file = "src/sectorflow/collect/run.py"
+find = "oldest=since.replace(\"-\", \"\"),"
+replace = "oldest=anchor,"
+
+[[mutation]]
+id = "byo-daily-map-only-calls-prices"
+why = "지도 전용인데 일봉·주식수까지 부른다"
+guards = ["tests/test_collect_daily.py::test_daily_map_only_fills_from_the_last_saved_day_with_two_trs"]
+file = "src/sectorflow/collect/run.py"
+find = "                if not args.map_only:\n                    lo = con.execute"
+replace = "                if True:\n                    lo = con.execute"
+
+[[mutation]]
+id = "byo-daily-map-only-unrestricted"
+why = "지도 전용 실행의 클라이언트가 TR 을 좁히지 않는다"
+guards = ["tests/test_collect_daily.py::test_daily_map_only_fills_from_the_last_saved_day_with_two_trs"]
+file = "src/sectorflow/collect/run.py"
+find = "only=map_only_trs if args.map_only else None"
+replace = "only=None"
+
+[[mutation]]
+id = "byo-daily-newcomers-any-sector"
+why = "받은 적 없는 섹터의 종목까지 증분이 끌어온다(조각이 전 시장으로 번진다)"
+guards = ["tests/test_collect_daily.py::test_daily_follows_listing_changes_within_the_same_sectors"]
+file = "src/sectorflow/collect/run.py"
+find = " and s[\"sector\"] in sectors)"
+replace = ")"
+
+[[mutation]]
+id = "byo-daily-done-not-marked"
+why = "끝난 종목을 collect_done 에 적지 않아 거래정지 종목을 매번 다시 받고 원장으로 이어 받기를 못 가른다"
+guards = ["tests/test_collect_daily.py::test_daily_resumes_after_a_busy_window"]
+file = "src/sectorflow/collect/run.py"
+find = "                write.mark_done(con, code, end, run_id)\n                con.commit()\n"
+replace = "                con.commit()\n"
+
+[[mutation]]
+id = "byo-daily-busy-exit-lost"
+why = "운영 창에 멈춘 daily 가 75 가 아니라 1 로 끝난다(cron_run 이 실패로 알린다)"
+guards = ["tests/test_collect_daily.py::test_daily_resumes_after_a_busy_window"]
+file = "src/sectorflow/collect/run.py"
+find = "\"n_failed\": len(failed), \"notes\": notes[:20]}, ensure_ascii=False, indent=1))\n    if interrupted:\n        return EXIT_BUSY\n"
+replace = "\"n_failed\": len(failed), \"notes\": notes[:20]}, ensure_ascii=False, indent=1))\n    if interrupted:\n        return 1\n"
+
+[[mutation]]
+id = "byo-daily-shares-snapshot-misdated"
+why = "주식수 스냅숏을 끝날이 아니라 마지막 저장일로 적는다"
+guards = ["tests/test_collect_daily.py::test_daily_full_mode_also_updates_prices_shares_and_indexes"]
+file = "src/sectorflow/collect/run.py"
+find = "snap=end,"
+replace = "snap=since,"
+
+[[mutation]]
+id = "byo-daily-empty-db-crashes"
+why = "수급이 하나도 없는 sqlite 에서 안내 대신 max() 오류로 죽는다"
+guards = ["tests/test_collect_daily.py::test_daily_without_any_saved_flow_refuses"]
+file = "src/sectorflow/collect/run.py"
+find = "    if not last_by_code:\n"
+replace = "    if False:\n"
+
+[[mutation]]
+id = "byo-daily-off-calendar-year-guessed"
+why = "달력이 다루지 않는 해인데 거래일을 추측한다"
+guards = ["tests/test_collect_daily.py::test_target_day_refuses_a_year_the_calendar_does_not_cover"]
+file = "src/sectorflow/collect/run.py"
+find = "    if known is None:\n        raise SystemExit(f\"{today.year}년이"
+replace = "    if False:\n        raise SystemExit(f\"{today.year}년이"
+
+[[mutation]]
+id = "byo-calendar-not-shipped"
+why = "wheel 에 KRX 달력이 없어 설치본 daily 가 죽는다"
+guards = ["tests/test_collect_daily.py::test_calendar_is_the_canonical_script_and_ships_in_the_wheel"]
+file = "pyproject.toml"
+find = "\"scripts/krx_calendar.py\" = \"sectorflow/_scripts/krx_calendar.py\"\n"
+replace = ""
 
 [[mutation]]
 id = "byo-universe-keeps-preferred"

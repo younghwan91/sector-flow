@@ -3,18 +3,23 @@
     sector-flow-collect smoke --code 005930
     sector-flow-collect universe --db data/byo.db                # 코스피·코스닥 전 종목·업종(ka10099, 호출 2 + 쪽)
     sector-flow-collect backfill --db data/byo.db --sectors "운송/창고,오락/문화" --days 300
+    sector-flow-collect daily --db data/byo.db --map-only        # 마지막 저장일부터 오늘까지(지도 전용: TR 2개)
     sector-flow-collect dart-shares --db data/byo.db          # 선택: DART 분기 주식수(본인 DART_API_KEY)
     sector-flow-collect --busy-file deploy/kiwoom_busy.simnode.toml backfill ... --resume
 
 같은 앱키를 다른 프로그램과 나눠 쓰면 ``--busy-file`` 로 그 프로그램의 운영 창을 준다(:mod:`.busy`). 요청 직전마다
 창을 확인하고, 창에 들어서면 그 요청을 보내지 않고 멈춘다(종료코드 75). 끝난 종목은 커밋돼 있어 ``--resume`` 이 이어 받는다.
 
-Phase 1 은 작은 조각(섹터 몇 개)만 받는다. 전 유니버스 증분·확정·밀린 날(설계 §2.4)은 다음 단계다.
+``daily`` 는 백필한 종목(과 같은 섹터의 신규 상장)을 종목마다 자기 마지막 저장일부터 오늘까지 받는다. 끝날은 KRX 휴장
+달력 정본(``scripts/krx_calendar.py``)이 정하고, 애프터마켓이 끝난 20:00 KST 전이면 오늘은 받지 않는다. 마지막
+저장일은 다시 받아 덮는다 — 그날 잠정치가 다음 실행에서 새 값이 된다.
 """
 
 from __future__ import annotations
 
 import argparse
+import functools
+import importlib.util
 import json
 import math
 import os
@@ -27,6 +32,7 @@ from .auth import load_dart_key, load_keys, mask
 from . import busy
 from .kiwoom import BusyWindow, CallBudgetExceeded, KiwoomRest, TokenConflict
 from .shares import reseed
+from sectorflow.report_cli import script_path
 
 KST = timezone(timedelta(hours=9))
 BUSY_ENV = "SECTORFLOW_BUSY_FILE"
@@ -36,15 +42,115 @@ EXIT_BUSY = 75
 MAX_FAIL_RATE = 0.20
 #: ka10059 한 쪽의 거래일 수(실측 약 100).
 SD_PAGE_DAYS = 100
+#: 지도 전용 수집이 부르는 TR — 종목·업종 목록과 수급뿐(설계 §5). ``daily --map-only`` 와 ``backfill --map-only`` 가
+#: 같이 쓴다. 클라이언트가 이 밖의 TR 을 요청 전에 막는다(``_client(args, only=map_only_trs)``).
+map_only_trs = ("ka10099", "ka10059")
+#: 그날 수급·통합 종가가 다 찬 시각(KST 시) — 애프터마켓(16:00~20:00)이 끝난 뒤. 그 전이면 오늘은 받지 않는다.
+DAY_DONE_HOUR_KST = 20
 
 
-def _client(args) -> KiwoomRest:
+def _client(args, only: "tuple[str, ...] | None" = None) -> KiwoomRest:
     windows = busy.load(args.busy_file)
     if not windows:
         print(busy.SHARED_KEY_WARNING, file=sys.stderr)
     key, secret = load_keys(args.env_file)
     return KiwoomRest(key, secret, rate=args.rate, max_calls=args.max_calls,
-                      guard=busy.make_guard(windows))
+                      guard=busy.make_guard(windows), only=only,
+                      notice=lambda m: print(m, file=sys.stderr))
+
+
+@functools.lru_cache(maxsize=1)
+def krx_calendar():
+    """KRX 휴장 달력 정본 ``scripts/krx_calendar.py`` — 설치본은 wheel 사본(:func:`sectorflow.report_cli.script_path`)."""
+    path = script_path("krx_calendar.py")
+    spec = importlib.util.spec_from_file_location("sectorflow_krx_calendar", path)
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _now_kst() -> datetime:
+    return datetime.now(KST)
+
+
+def target_day(now: datetime) -> str:
+    """증분의 끝날(YYYY-MM-DD) — ``now`` 이하 마지막 거래일. 오늘이 거래일이라도 20시 전이면 앞 거래일이다."""
+    cal = krx_calendar()
+    now = now.astimezone(KST)
+    today = now.date()
+    known = cal.is_trading_day(today)
+    if known is None:
+        raise SystemExit(f"{today.year}년이 KRX 달력(scripts/krx_calendar.py)에 없다 — 거래일을 못 가른다")
+    if known and now.hour >= DAY_DONE_HOUR_KST:
+        return today.isoformat()
+    prev = cal.prev_trading_day(today)
+    if prev is None:
+        raise SystemExit(f"{today} 앞 거래일이 KRX 달력(scripts/krx_calendar.py) 밖이다")
+    return prev
+
+
+def _gap_days(since: str, end: str) -> int:
+    """(since, end] 의 거래일 수 — 달력 밖 평일은 거래일로 친다(쪽 수를 넉넉히)."""
+    start = (datetime.fromisoformat(since) + timedelta(days=1)).date()
+    days, unknown = krx_calendar().trading_days(start, end)
+    return len(days) + len(unknown)
+
+
+def collect_flows(api: KiwoomRest, con, code: str, anchor: str, *, oldest: str,
+                  pages: int) -> "tuple[int, str, dict]":
+    """ka10059(``anchor`` 부터 과거로, ``oldest`` 이상, YYYYMMDD) → ``supply_demand``. ``(행 수, 첫 날짜, 쪽 정보)``.
+
+    지도 전용 수집의 종목 하나 — ``backfill``·``daily`` 가 같이 쓴다. 0행이면 :class:`fetch.EmptyResponse`.
+    """
+    info: dict = {}
+    sd = fetch.sd_records(code, fetch.investor_flow(api, code, anchor, max_pages=pages,
+                                                    oldest=oldest, info=info), oldest=oldest)
+    if not sd:
+        raise fetch.EmptyResponse("ka10059 0행")
+    return write.upsert_supply_demand(con, sd), min(r[1] for r in sd), info
+
+
+def _collect_prices(api: KiwoomRest, con, code: str, anchor: str, *, oldest: str, snap: str, no_raw: bool,
+                    add, failed: list) -> None:
+    """수정·무수정 일봉(ka10081) · 기업행동 · 주식수(ka10001) — 지도 전용 수집에는 없는 나머지."""
+    adj_rows = fetch.daily_chart(api, code, anchor, adjusted=True)
+    bars = fetch.bar_records(code, adj_rows, oldest=oldest)
+    if not bars:
+        raise fetch.EmptyResponse("ka10081 수정 0행")
+    add("daily_bars", write.upsert_bars(con, bars))
+    add("daily_bars_adjusted", write.upsert_adjusted(con, bars))
+    events = fetch.event_records(code, adj_rows)
+    span = [str(r["dt"]) for r in adj_rows if r.get("dt")]
+    if not no_raw:
+        raw_rows = fetch.daily_chart(api, code, anchor, adjusted=False)
+        add("daily_bars_raw", write.upsert_raw(con, fetch.bar_records(code, raw_rows, oldest=oldest)))
+        events += fetch.event_records(code, raw_rows)
+        span += [str(r["dt"]) for r in raw_rows if r.get("dt")]
+    # 수정·무수정 응답이 같은 이벤트를 둘 다 싣는다 — 날짜로 하나만 남긴다(두 번 세면 시드가 두 배로 틀린다).
+    events = list({(r[0], r[1]): r for r in events}.values())
+    # 응답이 덮은 날짜 범위만 바꾼다 — 그 밖의 이벤트(이전 실행분)는 지우지 않는다.
+    add("corporate_actions", write.replace_events(con, code, events, fetch.iso(min(span)), fetch.iso(max(span))))
+    cur = fetch.listed_shares(api, code)
+    if cur is None:
+        failed.append([code, "ka10001", "상장주식수 없음"])
+    else:
+        add("shares_outstanding_history", write.upsert_shares(con, [(code, snap, cur)], "kiwoom"))
+        add("shares_outstanding_history", reseed(con, [code]))
+
+
+def _collect_indexes(api: KiwoomRest, con, sectors: set, anchor: str, *, oldest: str, add, failed: list,
+                     names: "dict | None" = None, cal_rows: "list | None" = None) -> None:
+    """업종지수: 종합 2개 + 고른 섹터와 이름이 같은 업종 코드 전부(index_returns 가 이름으로 묶는다)."""
+    if names is None:
+        names = {i["code"]: i["name"] for i in fetch.industry_list(api)}
+    want = {"001", "101"} | {c for c, n in names.items() if n in sectors}
+    for code in sorted(want):
+        r = cal_rows if code == "001" and cal_rows is not None else fetch.industry_daily(api, code, anchor)
+        recs = fetch.index_records(code, names.get(code, ""), r, oldest=oldest)
+        if not recs:
+            failed.append([code, "ka20006", "0행"])
+        add("sector_index", write.upsert_index(con, recs))
 
 
 def _today() -> str:
@@ -172,14 +278,9 @@ def cmd_backfill(args) -> int:
         con.commit()
         print(f"🧺 {len(stocks)}종목 ({', '.join(sorted(sectors)) or '전체'})")
 
-        # 3) 업종지수: 종합 2개 + 고른 섹터와 이름이 같은 업종 코드 전부(index_returns 가 이름으로 묶는다).
-        want = {"001", "101"} | {c for c, n in names.items() if n in {s["sector"] for s in stocks}}
-        for code in sorted(want):
-            r = cal_rows if code == "001" else fetch.industry_daily(api, code, anchor)
-            recs = fetch.index_records(code, names.get(code, ""), r, oldest=oldest)
-            if not recs:
-                failed.append([code, "ka20006", "0행"])
-            add("sector_index", write.upsert_index(con, recs))
+        # 3) 업종지수
+        _collect_indexes(api, con, {s["sector"] for s in stocks}, anchor, oldest=oldest, add=add, failed=failed,
+                         names=names, cal_rows=cal_rows)
         con.commit()
 
         # 4) 종목별: 수급(ka10059 여러 쪽) · 수정·무수정 일봉(ka10081) · 주식수(ka10001)
@@ -193,44 +294,16 @@ def cmd_backfill(args) -> int:
             if code in done:
                 continue
             try:
-                info: dict = {}
-                sd = fetch.sd_records(code, fetch.investor_flow(api, code, anchor, max_pages=pages,
-                                                                oldest=oldest, info=info), oldest=oldest)
-                if not sd:
-                    raise fetch.EmptyResponse("ka10059 0행")
-                first = min(r[1] for r in sd)
+                n_sd, first, info = collect_flows(api, con, code, anchor, oldest=oldest, pages=pages)
                 if first > fetch.iso(oldest):
                     if info.get("more"):
                         # 서버는 더 있다는데 쪽 상한에서 멈췄다 — 신규 상장과 구분해 실패로 센다.
                         failed.append([code, "ka10059", f"잘림: {pages}쪽에서 멈춰 {first} 앞을 못 받았다"])
                     else:
                         notes.append([code, "ka10059", f"이력 시작 {first}(상장·이전상장 이후분)"])
-                add("supply_demand", write.upsert_supply_demand(con, sd))
-                adj_rows = fetch.daily_chart(api, code, anchor, adjusted=True)
-                bars = fetch.bar_records(code, adj_rows, oldest=oldest)
-                if not bars:
-                    raise fetch.EmptyResponse("ka10081 수정 0행")
-                add("daily_bars", write.upsert_bars(con, bars))
-                add("daily_bars_adjusted", write.upsert_adjusted(con, bars))
-                events = fetch.event_records(code, adj_rows)
-                span = [str(r["dt"]) for r in adj_rows if r.get("dt")]
-                if not args.no_raw:
-                    raw_rows = fetch.daily_chart(api, code, anchor, adjusted=False)
-                    add("daily_bars_raw", write.upsert_raw(con, fetch.bar_records(code, raw_rows,
-                                                                                   oldest=oldest)))
-                    events += fetch.event_records(code, raw_rows)
-                    span += [str(r["dt"]) for r in raw_rows if r.get("dt")]
-                # 수정·무수정 응답이 같은 이벤트를 둘 다 싣는다 — 날짜로 하나만 남긴다(두 번 세면 시드가 두 배로 틀린다).
-                events = list({(r[0], r[1]): r for r in events}.values())
-                # 응답이 덮은 날짜 범위만 바꾼다 — 그 밖의 이벤트(이전 실행분)는 지우지 않는다.
-                add("corporate_actions", write.replace_events(con, code, events,
-                                                              fetch.iso(min(span)), fetch.iso(max(span))))
-                cur = fetch.listed_shares(api, code)
-                if cur is None:
-                    failed.append([code, "ka10001", "상장주식수 없음"])
-                else:
-                    add("shares_outstanding_history", write.upsert_shares(con, [(code, snap, cur)], "kiwoom"))
-                    add("shares_outstanding_history", reseed(con, [code]))
+                add("supply_demand", n_sd)
+                _collect_prices(api, con, code, anchor, oldest=oldest, snap=snap, no_raw=args.no_raw, add=add,
+                                failed=failed)
                 write.mark_done(con, code, asof, run_id)
                 con.commit()
             except (CallBudgetExceeded, TokenConflict, BusyWindow):
@@ -256,6 +329,97 @@ def cmd_backfill(args) -> int:
                           "retries": dict(api.retries), "reissues": api.reissues, "rows": rows,
                           "failed": failed[:20], "n_failed": len(failed), "notes": notes[:20]},
                          ensure_ascii=False, indent=1))
+    if interrupted:
+        return EXIT_BUSY
+    return 0 if ok else 1
+
+
+def cmd_daily(args) -> int:
+    """마지막 저장일부터 끝날(:func:`target_day`)까지 — 종목마다 자기 마지막 저장일을 다시 받아 덮는다.
+
+    대상은 수급이 저장된 종목 중 지금 상장 목록에 있는 것 + 그 섹터의 신규 상장이다(조각으로 백필했으면 조각 그대로).
+    끝날에 이미 끝난 종목(``collect_done``)·끝날까지 찬 종목은 건너뛴다 — 다 찼으면 키움을 부르지 않는다.
+    """
+    end = target_day(_now_kst())
+    con = write.open_db(args.db)
+    last_by_code = dict(con.execute("SELECT code, max(date) FROM supply_demand GROUP BY code").fetchall())
+    if not last_by_code:
+        con.close()
+        raise SystemExit("저장된 수급이 없다 — 먼저 universe 로 목록을 받고 backfill 로 채운다")
+    done = write.done_codes(con, end)
+    stale = {c: d for c, d in last_by_code.items() if d < end and c not in done}
+    if not stale:
+        con.close()
+        print(f"✅ 이미 최신이다({end}) — 키움을 부르지 않는다")
+        return 0
+    held = dict(con.execute("SELECT code, sector FROM stocks").fetchall())
+    sectors = {held[c] for c in last_by_code if held.get(c)}
+    newest = max(last_by_code.values())
+
+    api = _client(args, only=map_only_trs if args.map_only else None)
+    run_id = write.start_run(con, "daily-map" if args.map_only else "daily", end)
+    anchor = end.replace("-", "")
+    rows: dict = {}
+    failed: list = []
+    notes: list = []
+
+    def add(table, n):
+        rows[table] = rows.get(table, 0) + n
+
+    ok = False
+    interrupted = ""
+    targets: list = []
+    try:
+        listing = {s["code"]: s for s in universe(api)}
+        for code in sorted(c for c in stale if c not in listing):
+            notes.append([code, "ka10099", "상장 목록에 없다(폐지·이전상장?) — 받지 않는다"])
+            write.mark_done(con, code, end, run_id)
+        new = sorted(c for c, s in listing.items() if c not in last_by_code and s["sector"] in sectors)
+        targets = sorted(c for c in stale if c in listing) + new
+        add("stocks", write.upsert_stocks(con, [listing[c] for c in targets]))
+        if not args.map_only:
+            _collect_indexes(api, con, {listing[c]["sector"] for c in targets}, anchor,
+                             oldest=newest.replace("-", ""), add=add, failed=failed)
+        con.commit()
+        print(f"📅 ~ {end} · {len(targets)}종목(신규 상장 {len(new)}){' · 지도 전용' if args.map_only else ''}")
+
+        for i, code in enumerate(targets, 1):
+            since = last_by_code.get(code, newest)
+            try:
+                pages = math.ceil((_gap_days(since, end) + 1) / SD_PAGE_DAYS) + 1
+                n_sd, first, info = collect_flows(api, con, code, anchor, oldest=since.replace("-", ""),
+                                                  pages=pages)
+                add("supply_demand", n_sd)
+                if first > since and info.get("more"):
+                    failed.append([code, "ka10059", f"잘림: {pages}쪽에서 멈춰 {first} 앞을 못 받았다"])
+                if not args.map_only:
+                    lo = con.execute("SELECT min(date) FROM daily_bars WHERE code = ?", (code,)).fetchone()[0]
+                    # 저장된 구간 전체를 한 응답으로 다시 쓴다 — 새 기업행동이 옛 수정주가를 바꿔도 이음매가 없다.
+                    _collect_prices(api, con, code, anchor, oldest=(lo or since).replace("-", ""), snap=end,
+                                    no_raw=args.no_raw, add=add, failed=failed)
+                write.mark_done(con, code, end, run_id)
+                con.commit()
+            except (CallBudgetExceeded, TokenConflict, BusyWindow):
+                con.rollback()
+                raise
+            except Exception as e:  # noqa: BLE001 — 종목 단위로 격리
+                con.rollback()
+                failed.append([code, "-", mask(f"{type(e).__name__}: {e}")[:200]])
+            if i % 50 == 0 or i == len(targets):
+                print(f"  [{i}/{len(targets)}] 호출 {api.total_calls} · 실패 {len(failed)}")
+        ok = len([f for f in failed if f[1] != "ka20006"]) <= MAX_FAIL_RATE * max(len(targets), 1)
+    except BusyWindow as e:
+        con.rollback()
+        interrupted = str(e)
+        notes.append(["-", "busy", interrupted])
+        print(f"⏸ {interrupted}", file=sys.stderr)
+    finally:
+        write.finish_run(con, run_id, calls=dict(api.calls), rows=rows, failed=failed, ok=ok, asof=end,
+                         notes=notes)
+        con.close()
+        print(json.dumps({"ok": ok, "interrupted": bool(interrupted), "asof": end, "calls": dict(api.calls),
+                          "retries": dict(api.retries), "rows": rows, "failed": failed[:20],
+                          "n_failed": len(failed), "notes": notes[:20]}, ensure_ascii=False, indent=1))
     if interrupted:
         return EXIT_BUSY
     return 0 if ok else 1
@@ -335,6 +499,11 @@ def main(argv: "list[str] | None" = None) -> int:
     bf.add_argument("--limit", type=int, default=0)
     bf.add_argument("--no-raw", action="store_true", help="무수정 일봉(daily_bars_raw)을 건너뛴다")
     bf.add_argument("--resume", action="store_true", help="같은 기준일에 이미 끝난 종목을 건너뛴다")
+    dl = sub.add_parser("daily", help="마지막 저장일부터 오늘(KRX 거래일, 20시 KST 뒤)까지 증분 — 다시 돌리면 이어 받는다")
+    dl.add_argument("--db", required=True, help="sqlite 경로(먼저 backfill)")
+    dl.add_argument("--map-only", action="store_true",
+                    help="지도 전용 — 종목 목록·수급(ka10099·ka10059)만 부른다(종목당 약 1회)")
+    dl.add_argument("--no-raw", action="store_true", help="무수정 일봉(daily_bars_raw)을 건너뛴다")
     rs = sub.add_parser("reseed", help="저장된 스냅숏·기업행동으로 주식수 시드를 다시 만든다(호출 없음)")
     rs.add_argument("--db", required=True)
     ds = sub.add_parser("dart-shares", help="DART 분기 발행주식총수로 주식수 이력을 채운다(본인 DART_API_KEY, 선택)")
@@ -345,7 +514,7 @@ def main(argv: "list[str] | None" = None) -> int:
     ds.add_argument("--dart-rate", type=float, default=1.0, help="DART 속도[req/s] (기본 1.0)")
     ds.add_argument("--dart-max-calls", type=int, default=1000, help="이 실행의 DART 호출 상한(기본 1000)")
     args = ap.parse_args(argv)
-    return {"smoke": cmd_smoke, "universe": cmd_universe, "backfill": cmd_backfill, "reseed": cmd_reseed,
+    return {"smoke": cmd_smoke, "universe": cmd_universe, "backfill": cmd_backfill, "daily": cmd_daily, "reseed": cmd_reseed,
             "dart-shares": cmd_dart_shares}[args.cmd](args)
 
 

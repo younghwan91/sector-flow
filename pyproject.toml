@@ -40,6 +40,8 @@ packages = ["src/sectorflow"]
 "scripts/sector_numbers.py" = "sectorflow/_scripts/sector_numbers.py"
 "scripts/completeness_gate.py" = "sectorflow/_scripts/completeness_gate.py"
 "scripts/verify_report.py" = "sectorflow/_scripts/verify_report.py"
+# KRX 휴장 달력 정본 — `sector-flow-collect daily` 가 끝날을 정한다(src/sectorflow/collect/run.py krx_calendar).
+"scripts/krx_calendar.py" = "sectorflow/_scripts/krx_calendar.py"
 # krx_truth.py 는 일부러 안 싣는다 — 내부 검증 전용·data.krx.co.kr 이라 설계 §4.2 허용 목록 밖이다. 없으면 대조만 꺼진다.
 # 템플릿(sector_flow.html·sector_numbers.html)은 여기 말고 빌드 훅(hatch_build.py)이 파일 하나씩 싣는다 —
 # 설치본은 원격 글꼴을 부르지 않게 떼어 낸 사본이다(src/sectorflow/offline_templates.py).
