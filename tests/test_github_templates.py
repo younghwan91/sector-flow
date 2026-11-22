@@ -48,3 +48,16 @@ def test_pr_template_asks_about_real_data():
 @pytest.mark.parametrize("path", [*FORMS, GH / "pull_request_template.md"], ids=lambda p: p.name)
 def test_templates_use_no_banned_word(path):
     assert W.page_hits(path.read_text("utf-8")) == [], path.name
+
+
+def test_broker_verify_form_takes_only_the_equiv_output():
+    """증권사 어댑터 검증 이슈 — 대조 명령 출력(실데이터 숫자 없음)만 받고, 실데이터를 붙이지 않았다는 체크가 required."""
+    from sectorflow.collect.brokers import BROKERS
+    text = (GH / "ISSUE_TEMPLATE/broker-verify.yml").read_text("utf-8")
+    checks = _checks(text)
+    assert any("실데이터" in lab and req for lab, req in checks)
+    assert "sector-flow-collect equiv" in text and "render: json" in text
+    out = text.split("id: output", 1)[1].split("- type:", 1)[0]
+    assert "required: true" in out, "대조 출력 칸이 비어도 열린다"
+    opts = re.findall(r"^\s+- (\w+)$", text.split("id: broker", 1)[1].split("- type:", 1)[0], re.M)
+    assert opts == [b for b in BROKERS if b != "kiwoom"], "어댑터 고르기가 등록부와 다르다"
