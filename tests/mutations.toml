@@ -13240,6 +13240,110 @@ file = "scripts/daily_report.sh"
 find = '    rm -f "$BUILD/map.html"'
 replace = '    :'
 
+[[mutation]]
+id = "landing-says-inflow"
+why = "랜딩이 '유입' 을 말한다 — 돈이 섹터로 들어온 것처럼 읽힌다. 관측되는 것은 주체별 순매매뿐이다(설계 §2 반목표)."
+guards = ["tests/test_site.py::test_landing_is_marked_demo_and_passes_the_map_wording"]
+file = "site/index.html"
+find = '<p class="kicker"><b>오픈소스</b>'
+replace = '<p class="kicker"><b>오픈소스</b> · 오늘의 유입'
+
+[[mutation]]
+id = "landing-grows-an-analytics-script"
+why = "랜딩에 분석 스크립트가 들어온다 — 공개 사이트는 추적·쿠키가 없어야 한다(설계 §6.4)."
+guards = ["tests/test_site.py::test_landing_has_no_script_and_talks_only_to_known_hosts"]
+file = "site/index.html"
+find = "</head>"
+replace = '<script defer src="https://plausible.io/js/script.js"></script></head>'
+
+[[mutation]]
+id = "landing-drops-no-perk-line"
+why = "후원 혜택 없음 줄이 빠진다 — 후원하면 실데이터를 더 본다고 읽힐 수 있다."
+guards = ["tests/test_site.py::test_landing_carries_the_notices_and_the_sponsor_line"]
+file = "site/index.html"
+find = "후원해도 더 보이는 것은 없다."
+replace = "후원하면 고맙다."
+
+[[mutation]]
+id = "landing-byo-option-typo"
+why = "자기 키 안내의 수집 명령 옵션이 틀린다 — 그대로 친 사람이 argparse 오류를 받는다."
+guards = ["tests/test_site.py::test_byo_commands_on_the_landing_exist"]
+file = "site/index.html"
+find = "--max-calls 1500"
+replace = "--max-call 1500"
+
+[[mutation]]
+id = "site-build-skips-images"
+why = "랜딩 빌드가 데모 그림을 빈 파일로 싣는다 — 배포된 첫 화면의 영상이 깨진다."
+guards = ["tests/test_site.py::test_build_makes_the_site_from_a_demo_folder"]
+file = "site/build.py"
+find = "        files[name] = (images / name).read_bytes()"
+replace = "        files[name] = b\"\""
+
+[[mutation]]
+id = "site-build-takes-unmarked-folder"
+why = "DEMO.txt 표식 없는 폴더(실 리포트)로 공개 사이트를 짓는다."
+guards = ["tests/test_site.py::test_build_refuses_anything_but_a_demo[no-marker]"]
+file = "site/build.py"
+find = "    if not (folder / MARKER).is_file():"
+replace = "    if False:"
+
+[[mutation]]
+id = "site-build-takes-real-payload"
+why = "페이로드가 demo 가 아니어도(실 리포트를 데모 폴더에 복사) 공개 사이트를 짓는다."
+guards = ["tests/test_site.py::test_build_refuses_anything_but_a_demo[not-demo-payload]"]
+file = "site/build.py"
+find = '    if payload.get("demo") is not True:'
+replace = "    if False:"
+
+[[mutation]]
+id = "site-build-takes-real-sector-names"
+why = "'가상' 이 아닌 섹터 이름(벤더 업종명)이 든 페이로드로 공개 지도를 짓는다 — 실데이터가 Pages 로 나간다."
+guards = ["tests/test_site.py::test_build_refuses_anything_but_a_demo[real-sector-name]"]
+file = "site/build.py"
+find = "    if real:"
+replace = "    if False:"
+
+[[mutation]]
+id = "site-build-wipes-foreign-folder"
+why = "--out 을 잘못 주면 남의 폴더를 통째로 지운다."
+guards = ["tests/test_site.py::test_build_will_not_wipe_a_folder_it_did_not_make"]
+file = "site/build.py"
+find = "    if out.exists() and any(out.iterdir()) and not (out / BUILT).exists():"
+replace = "    if False:"
+
+[[mutation]]
+id = "site-build-keeps-stale-files"
+why = "다시 지을 때 옛 산출물을 안 지운다 — 지운 페이지가 Pages 에 계속 남는다."
+guards = ["tests/test_site.py::test_build_replaces_its_own_previous_output"]
+file = "site/build.py"
+find = "            shutil.rmtree(out)"
+replace = "            pass"
+
+[[mutation]]
+id = "site-build-ignores-dead-links"
+why = "랜딩이 가리키는 파일이 없는데 짓는다 — 배포된 첫 화면의 영상·지도 링크가 404 다."
+guards = ["tests/test_site.py::test_build_fails_on_a_dead_landing_link"]
+file = "site/build.py"
+find = "    if missing:"
+replace = "    if False:"
+
+[[mutation]]
+id = "site-build-misses-srcset"
+why = "링크 검사가 srcset 을 안 본다 — 움직임 줄이기 쪽 정지 그림이 없어도 모른다."
+guards = ["tests/test_site.py::test_local_refs_skip_external_and_in_page_links"]
+file = "site/build.py"
+find = "(?:href|src|srcset)"
+replace = "(?:href|src)"
+
+[[mutation]]
+id = "public-site-copy-judged-by-name-only"
+why = "랜딩 빌드의 그림 사본을 내용이 아니라 이름으로만 본다 — 원장 그림과 다른(실데이터) 그림이 _site 로 나가도 초록이거나, 같은 사본이 빨갛다."
+guards = ["tests/test_public_surface.py::test_site_copies_are_matched_by_content_not_name"]
+file = "tests/test_public_surface.py"
+find = "        if rel not in listed and p.read_bytes() not in known:"
+replace = "        if rel not in listed and False:"
+
 [[removed]]
 id = "ci-shard-denominator-hardcoded"
 why = "샤드를 없앴다 — 전체 검증은 잡 하나다(tests/test_ci_workflow.py 가 matrix 를 막는다)"
@@ -13833,8 +13937,8 @@ id = "public-html-ignores-vendor-sector-data"
 why = "업종명 판정이 죽으면 데모 표지만 붙인 실데이터 페이지(표지 + 실 섹터 데이터)가 공개 경로로 나간다"
 guards = ["tests/test_public_surface.py::test_html_judge_passes_demo_and_fails_real"]
 file = "tests/test_public_surface.py"
-find = "_VENDOR_VALUE = re.compile(r\"\"\"(?<!\"insrnc\":)"
-replace = "_VENDOR_VALUE = re.compile(r\"\"\"(?!)(?<!\"insrnc\":)"
+find = "_VENDOR_VALUE = re.compile(r\"\"\"(?<!insrnc\":)"
+replace = "_VENDOR_VALUE = re.compile(r\"\"\"(?!)(?<!insrnc\":)"
 
 [[mutation]]
 id = "public-html-skips-demo-notice"
@@ -13849,7 +13953,7 @@ id = "public-html-insurance-label-false-positive"
 why = "기관 세부 라벨 '보험' 을 섹터로 읽으면 데모 뷰어마다 실패해 검사를 끄고 싶어진다"
 guards = ["tests/test_public_surface.py::test_html_judge_passes_demo_and_fails_real"]
 file = "tests/test_public_surface.py"
-find = "(?<!\"insrnc\":)(?<!\"insrnc\": )([\"'])("
+find = "(?<!insrnc\":)(?<!insrnc\": )([\"'])("
 replace = "([\"'])("
 
 [[mutation]]
@@ -13865,16 +13969,16 @@ id = "public-ledger-row-misread"
 why = "원장 줄을 잘못 읽으면(확장자를 떼어 읽기) 모든 공개 그림이 '원장에 없다' 가 되거나 엉뚱한 줄이 맞는다"
 guards = ["tests/test_public_surface.py::test_ledger_rows_are_read", "tests/test_public_surface.py::test_public_png_has_demo_sidecar"]
 file = "tests/test_public_surface.py"
-find = "_LEDGER_ROW = re.compile(r\"^\\|\\s*(\\S+?\\.png)\\s*\\|\", re.M)"
-replace = "_LEDGER_ROW = re.compile(r\"^\\|\\s*(\\S+?)\\.png\\s*\\|\", re.M)"
+find = "_LEDGER_ROW = re.compile(r\"^\\|\\s*(\\S+?\\.(?:png|gif))\\s*\\|\", re.M)"
+replace = "_LEDGER_ROW = re.compile(r\"^\\|\\s*(\\S+?)\\.(?:png|gif)\\s*\\|\", re.M)"
 
 [[mutation]]
 id = "public-globs-miss-images"
 why = "공개 경로 목록에서 README 그림 폴더가 빠지면 검사가 빈 목록을 돌며 초록이다"
 guards = ["tests/test_public_surface.py::test_public_png_has_demo_sidecar"]
 file = "tests/test_public_surface.py"
-find = "PUBLIC_GLOBS = (\"README.md\", \"README.en.md\", \"docs/images/**\", \"docs/brand/**\", \"site/**\")"
-replace = "PUBLIC_GLOBS = (\"README.md\", \"README.en.md\", \"docs/brand/**\", \"site/**\")"
+find = "PUBLIC_GLOBS = (\"README.md\", \"README.en.md\", \"docs/images/**\", \"docs/brand/**\", \"site/**\", \"_site/**\")"
+replace = "PUBLIC_GLOBS = (\"README.md\", \"README.en.md\", \"docs/brand/**\", \"site/**\", \"_site/**\")"
 
 [[mutation]]
 id = "map-shot-drops-to-64-colours"
@@ -13883,3 +13987,4 @@ guards = ["tests/test_screenshots_fresh.py::test_map_shot_keeps_enough_colours_f
 file = "scripts/demo_shots.py"
 find = 'MIN_COLORS = {"map-demo.png": 128}'
 replace = 'MIN_COLORS = {}'
+
