@@ -12606,6 +12606,70 @@ file = "scripts/serve_reports.py"
 find = 'EXTRAS = (("map.html", "수급 지도"), ("trust.html", "검증·품질"),'
 replace = 'EXTRAS = (("trust.html", "검증·품질"),'
 
+[[mutation]]
+id = "video-clip-starts-at-first-day"
+why = "타임랩스 영상이 처음 며칠을 보이고 기준일에 닿지 않는다 — 60프레임 중 앞 11일이 '오늘' 영상인 척한다."
+guards = ["tests/test_map_video.py::test_clip_ends_on_the_base_date[60-8-want0]"]
+file = "scripts/map_video.py"
+find = "    return n_frames - days, days"
+replace = "    return 0, days"
+
+[[mutation]]
+id = "video-takes-ffmpeg-without-encoder"
+why = "인코더가 빠진 ffmpeg(Playwright 녹화용 축소판)를 고른다 — 몇 분 찍은 뒤 인코딩에서 알 수 없는 오류로 죽는다."
+guards = ["tests/test_map_video.py::test_ffmpeg_without_the_needed_encoder_is_skipped_and_named"]
+file = "scripts/map_video.py"
+find = "        if not lack:"
+replace = "        if True:"
+
+[[mutation]]
+id = "video-no-output-accepted"
+why = "--out 도 --gif 도 없이 몇 분 녹화하고 아무것도 안 쓴다."
+guards = ["tests/test_map_video.py::test_bad_arguments_exit_2_before_anything_runs[no-output]"]
+file = "scripts/map_video.py"
+find = "    if not a.out and not a.gif:"
+replace = "    if False:"
+
+[[mutation]]
+id = "video-no-ffmpeg-hint-drops-package"
+why = "ffmpeg 가 없을 때 sudo 없이 되는 길(imageio-ffmpeg)을 안 알려 준다 — 사용자는 apt 권한이 없을 수 있다."
+guards = ["tests/test_map_video.py::test_no_ffmpeg_gives_a_friendly_fix_and_writes_nothing"]
+file = "scripts/map_video.py"
+find = '                "  · uv run --with playwright --with imageio-ffmpeg python scripts/map_video.py …   (정적 ffmpeg 를 패키지로)\n"'
+replace = '                ""'
+
+[[mutation]]
+id = "video-ignores-playwright-ffmpeg"
+why = "설계가 말한 자리(~/.cache/ms-playwright/ffmpeg-*)를 안 본다 — 거기 쓸 만한 ffmpeg 가 있어도 못 찾았다고 한다."
+guards = ["tests/test_map_video.py::test_playwright_cached_ffmpeg_is_a_candidate"]
+file = "scripts/map_video.py"
+find = '    out += sorted(glob.glob(os.path.join(root, "ffmpeg-*", "ffmpeg-*")), reverse=True)'
+replace = '    out += []'
+
+[[mutation]]
+id = "video-explicit-ffmpeg-not-first"
+why = "--ffmpeg 로 준 경로보다 다른 후보를 먼저 쓴다 — 사용자가 고른 ffmpeg 가 무시된다."
+guards = ["tests/test_map_video.py::test_first_capable_ffmpeg_wins_and_needs_follow_the_outputs"]
+file = "scripts/map_video.py"
+find = '    out = [explicit, os.environ.get("FFMPEG"), shutil.which("ffmpeg")]'
+replace = '    out = [os.environ.get("FFMPEG"), shutil.which("ffmpeg"), explicit]'
+
+[[mutation]]
+id = "video-empty-folder-accepted"
+why = "map.html 도 payload.json 도 없는 폴더를 받아 Chromium 을 띄운 뒤에야 죽는다."
+guards = ["tests/test_map_video.py::test_folder_without_map_or_payload_is_refused"]
+file = "scripts/map_video.py"
+find = '    elif not (d / "map.html").is_file() and not (d / "payload.json").is_file():'
+replace = '    elif False:'
+
+[[mutation]]
+id = "shots-ledger-skips-gif"
+why = "그림을 다시 찍어도 원장의 GIF 줄은 옛 커밋으로 남는다 — 신선도 검사가 새로 찍은 GIF 를 낡았다고 한다."
+guards = ["tests/test_screenshots_fresh.py::test_stamp_rewrites_every_manifest_row_and_only_those"]
+file = "scripts/demo_shots.py"
+find = 'ROW = re.compile(r"^(\|\s*docs/images/\S+?\.(?:png|gif)\s*\|'
+replace = 'ROW = re.compile(r"^(\|\s*docs/images/\S+?\.(?:png)\s*\|'
+
 [[removed]]
 id = "ci-shard-denominator-hardcoded"
 why = "샤드를 없앴다 — 전체 검증은 잡 하나다(tests/test_ci_workflow.py 가 matrix 를 막는다)"

@@ -20,10 +20,11 @@ import pytest
 REPO = Path(__file__).resolve().parent.parent
 MANIFEST = REPO / "docs" / "SCREENSHOTS.md"
 
-#: | docs/images/….png | 감시 경로 | sha |
-ROW = re.compile(r"^\|\s*(docs/images/\S+?\.png)\s*\|\s*(\S+?)/?\s*\|\s*([0-9a-f]{40})\s*\|",
+#: | docs/images/….png(.gif) | 감시 경로 | sha |
+ROW = re.compile(r"^\|\s*(docs/images/\S+?\.(?:png|gif))\s*\|\s*(\S+?)/?\s*\|\s*([0-9a-f]{40})\s*\|",
                  re.MULTILINE)
-README_IMG = re.compile(r"\]\((docs/images/[\w.-]+\.png)\)")
+#: 마크다운 ``](…)`` 과 HTML ``src="…"`` 둘 다 — README 머리 그림은 폭을 정하려고 ``<img>`` 로 쓴다.
+README_IMG = re.compile(r"(?:\]\(|src=\")(docs/images/[\w.-]+\.(?:png|gif))[)\"]")
 
 
 def _git(*args: str) -> subprocess.CompletedProcess:
@@ -60,7 +61,7 @@ def test_ui_change_after_manifest_sha_demands_retake():
 
 
 def test_every_readme_image_is_in_the_manifest():
-    """README 가 쓰는 docs/images/*.png 는 전부 원장에 있고, 원장의 파일도 실제로 있다."""
+    """README 가 쓰는 docs/images 그림(png·gif)은 전부 원장에 있고, 원장의 파일도 실제로 있다."""
     used = set(README_IMG.findall((REPO / "README.md").read_text("utf-8")))
     assert used, "README 에서 docs/images 참조를 하나도 못 읽었다 — 패턴이 낡았나"
     listed = {img for img, _, _ in _rows()}

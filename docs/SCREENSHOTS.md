@@ -1,17 +1,19 @@
 # 스크린샷 원장
 
-README 가 쓰는 `docs/images/*.png` 가 **어느 코드로 찍혔나**를 적는다. `tests/test_screenshots_fresh.py` 가
+README 가 쓰는 `docs/images` 그림(`*.png`, 타임랩스 `map-demo.gif`)이 **어느 코드로 찍혔나**를 적는다. `tests/test_screenshots_fresh.py` 가
 이 표의 커밋과 지금 HEAD 에서 감시 경로의 git 트리를 비교해, 화면 코드가 바뀌었는데 그림이 그대로면
 `스크린샷 재촬영` 으로 실패한다. 날짜가 아니라 트리를 비교한다 — 화면과 무관한 커밋으로는 울지 않는다.
 
 그림은 전부 **합성 데모**다(실종목·실숫자 없음, 제목 줄과 웹 맨 위에 `[합성 데모]`). 다시 찍는 법:
 
 ```
-uv run --with playwright --with pillow python scripts/demo_shots.py
+uv run --with playwright --with pillow --with imageio-ffmpeg python scripts/demo_shots.py
 ```
 
-감시 경로를 커밋한 뒤 돌린다 — 도구가 그림 8장을 찍고 이 표를 HEAD 로 고친다. 터미널은 tmux 160×45
+감시 경로를 커밋한 뒤 돌린다 — 도구가 그림 8장과 GIF 하나를 찍고 이 표를 HEAD 로 고친다. 터미널은 tmux 160×45
 `capture-pane -e` → ANSI → HTML → Chromium(128색), 웹은 Chromium 1440·390(DPR 2, 64색)이고 그림당 약 150KB 안이다(폰 그림은 요약 문장과 시장 4주체까지라 길다).
+GIF 는 `scripts/map_video.py`(가짜 시계로 타임랩스를 30fps 로 찍어 ffmpeg 로 960폭·15fps·128색)라 ffmpeg 가 있어야 하고(없으면 아무것도
+찍기 전에 멈춘다), 기준일로 끝나는 마지막 11거래일 8초, 4MB 안이다(`tests/test_map_video.py`).
 
 | 이미지 | 감시 경로 | 찍은 커밋 |
 |---|---|---|
@@ -33,3 +35,8 @@ uv run --with playwright --with pillow python scripts/demo_shots.py
 | docs/images/map-demo.png | scripts/sector_map.py | 288f4165c382e068cbea3bc12d75ddaabbf0bfc9 |
 | docs/images/map-demo.png | src/sectorflow/flowmap.py | 288f4165c382e068cbea3bc12d75ddaabbf0bfc9 |
 | docs/images/map-demo.png | src/sectorflow/demo.py | 288f4165c382e068cbea3bc12d75ddaabbf0bfc9 |
+| docs/images/map-demo.gif | scripts/templates/ | 89c6bbeed47f820eade329f945b6ec74d9272393 |
+| docs/images/map-demo.gif | scripts/sector_map.py | 89c6bbeed47f820eade329f945b6ec74d9272393 |
+| docs/images/map-demo.gif | scripts/map_video.py | 89c6bbeed47f820eade329f945b6ec74d9272393 |
+| docs/images/map-demo.gif | src/sectorflow/flowmap.py | 89c6bbeed47f820eade329f945b6ec74d9272393 |
+| docs/images/map-demo.gif | src/sectorflow/demo.py | 89c6bbeed47f820eade329f945b6ec74d9272393 |

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """README 그림을 **합성 데모**로 다시 만든다 — 실종목·실숫자를 문서에 싣지 않는다.
 
-    uv run --with playwright --with pillow python scripts/demo_shots.py     # docs/images/*.png 7장 + 원장 sha
+    uv run --with playwright --with pillow --with imageio-ffmpeg python scripts/demo_shots.py   # docs/images 그림 + 원장 sha
 
 터미널은 tmux 160×45 ``capture-pane -e`` → ANSI → HTML → Chromium(128색), 웹은 Chromium 1440·390(DPR 2, 64색).
+수급 지도 타임랩스 GIF(``map-demo.gif``)는 ``scripts/map_video.py`` 로 — ffmpeg 가 없으면 아무것도 찍기 전에 멈춘다.
 그림은 **HEAD 의 화면 코드**여야 뜻이 있다 — ``docs/SCREENSHOTS.md`` 의 감시 경로에 커밋 안 한 변경이 있으면 찍지 않는다.
 원장 sha 를 HEAD 로 고쳐 쓰고 ``tests/test_screenshots_fresh.py`` 가 그 뒤의 화면 변경을 잡는다.
 """
@@ -29,6 +30,8 @@ sys.path.insert(0, str(REPO / "src"))
 
 MANIFEST = REPO / "docs" / "SCREENSHOTS.md"
 IMAGES = REPO / "docs" / "images"
+#: README 머리의 타임랩스 GIF — 원장에 PNG 와 같이 적는다.
+VIDEO_GIF = "map-demo.gif"
 TERM_W, TERM_H = 160, 45
 #: 터미널 그림 — (파일, 명령, 키, 끝 빈 줄을 지우나). 키는 tmux send-keys 인자.
 TUI_SHOTS = (("kqflow-today.png", "sw-flow", (), True),
@@ -246,12 +249,19 @@ def shoot(report: Path, out: Path) -> None:
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def _map_video():
+    spec = importlib.util.spec_from_file_location("_shots_map_video", REPO / "scripts" / "map_video.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def _git(*args: str) -> str:
     return subprocess.run(["git", "-C", str(REPO), *args], check=True, capture_output=True, text=True).stdout.strip()
 
 
 #: 원장 행 — | 이미지 | 감시 경로 | 커밋 |.
-ROW = re.compile(r"^(\|\s*docs/images/\S+?\.png\s*\|\s*(\S+?)\s*\|\s*)[0-9a-f]{40}(\s*\|)$", re.M)
+ROW = re.compile(r"^(\|\s*docs/images/\S+?\.(?:png|gif)\s*\|\s*(\S+?)\s*\|\s*)[0-9a-f]{40}(\s*\|)$", re.M)
 
 
 def watched(text: str) -> list[str]:
@@ -280,7 +290,15 @@ def main(argv: "list[str] | None" = None) -> int:
         if dirty:
             print(f"감시 경로에 커밋 안 한 변경이 있다 — 그림이 HEAD 의 화면이 아니게 된다. 먼저 커밋하라:\n{dirty}", file=sys.stderr)
             return 2
+        video = _map_video()
+        try:
+            ffmpeg = video.find_ffmpeg([VIDEO_GIF])
+        except video.VideoError as e:
+            print(f"{VIDEO_GIF} 를 못 만든다 — 아무것도 찍지 않았다(원장이 반만 맞게 되지 않게).\n{e}", file=sys.stderr)
+            return 2
         shoot(report, IMAGES)
+        video.make(report, ffmpeg, gif=str(IMAGES / VIDEO_GIF))
+        print(f"{VIDEO_GIF}: {(IMAGES / VIDEO_GIF).stat().st_size:,} bytes")
         MANIFEST.write_text(stamp_manifest(text, _git("rev-parse", "HEAD")), "utf-8")
         print(f"wrote {MANIFEST.relative_to(REPO)}")
         return 0
