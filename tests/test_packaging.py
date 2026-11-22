@@ -254,3 +254,25 @@ def test_built_wheel_makes_a_report_from_its_own_copy(wheel_site, tmp_path):
     assert not T.AUTO_FETCH.search((out / "viewer.html").read_text("utf-8"))
     run("gate", "--asof", payload["dates"][-1], "--db", str(db))
     run("verify", "--dir", str(out), "--db-check", "--db", str(db), "--layers", "A")
+
+
+def test_built_wheel_draws_a_byo_map_from_its_own_copy(wheel_site, tmp_path):
+    """``sector-flow-byo map`` 이 wheel 사본(sector_flow.py·sector_map.py·원격 글꼴 뗀 템플릿)만으로 지도 전용 sqlite 에서 선다."""
+    from sectorflow import demo
+    from tests.test_flows_only import map_only_db
+
+    site, names = wheel_site
+    assert "sectorflow/_scripts/sector_map.py" in names and "sectorflow/byo.py" in names
+    demo.build_db(tmp_path / "full.db")
+    db = map_only_db(tmp_path / "full.db", tmp_path / "map.db")
+    out = tmp_path / "map"
+    env = {**os.environ, "PYTHONPATH": str(site)}
+    env.pop("KR_QUANT_DB", None)
+    code = ("import sys, pathlib, sectorflow.byo as b; "
+            f"assert pathlib.Path(b.script_path('sector_map.py')).is_relative_to({str(site)!r}); "
+            "sys.exit(b.main(sys.argv[1:]))")
+    p = subprocess.run([sys.executable, "-c", code, "map", "--db", str(db), "--out", str(out), "--no-card"],
+                       cwd=tmp_path, env=env, capture_output=True, text=True, timeout=300)
+    assert p.returncode == 0, p.stdout[-1500:] + p.stderr[-3000:]
+    html = (out / "map.html").read_text("utf-8")
+    assert "const D = {" in html and not T.AUTO_FETCH.search(html), "설치본 지도가 원격 자원을 부른다"

@@ -30,6 +30,8 @@ sector-flow-verify = "sectorflow.report_cli:verify"
 sector-flow-demo = "sectorflow.demo:main"
 # BYO 수집기(자기 키움 키 → sqlite). 읽기 전용 TR 6개만 부른다.
 sector-flow-collect = "sectorflow.collect.run:main"
+# BYO sqlite → 수급만 페이로드 → map.html 한 명령(docs/byo/quickstart.md).
+sector-flow-byo = "sectorflow.byo:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/sectorflow"]
@@ -40,10 +42,12 @@ packages = ["src/sectorflow"]
 "scripts/sector_numbers.py" = "sectorflow/_scripts/sector_numbers.py"
 "scripts/completeness_gate.py" = "sectorflow/_scripts/completeness_gate.py"
 "scripts/verify_report.py" = "sectorflow/_scripts/verify_report.py"
+# 수급 지도 생성기 — `sector-flow-byo map` 이 부른다(src/sectorflow/byo.py). 템플릿은 빌드 훅이 싣는다.
+"scripts/sector_map.py" = "sectorflow/_scripts/sector_map.py"
 # KRX 휴장 달력 정본 — `sector-flow-collect daily` 가 끝날을 정한다(src/sectorflow/collect/run.py krx_calendar).
 "scripts/krx_calendar.py" = "sectorflow/_scripts/krx_calendar.py"
 # krx_truth.py 는 일부러 안 싣는다 — 내부 검증 전용·data.krx.co.kr 이라 설계 §4.2 허용 목록 밖이다. 없으면 대조만 꺼진다.
-# 템플릿(sector_flow.html·sector_numbers.html)은 여기 말고 빌드 훅(hatch_build.py)이 파일 하나씩 싣는다 —
+# 템플릿(sector_flow.html·sector_numbers.html·sector_map.html)은 여기 말고 빌드 훅(hatch_build.py)이 파일 하나씩 싣는다 —
 # 설치본은 원격 글꼴을 부르지 않게 떼어 낸 사본이다(src/sectorflow/offline_templates.py).
 
 [tool.hatch.build.targets.wheel.hooks.custom]

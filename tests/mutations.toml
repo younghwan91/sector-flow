@@ -7750,8 +7750,8 @@ id = "wheel-drops-a-template"
 why = "wheel 템플릿 목록에서 하나가 빠져 설치본이 그 HTML 을 못 만든다"
 guards = ["tests/test_packaging.py::test_report_entry_points_ship_their_script_and_templates"]
 file = "src/sectorflow/offline_templates.py"
-find = "TEMPLATES = (\"sector_flow.html\", \"sector_numbers.html\")"
-replace = "TEMPLATES = (\"sector_flow.html\",)"
+find = "TEMPLATES = (\"sector_flow.html\", \"sector_numbers.html\", \"sector_map.html\")"
+replace = "TEMPLATES = (\"sector_flow.html\", \"sector_map.html\")"
 
 [[mutation]]
 id = "shipped-code-phones-home"
@@ -8066,8 +8066,8 @@ id = "wheel-web-only-list-loses-a-template"
 why = "웹 전용 목록에서 템플릿이 빠져 레포 템플릿이 '싣는다'·'웹 전용' 어느 쪽에도 없다 — 새 템플릿을 아무도 판단하지 않는다"
 guards = ["tests/test_packaging.py::test_report_entry_points_ship_their_script_and_templates"]
 file = "src/sectorflow/offline_templates.py"
-find = 'WEB_ONLY_TEMPLATES = ("digest_card.html", "trust.html", "sector_map.html")'
-replace = 'WEB_ONLY_TEMPLATES = ("digest_card.html", "sector_map.html")'
+find = 'WEB_ONLY_TEMPLATES = ("digest_card.html", "trust.html")'
+replace = 'WEB_ONLY_TEMPLATES = ("digest_card.html",)'
 
 [[mutation]]
 id = "wheel-krx-truth-load-unguarded"
@@ -13046,6 +13046,94 @@ guards = ["tests/test_flows_only.py::test_numbers_and_tui_end_with_the_flows_onl
 file = "src/sectorflow/tui/flow_app.py"
 find = "        if flows_only_folder(report_dir):"
 replace = "        if False:"
+
+[[mutation]]
+id = "byo-card-without-playwright"
+why = "Playwright 가 없는데 카드 생성기를 불러 실패를 낸다(지도만 원한 사용자에게 오류)"
+guards = ["tests/test_byo_map.py::test_card_runs_only_with_generator_and_playwright"]
+file = "src/sectorflow/byo.py"
+find = "    if not _has_playwright():"
+replace = "    if False:"
+
+[[mutation]]
+id = "byo-card-failure-breaks-map"
+why = "카드 생성기가 실패하면 지도 명령 전체가 실패한다 — 카드는 곁가지다"
+guards = ["tests/test_byo_map.py::test_card_runs_only_with_generator_and_playwright"]
+file = "src/sectorflow/byo.py"
+find = "\"--dir\", str(out)]).returncode"
+replace = "\"--dir\", str(out)], check=True).returncode"
+
+[[mutation]]
+id = "byo-card-missing-generator-runs"
+why = "설치본에 카드 생성기가 없는데 부르려다 실패를 적는다"
+guards = ["tests/test_byo_map.py::test_card_skipped_when_the_install_has_no_generator"]
+file = "src/sectorflow/byo.py"
+find = "    path = _script(CARD_SCRIPT)\n    if path is None:"
+replace = "    path = _script(CARD_SCRIPT)\n    if False:"
+
+[[mutation]]
+id = "byo-map-overwrites-report-folder"
+why = "--out 을 배치·데모 리포트 폴더로 주면 그 payload.json 을 수급만으로 덮는다"
+guards = ["tests/test_byo_map.py::test_byo_map_does_not_overwrite_a_report_folder"]
+file = "src/sectorflow/byo.py"
+find = "    _guard_out(out)\n"
+replace = "    pass\n"
+
+[[mutation]]
+id = "byo-map-continues-after-payload-failure"
+why = "페이로드를 못 지었는데 지도 단계로 넘어가 원인 대신 엉뚱한 오류를 낸다"
+guards = ["tests/test_byo_map.py::test_byo_map_stops_when_the_payload_fails"]
+file = "src/sectorflow/byo.py"
+find = "    if rc != 0:\n        print(f\"⏹ 페이로드를"
+replace = "    if False:\n        print(f\"⏹ 페이로드를"
+
+[[mutation]]
+id = "byo-map-full-payload"
+why = "지도 전용 sqlite 에 전체 페이로드를 지으려 한다(수익률이 비거나 실패)"
+guards = ["tests/test_byo_map.py::test_byo_map_end_to_end"]
+file = "src/sectorflow/byo.py"
+find = "*extra, \"--flows-only\", \"--json\", str(payload))"
+replace = "*extra, \"--json\", str(payload))"
+
+[[mutation]]
+id = "byo-map-ignores-asof"
+why = "--asof 를 받고도 저장된 마지막 날로 짓는다"
+guards = ["tests/test_byo_map.py::test_byo_map_respects_days_and_asof"]
+file = "src/sectorflow/byo.py"
+find = "extra = [\"--asof\", a.asof] if a.asof else []"
+replace = "extra = []"
+
+[[mutation]]
+id = "byo-map-ignores-days"
+why = "--days 를 받고도 기본 260거래일로 짓는다"
+guards = ["tests/test_byo_map.py::test_byo_map_respects_days_and_asof"]
+file = "src/sectorflow/byo.py"
+find = "\"--days\", str(a.days)"
+replace = "\"--days\", str(DEFAULT_DAYS)"
+
+[[mutation]]
+id = "wheel-map-template-not-shipped"
+why = "설치본에 지도 템플릿이 없어 sector-flow-byo map 이 지도 단계에서 죽는다"
+guards = ["tests/test_packaging.py::test_built_wheel_draws_a_byo_map_from_its_own_copy"]
+file = "src/sectorflow/offline_templates.py"
+find = "TEMPLATES = (\"sector_flow.html\", \"sector_numbers.html\", \"sector_map.html\")"
+replace = "TEMPLATES = (\"sector_flow.html\", \"sector_numbers.html\")"
+
+[[mutation]]
+id = "wheel-map-script-not-shipped"
+why = "설치본에 sector_map.py 가 없어 sector-flow-byo map 이 지도를 못 짓는다"
+guards = ["tests/test_packaging.py::test_built_wheel_draws_a_byo_map_from_its_own_copy"]
+file = "pyproject.toml"
+find = "\"scripts/sector_map.py\" = \"sectorflow/_scripts/sector_map.py\""
+replace = "# sector_map.py 안 싣는다"
+
+[[mutation]]
+id = "byo-console-script-missing"
+why = "문서의 sector-flow-byo 명령이 설치본에 없다"
+guards = ["tests/test_byo_map.py::test_byo_is_a_console_script"]
+file = "pyproject.toml"
+find = "sector-flow-byo = \"sectorflow.byo:main\""
+replace = "sector-flow-map = \"sectorflow.byo:main\""
 
 [[removed]]
 id = "ci-shard-denominator-hardcoded"
