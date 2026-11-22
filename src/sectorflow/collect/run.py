@@ -36,7 +36,7 @@ from datetime import datetime, timedelta, timezone
 from . import dart, fetch, write
 from .auth import MissingKeys, load_dart_key, mask
 from . import busy
-from .brokers import BROKERS, DEFAULT as DEFAULT_BROKER, Broker, Settings
+from .brokers import BROKERS, DEFAULT as DEFAULT_BROKER, Broker, Settings, venue_of
 from .brokers import kiwoom as kiwoom_broker
 from .brokers.base import sd_tuple
 from .kiwoom import BusyWindow, CallBudgetExceeded, KiwoomRest, TokenConflict
@@ -149,6 +149,17 @@ def listing(broker: Broker, con) -> list[dict]:
     """증권사 목록(없으면 저장된 ``stocks``) — 섹터는 저장된 한 벌을 따른다(:func:`write.with_stored_sectors`)."""
     rows = broker.universe() if broker.lists_stocks else stored_listing(con, broker.name)
     return write.with_stored_sectors(con, rows)
+
+
+def guard_venue(con, broker: Broker) -> None:
+    """이 sqlite 에 거래소 기준이 다른 수급이 있으면 멈춘다 — KRX 단독(키움·한국투자·LS…)과 KRX+NXT 통합(토스)은 같은 날 숫자가
+    달라 한 지도에 더하면 뜻이 없다. 섞으려면 다른 ``--db`` 를 쓴다."""
+    have = {r[0] for r in con.execute("SELECT DISTINCT source FROM supply_demand").fetchall()}
+    bad = sorted(s for s in have if s != broker.name and venue_of(s) != broker.capability.venue)
+    if bad:
+        con.close()
+        raise SystemExit(f"⏹ 이 sqlite 에는 거래소 기준이 다른 수급이 있다({', '.join(f'{s}={venue_of(s)}' for s in bad)}) — "
+                         f"--broker {broker.name} 는 {broker.capability.venue} 다. 섞지 않는다: 다른 --db 를 준다")
 
 
 def _require_map_only(args, map_only: bool) -> None:
@@ -303,6 +314,7 @@ def cmd_backfill(args) -> int:
         args.days = MAP_ONLY_DAYS if map_only else BACKFILL_DAYS
     broker = _broker(args, only=map_only_trs if map_only else None)
     con = write.open_db(args.db)
+    guard_venue(con, broker)
     run_id = write.start_run(con, "backfill-map" if map_only else "backfill")
     anchor = _today()
     rows: dict = {}
@@ -432,6 +444,7 @@ def cmd_daily(args) -> int:
     newest = max(last_by_code.values())
 
     broker = _broker(args, only=map_only_trs if args.map_only else None)
+    guard_venue(con, broker)
     run_id = write.start_run(con, "daily-map" if args.map_only else "daily", end)
     anchor = end.replace("-", "")
     rows: dict = {}

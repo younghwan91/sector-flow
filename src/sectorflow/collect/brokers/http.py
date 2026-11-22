@@ -2,7 +2,7 @@
 
 키움 클라이언트(:mod:`..kiwoom`)와 같은 원칙을 증권사마다 다시 쓰지 않으려고 한 곳에 둔다:
 
-- **허용 경로**(``allowed``) 밖의 (메서드, 경로)는 요청 전에 :class:`ForbiddenPath` — 주문·계좌 경로는 어느 어댑터 목록에도 없다
+- **허용 경로**(``allowed``, 경로에 ``{symbol}`` 자리가 있으면 영숫자·``.``·``-`` 한 마디) 밖의 (메서드, 경로)는 요청 전에 :class:`ForbiddenPath` — 주문·계좌 경로는 어느 어댑터 목록에도 없다
   (``tests/test_collect_broker_http.py`` 가 정적으로도 본다).
 - **속도**: 요청 사이 최소 간격(``rate`` req/s)과 모든 요청 합의 (횟수, 창[초]) 상한(``limits``). 창이 차면 가장 오래된
   전송이 창을 벗어날 때까지 기다린다.
@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 import urllib.error
 import urllib.parse
@@ -68,6 +69,24 @@ def urllib_transport(method: str, url: str, headers: dict, body: dict, timeout: 
     except (UnicodeDecodeError, json.JSONDecodeError):
         parsed = {"_raw": raw[:200].decode("utf-8", "replace")}
     return status, {k.lower(): v for k, v in hdrs.items()}, parsed if isinstance(parsed, dict) else {"_list": parsed}
+
+
+#: 허용 경로의 자리표시 한 마디 — 종목 심볼(``005930``·``0101N0``).
+_SLOT = re.compile(r"\{[a-z_]+\}")
+
+
+def path_allowed(allowed: "frozenset[tuple[str, str]]", method: str, path: str) -> bool:
+    """``(method, path)`` 가 허용 목록에 있나 — 정확히 같거나, 자리표시(``{symbol}``)를 한 마디로 채운 꼴."""
+    if (method, path) in allowed:
+        return True
+    for m, tpl in allowed:
+        if m != method or "{" not in tpl:
+            continue
+        parts = _SLOT.split(tpl)
+        rx = "^" + "[A-Za-z0-9.-]+".join(re.escape(p) for p in parts) + "$"
+        if re.fullmatch(rx, path):
+            return True
+    return False
 
 
 class HttpSession:
@@ -139,7 +158,7 @@ class HttpSession:
     def send(self, method: str, path: str, headers: dict, body: dict, *, what: str,
              rate_limited: "Callable[[int, dict], bool] | None" = None) -> "tuple[int, dict[str, str], dict]":
         """요청 하나 — 허용 경로 확인 → (속도 제한에 걸리면 재시도하며) 보낸다. ``what`` 은 원장의 호출 칸 이름."""
-        if (method, path) not in self.allowed:
+        if not path_allowed(self.allowed, method, path):
             raise ForbiddenPath(self.broker, what, "-", f"허용 목록 밖의 경로 {method} {path} — 시세·수급 조회만 부른다")
         attempt = 0
         while True:

@@ -30,7 +30,7 @@ def render(data: dict, template: str) -> str:
     """템플릿에 지도 데이터·표지를 심는다. ``</`` 는 스크립트가 닫히지 않게 바꾼다."""
     blob = json.dumps(data, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
     return (template.replace("__DATA__", blob)
-            .replace("__BASIS__", DATA_BASIS_SHORT)
+            .replace("__BASIS__", data.get("basis") or DATA_BASIS_SHORT)
             .replace("__SOURCE__", DEMO_SOURCE if data.get("demo") else SOURCE)
             .replace("__DEMO_NOTICE__", DEMO_NOTICE))
 

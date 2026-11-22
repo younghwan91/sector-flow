@@ -265,6 +265,7 @@ sector-flow `storage.INVESTOR_COLUMNS` 는 11칸이다(키움 `etc_fnnc` 기타�
 | `kiwoom` | `KIWOOM_APP_KEY`·`KIWOOM_APP_SECRET` | `ka10059` | 11 | KRX | TR당 0.9/초 + 초 5·분 100·시간 1,000 | `ka10099`(업종 포함) | 기준(Phase 1 차 0) |
 | `kis` | `KIS_APP_KEY`·`KIS_APP_SECRET` | `FHPTJ04160001` | 10 — 국가 없음 | KRX(`J`) | 5/초(공지 상한 18 을 넘지 않는다) | 없음 → 저장된 `stocks` | 미검증 |
 | `ls` | `LS_APP_KEY`·`LS_APP_SECRET` | `t1702` | 11 | KRX(`K`) | 1/초(t1702 개인 상한 — 넘지 않는다) | `t8436`(업종 없음 → 저장된 섹터) | 미검증 |
+| `toss` | `TOSS_CLIENT_ID`·`TOSS_CLIENT_SECRET` | `investor-trading` + 원 종가 일봉 `candles` | 10 — 국가 없음, 외국인은 등록외국인만 | **KRX+NXT 통합** | 5/초(그룹 상한 10 을 넘지 않는다) | `stocks/all`(보통주, 토스 섹터는 쓰지 않는다) | 미검증 |
 
 - `kis`: 실전 앱키 전용(이 TR 은 모의투자 미지원 — 시작할 때 경고). 한 응답의 행 수가 미확인이라 응답 헤더 `tr_cont`(M·F) 연속조회와
   날짜 옮기기 두 길로 잇는다. 등락률은 키움 `flu_rt` 와 단위가 달라 싣지 않는다. 종목 목록 API 가 없어 먼저
@@ -274,6 +275,10 @@ sector-flow `storage.INVESTOR_COLUMNS` 는 11칸이다(키움 `etc_fnnc` 기타�
   `--i-understand-ls-terms` 가 없으면 요청 전에 멈춘다(sqlite 도 만들지 않는다). 토큰은 폼(`appkey`·`appsecretkey`·`scope=oob`)으로 받는다.
   외국인은 외인계(`tjj0016`, 등록+미등록), 국가는 국가외(`tjj0011`). 연속조회 방식이 미확인이라 응답 머리 `tr_cont: Y`(+`tr_cont_key`)와
   `todt` 옮기기 두 길로 잇는다. 섹터가 없어 키움 키로 받은 업종이나 `sectors --csv` 의 표를 둔다.
+- `toss`: 수급이 KRX+NXT 통합뿐이라 KRX 단독(나머지 어댑터·리포트)과 같은 날 숫자가 다르다. 그래서 KRX 단독 행이 든 sqlite 에는 받아
+  넣지 않고(수집 전에 거부 — 다른 `--db` 를 준다), 지도 머리 표지가 `자료 범위: KRX+NXT 통합` 으로 바뀐다(`basis.DATA_BASIS_INTEGRATED`).
+  매매동향에 종가가 없어 원 종가 일봉(`adjusted=false`)을 날짜로 붙인다 — 종목당 요청이 둘이다. 당일 잠정 기록의 개인·기관 세부·기타법인은
+  null(NULL 로 둔다). 섹터는 자체 분류·다중 소속이라 쓰지 않는다. 허용 IP 등록이 필요하다.
 
 ---
 

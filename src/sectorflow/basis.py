@@ -12,6 +12,11 @@ import math
 #: 화면·웹에 그대로 나가는 한 줄. 바꾸면 TUI 도움말·웹 두 페이지가 같이 바뀐다(``tests/test_data_basis.py``).
 DATA_BASIS = "자료 범위: KRX 단독(수급·거래량·종가) — 넥스트레이드(NXT) 체결 제외"
 
+#: KRX+NXT 통합 수급(토스증권 어댑터, ``sectorflow.collect.brokers.toss``)으로 지은 BYO 지도의 표지 — :data:`DATA_BASIS` 대신.
+#: KRX 단독 숫자와 같은 날 다르다. 한 sqlite 에 섞지 않는다(수집기가 거부한다).
+DATA_BASIS_INTEGRATED = "자료 범위: KRX+넥스트레이드(NXT) 통합(수급) — KRX 단독 리포트와 숫자가 다르다, 외국인은 등록외국인만"
+DATA_BASIS_INTEGRATED_SHORT = "자료 범위: KRX+NXT 통합"
+
 #: 웹 템플릿의 자리표시 — ``sector_flow.py``·``sector_numbers.py`` 가 ``__DATA__`` 와 같이 갈아 끼운다.
 BASIS_SLOT = "__BASIS__"
 
