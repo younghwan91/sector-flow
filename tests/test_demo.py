@@ -336,3 +336,18 @@ def test_demo_module_never_reads_a_real_db_env():
     """생성기를 띄울 때 ``KR_QUANT_DB`` 를 지운다 — sector_flow 기본값이 실 DB 를 보면 데모가 실데이터가 된다."""
     src = (REPO / "src/sectorflow/demo.py").read_text("utf-8")
     assert re.search(r'if k != "KR_QUANT_DB"', src)
+
+
+def test_installed_copy_without_the_map_generator_still_fingerprints(monkeypatch):
+    """설치본(wheel)에는 웹 전용 sector_map.py 가 없다 — 지도만 빠지고 데모 지문·생성은 멈추지 않는다."""
+    real = demo.script_path
+
+    def _no_map(name):
+        if name == "sector_map.py":
+            raise SystemExit("없음")
+        return real(name)
+
+    with_map = demo._fingerprint()
+    monkeypatch.setattr(demo, "script_path", _no_map)
+    assert demo._script_or_none("sector_map.py") is None
+    assert demo._fingerprint() != with_map              # 지도 생성기가 생기거나 빠지면 데모를 다시 짓는다

@@ -1,58 +1,37 @@
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/brand/logo-dark.svg">
-  <img alt="sector-flow" src="docs/brand/logo.svg" height="56">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/brand/wordmark-dark.svg">
+  <img src="docs/brand/wordmark.svg" alt="sector-flow · 수급 지도" height="48">
 </picture>
-
-# sector-flow
 
 **한국어** · [English](README.en.md)
 
-**오늘 코스피·코스닥 어느 섹터에 누구의 돈이 들어왔는지를 터미널과 브라우저에서 본다.** 일일 배치가
-수급 DB 에서 리포트 폴더를 만들고 저장 직후 스스로 검사한다. 화면은 그 폴더만 읽으므로 SSH 에서
-바로 뜬다. 숫자는 동시기(同時期) 측정값이고, 돈이 들어온 섹터가 앞으로 오른다는 주장이 아니다([§8](#8-주의--이-숫자들은-예측이-아니다)).
-
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/)
+
+**오늘 누가 어느 섹터를 넘기고 넘겨받았는지, 투자 주체별 순매매를 한 장의 지도로 본다.** 코스피·코스닥의 섹터별 수급을
+터미널과 브라우저에서 본다. 동시기 관측이며 예측이 아니다([§8](#8-주의--이-숫자들은-예측이-아니다)).
+
+![수급 지도 타임랩스(합성 데모) — 왼쪽은 순매도한 주체, 가운데는 섹터, 오른쪽은 순매수한 주체. 띠 굵기는 금액이고, 하루씩 넘기며 다시 그린다](docs/images/map-demo.gif)
+
+*수급 지도 타임랩스(**합성 데모** — 이 문서의 그림은 전부 난수로 만든 가짜 숫자·가짜 이름이다). 띠 하나가 (주체, 섹터) 한 칸이고 굵기는 금액이다.
+섹터끼리·주체끼리는 잇지 않는다 — 누가 누구에게 넘겼는지는 데이터에 없다([정의](docs/formulas.md#8-수급-지도--sectorflowflowmap)).*
 
 ## Quick start
 
 ```bash
 uv sync
-uv run sw-flow --demo      # 섹터 자금 흐름 — DB·데이터 없이 바로 뜬다
-uv run sw-ledger --demo    # 자금 원장 — 같은 데모
-uv run sector-flow-demo --out ~/sf-demo && uv run python scripts/serve_reports.py --root ~/sf-demo   # 같은 데모를 웹으로 — http://127.0.0.1:8765/
+uv run sw-flow --demo      # 터미널 — DB·데이터 없이 바로 뜬다
+uv run sector-flow-demo --out ~/sf-demo && uv run python scripts/serve_reports.py --root ~/sf-demo   # 수급 지도·수치표를 웹으로 — http://127.0.0.1:8765/
 ```
 
-**`--demo` 의 숫자와 이름은 전부 난수다.** 실제 시장·종목과 무관하고, 제목 줄 맨 앞과 웹 맨 위에 `[합성 데모]` 가 늘 붙는다.
-처음 한 번 수십 초 걸려 `~/.cache/sector-flow/demo` 에 만들고, 그 뒤로는 바로 뜬다.
-
-실제 리포트로 보는 길은 둘이다.
-
-```bash
-uv run sw-flow --dir <리포트 폴더>   # 받은 폴더(DB 불요, §4.3)
-scripts/daily_report.sh              # 수급 DB 에 접속할 수 있으면 직접 만든다(§4.1) → uv run sw-flow
-```
+데모의 숫자와 이름은 전부 난수이고, 화면마다 `[합성 데모]` 가 붙는다. 실제 리포트를 만들고 여는 법은 [§4](#4-설치와-실행) —
+일일 배치는 [quant-airflow](https://github.com/younghwan91/quant-airflow) 가 적재한 DB 를 읽기만 한다. 자기 키움 키로 sqlite 를
+채우는 BYO 수집기(`sector-flow-collect`, `sector-flow-byo`)는 [`docs/byo/quickstart.md`](docs/byo/quickstart.md) 참고.
 
 > **리포트 폴더는 제3자에게 넘기지 않는다.** 실제 종목별 수급이 들어 있고, KRX·키움의 데이터 이용 범위상
 > 재배포할 수 없다. 본인 기기 사이에서만 옮기고, 남에게 보여 줄 때는 합성 데모를 쓴다(§4.3).
 > 섹터 합계로 그린 그림·카드도 같다 — 이 레포의 공개 그림은 전부 합성 데모다.
 
-> **데이터는 어디서 오나.** 일일 배치는 [quant-airflow](https://github.com/younghwan91/quant-airflow) 가 적재한 DB 를 읽기만
-> 한다. `src/sectorflow/collect/`(`sector-flow-collect`)는 자기 키움 키로 sqlite 를 채우는 BYO 수집기로, 일일 배치에는
-> 쓰지 않는다([`docs/byo/`](docs/byo/)).
-
-## 수급 지도
-
-![수급 지도(합성 데모) — 왼쪽은 순매도한 주체, 가운데는 섹터, 오른쪽은 순매수한 주체. 띠 굵기는 금액이다](docs/images/map-demo.png)
-
-하루(또는 5·20·60·120거래일) 동안 **누가 어느 섹터를 순매도하고 순매수했나**를 한 장으로 그린다. 띠 하나가 (주체, 섹터) 한 칸이다.
-주체 칸을 누르면 그 주체 하나의 섹터별 순매도·순매수만 남고, 기관은 투신·연기금 등 세부로 펼친다. 타임랩스는 최근 60거래일을 하루씩 넘긴다.
-섹터와 섹터, 주체와 주체는 잇지 않는다 — 누가 누구에게 넘겼는지는 데이터에 없다([정의](docs/formulas.md#8-수급-지도--sectorflowflowmap)).
-
-```bash
-uv run python scripts/sector_map.py --payload <리포트 폴더>/payload.json --html map.html   # 브라우저로 연다
-```
-
-일일 배치는 아직 `map.html` 을 만들지 않는다. 실데이터 지도도 리포트 폴더와 같다 — 본인 기기에서만 본다.
+코드가 쓸모 있었다면 [GitHub Sponsors](https://github.com/sponsors/younghwan91)로 후원할 수 있다 — 혜택은 없고, 데이터는 팔지 않는다([후원](#후원)).
 
 **자기 키움 키로 자기 기기에서 지도까지:** [`docs/byo/quickstart.md`](docs/byo/quickstart.md) — 키 발급 → 설치 → 종목 목록 → 지도 전용 수집 → 지도 짓기.
 
@@ -78,7 +57,7 @@ uv run python scripts/sector_map.py --payload <리포트 폴더>/payload.json --
 |---|---|---|
 | `sw-flow` | 첫 화면은 **오늘의 수급** — 기준일 하루 누가 어디서 얼마나 드물게 사고팔았나. 아무 키나 누르면 27개 섹터 칸(벤더 분류 26개 + 미분류) × 5개 구간(1·5·20·60·120거래일) × 3개 시장 × 4개 주체의 표로 간다. 기본 정렬은 금액이 아니라 **가속**(누적 순매수 ÷ 섹터 시총)이라 시총 큰 종목이 있는 섹터가 자동으로 1등이 되지 않는다. `Enter` 로 섹터를 열면 그 흐름을 만든 종목이 보인다 | 불요 |
 | `sw-ledger` | 같은 리포트의 회계. 누가 얼마를 넘겼고 얼마가 미분류로 남았나를 원 금액과 잔여만으로 | 불요 |
-| 웹 | 같은 리포트의 수치표(`numbers.html`, 맨 위 **오늘 한 장**)와 흐름 뷰어(`viewer.html`)를 Tailscale 로 연다 | 불요 |
+| 웹 | 같은 리포트의 수치표(`numbers.html`, 맨 위 **오늘 한 장**)·흐름 뷰어(`viewer.html`)·수급 지도(`map.html`)를 Tailscale 로 연다 | 불요 |
 | `scripts/daily_report.sh` | DB 에서 리포트 폴더를 만들고 저장 직후 자기 검증 | 읽기 전용 |
 
 ![sw-flow 첫 화면 — 오늘의 수급(합성 데모). 시장 4주체 순매수와 1년%ile·기관 세부, 분봉 밖 거래 큼·네이버 시장값 차이 경고, 오늘 달라진 것(어제와 부호 바뀐 섹터·직전 리포트 대비 들고 남·잠정→확정 변경),
@@ -264,6 +243,8 @@ uv run sw-ledger --dump --width 100     # 색 없는 평문 — 파이프·리�
 uv run sector-flow-demo --out <폴더>     # 합성 데모 폴더만 만든다 — 웹으로 열어 보거나 --dir 로 띄운다
 ```
 
+`--demo` 는 처음 한 번 수십 초 걸려 `~/.cache/sector-flow/demo` 에 데모 폴더를 만들고, 그 뒤로는 바로 뜬다.
+
 40×10 창에서도 뜬다. 폭이 모자라면 열이 경계에서 통째로 빠진다(숫자가 자릿수 중간에서 잘려 다른 값처럼 보이지 않게).
 원장 표만은 71칸 미만이면 아예 안 그리고 그 사실을 적는다 — 4주체와 잔여가 한 덩어리라 일부만 보이면 회계 항등식이
 깨진 것처럼 읽힌다. `NO_COLOR` 를 존중한다.
@@ -299,7 +280,13 @@ uv run sw-flow --dir ~/reports/2026-11-06
 http://<서버의 Tailscale 주소>:8765/                    # 기준일 목록 — 최신·확정·검증 실패·수집 미완 표시
 http://<서버의 Tailscale 주소>:8765/latest/numbers.html  # 즐겨찾기용 — 늘 최신 수치표
 http://<서버의 Tailscale 주소>:8765/latest/viewer.html   #            — 늘 최신 흐름 뷰어
+http://<서버의 Tailscale 주소>:8765/latest/map.html      #            — 늘 최신 수급 지도
 ```
+
+**수급 지도**(`map.html`, 맨 위 그림)는 하루(또는 5·20·60·120거래일) 동안 누가 어느 섹터를 순매도하고 순매수했나를 한 장으로 그린다.
+주체 칸을 누르면 그 주체 하나의 섹터별 순매도·순매수만 남고, 기관은 투신·연기금 등 세부로 펼친다. 타임랩스는 최근 60거래일을 하루씩 넘긴다.
+배치가 리포트 폴더에 같이 짓고, 옛 폴더는 `uv run python scripts/sector_map.py --payload <리포트 폴더>/payload.json --html map.html` 로 짓는다.
+실데이터 지도도 리포트 폴더와 같다 — 본인 기기에서만 본다.
 
 `/latest/trust.html` 은 검증·품질 페이지(첫 게시 결과·정정의 크기·지표 검정 결과·알려진 한계)이고 근거 문서 사본이 `/latest/validation/` 에 같이 있다.
 `/latest/digest.md`·`/latest/digest.png` 는 그날의 수급 다이제스트다 — 이 비공개 웹에서만 읽고 밖으로 보내는 길은 없다.

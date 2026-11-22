@@ -1,9 +1,7 @@
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/brand/logo-dark.svg">
-  <img alt="sector-flow" src="docs/brand/logo.svg" height="56">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/brand/wordmark-dark.svg">
+  <img src="docs/brand/wordmark.svg" alt="sector-flow · 수급 지도" height="48">
 </picture>
-
-# sector-flow
 
 [한국어](README.md) · **English**
 
@@ -13,13 +11,14 @@ The numbers are same-period observations, not forecasts.
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/)
 
+![Flow map time-lapse (synthetic demo) — investors that net sold on the left, sectors in the middle, investors that net bought on the right. Band width is the amount; the map is redrawn day by day](docs/images/map-demo.gif)
+
 ## Quick start
 
 ```bash
 uv sync
-uv run sw-flow --demo      # sector flow screen — no database, no data needed
-uv run sw-ledger --demo    # flow ledger — same demo
-uv run sector-flow-demo --out ~/sf-demo && uv run python scripts/serve_reports.py --root ~/sf-demo   # same demo in a browser — http://127.0.0.1:8765/
+uv run sw-flow --demo      # terminal — no database, no data needed
+uv run sector-flow-demo --out ~/sf-demo && uv run python scripts/serve_reports.py --root ~/sf-demo   # flow map and tables in a browser — http://127.0.0.1:8765/
 ```
 
 **Everything in `--demo` is random.** Sector names such as `가상전자` ("virtual electronics") are made up on purpose, and
