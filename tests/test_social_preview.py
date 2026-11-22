@@ -76,3 +76,71 @@ def test_stamp_rewrites_only_the_preview_rows():
     new = SP.stamp_manifest(text, "b" * 40)
     assert len(mine) >= 5 and new.count("b" * 40) == len(mine)
     assert {"scripts/social_preview.py", "docs/brand/wordmark-dark.svg", "src/sectorflow/demo.py"} <= set(SP.watched(text))
+
+
+# mutation-exempt: 브라우저·Pillow 를 가짜로 끼워 shoot·main 흐름의 회귀를 막는 커버리지 테스트다
+def test_shoot_and_main_with_fake_playwright(tmp_path, monkeypatch):
+    import sys
+    import types
+
+    demo_dir = tmp_path / "demo"
+    demo_dir.mkdir()
+    (demo_dir / "DEMO.txt").write_text("demo\n", "utf-8")
+    (demo_dir / "payload.json").write_text("{}", "utf-8")
+    out = tmp_path / "preview.png"
+
+    fake_sm = types.SimpleNamespace(
+        TEMPLATE=tmp_path / "tpl.html",
+        build_map_data=lambda p: {"ok": True},
+        render=lambda data, tpl: "<html><div id='fig'></div></html>",
+    )
+    fake_sm.TEMPLATE.write_text("tpl", "utf-8")
+    monkeypatch.setattr(SP, "_sector_map", lambda: fake_sm)
+
+    class _Loc:
+        def screenshot(self, **kw):
+            return b"\x89PNGfig"
+
+    class _Pg:
+        def goto(self, *a, **kw): pass
+        def wait_for_timeout(self, *a): pass
+        def add_style_tag(self, **kw): pass
+        def locator(self, sel): return _Loc()
+        def screenshot(self, path):
+            Path(path).write_bytes(b"\x89PNG\r\n\x1a\n")
+
+    class _Ctx:
+        def route(self, *a): pass
+        def new_page(self): return _Pg()
+        def close(self): pass
+
+    class _Browser:
+        def new_context(self, **kw): return _Ctx()
+        def close(self): pass
+
+    class _SyncPW:
+        def __enter__(self): return object()
+        def __exit__(self, *a): pass
+
+    monkeypatch.setattr(SP, "_launch", lambda p: _Browser())
+    pw_mod = types.ModuleType("playwright")
+    pw_sync = types.ModuleType("playwright.sync_api")
+    pw_sync.sync_playwright = lambda: _SyncPW()
+    pw_mod.sync_api = pw_sync
+
+    class _Img:
+        size = (SP.W, SP.H)
+        def convert(self, mode): return self
+        def save(self, path, **kw): Path(path).write_bytes(b"\x89PNG\r\n\x1a\n")
+
+    pil_mod = types.ModuleType("PIL")
+    pil_img = types.ModuleType("PIL.Image")
+    pil_img.open = lambda p: _Img()
+    pil_mod.Image = pil_img
+    monkeypatch.setitem(sys.modules, "playwright", pw_mod)
+    monkeypatch.setitem(sys.modules, "playwright.sync_api", pw_sync)
+    monkeypatch.setitem(sys.modules, "PIL", pil_mod)
+    monkeypatch.setitem(sys.modules, "PIL.Image", pil_img)
+
+    assert SP.main(["--demo-dir", str(demo_dir), "--out", str(out)]) == 0
+    assert out.exists()
