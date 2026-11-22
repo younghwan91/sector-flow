@@ -66,6 +66,8 @@ def _pages(tmp: Path) -> Path:
         .replace(BASIS_SHORT_SLOT, DATA_BASIS_SHORT).replace(BASIS_SLOT, DATA_BASIS), "utf-8")
     vt = (REPO / "scripts" / "templates" / "sector_flow.html").read_text("utf-8")
     (tmp / "viewer.html").write_text(vt.replace("__DATA__", SF.script_json(P)).replace(BASIS_SLOT, DATA_BASIS), "utf-8")
+    SM = _mod("sector_map", REPO / "scripts" / "sector_map.py")
+    (tmp / "map.html").write_text(SM.render(SM.build_map_data(P), Path(SM.TEMPLATE).read_text("utf-8")), "utf-8")
     return tmp
 
 
@@ -162,7 +164,10 @@ class _Page:
         pass
 
     def evaluate(self, js):
-        return self.pw.facts.get((self.name, self.width), {k: v for k, v in CLEAN.items() if k not in ("console", "errors")})
+        f = self.pw.facts.get((self.name, self.width), {k: v for k, v in CLEAN.items() if k not in ("console", "errors")})
+        if js == WS._MAP_MEASURE:                  # 지도 잰 값은 따로 재는 식에서만 나온다
+            return {"map": f.get("map")}
+        return {k: v for k, v in f.items() if k != "map"}
 
     def screenshot(self, path):
         Path(path).write_bytes(b"png")
@@ -250,3 +255,38 @@ def test_smoke_exit_codes_and_the_chromium_fallback(tmp_path, monkeypatch, capsy
     assert WS.main(["--dir", folder]) == 2
     monkeypatch.setitem(sys.modules, "playwright.sync_api", None)        # import 가 ImportError 를 낸다
     assert WS.main(["--dir", folder]) == 2
+
+
+MAP_OK = {"nodes": 20, "labels": 40, "overlaps": [], "outside": 0}
+
+
+def test_judge_flags_an_empty_map_overlapping_labels_and_clipped_nodes():
+    """주입: 지도 판정에서 빈 그림·라벨 겹침·잘린 노드 중 하나를 빼면 실패한다. 카드 배치도 같은 판정이다."""
+    ok = dict(CLEAN, today=None, map=MAP_OK)
+    assert WS.judge("map.html", 390, ok) == [] and WS.judge("map.html?card=wide", 1200, ok) == []
+    assert any("노드가 없다" in x for x in WS.judge("map.html", 600, dict(ok, map=None)))
+    assert any("노드가 없다" in x for x in WS.judge("map.html", 600, dict(ok, map=dict(MAP_OK, nodes=0))))
+    over = WS.judge("map.html", 390, dict(ok, map=dict(MAP_OK, overlaps=["가상전자 / 가상기계"])))
+    assert over == ["map.html@390 노드 라벨 겹침: 가상전자 / 가상기계"]
+    assert any("그림 밖" in x for x in WS.judge("map.html?card=wide", 1200, dict(ok, map=dict(MAP_OK, outside=2))))
+    assert WS.judge("numbers.html", 390, CLEAN) == [], "지도 판정이 다른 쪽에 새지 않는다"
+
+
+def test_smoke_opens_the_map_at_three_widths_and_both_card_layouts(tmp_path, monkeypatch):
+    """지도는 폴더에 있으면 연다 — 폭 1440·600·390 과 카드 배치 둘(크기 그대로). 지도 잰 값은 따로 잰다.
+
+    주입: 지도를 안 열거나, 카드 배치를 빼거나, 지도 잰 값을 안 재면 실패한다.
+    """
+    _folder(tmp_path)
+    (tmp_path / "map.html").write_text("<html></html>", "utf-8")
+    base = {k: v for k, v in CLEAN.items() if k not in ("console", "errors")}
+    facts = {("map.html", w): dict(base, today=None, map=MAP_OK) for w in WS.MAP_WIDTHS}
+    facts.update({(f"map.html?card={c}", w): dict(base, today=None, map=MAP_OK) for c, w, _h in WS.MAP_CARDS})
+    facts[("map.html?card=wide", 1200)] = dict(base, today=None, map=dict(MAP_OK, overlaps=["개인 / 가상전자"]))
+    pw = _FakePW(facts=facts)
+    _fake(monkeypatch, pw)
+    problems = WS.smoke(str(tmp_path), shots=str(tmp_path / "shots"))
+    assert problems == ["map.html?card=wide@1200 노드 라벨 겹침: 개인 / 가상전자"], problems
+    assert {"map-1440.png", "map-600.png", "map-390.png", "map-card-tall-1080.png", "map-card-wide-1200.png"} <= set(pw.shots)
+    (tmp_path / "map.html").unlink()
+    assert WS.smoke(str(tmp_path)) == [], "지도는 선택 쪽이다 — 옛 폴더엔 없다"

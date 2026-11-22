@@ -13474,6 +13474,54 @@ file = "scripts/daily_report.sh"
 find = "--with 'playwright==1.48.0' python scripts/map_card.py"
 replace = "--with playwright python scripts/map_card.py"
 
+[[mutation]]
+id = "smoke-map-label-overlap-ignored"
+why = "웹 스모크가 지도 노드 라벨 겹침을 안 센다 — 글꼴 없는 설치본·좁은 폭에서 포개진 글자가 지나간다."
+guards = ["tests/test_web_smoke.py::test_judge_flags_an_empty_map_overlapping_labels_and_clipped_nodes"]
+file = "scripts/web_smoke.py"
+find = '''            out += [f"{tag} 노드 라벨 겹침: {x}" for x in m.get("overlaps") or []]'''
+replace = '''            out += []'''
+
+[[mutation]]
+id = "smoke-map-clipped-nodes-ignored"
+why = "그림 밖으로 나가 잘린 노드를 안 센다 — 가로 카드에서 맨 위·맨 아래 섹터가 사라져도 통과한다."
+guards = ["tests/test_web_smoke.py::test_judge_flags_an_empty_map_overlapping_labels_and_clipped_nodes"]
+file = "scripts/web_smoke.py"
+find = '''            if m.get("outside"):'''
+replace = '''            if False:'''
+
+[[mutation]]
+id = "smoke-map-empty-picture-passes"
+why = "노드가 없는 빈 지도를 통과시킨다 — 데이터가 안 심겨도 스모크가 초록이다."
+guards = ["tests/test_web_smoke.py::test_judge_flags_an_empty_map_overlapping_labels_and_clipped_nodes"]
+file = "scripts/web_smoke.py"
+find = '''        if not m or not m.get("nodes"):'''
+replace = '''        if False:'''
+
+[[mutation]]
+id = "smoke-map-not-opened"
+why = "웹 스모크가 수급 지도를 열지 않는다."
+guards = ["tests/test_web_smoke.py::test_smoke_opens_the_map_at_three_widths_and_both_card_layouts"]
+file = "scripts/web_smoke.py"
+find = '''OPTIONAL_PAGES = ("trust.html", "map.html")'''
+replace = '''OPTIONAL_PAGES = ("trust.html",)'''
+
+[[mutation]]
+id = "smoke-map-cards-skipped"
+why = "웹 스모크가 지도 카드 배치(?card=tall|wide)를 안 연다 — 카드에서만 나는 넘침·잘림이 지나간다."
+guards = ["tests/test_web_smoke.py::test_smoke_opens_the_map_at_three_widths_and_both_card_layouts"]
+file = "scripts/web_smoke.py"
+find = '''            + [(f"{page_name}?card={c}", w, h, f"?card={c}") for c, w, h in MAP_CARDS])'''
+replace = '''            + [])'''
+
+[[mutation]]
+id = "smoke-map-measure-skipped"
+why = "지도 잰 값(라벨 상자·잘린 노드)을 재지 않는다 — 판정이 늘 '빈 그림' 이거나 아무것도 못 본다."
+guards = ["tests/test_web_smoke.py::test_smoke_opens_the_map_at_three_widths_and_both_card_layouts"]
+file = "scripts/web_smoke.py"
+find = '''                        facts.update(pg.evaluate(_MAP_MEASURE))'''
+replace = '''                        pass'''
+
 [[removed]]
 id = "ci-shard-denominator-hardcoded"
 why = "샤드를 없앴다 — 전체 검증은 잡 하나다(tests/test_ci_workflow.py 가 matrix 를 막는다)"
