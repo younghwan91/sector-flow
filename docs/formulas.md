@@ -1129,7 +1129,7 @@ $\mathrm{net}_a=\sum_s S_{s,a}$ 는 꼬리까지 더한 값이다(`actor_graph` 
 주체 $a$ 하나의 섹터별 **하루** 순매수 $x_{s,t} = \sum_{m} f_{m,s,a,t}$(시장을 더하고 결측은 0)를 마지막 $n$ 거래일(기본 120,
 날짜가 모자라면 그만큼) 늘어놓는다. 구간 $\sum_t |x_{s,t}|$ 큰 순 10개 섹터는 따로, 나머지는 날마다 더해 `기타 N개 섹터` 한 띠로 둔다
 (구간 내내 0 인 섹터는 뺀다). 값은 소수 1자리로 싣고, 화면은 그 값으로 5일 합 $\sum_{k=0}^{4} x_{s,t-k}$ 과 누적 $\sum_{k \le t} x_{s,k}$(보이는
-구간 첫날부터)을 셈한다(`stream_series` `src/sectorflow/flowmap.py:229-259`, 정렬 `src/sectorflow/flowmap.py:253`,
+구간 첫날부터)을 셈한다(`stream_series` `src/sectorflow/flowmap.py:229-259`,
 묶음 `stream_data` `src/sectorflow/flowmap.py:324-328`). 위는 순매수, 아래는 순매도로 쌓고 날마다의 값을 직선으로 잇는다.
 섹터와 섹터를 잇는 구조는 데이터에도 그림에도 없다 — 같은 날 한 섹터의 순매도와 다른 섹터의 순매수는 같은 돈이라는 관측이 아니다.
 검증기 M 층이 이 띠를 일별 배열에서 다시 센다(허용오차 0.06억, `_vm_stream` `scripts/verify_report.py:5436`).

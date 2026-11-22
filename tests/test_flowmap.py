@@ -375,6 +375,7 @@ def test_flows_only_payload_ok(demo_payload):
 
 # ── 시간 흐름(두 번째 보기) — 주체 하나의 섹터별 하루 순매수 띠 ───────────────────────────
 
+# mutation-exempt: stream_series 시장 합산·결측 0·소수 1자리 반올림 불변 검사다
 def test_stream_series_adds_markets_and_keeps_daily_values():
     """두 시장을 날마다 더한다(None 은 0). 그 시장에 없는 섹터도 0. 값은 반올림 자릿수까지 손계산과 같다."""
     P = _payload()
@@ -402,6 +403,7 @@ def test_stream_series_orders_by_gross_and_bundles_the_rest():
         assert rest["v"][j] == pytest.approx(want, abs=0.051)
 
 
+# mutation-exempt: 시간 흐름 데이터에 섹터→섹터 구조나 잔여 주체가 없음을 확인하는 구조 불변 검사다
 def test_stream_has_no_sector_to_sector_structure_and_rejects_unknown_actor():
     """띠는 (섹터, 날짜) 값뿐 — 섹터와 섹터를 잇는 칸이 없다. 잔여는 주체가 아니라 시간 흐름에 없다."""
     P = _long_payload(n_days=6, n_sec=12)
@@ -412,6 +414,7 @@ def test_stream_has_no_sector_to_sector_structure_and_rejects_unknown_actor():
         FM.stream_series(P, ["거래소"], FM.RESID)
 
 
+# mutation-exempt: build_map_data 묶음에 stream 구조(날짜·시장×4주체)가 포함되는지 확인하는 계약 검사다
 def test_stream_data_in_the_map_bundle(demo_payload):
     """지도 묶음의 stream — 날짜는 한 번, 시장(전체·각 시장) × 4주체. 120거래일(데모 260일), 날짜가 적으면 그만큼."""
     D = FM.build_map_data(demo_payload)
