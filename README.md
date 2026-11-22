@@ -32,8 +32,8 @@ scripts/daily_report.sh              # 수급 DB 에 접속할 수 있으면 직
 > 섹터 합계로 그린 그림·카드도 같다 — 이 레포의 공개 그림은 전부 합성 데모다.
 
 > **데이터는 어디서 오나.** 일일 배치는 [quant-airflow](https://github.com/younghwan91/quant-airflow) 가 적재한 DB 를 읽기만
-> 한다. `src/sectorflow/collect/`(`sector-flow-collect`)는 자기 키움 키로 sqlite 를 채우는 BYO 수집기로, 아직 섹터 몇 개 크기의
-> 조각만 받고 일일 배치에 쓰지 않는다([`docs/byo/`](docs/byo/)).
+> 한다. `src/sectorflow/collect/`(`sector-flow-collect`)는 자기 키움 키로 sqlite 를 채우는 BYO 수집기로, 일일 배치에는
+> 쓰지 않는다([`docs/byo/`](docs/byo/)).
 
 ## 수급 지도
 
@@ -48,6 +48,8 @@ uv run python scripts/sector_map.py --payload <리포트 폴더>/payload.json --
 ```
 
 일일 배치는 아직 `map.html` 을 만들지 않는다. 실데이터 지도도 리포트 폴더와 같다 — 본인 기기에서만 본다.
+
+**자기 키움 키로 자기 기기에서 지도까지:** [`docs/byo/quickstart.md`](docs/byo/quickstart.md) — 키 발급 → 설치 → 종목 목록 → 지도 전용 수집 → 지도 짓기.
 
 ## 목차
 

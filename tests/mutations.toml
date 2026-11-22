@@ -13368,6 +13368,38 @@ file = ".github/workflows/pages.yml"
 find = "        continue-on-error: true"
 replace = "        timeout-minutes: 5"
 
+[[mutation]]
+id = "docs-byo-out-option-renamed"
+why = "sector-flow-byo map 의 --out 이 바뀌었는데 빠른 시작 문서는 옛 옵션을 적는다"
+guards = ["tests/test_docs_cli_options.py::test_documented_console_commands_parse"]
+file = "src/sectorflow/byo.py"
+find = "    mp.add_argument(\"--out\", required=True"
+replace = "    mp.add_argument(\"--dest\", required=True"
+
+[[mutation]]
+id = "docs-collect-daily-map-only-renamed"
+why = "daily 의 --map-only 가 바뀌었는데 빠른 시작 문서는 옛 옵션을 적는다"
+guards = ["tests/test_docs_cli_options.py::test_documented_console_commands_parse"]
+file = "src/sectorflow/collect/run.py"
+find = "    dl.add_argument(\"--map-only\", action=\"store_true\","
+replace = "    dl.add_argument(\"--maponly\", action=\"store_true\","
+
+[[mutation]]
+id = "collect-missing-keys-traceback"
+why = "키가 없을 때 트레이스백으로 끝나 --env-file 을 말하지 않는다"
+guards = ["tests/test_collect_cli_errors.py::test_missing_keys_say_env_file_instead_of_a_traceback"]
+file = "src/sectorflow/collect/run.py"
+find = "    except MissingKeys as e:"
+replace = "    except ImportError as e:"
+
+[[mutation]]
+id = "collect-call-budget-traceback"
+why = "호출 상한에 닿으면 트레이스백으로 끝나 --max-calls·--resume 을 말하지 않는다"
+guards = ["tests/test_collect_cli_errors.py::test_call_budget_stops_with_a_hint_and_resume_finishes"]
+file = "src/sectorflow/collect/run.py"
+find = "    except CallBudgetExceeded as e:\n        # 끝낸 종목은"
+replace = "    except ImportError as e:\n        # 끝낸 종목은"
+
 [[removed]]
 id = "ci-shard-denominator-hardcoded"
 why = "샤드를 없앴다 — 전체 검증은 잡 하나다(tests/test_ci_workflow.py 가 matrix 를 막는다)"

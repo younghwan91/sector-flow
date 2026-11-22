@@ -29,7 +29,7 @@ from collections import Counter
 from datetime import datetime, timedelta, timezone
 
 from . import dart, fetch, write
-from .auth import load_dart_key, load_keys, mask
+from .auth import MissingKeys, load_dart_key, load_keys, mask
 from . import busy
 from .kiwoom import BusyWindow, CallBudgetExceeded, KiwoomRest, TokenConflict
 from .shares import reseed
@@ -549,8 +549,16 @@ def main(argv: "list[str] | None" = None) -> int:
     ds.add_argument("--dart-rate", type=float, default=1.0, help="DART 속도[req/s] (기본 1.0)")
     ds.add_argument("--dart-max-calls", type=int, default=1000, help="이 실행의 DART 호출 상한(기본 1000)")
     args = ap.parse_args(argv)
-    return {"smoke": cmd_smoke, "universe": cmd_universe, "backfill": cmd_backfill, "daily": cmd_daily, "reseed": cmd_reseed,
-            "dart-shares": cmd_dart_shares}[args.cmd](args)
+    try:
+        return {"smoke": cmd_smoke, "universe": cmd_universe, "backfill": cmd_backfill, "daily": cmd_daily,
+                "reseed": cmd_reseed, "dart-shares": cmd_dart_shares}[args.cmd](args)
+    except MissingKeys as e:
+        # 처음 치는 사람이 가장 먼저 만나는 실패다 — 트레이스백 대신 갈 길 한 줄(docs/byo/quickstart.md §1).
+        raise SystemExit(f"⏹ {e} --env-file 로 키 파일을 주거나 환경변수를 둔다(docs/byo/quickstart.md)") from None
+    except CallBudgetExceeded as e:
+        # 끝낸 종목은 이미 커밋됐다 — 같은 명령을 다시 치면 이어 받는다.
+        print(f"⏹ {mask(str(e))} — --max-calls 를 올리고 같은 명령을 다시 친다(backfill 은 --resume)", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":

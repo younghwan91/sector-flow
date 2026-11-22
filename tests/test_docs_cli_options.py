@@ -68,3 +68,57 @@ def test_drift_reads_a_typo_a_bad_choice_and_a_good_command():
     assert drift("`python scripts/verify_merge.py . --scope changed --only render,pty`", scripts) == []
     assert drift("    scripts/rebuild_history.py --root r --from a --to b\n", scripts) == []
     assert drift("`scripts/nope.py --x`", scripts) == []
+
+
+#: 문서가 적는 설치 명령(콘솔 진입점) → 그 모듈. 하위 명령 함수(``cmd_*``)를 바꿔 끼워 argparse 만 돌린다 — 키움·DB 를 안 부른다.
+CONSOLE = {"sector-flow-collect": "sectorflow.collect.run", "sector-flow-byo": "sectorflow.byo"}
+_CONSOLE_CMD = re.compile(r"(?<![\w-])(sector-flow-(?:collect|byo))\b([^`\n|;&#]*)")
+
+
+def console_drift(text: str, monkeypatch) -> list[str]:
+    """이 글이 적은 ``sector-flow-collect …``·``sector-flow-byo …`` 중 argparse 가 거절하는 줄.
+
+    건너뛰는 것: 이름만 적은 곳(산문 — 뒤가 옵션·하위 명령 모양이 아니다)과 ``[--x]``·``…`` 를 쓴 문법 요약(칠 수 있는 줄이 아니다).
+    """
+    import importlib
+    import shlex
+
+    bad = []
+    for prog, rest in _CONSOLE_CMD.findall(text):
+        argv = shlex.split(rest.strip().rstrip("\\").strip())
+        if not argv or not re.match(r"-|[a-z]", argv[0]) or "[" in rest or "…" in rest:
+            continue
+        mod = importlib.import_module(CONSOLE[prog])
+        for name in dir(mod):
+            if name.startswith("cmd_"):
+                monkeypatch.setattr(mod, name, lambda a: 0)
+        try:
+            mod.main(argv)
+        except SystemExit as e:
+            if e.code not in (0, None):
+                bad.append(f"{prog} {rest.strip()}")
+    return bad
+
+
+def test_documented_console_commands_parse(monkeypatch, capsys):
+    """문서의 ``sector-flow-collect``·``sector-flow-byo`` 명령을 그대로 쳤을 때 argparse 가 받는다(하위 명령·옵션·값 모양)."""
+    seen = 0
+    for doc in _docs():
+        text = doc.read_text("utf-8")
+        seen += sum(1 for _, rest in _CONSOLE_CMD.findall(text) if rest.strip())
+        assert not console_drift(text, monkeypatch), f"{doc.name}: {console_drift(text, monkeypatch)}"
+    assert seen >= 8, "명령을 거의 못 찾았다 — 정규식이 헛돈다"
+    capsys.readouterr()
+
+
+# mutation-exempt: console_drift 검사기 자신이 눈멀지 않았는지 보는 자가 검사다
+def test_console_drift_reads_a_typo_and_a_good_command(monkeypatch, capsys):
+    """검사 자신이 눈멀지 않았는가."""
+    assert console_drift("`sector-flow-collect backfill --db x.db --mapp-only`", monkeypatch)
+    assert console_drift("`sector-flow-byo map --db x.db`", monkeypatch), "--out 이 빠졌다"
+    assert console_drift("`sector-flow-collect backfill --db x.db --days 백이십`", monkeypatch)
+    assert console_drift('    sector-flow-collect --max-calls 6000 backfill --db "a b.db" --map-only --resume\n'
+                         "`sector-flow-byo map --db x.db --out <폴더>` · `sector-flow-collect` 만 적은 곳 · "
+                         "sector-flow-collect — 산문 · `sector-flow-collect daily --db … [--map-only]`",
+                         monkeypatch) == []
+    capsys.readouterr()
