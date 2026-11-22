@@ -12670,6 +12670,70 @@ file = "scripts/demo_shots.py"
 find = 'ROW = re.compile(r"^(\|\s*docs/images/\S+?\.(?:png|gif)\s*\|'
 replace = 'ROW = re.compile(r"^(\|\s*docs/images/\S+?\.(?:png)\s*\|'
 
+[[mutation]]
+id = "video-overwrites-users-map"
+why = "폴더에 map.html 이 있어도 payload 로 다시 짓는다 — 자기 리포트의 지도와 다른 그림이 영상이 된다."
+guards = ["tests/test_map_video.py::test_folder_without_map_html_gets_one_built_from_payload"]
+file = "scripts/map_video.py"
+find = '    if (report / "map.html").is_file():'
+replace = '    if False:'
+
+[[mutation]]
+id = "video-clock-not-paused"
+why = "가짜 시계를 설치만 하고 멈추지 않는다 — 실시간으로도 흘러 타임랩스가 두 배 빨리 지나갔다(2026-11-22 첫 시안)."
+guards = ["tests/test_map_video.py::test_record_freezes_the_clock_blocks_the_network_and_ends_on_the_base_date"]
+file = "scripts/map_video.py"
+find = "        page.clock.pause_at(PAUSE_AT_MS)"
+replace = "        pass"
+
+[[mutation]]
+id = "video-network-not-blocked"
+why = "녹화 중 외부 요청(글꼴)을 내보낸다 — 자기 리포트를 찍을 때도 기기 밖으로 나가는 길이 생긴다."
+guards = ["tests/test_map_video.py::test_record_freezes_the_clock_blocks_the_network_and_ends_on_the_base_date"]
+file = "scripts/map_video.py"
+find = '        ctx.route("http*://**", lambda r: r.fulfill(status=200, body="", content_type="text/css"))'
+replace = '        pass'
+
+[[mutation]]
+id = "video-empty-timelapse-recorded"
+why = "타임랩스 프레임이 0 인 폴더를 그대로 찍는다 — 빈 그림 8초가 영상이 된다."
+guards = ["tests/test_map_video.py::test_record_without_timelapse_frames_is_a_clean_error"]
+file = "scripts/map_video.py"
+find = "        if not n:"
+replace = "        if False:"
+
+[[mutation]]
+id = "video-mp4-not-browser-playable"
+why = "MP4 를 yuv444p 로 — 브라우저·폰이 못 튼다(랜딩·README 의 영상이 검은 칸)."
+guards = ["tests/test_map_video.py::test_encode_makes_a_web_playable_mp4_and_a_shared_palette_gif"]
+file = "scripts/map_video.py"
+find = '"-pix_fmt", "yuv420p"'
+replace = '"-pix_fmt", "yuv444p"'
+
+[[mutation]]
+id = "video-temp-frames-left"
+why = "임시 프레임 PNG(수백 장, 수백 MB)를 지우지 않는다."
+guards = ["tests/test_map_video.py::test_make_records_then_encodes_and_leaves_no_temp"]
+file = "scripts/map_video.py"
+find = "        shutil.rmtree(tmp, ignore_errors=True)"
+replace = "        pass"
+
+[[mutation]]
+id = "shots-checks-ffmpeg-after-shooting"
+why = "ffmpeg 를 PNG 를 다 찍은 뒤에야 본다 — 반만 다시 찍힌 채 멈추거나 원장이 옛 GIF 를 새 것이라 적는다."
+guards = ["tests/test_map_video.py::test_demo_shots_stops_before_shooting_when_the_gif_cannot_be_made"]
+file = "scripts/demo_shots.py"
+find = "            ffmpeg = video.find_ffmpeg([VIDEO_GIF])"
+replace = '            ffmpeg = "ffmpeg"'
+
+[[mutation]]
+id = "shots-skips-gif"
+why = "그림을 다시 찍을 때 GIF 는 안 찍는다 — 원장은 HEAD 라 적는데 README 머리의 GIF 는 옛 화면이다."
+guards = ["tests/test_map_video.py::test_demo_shots_retakes_the_gif_next_to_the_pngs"]
+file = "scripts/demo_shots.py"
+find = "        video.make(report, ffmpeg, gif=str(IMAGES / VIDEO_GIF))"
+replace = "        None"
+
 [[removed]]
 id = "ci-shard-denominator-hardcoded"
 why = "샤드를 없앴다 — 전체 검증은 잡 하나다(tests/test_ci_workflow.py 가 matrix 를 막는다)"
