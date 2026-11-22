@@ -382,6 +382,91 @@ def compare(a: dict, b: dict) -> dict:
     return res
 
 
+# ── 증권사 어댑터 대조(Phase 6b Task 62) ─────────────────────────────────────
+#: 섹터 합 상대오차의 바 — Phase 1(키움 BYO 대 kr_quant)과 같다(``docs/byo/phase1-equivalence.md``).
+BROKER_BAR = 0.005
+#: 섹터 합 창 — 하루 칸과 함께 이 창들의 합도 본다(날짜 수보다 긴 창은 뺀다).
+BROKER_WINDOWS = (5, 20, 60, 120)
+#: 출력 JSON 의 키 — **실데이터 숫자가 없다**(일치 여부·칸 수·최대 상대오차뿐). 이슈에 그대로 붙여도 된다.
+BROKER_EQUIV_KEYS = ("broker", "against", "verdict", "actors", "missing_actors", "dates", "codes", "cells",
+                     "sector_cells", "bar", "max_rel_err", "note")
+
+
+def _sources(db: str) -> set:
+    con = connect(db)
+    try:
+        return {r[0] for r in con.execute("SELECT DISTINCT source FROM supply_demand").fetchall()}
+    finally:
+        con.close()
+
+
+def broker_equiv(db: str, against: str, broker: str, *, sectors: "list[str] | None" = None,
+                 bar: float = BROKER_BAR) -> dict:
+    """증권사 어댑터로 받은 sqlite(``db``)를 키움으로 받은 sqlite(``against``)와 대조한다 — 출력에 실데이터 숫자가 없다.
+
+    1. **칸**: 겹치는 (날짜, 종목, 주체)마다 순매매 수량이 같은가. 주체는 그 어댑터가 주는 것만(:attr:`Capability.actors`).
+    2. **섹터 합**: (날짜, 시장, 섹터, 주체) 합 금액(수량 × 각자의 종가)과 그 창 합(:data:`BROKER_WINDOWS`)의 상대오차 —
+       분모가 :data:`REL_FLOOR_EOK` 억 밑인 칸은 뺀다. 섹터는 ``against``(키움 업종)의 것, ``sectors`` 를 주면 그 섹터만.
+    판정: 섹터 합 최대 상대오차가 ``bar``(0.5%) 이하면 ``일치``, 넘으면 ``불일치``. 겹치는 칸이 없거나 거래소 기준이 다르면 ``판정 불가``.
+    """
+    from .brokers import CAPABILITIES
+    if broker not in CAPABILITIES:
+        raise SystemExit(f"모르는 증권사 어댑터: {broker}")
+    cap = CAPABILITIES[broker]
+    got, ref = _sources(db), _sources(against)
+    if got != {broker}:
+        raise SystemExit(f"--db 의 수급 출처가 {sorted(got)} 다 — --broker {broker} 로만 받은 sqlite 를 준다")
+    if ref != {"kiwoom"}:
+        raise SystemExit(f"--against 의 수급 출처가 {sorted(ref)} 다 — 키움으로 받은 sqlite 를 준다")
+    actors = [c for c in INVESTOR_COLUMNS if c in cap.actors]
+    out = {"broker": broker, "against": "kiwoom", "verdict": "판정 불가", "actors": actors,
+           "missing_actors": list(cap.missing), "dates": 0, "codes": 0,
+           "cells": {"compared": 0, "equal": 0, "differ": 0}, "sector_cells": 0, "bar": bar, "max_rel_err": None,
+           "note": ""}
+    if cap.venue != CAPABILITIES["kiwoom"].venue:
+        out["note"] = f"거래소 기준이 다르다({cap.venue} 대 키움 {CAPABILITIES['kiwoom'].venue}) — 같은 날 숫자가 같을 수 없다"
+        return out
+    sel = f"SELECT code, date, close, {', '.join(actors)} FROM supply_demand"
+    a, b = _frame(db, sel), _frame(against, sel)
+    meta = _frame(against, "SELECT code, market, sector FROM stocks")
+    if sectors:
+        meta = meta[meta["sector"].isin(sectors)]
+    m = a.merge(b, on=["code", "date"], suffixes=("_a", "_b")).merge(meta, on="code")
+    if m.empty:
+        out["note"] = "겹치는 (날짜, 종목)이 없다 — 같은 기간·종목을 두 증권사로 받는다"
+        return out
+    out["dates"], out["codes"] = int(m["date"].nunique()), int(m["code"].nunique())
+    compared = equal = 0
+    for c in actors:
+        both = m[m[f"{c}_a"].notna() & m[f"{c}_b"].notna()]
+        compared += len(both)
+        equal += int((both[f"{c}_a"].astype(float) == both[f"{c}_b"].astype(float)).sum())
+    out["cells"] = {"compared": compared, "equal": equal, "differ": compared - equal}
+    worst, n_sec = None, 0
+    for c in actors:
+        g = m.assign(_a=m[f"{c}_a"].astype(float) * m["close_a"].abs() / 1e8,
+                     _b=m[f"{c}_b"].astype(float) * m["close_b"].abs() / 1e8)
+        g = g[g["_a"].notna() & g["_b"].notna()]
+        day = g.groupby(["market", "sector", "date"])[["_a", "_b"]].sum().reset_index()
+        dates = sorted(day["date"].unique())
+        frames = [day] + [day[day["date"] >= dates[-w]].groupby(["market", "sector"])[["_a", "_b"]].sum().reset_index()
+                          for w in BROKER_WINDOWS if w <= len(dates)]
+        for f in frames:
+            for x, y in zip(f["_a"], f["_b"]):
+                r = _rel(x, y)
+                if r is None:
+                    continue
+                n_sec += 1
+                worst = r if worst is None or r > worst else worst
+    out["sector_cells"] = n_sec
+    if worst is None:
+        out["note"] = f"분모가 {REL_FLOOR_EOK:g}억 이상인 섹터 칸이 없다 — 더 긴 기간이나 큰 섹터로 받는다"
+        return out
+    out["max_rel_err"] = round(worst, 6)
+    out["verdict"] = "일치" if worst <= bar else "불일치"
+    return out
+
+
 def main(argv: "list[str] | None" = None) -> int:
     ap = argparse.ArgumentParser(prog="sectorflow.collect.equiv")
     sub = ap.add_subparsers(dest="cmd", required=True)
