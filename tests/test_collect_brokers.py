@@ -76,7 +76,7 @@ def _scenarios(tmp_path: Path, monkeypatch) -> dict:
 
     with monkeypatch.context() as m:
         m.setattr(TD, "TRUTH", TD.CAL.trading_days("2026-01-02", "2026-12-30")[0])
-        run("backfill", TB.FakeKiwoom(), "2026-11-06 21:00", ["backfill", "--sectors", "운송/창고", "--days", "30"],
+        run("backfill", TB.FakeKiwoom(), "2026-11-07 10:00", ["backfill", "--sectors", "운송/창고", "--days", "30"],
             tmp_path / "a.db")
         run("backfill-map", TD.FakeServer(), "2026-11-20 21:00", ["backfill", "--map-only", "--sectors", "운송/창고"],
             tmp_path / "b.db")
@@ -104,3 +104,56 @@ def test_kiwoom_adapter_byte_identical(tmp_path, monkeypatch):
         assert got[name]["requests"] == want[name]["requests"], f"{name}: 요청 순서·헤더·본문이 바뀌었다"
         assert got[name]["db"] == want[name]["db"], f"{name}: sqlite 내용이 바뀌었다"
     assert sum(len(v["requests"]) for v in want.values()) > 40, "기록이 거의 비었다 — 시나리오가 헛돈다"
+
+
+# ── 등록부·능력 ────────────────────────────────────────────────────────────
+#: 계획(Phase 6b)의 어댑터 이름 — 등록부는 이 안에서만 는다.
+PLANNED = ("kiwoom", "kis", "ls", "toss", "db", "nh")
+
+
+def test_broker_registry_names(monkeypatch):
+    from sectorflow.collect.brokers import BROKERS, CAPABILITIES, DEFAULT, Broker, Settings
+    assert list(BROKERS)[0] == DEFAULT == "kiwoom"
+    assert set(BROKERS) <= set(PLANNED) and list(BROKERS) == [n for n in PLANNED if n in BROKERS]
+    assert set(CAPABILITIES) == set(BROKERS)
+    monkeypatch.setenv("KIWOOM_APP_KEY", "k")
+    monkeypatch.setenv("KIWOOM_APP_SECRET", "s")
+    for name, make in BROKERS.items():
+        b = make(Settings(transport=lambda *a: (500, {}, {})))
+        assert isinstance(b, Broker) and b.name == name and b.capability is CAPABILITIES[name], name
+        assert b.total_calls == 0, "만들기만 해서는 부르지 않는다"
+
+
+def test_kiwoom_is_the_full_verified_krx_reference():
+    from sectorflow.collect.brokers import CAPABILITIES
+    from sectorflow.storage import INVESTOR_COLUMNS
+    cap = CAPABILITIES["kiwoom"]
+    assert cap.actors == frozenset(INVESTOR_COLUMNS) and cap.missing == ()
+    assert (cap.venue, cap.verified) == ("KRX", True)
+
+
+def test_capability_rejects_unknown_actors_venues_and_multiline_notes():
+    from sectorflow.collect.brokers.base import Capability
+    ok = dict(actors=frozenset({"individual"}), venue="KRX", verified=False, terms_note="한 줄")
+    assert Capability(**ok).missing[0] == "foreign_"
+    for bad in ({"actors": frozenset({"etc_fnnc"})}, {"venue": "NXT"}, {"terms_note": "두\n줄"}, {"terms_note": " "}):
+        with pytest.raises(ValueError):
+            Capability(**{**ok, **bad})
+
+
+def test_sd_row_leaves_missing_actors_unknown_not_zero():
+    from sectorflow.collect.brokers.base import SD_FIELDS, sd_row, sd_tuple
+    r = sd_row("000120", "2026-11-20", close=1000, flu_rt=None, acc_trde_qty=None,
+               actors={"individual": -3, "institution": 0}, source="x")
+    assert r["institution"] == 0 and r["foreign_"] is None and r["etc_corp"] is None
+    assert sd_tuple(r) == tuple(r[k] for k in SD_FIELDS) and len(SD_FIELDS) == 17
+    with pytest.raises(ValueError):
+        sd_row("000120", "2026-11-20", close=1, flu_rt=None, acc_trde_qty=None, actors={"etc_fnnc": 1}, source="x")
+
+
+def test_other_brokers_only_collect_for_the_map():
+    import argparse
+    R._require_map_only(argparse.Namespace(broker="kiwoom"), False)
+    R._require_map_only(argparse.Namespace(broker="kis"), True)
+    with pytest.raises(SystemExit, match="--map-only"):
+        R._require_map_only(argparse.Namespace(broker="kis"), False)

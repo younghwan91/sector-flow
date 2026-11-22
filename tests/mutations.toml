@@ -7517,9 +7517,9 @@ replace = "    if False:\n        raise TruncatedResponse("
 id = "byo-universe-one-market"
 why = "universe 가 거래소만 받는다(코스닥 섹터가 통째로 빈다)"
 guards = ["tests/test_collect_universe.py::test_universe_writes_both_markets_with_sectors_across_pages"]
-file = "src/sectorflow/collect/run.py"
-find = "for m in fetch.MARKETS for s in fetch.stock_list(api, m)"
-replace = "for m in (\"kospi\",) for s in fetch.stock_list(api, m)"
+file = "src/sectorflow/collect/brokers/kiwoom.py"
+find = "for m in fetch.MARKETS for s in fetch.stock_list(self.api, m)"
+replace = "for m in (\"kospi\",) for s in fetch.stock_list(self.api, m)"
 
 [[mutation]]
 id = "byo-hourly-cap-off-by-one"
@@ -7590,16 +7590,16 @@ id = "byo-daily-last-day-not-refreshed"
 why = "마지막 저장일을 다시 받지 않아 그날 잠정치가 남는다"
 guards = ["tests/test_collect_daily.py::test_daily_map_only_fills_from_the_last_saved_day_with_two_trs"]
 file = "src/sectorflow/collect/run.py"
-find = "oldest=since.replace(\"-\", \"\"),"
-replace = "oldest=since.replace(\"-\", \"\") + \"~\","
+find = "collect_flows(broker, con, code, since, end,"
+replace = "collect_flows(broker, con, code, since + \"~\", end,"
 
 [[mutation]]
 id = "byo-daily-gap-not-filled"
 why = "끝날 하루만 받아 사이의 거래일이 빈다"
 guards = ["tests/test_collect_daily.py::test_daily_map_only_fills_from_the_last_saved_day_with_two_trs", "tests/test_collect_daily.py::test_daily_skips_weekends_and_holidays"]
 file = "src/sectorflow/collect/run.py"
-find = "oldest=since.replace(\"-\", \"\"),"
-replace = "oldest=anchor,"
+find = "collect_flows(broker, con, code, since, end,"
+replace = "collect_flows(broker, con, code, end, end,"
 
 [[mutation]]
 id = "byo-daily-map-only-calls-prices"
@@ -7677,7 +7677,7 @@ replace = ""
 id = "byo-universe-keeps-preferred"
 why = "universe 가 우선주·ETF 까지 stocks 에 쓴다(kr_quant 보통주 유니버스와 달라진다)"
 guards = ["tests/test_collect_universe.py::test_universe_writes_both_markets_with_sectors_across_pages"]
-file = "src/sectorflow/collect/run.py"
+file = "src/sectorflow/collect/brokers/kiwoom.py"
 find = " if fetch.is_common_stock(s)]"
 replace = "]"
 
@@ -12980,8 +12980,8 @@ id = "byo-backfill-map-only-unrestricted"
 why = "지도 전용 백필의 클라이언트가 TR 을 좁히지 않는다 — 실수로 다른 TR 을 불러도 요청 전에 막히지 않는다"
 guards = ["tests/test_collect_map_only.py::test_map_only_calls_two_trs"]
 file = "src/sectorflow/collect/run.py"
-find = "api = _client(args, only=map_only_trs if map_only else None)"
-replace = "api = _client(args, only=None)"
+find = "broker = _broker(args, only=map_only_trs if map_only else None)"
+replace = "broker = _broker(args, only=None)"
 
 [[mutation]]
 id = "byo-backfill-map-only-calls-prices"
@@ -13614,6 +13614,54 @@ guards = ["tests/test_release.py::test_changelog_has_a_section_for_the_current_v
 file = "CHANGELOG.md"
 find = "## [0.2.0] - 2026-11-23"
 replace = "## [0.1.9] - 2026-11-23"
+
+[[mutation]]
+id = "broker-kiwoom-flow-window-end-is-asof"
+why = "키움 전체 백필의 수급 기준일을 오늘(_today) 대신 지수 달력의 마지막 날로 — 어댑터로 옮기며 요청 본문의 dt 가 조용히 바뀐다."
+guards = ["tests/test_collect_brokers.py::test_kiwoom_adapter_byte_identical"]
+file = "src/sectorflow/collect/run.py"
+find = "collect_flows(broker, con, code, fetch.iso(oldest), fetch.iso(anchor),"
+replace = "collect_flows(broker, con, code, fetch.iso(oldest), asof,"
+
+[[mutation]]
+id = "broker-missing-actor-filled-zero"
+why = "증권사가 주지 않는 주체를 0 으로 채운다 — 0 은 '순매매 없음', NULL 은 '모름'이다(데이터 함정)."
+guards = ["tests/test_collect_brokers.py::test_sd_row_leaves_missing_actors_unknown_not_zero"]
+file = "src/sectorflow/collect/brokers/base.py"
+find = "**{c: actors.get(c) for c in INVESTOR_COLUMNS}"
+replace = "**{c: actors.get(c, 0) for c in INVESTOR_COLUMNS}"
+
+[[mutation]]
+id = "broker-capability-any-venue"
+why = "능력의 거래소 기준을 검사하지 않는다 — 오타(NXT 단독 등)가 통합·단독 섞임 검사를 비껴간다."
+guards = ["tests/test_collect_brokers.py::test_capability_rejects_unknown_actors_venues_and_multiline_notes"]
+file = "src/sectorflow/collect/brokers/base.py"
+find = "        if self.venue not in VENUES:\n"
+replace = "        if False:\n"
+
+[[mutation]]
+id = "broker-other-full-collect-allowed"
+why = "키움 밖 증권사로 --map-only 없이 백필하게 둔다 — 어댑터에 없는 일봉·주식수 TR 을 찾다 중간에 죽는다."
+guards = ["tests/test_collect_brokers.py::test_other_brokers_only_collect_for_the_map"]
+file = "src/sectorflow/collect/run.py"
+find = "    if name != \"kiwoom\" and not map_only:\n"
+replace = "    if False:\n"
+
+[[mutation]]
+id = "broker-kiwoom-name-drift"
+why = "어댑터 이름이 등록부 키와 달라진다 — 수급 행의 source 로 능력을 찾는 지도·대조 명령이 키움을 못 찾는다."
+guards = ["tests/test_collect_brokers.py::test_broker_registry_names"]
+file = "src/sectorflow/collect/brokers/kiwoom.py"
+find = "    name = \"kiwoom\"\n"
+replace = "    name = \"kiwoom-rest\"\n"
+
+[[mutation]]
+id = "broker-kiwoom-unverified"
+why = "기준 어댑터(키움)가 미검증으로 표시된다 — 지도마다 '미검증 어댑터' 배지가 거짓으로 붙는다."
+guards = ["tests/test_collect_brokers.py::test_kiwoom_is_the_full_verified_krx_reference"]
+file = "src/sectorflow/collect/brokers/kiwoom.py"
+find = "    verified=True,\n"
+replace = "    verified=False,\n"
 
 [[removed]]
 id = "ci-shard-denominator-hardcoded"
