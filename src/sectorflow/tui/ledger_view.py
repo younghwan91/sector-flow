@@ -35,7 +35,7 @@ import random
 from array import array
 from collections import OrderedDict
 
-from sectorflow.basis import BASIS_HELP
+from sectorflow.basis import BASIS_HELP, FLOWS_ONLY_NOTICE
 from sectorflow.tui.flow_view import (
     HELP_TITLE_TIERS, MARKET_ORDER, cell_len, cell_width, fit_widths, fmt_amt, help_desc,
     demo_mark, help_lines, hint_line, missing_report_hint, no_report_help, pad, report_warnings, scroll_mark,
@@ -143,6 +143,8 @@ def load(report_dir: str) -> dict:
     if not isinstance(d, dict):
         raise SystemExit(f"{path} 가 리포트 형식이 아니다(최상위가 {type(d).__name__}).\n"
                          f"  리포트를 다시 생성하라 — scripts/daily_report.sh")
+    if d.get("flows_only"):
+        raise SystemExit(f"{path}: {FLOWS_ONLY_NOTICE}")
     # 방어가 행 수준(.get)에만 있으면 문서가 통째로 다른 형식일 때 curses 안에서
     # 생 트레이스백으로 터진다. 문 앞에서 잡는다.
     # ⚠️ 여기서 안 보는 키는 나중에 **대괄호로** 집힌다 — `cap`·`n_by_sector` 가

@@ -17,7 +17,7 @@ import subprocess
 import sys
 import tempfile
 
-from sectorflow.basis import BASIS_SHORT_SLOT, BASIS_SLOT, DATA_BASIS, DATA_BASIS_SHORT
+from sectorflow.basis import BASIS_SHORT_SLOT, BASIS_SLOT, DATA_BASIS, DATA_BASIS_SHORT, FLOWS_ONLY_NOTICE
 
 WINDOWS = ((5, "5일"), (20, "20일"), (60, "60일"), (120, "120일"))
 # 종목 목록은 **절대 순매수 금액** 순이다.
@@ -526,6 +526,9 @@ def main():
     ap.add_argument("--payload", help="이미 만든 sector_flow JSON 을 재사용")
     a = ap.parse_args()
     P = load_payload(a.db, a.days, a.payload)
+    if P.get("flows_only"):
+        # 수급만 페이로드 — 수익률·시총이 없어 표를 지을 수 없다. 빈 수치표를 조용히 내지 않는다.
+        raise SystemExit(FLOWS_ONLY_NOTICE)
     data = build(P)
     here = os.path.dirname(os.path.abspath(__file__))
     with open(os.path.join(here, "templates", "sector_numbers.html"), encoding="utf-8") as f:

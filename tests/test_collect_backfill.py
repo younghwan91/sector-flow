@@ -81,8 +81,8 @@ class FakeKiwoom:
 
 
 def _patch(monkeypatch, fake, guard=None):
-    monkeypatch.setattr(R, "_client", lambda args: K.KiwoomRest(
-        "k", "s", transport=fake, rate=None, max_calls=args.max_calls, sleep=lambda s: None, guard=guard))
+    monkeypatch.setattr(R, "_client", lambda args, only=None: K.KiwoomRest(
+        "k", "s", transport=fake, rate=None, max_calls=args.max_calls, sleep=lambda s: None, guard=guard, only=only))
 
 
 @pytest.fixture

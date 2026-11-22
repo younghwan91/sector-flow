@@ -27,10 +27,11 @@ import sys
 from collections import namedtuple
 from pathlib import Path
 
+from sectorflow.basis import FLOWS_ONLY_NOTICE
 from sectorflow.tui.flow_view import (
     HELP_FOOT_TIERS, NAME_SORT_COL, all_lines, NAME_SORTS, SORT_COL, SORTS,
     ONE_DAY, State, banner_lines, ret_label, banner_view, cell_len as view_cell_len, color_spans,
-    detail_lines, detail_title_span, footer_line, header_lines, help_entries, help_lines,
+    detail_lines, detail_title_span, flows_only_folder, footer_line, header_lines, help_entries, help_lines,
     hint_desc, hint_line,
     is_section, missing_report_hint, name_sort_span, names_lines, no_report_help, report_warnings,
     B_SHORT, scroll_mark, sort_evidence, sort_span, staleness_warning, table_lines, tier_for,
@@ -47,6 +48,8 @@ DEFAULT_DIR = str(_REPO_ROOT / "reports" / "latest")
 def load(report_dir: str) -> dict:
     path = os.path.join(os.path.expanduser(report_dir), "numbers.html")
     if not os.path.exists(path):
+        if flows_only_folder(report_dir):
+            raise SystemExit(f"{report_dir}: {FLOWS_ONLY_NOTICE}")
         raise SystemExit(f"리포트를 찾을 수 없다: {path}\n"
                          f"{no_report_help('sw-flow')}"
                          f"{missing_report_hint(report_dir)}")

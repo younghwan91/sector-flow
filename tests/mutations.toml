@@ -12951,6 +12951,102 @@ file = "scripts/demo_shots.py"
 find = "        video.make(report, ffmpeg, gif=str(IMAGES / VIDEO_GIF))"
 replace = "        None"
 
+[[mutation]]
+id = "byo-backfill-map-only-unrestricted"
+why = "지도 전용 백필의 클라이언트가 TR 을 좁히지 않는다 — 실수로 다른 TR 을 불러도 요청 전에 막히지 않는다"
+guards = ["tests/test_collect_map_only.py::test_map_only_calls_two_trs"]
+file = "src/sectorflow/collect/run.py"
+find = "api = _client(args, only=map_only_trs if map_only else None)"
+replace = "api = _client(args, only=None)"
+
+[[mutation]]
+id = "byo-backfill-map-only-calls-prices"
+why = "지도 전용 백필인데 일봉·주식수까지 부른다(종목당 호출이 3배)"
+guards = ["tests/test_collect_map_only.py::test_map_only_calls_two_trs"]
+file = "src/sectorflow/collect/run.py"
+find = "                if not map_only:\n                    _collect_prices("
+replace = "                if True:\n                    _collect_prices("
+
+[[mutation]]
+id = "byo-backfill-map-only-calls-indexes"
+why = "지도 전용 백필인데 업종지수를 부른다"
+guards = ["tests/test_collect_map_only.py::test_map_only_calls_two_trs"]
+file = "src/sectorflow/collect/run.py"
+find = "        if not map_only:\n            _collect_indexes("
+replace = "        if True:\n            _collect_indexes("
+
+[[mutation]]
+id = "byo-backfill-map-only-window-off-by-one"
+why = "지도 전용 창이 --days 보다 하루 짧다(120일 창이 지도에서 빠진다)"
+guards = ["tests/test_collect_map_only.py::test_map_only_calls_two_trs", "tests/test_collect_map_only.py::test_map_only_window_follows_days_and_the_close", "tests/test_collect_map_only.py::test_map_only_then_daily_adds_only_the_next_day"]
+file = "src/sectorflow/collect/run.py"
+find = "            return cal[-days]"
+replace = "            return cal[-days + 1]"
+
+[[mutation]]
+id = "byo-backfill-map-only-default-300"
+why = "지도 전용의 기본 창이 전체 수집의 300거래일이다(첫 지도가 2.5배 늦다)"
+guards = ["tests/test_collect_map_only.py::test_map_only_calls_two_trs"]
+file = "src/sectorflow/collect/run.py"
+find = "args.days = MAP_ONLY_DAYS if map_only else BACKFILL_DAYS"
+replace = "args.days = BACKFILL_DAYS"
+
+[[mutation]]
+id = "byo-backfill-map-only-anchor-today"
+why = "지도 전용 백필이 KRX 달력의 끝날 대신 시계의 오늘(장중·휴장일 포함)부터 받는다"
+guards = ["tests/test_collect_map_only.py::test_map_only_calls_two_trs", "tests/test_collect_map_only.py::test_map_only_window_follows_days_and_the_close"]
+file = "src/sectorflow/collect/run.py"
+find = "            anchor = asof.replace(\"-\", \"\")"
+replace = "            anchor = _today()"
+
+[[mutation]]
+id = "flows-only-names-fill-zero-returns"
+why = "수급만 페이로드의 종목 수익률이 None 대신 0 으로 실린다(모르는 값을 0 으로 말한다)"
+guards = ["tests/test_flows_only.py::test_flows_only_names_keep_flows_and_drop_returns"]
+file = "scripts/sector_flow.py"
+find = "v = rr.get(code) if caps is not None else None"
+replace = "v = rr.get(code)"
+
+[[mutation]]
+id = "flows-only-flag-missing"
+why = "수급만 페이로드에 flows_only 표지가 없다 — 수치표·TUI 가 빈 표를 조용히 낸다"
+guards = ["tests/test_flows_only.py::test_flows_only_payload_builds_map", "tests/test_flows_only.py::test_numbers_and_tui_end_with_the_flows_only_notice"]
+file = "scripts/sector_flow.py"
+find = "\"n_names\": int(df[\"code\"].nunique()), \"flows_only\": True}"
+replace = "\"n_names\": int(df[\"code\"].nunique()), \"flows_only\": False}"
+
+[[mutation]]
+id = "flows-only-accepts-viewer"
+why = "--flows-only 가 수익률이 있어야 하는 뷰어·확정 옵션을 받아 깨진 산출물을 낸다"
+guards = ["tests/test_flows_only.py::test_flows_only_refuses_the_viewer"]
+file = "scripts/sector_flow.py"
+find = "            ap.error(\"--flows-only 는 --json 하고만 쓴다"
+replace = "            print(\"--flows-only 는 --json 하고만 쓴다"
+
+[[mutation]]
+id = "numbers-builds-from-flows-only"
+why = "수치표가 수급만 페이로드로 표를 지으려다 깨지거나 빈 표를 낸다"
+guards = ["tests/test_flows_only.py::test_numbers_and_tui_end_with_the_flows_only_notice"]
+file = "scripts/sector_numbers.py"
+find = "    if P.get(\"flows_only\"):"
+replace = "    if False:"
+
+[[mutation]]
+id = "ledger-opens-flows-only"
+why = "sw-ledger 가 수급만 폴더에서 '없는 키 cap' 으로 끝난다 — 왜 없는지 말하지 않는다"
+guards = ["tests/test_flows_only.py::test_numbers_and_tui_end_with_the_flows_only_notice"]
+file = "src/sectorflow/tui/ledger_view.py"
+find = "    if d.get(\"flows_only\"):"
+replace = "    if False:"
+
+[[mutation]]
+id = "flow-app-flows-only-says-missing"
+why = "sw-flow 가 수급만 폴더에서 '리포트를 찾을 수 없다' 로 끝난다 — 지도 전용 수집이라는 말이 없다"
+guards = ["tests/test_flows_only.py::test_numbers_and_tui_end_with_the_flows_only_notice"]
+file = "src/sectorflow/tui/flow_app.py"
+find = "        if flows_only_folder(report_dir):"
+replace = "        if False:"
+
 [[removed]]
 id = "ci-shard-denominator-hardcoded"
 why = "샤드를 없앴다 — 전체 검증은 잡 하나다(tests/test_ci_workflow.py 가 matrix 를 막는다)"
