@@ -13217,6 +13217,14 @@ find = '    go("M", layer_m, payload, open(map_p, encoding="utf-8").read() if os
 replace = '    pass'
 
 [[mutation]]
+id = "map-verify-window-off-by-one"
+why = "M 층이 창을 하루 더 길게 센다 — 맞게 지은 지도를 빨갛게 만들어 배치가 멀쩡한 지도를 뺀다(거짓 경보도 결함이다)."
+guards = ["tests/test_verify_report.py::test_m_layer_is_green_on_a_built_map_without_calling_flowmap"]
+file = "scripts/verify_report.py"
+find = '''            sums = _vm_sums(P, ms, N - w, N - 1, det)'''
+replace = '''            sums = _vm_sums(P, ms, N - w - 1, N - 1, det)'''
+
+[[mutation]]
 id = "batch-map-not-verified"
 why = "배치가 지은 지도를 M 층에 맞추지 않는다 — 페이로드와 다른 숫자를 그리는 지도가 게시된다."
 guards = ["tests/test_daily_report_flow.py::test_map_is_checked_by_the_m_layer_and_withheld_when_it_disagrees"]
