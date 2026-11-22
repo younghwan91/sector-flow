@@ -11,6 +11,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 CI = (REPO / ".github" / "workflows" / "ci.yml").read_text("utf-8")
 SELFTEST = (REPO / ".github" / "workflows" / "harness-selftest.yml").read_text("utf-8")
+PAGES = (REPO / ".github" / "workflows" / "pages.yml").read_text("utf-8")
 
 
 def _job(text: str, name: str) -> str:
@@ -49,9 +50,9 @@ def test_every_job_is_on_the_minutes_table():
     plan = _load_plan()
     identity = (REPO / ".github" / "workflows" / "commit-identity.yml").read_text("utf-8")
     both = {"plan", "check-identity"}
-    assert _jobs(CI) | _jobs(identity) == set(plan.MERGE_JOBS["pull_request"]) | set(plan.MERGE_JOBS["push"])
+    assert _jobs(CI) | _jobs(identity) | _jobs(PAGES) == set(plan.MERGE_JOBS["pull_request"]) | set(plan.MERGE_JOBS["push"])
     assert set(plan.MERGE_JOBS["pull_request"]) == both | {"test", "mutations-pr"}
-    assert set(plan.MERGE_JOBS["push"]) == both | {"gate"}
+    assert set(plan.MERGE_JOBS["push"]) == both | {"gate", "pages"}
 
 
 def test_full_gate_is_one_job_and_its_budget_adds_up():
@@ -234,3 +235,41 @@ def test_every_job_in_our_workflows_has_a_time_limit():
             n += 1
             assert re.search(r"^    timeout-minutes: \d+", m.group(2), re.M), f"{f.name}: {m.group(1)}"
     assert n >= 6, "잡을 못 찾았다 — 정규식이 헛돈다"
+
+
+# ── 공개 랜딩(pages.yml) — 합성 데모만, 검사 뒤 배포, 랜딩 사정으로 배치 배포를 멈추지 않는다 ────────────────────
+def _steps(text: str) -> list[str]:
+    return re.split(r"^      - ", text, flags=re.M)[1:]
+
+
+def test_pages_deploys_only_from_main_and_only_a_fresh_demo():
+    """PR 에서는 배포하지 않는다. 사이트는 이 코드로 새로 지은 데모로만 — 받은·리포트 폴더를 넘길 자리(--demo)가 없다."""
+    on = re.search(r"^on:\n(.*?)(?=^\S)", PAGES, re.S | re.M).group(1)
+    assert "branches: [main]" in on and "pull_request" not in on
+    build = next(st for st in _steps(PAGES) if "site/build.py" in st)
+    assert "--demo" not in build and "reports" not in PAGES, "공개 사이트에 폴더를 넘기는 길이 생겼다"
+    job = _job(PAGES, "pages")
+    assert "pages: write" in job and "id-token: write" in job
+    assert re.search(r"^permissions:\n  contents: read", PAGES, re.M), "워크플로 기본 권한은 읽기만"
+
+
+def test_pages_checks_the_public_surface_before_upload_and_the_check_can_turn_red():
+    """검사가 올리기보다 먼저고, 검사·짓기의 실패는 빨갛다(데모가 아닌 것이 나갈 뻔했으면 배포를 멈출 일이다)."""
+    steps = _steps(PAGES)
+    idx = {k: next(i for i, st in enumerate(steps) if k in st)
+           for k in ("site/build.py", "tests/test_public_surface.py", "upload-pages-artifact", "deploy-pages")}
+    assert idx["site/build.py"] < idx["tests/test_public_surface.py"] < idx["upload-pages-artifact"] < idx["deploy-pages"]
+    for k in ("site/build.py", "tests/test_public_surface.py", "upload-pages-artifact"):
+        assert "continue-on-error" not in steps[idx[k]], k
+    assert "path: _site" in steps[idx["upload-pages-artifact"]]
+
+
+def test_pages_outage_warns_instead_of_blocking_the_batch_deploy():
+    """배포 관문은 머리 커밋의 체크가 다 초록이어야 받는다 — Pages 설정·장애로 배치 배포까지 멈추면 안 된다. 대신 경고를 남긴다."""
+    steps = _steps(PAGES)
+    deploy = next(st for st in steps if "deploy-pages" in st)
+    assert "continue-on-error: true" in deploy and "id: deploy" in deploy
+    warn = next((st for st in steps if "steps.deploy.outcome == 'failure'" in st), None)
+    assert warn and "::warning" in warn
+    assert re.search(r"^concurrency:\n  group: pages\n  cancel-in-progress: false", PAGES, re.M), \
+        "머리의 배포가 끊기면 cancelled 라 관문이 보류한다"
