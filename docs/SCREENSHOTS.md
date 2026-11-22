@@ -53,10 +53,10 @@ uv run --with playwright --with pillow python scripts/social_preview.py
 
 | 이미지 | 감시 경로 | 찍은 커밋 |
 |---|---|---|
-| docs/brand/social-preview.png | scripts/social_preview.py | 8f0e532167b2c9f8dfa65bf9285bba5d3940f6ea |
-| docs/brand/social-preview.png | scripts/templates/sector_map.html | 8f0e532167b2c9f8dfa65bf9285bba5d3940f6ea |
-| docs/brand/social-preview.png | scripts/sector_map.py | 8f0e532167b2c9f8dfa65bf9285bba5d3940f6ea |
-| docs/brand/social-preview.png | src/sectorflow/flowmap.py | 8f0e532167b2c9f8dfa65bf9285bba5d3940f6ea |
-| docs/brand/social-preview.png | src/sectorflow/demo.py | 8f0e532167b2c9f8dfa65bf9285bba5d3940f6ea |
-| docs/brand/social-preview.png | docs/brand/wordmark-dark.svg | 8f0e532167b2c9f8dfa65bf9285bba5d3940f6ea |
-| docs/brand/social-preview.png | docs/brand/README.md | 8f0e532167b2c9f8dfa65bf9285bba5d3940f6ea |
+| docs/brand/social-preview.png | scripts/social_preview.py | 438068b0d54b68f180f2757a2c524d6923c41f50 |
+| docs/brand/social-preview.png | scripts/templates/sector_map.html | 438068b0d54b68f180f2757a2c524d6923c41f50 |
+| docs/brand/social-preview.png | scripts/sector_map.py | 438068b0d54b68f180f2757a2c524d6923c41f50 |
+| docs/brand/social-preview.png | src/sectorflow/flowmap.py | 438068b0d54b68f180f2757a2c524d6923c41f50 |
+| docs/brand/social-preview.png | src/sectorflow/demo.py | 438068b0d54b68f180f2757a2c524d6923c41f50 |
+| docs/brand/social-preview.png | docs/brand/wordmark-dark.svg | 438068b0d54b68f180f2757a2c524d6923c41f50 |
+| docs/brand/social-preview.png | docs/brand/README.md | 438068b0d54b68f180f2757a2c524d6923c41f50 |

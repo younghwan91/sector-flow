@@ -13990,7 +13990,6 @@ replace = 'MIN_COLORS = {}'
 
 
 [[mutation]]
-[[mutation]]
 id = "social-card-picture-loses-demo-mark"
 why = """소셜 미리보기의 그림 칸에서 [합성 데모] 표지가 빠진다 — 그림만 잘라 가면 실데이터 지도로 읽힌다"""
 guards = ["tests/test_social_preview.py::test_card_shows_the_demo_mark_on_the_picture_and_under_the_text"]
