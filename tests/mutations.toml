@@ -14247,6 +14247,22 @@ file = "scripts/sector_map.py"
 find = "                     else BYO_SOURCE.format(broker=data[\"broker\"]) if data.get(\"broker\") else SOURCE)"
 replace = "                     else SOURCE)"
 
+[[mutation]]
+id = "map-batch-shows-unverified-badge"
+why = "능력 없는 배치(kr_quant) 지도까지 미검증으로 본다 — 매일 리포트 지도에 '미검증 어댑터' 배지가 거짓으로 선다."
+guards = ["tests/test_map_capability.py::test_batch_payload_draws_everything_without_a_badge"]
+file = "src/sectorflow/flowmap.py"
+find = "\"verified\": bool(cap.get(\"verified\", True)),"
+replace = "\"verified\": bool(cap.get(\"verified\", False)),"
+
+[[mutation]]
+id = "payload-kiwoom-unverified"
+why = "키움으로 받은 BYO sqlite 의 능력을 미검증으로 싣는다 — 기준 어댑터 지도에 배지가 거짓으로 선다."
+guards = ["tests/test_map_capability.py::test_kiwoom_sqlite_is_verified_and_full"]
+file = "scripts/sector_flow.py"
+find = "\"verified\": bool(caps) and all(c.verified for c in caps)"
+replace = "\"verified\": False"
+
 [[removed]]
 id = "ci-shard-denominator-hardcoded"
 why = "샤드를 없앴다 — 전체 검증은 잡 하나다(tests/test_ci_workflow.py 가 matrix 를 막는다)"
