@@ -155,7 +155,8 @@ scripts/
 ├── finalize_done.py        # 08:20 확정 모드 — daily_finalize 성공 확인
 ├── sector_flow.py          # DB → payload.json (+ viewer.html)
 ├── sector_numbers.py       # payload → numbers.html (templates/)
-├── sector_map.py           # payload → map.html 수급 지도(templates/, 배치 밖 — 손으로 짓는다)
+├── sector_map.py           # payload → map.html 수급 지도(templates/) — 배치가 짓고 검증기 M 층이 본다
+├── map_card.py             # map.html → 공유 카드 map.png·map_wide.png (Chromium, 폴더에만 쓴다)
 ├── map_video.py            # 수급 지도 타임랩스 → MP4·GIF (ffmpeg, 배치 밖 — 파일은 그 기기에만)
 ├── verify_report.py        # 리포트 자기 검증 (§9)
 ├── krx_truth.py            # 네이버 시장값과 시장 합계 대조 (내부 전용)

@@ -207,12 +207,14 @@ def real_repo(tmp_path):
         shutil.copy(REPO / "scripts" / name, r / "scripts" / name)
     (r / "scripts" / "sector_flow.py").write_text(FLOW.FAKE_SECTOR_FLOW)
     (r / "scripts" / "sector_map.py").write_text(FLOW.FAKE_SECTOR_MAP)
+    (r / "scripts" / "map_card.py").write_text(FLOW.FAKE_MAP_CARD)
     (r / "scripts" / "sector_numbers.py").write_text(FLOW.FAKE_NUMBERS)
     (r / "scripts" / "verify_report.py").write_text(FAKE_VERIFY_COUNTS)
     (r / "scripts" / "trust_page.py").write_text(FLOW.FAKE_TRUST)
     (r / ".env").write_text(f"KR_QUANT_DB={tmp_path / 'db.sqlite'}\nKR_QUANT_DIGEST=0\n")
     uv = tmp_path / "uv"
-    uv.write_text(f'#!/bin/sh\nshift 5\nexec "{sys.executable}" "$@"\n')
+    # `uv run --quiet --extra pg [--with X] python Y` → 이 인터프리터로 Y(지도 카드는 --with playwright 가 붙는다).
+    uv.write_text(f'#!/bin/sh\nwhile [ "$1" != python ]; do shift; done\nshift\nexec "{sys.executable}" "$@"\n')
     uv.chmod(uv.stat().st_mode | stat.S_IEXEC)
     return r
 

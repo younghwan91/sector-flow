@@ -344,10 +344,12 @@ def test_index_links_extras_only_when_the_folder_has_them(root):
     d = root / "2026-11-06"
     page = srv.index_html(str(root), today=date(2026, 11, 7))
     assert "/latest/trust.html" not in page and "/2026-11-06/digest.md" not in page
-    for f in ("trust.html", "digest.md", "digest.png", "map.html"):
+    for f in ("trust.html", "digest.md", "digest.png", "map.html", "map.png", "map_wide.png"):
         (d / f).write_text("x", "utf-8")
     page = srv.index_html(str(root), today=date(2026, 11, 7))
     assert 'href="/latest/map.html"' in page and 'href="/2026-11-06/map.html"' in page
+    assert 'href="/latest/map.png"' in page and 'href="/2026-11-06/map_wide.png"' in page
+    assert srv.FILES["map.png"] == srv.FILES["map_wide.png"] == "image/png"
     assert 'href="/latest/trust.html"' in page and 'href="/latest/digest.md"' in page and 'href="/latest/digest.png"' in page
     assert 'href="/2026-11-06/trust.html"' in page and 'href="/2026-11-05/trust.html"' not in page
 

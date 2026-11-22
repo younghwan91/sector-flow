@@ -19,6 +19,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(
 from sectorflow.basis import DATA_BASIS_SHORT, DEMO_NOTICE  # noqa: E402
 from sectorflow.flowmap import build_map_data  # noqa: E402
 
+#: 지도·카드의 출처 줄. 데모는 실데이터가 아니므로 출처를 따로 적는다.
+SOURCE = "자료: 한국거래소 투자자별 매매동향(키움증권 API로 수집) · 금액은 순매수 수량×종가 근사 · 섹터 구분은 자체 분류"
+DEMO_SOURCE = "자료: 합성 데모(sectorflow.demo 가 난수로 만든 가짜 숫자·가짜 이름) — 실데이터 아님"
+
 TEMPLATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates", "sector_map.html")
 
 
@@ -27,6 +31,7 @@ def render(data: dict, template: str) -> str:
     blob = json.dumps(data, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
     return (template.replace("__DATA__", blob)
             .replace("__BASIS__", DATA_BASIS_SHORT)
+            .replace("__SOURCE__", DEMO_SOURCE if data.get("demo") else SOURCE)
             .replace("__DEMO_NOTICE__", DEMO_NOTICE))
 
 

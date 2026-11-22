@@ -17,29 +17,29 @@ GIF 는 `scripts/map_video.py`(가짜 시계로 타임랩스를 30fps 로 찍어
 
 | 이미지 | 감시 경로 | 찍은 커밋 |
 |---|---|---|
-| docs/images/kqflow-today.png | src/sectorflow/tui/ | 34024ca073e5888d16b3fcd4fb3df8c4d681c4f6 |
-| docs/images/kqflow-today.png | src/sectorflow/demo.py | 34024ca073e5888d16b3fcd4fb3df8c4d681c4f6 |
-| docs/images/kqflow-table.png | src/sectorflow/tui/ | 34024ca073e5888d16b3fcd4fb3df8c4d681c4f6 |
-| docs/images/kqflow-table.png | src/sectorflow/demo.py | 34024ca073e5888d16b3fcd4fb3df8c4d681c4f6 |
-| docs/images/kqflow-names.png | src/sectorflow/tui/ | 34024ca073e5888d16b3fcd4fb3df8c4d681c4f6 |
-| docs/images/kqflow-names.png | src/sectorflow/demo.py | 34024ca073e5888d16b3fcd4fb3df8c4d681c4f6 |
-| docs/images/kqflow-combined.png | src/sectorflow/tui/ | 34024ca073e5888d16b3fcd4fb3df8c4d681c4f6 |
-| docs/images/kqflow-combined.png | src/sectorflow/demo.py | 34024ca073e5888d16b3fcd4fb3df8c4d681c4f6 |
-| docs/images/kqledger-table.png | src/sectorflow/tui/ | 34024ca073e5888d16b3fcd4fb3df8c4d681c4f6 |
-| docs/images/kqledger-table.png | src/sectorflow/demo.py | 34024ca073e5888d16b3fcd4fb3df8c4d681c4f6 |
-| docs/images/web-today.png | scripts/templates/ | 34024ca073e5888d16b3fcd4fb3df8c4d681c4f6 |
-| docs/images/web-today.png | src/sectorflow/demo.py | 34024ca073e5888d16b3fcd4fb3df8c4d681c4f6 |
-| docs/images/web-today-mobile.png | scripts/templates/ | 34024ca073e5888d16b3fcd4fb3df8c4d681c4f6 |
-| docs/images/web-today-mobile.png | src/sectorflow/demo.py | 34024ca073e5888d16b3fcd4fb3df8c4d681c4f6 |
-| docs/images/map-demo.png | scripts/templates/ | 34024ca073e5888d16b3fcd4fb3df8c4d681c4f6 |
-| docs/images/map-demo.png | scripts/sector_map.py | 34024ca073e5888d16b3fcd4fb3df8c4d681c4f6 |
-| docs/images/map-demo.png | src/sectorflow/flowmap.py | 34024ca073e5888d16b3fcd4fb3df8c4d681c4f6 |
-| docs/images/map-demo.png | src/sectorflow/demo.py | 34024ca073e5888d16b3fcd4fb3df8c4d681c4f6 |
-| docs/images/map-demo.gif | scripts/templates/ | 34024ca073e5888d16b3fcd4fb3df8c4d681c4f6 |
-| docs/images/map-demo.gif | scripts/sector_map.py | 34024ca073e5888d16b3fcd4fb3df8c4d681c4f6 |
-| docs/images/map-demo.gif | scripts/map_video.py | 34024ca073e5888d16b3fcd4fb3df8c4d681c4f6 |
-| docs/images/map-demo.gif | src/sectorflow/flowmap.py | 34024ca073e5888d16b3fcd4fb3df8c4d681c4f6 |
-| docs/images/map-demo.gif | src/sectorflow/demo.py | 34024ca073e5888d16b3fcd4fb3df8c4d681c4f6 |
+| docs/images/kqflow-today.png | src/sectorflow/tui/ | e3acf872ab90943f690f350f0b4c907c0d904fd9 |
+| docs/images/kqflow-today.png | src/sectorflow/demo.py | e3acf872ab90943f690f350f0b4c907c0d904fd9 |
+| docs/images/kqflow-table.png | src/sectorflow/tui/ | e3acf872ab90943f690f350f0b4c907c0d904fd9 |
+| docs/images/kqflow-table.png | src/sectorflow/demo.py | e3acf872ab90943f690f350f0b4c907c0d904fd9 |
+| docs/images/kqflow-names.png | src/sectorflow/tui/ | e3acf872ab90943f690f350f0b4c907c0d904fd9 |
+| docs/images/kqflow-names.png | src/sectorflow/demo.py | e3acf872ab90943f690f350f0b4c907c0d904fd9 |
+| docs/images/kqflow-combined.png | src/sectorflow/tui/ | e3acf872ab90943f690f350f0b4c907c0d904fd9 |
+| docs/images/kqflow-combined.png | src/sectorflow/demo.py | e3acf872ab90943f690f350f0b4c907c0d904fd9 |
+| docs/images/kqledger-table.png | src/sectorflow/tui/ | e3acf872ab90943f690f350f0b4c907c0d904fd9 |
+| docs/images/kqledger-table.png | src/sectorflow/demo.py | e3acf872ab90943f690f350f0b4c907c0d904fd9 |
+| docs/images/web-today.png | scripts/templates/ | e3acf872ab90943f690f350f0b4c907c0d904fd9 |
+| docs/images/web-today.png | src/sectorflow/demo.py | e3acf872ab90943f690f350f0b4c907c0d904fd9 |
+| docs/images/web-today-mobile.png | scripts/templates/ | e3acf872ab90943f690f350f0b4c907c0d904fd9 |
+| docs/images/web-today-mobile.png | src/sectorflow/demo.py | e3acf872ab90943f690f350f0b4c907c0d904fd9 |
+| docs/images/map-demo.png | scripts/templates/ | e3acf872ab90943f690f350f0b4c907c0d904fd9 |
+| docs/images/map-demo.png | scripts/sector_map.py | e3acf872ab90943f690f350f0b4c907c0d904fd9 |
+| docs/images/map-demo.png | src/sectorflow/flowmap.py | e3acf872ab90943f690f350f0b4c907c0d904fd9 |
+| docs/images/map-demo.png | src/sectorflow/demo.py | e3acf872ab90943f690f350f0b4c907c0d904fd9 |
+| docs/images/map-demo.gif | scripts/templates/ | e3acf872ab90943f690f350f0b4c907c0d904fd9 |
+| docs/images/map-demo.gif | scripts/sector_map.py | e3acf872ab90943f690f350f0b4c907c0d904fd9 |
+| docs/images/map-demo.gif | scripts/map_video.py | e3acf872ab90943f690f350f0b4c907c0d904fd9 |
+| docs/images/map-demo.gif | src/sectorflow/flowmap.py | e3acf872ab90943f690f350f0b4c907c0d904fd9 |
+| docs/images/map-demo.gif | src/sectorflow/demo.py | e3acf872ab90943f690f350f0b4c907c0d904fd9 |
 
 ## 소셜 미리보기
 
@@ -53,10 +53,10 @@ uv run --with playwright --with pillow python scripts/social_preview.py
 
 | 이미지 | 감시 경로 | 찍은 커밋 |
 |---|---|---|
-| docs/brand/social-preview.png | scripts/social_preview.py | 438068b0d54b68f180f2757a2c524d6923c41f50 |
-| docs/brand/social-preview.png | scripts/templates/sector_map.html | 438068b0d54b68f180f2757a2c524d6923c41f50 |
-| docs/brand/social-preview.png | scripts/sector_map.py | 438068b0d54b68f180f2757a2c524d6923c41f50 |
-| docs/brand/social-preview.png | src/sectorflow/flowmap.py | 438068b0d54b68f180f2757a2c524d6923c41f50 |
-| docs/brand/social-preview.png | src/sectorflow/demo.py | 438068b0d54b68f180f2757a2c524d6923c41f50 |
-| docs/brand/social-preview.png | docs/brand/wordmark-dark.svg | 438068b0d54b68f180f2757a2c524d6923c41f50 |
-| docs/brand/social-preview.png | docs/brand/README.md | 438068b0d54b68f180f2757a2c524d6923c41f50 |
+| docs/brand/social-preview.png | scripts/social_preview.py | e3acf872ab90943f690f350f0b4c907c0d904fd9 |
+| docs/brand/social-preview.png | scripts/templates/sector_map.html | e3acf872ab90943f690f350f0b4c907c0d904fd9 |
+| docs/brand/social-preview.png | scripts/sector_map.py | e3acf872ab90943f690f350f0b4c907c0d904fd9 |
+| docs/brand/social-preview.png | src/sectorflow/flowmap.py | e3acf872ab90943f690f350f0b4c907c0d904fd9 |
+| docs/brand/social-preview.png | src/sectorflow/demo.py | e3acf872ab90943f690f350f0b4c907c0d904fd9 |
+| docs/brand/social-preview.png | docs/brand/wordmark-dark.svg | e3acf872ab90943f690f350f0b4c907c0d904fd9 |
+| docs/brand/social-preview.png | docs/brand/README.md | e3acf872ab90943f690f350f0b4c907c0d904fd9 |

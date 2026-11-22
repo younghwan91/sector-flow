@@ -7100,8 +7100,8 @@ id = "digest-hook-unpinned"
 why = "playwright 판을 안 박으면 실행마다 색인을 보고, 받아 둔 브라우저와 드라이버 판이 어긋난다"
 guards = ["tests/test_digest.py::test_digest_hook_cannot_block_or_fail_publishing"]
 file = "scripts/daily_report.sh"
-find = "--with 'playwright==1.48.0'"
-replace = "--with playwright"
+find = "--with 'playwright==1.48.0' python scripts/digest.py"
+replace = "--with playwright python scripts/digest.py"
 
 [[mutation]]
 id = "digest-revision-honesty-dropped"
@@ -12844,8 +12844,8 @@ id = "web-map-not-linked"
 why = "비공개 웹 목록이 수급 지도를 잇지 않는다 — 폴더에 있어도 찾아 들어갈 길이 없다."
 guards = ["tests/test_serve_reports.py::test_index_links_extras_only_when_the_folder_has_them"]
 file = "scripts/serve_reports.py"
-find = 'EXTRAS = (("map.html", "수급 지도"), ("trust.html", "검증·품질"),'
-replace = 'EXTRAS = (("trust.html", "검증·품질"),'
+find = 'EXTRAS = (("map.html", "수급 지도"), ("map.png", "지도 카드"),'
+replace = 'EXTRAS = (("map.png", "지도 카드"),'
 
 [[mutation]]
 id = "video-clip-starts-at-first-day"
@@ -13407,6 +13407,72 @@ guards = ["tests/test_verify_merge.py::test_self_test_clears_base_mutations_for_
 file = "scripts/verify_merge.py"
 find = '        if only == {"mutations"}:'
 replace = '        if False:'
+
+[[mutation]]
+id = "batch-map-card-not-shot"
+why = "배치가 지도 카드를 짓는 폴더에 찍지 않는다 — 웹의 /latest/map.png 가 404 다."
+guards = ["tests/test_daily_report_flow.py::test_map_card_is_shot_after_the_map_passes_and_failure_warns_without_blocking"]
+file = "scripts/daily_report.sh"
+find = '''python scripts/map_card.py --dir "$BUILD"; then'''
+replace = '''python scripts/map_card.py --dir "$BUILD/none"; then'''
+
+[[mutation]]
+id = "batch-map-card-failure-silent"
+why = "지도 카드를 못 찍은 날 종료코드가 0 — 카드가 빠졌는데 아무도 모른다."
+guards = ["tests/test_daily_report_flow.py::test_map_card_is_shot_after_the_map_passes_and_failure_warns_without_blocking"]
+file = "scripts/daily_report.sh"
+find = '''    SIDE_FAIL+="map.png "'''
+replace = '''    :'''
+
+[[mutation]]
+id = "batch-map-card-shot-before-verify"
+why = "검증(M 층)에 걸려 뺀 지도도 카드로 찍는다 — 페이로드와 다른 그림이 카드로 남는다."
+guards = ["tests/test_daily_report_flow.py::test_map_card_is_shot_after_the_map_passes_and_failure_warns_without_blocking"]
+file = "scripts/daily_report.sh"
+find = '''# 검증을 통과한 지도만 찍는다. 폴더에만 쓴다(밖으로 보내지 않는다). 상한 3분·오프라인·판 고정(다이제스트 카드와 같은 Chromium).
+if [ -f "$BUILD/map.html" ]; then'''
+replace = '''# 검증을 통과한 지도만 찍는다. 폴더에만 쓴다(밖으로 보내지 않는다). 상한 3분·오프라인·판 고정(다이제스트 카드와 같은 Chromium).
+if [ -f "$BUILD/payload.json" ]; then'''
+
+[[mutation]]
+id = "map-card-source-line-missing"
+why = "카드 꼬리의 출처 줄이 빈다 — 데모 카드가 실데이터 출처를 달거나 실 카드에 출처가 없다."
+guards = ["tests/test_map_card.py::test_card_has_basis_line"]
+file = "scripts/sector_map.py"
+find = '''            .replace("__SOURCE__", DEMO_SOURCE if data.get("demo") else SOURCE)'''
+replace = '''            .replace("__SOURCE__", SOURCE)'''
+
+[[mutation]]
+id = "map-card-writes-published-folder"
+why = "카드가 게시된 폴더(이름이 기준일)에 고쳐 쓴다 — 리포트와 함께 바꿔 끼우는 규칙이 깨진다."
+guards = ["tests/test_map_card.py::test_card_refuses_a_published_folder_and_clears_stale_cards"]
+file = "scripts/map_card.py"
+find = '''    if not a.out and re.fullmatch(r"\d{4}-\d{2}-\d{2}", d.resolve().name):'''
+replace = '''    if False:'''
+
+[[mutation]]
+id = "map-card-stale-cards-kept"
+why = "못 찍은 날 옛 카드를 지우지 않는다 — 어제 카드가 오늘 것처럼 걸린다."
+guards = ["tests/test_map_card.py::test_card_refuses_a_published_folder_and_clears_stale_cards"]
+file = "scripts/map_card.py"
+find = '''    clear()                        # 옛 카드가 오늘 것처럼 남지 않게'''
+replace = '''    pass'''
+
+[[mutation]]
+id = "web-map-card-not-served"
+why = "비공개 웹이 지도 카드를 내보내지 않는다 — 폴더에 있어도 404 다."
+guards = ["tests/test_serve_reports.py::test_index_links_extras_only_when_the_folder_has_them"]
+file = "scripts/serve_reports.py"
+find = '''    "map.png": "image/png",                  # 수급 지도 공유 카드 1080×1350·1200×675(scripts/map_card.py)'''
+replace = '''    "map.png": "text/plain",'''
+
+[[mutation]]
+id = "batch-map-card-unpinned"
+why = "지도 카드의 playwright 판을 안 박거나 온라인으로 부른다 — 실행마다 색인을 보고, 받아 둔 브라우저와 드라이버 판이 어긋난다."
+guards = ["tests/test_daily_report_flow.py::test_map_card_runs_offline_with_the_pinned_playwright"]
+file = "scripts/daily_report.sh"
+find = "--with 'playwright==1.48.0' python scripts/map_card.py"
+replace = "--with playwright python scripts/map_card.py"
 
 [[removed]]
 id = "ci-shard-denominator-hardcoded"
