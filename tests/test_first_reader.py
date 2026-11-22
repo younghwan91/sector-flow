@@ -186,9 +186,9 @@ def test_research_inputs_point_at_the_archive(study):
 
 
 def test_readme_head_reads_top_to_bottom():
-    """머리는 워드마크 → 한 줄 소개 → 데모 지도 → Quick start → 후원 한 줄 → 목차 순이다 — 처음 읽는 사람이 그림부터 본다."""
+    """머리는 로고(심볼, #77·#86) → 한 줄 소개 → 데모 지도 → Quick start → 후원 한 줄 → 목차 순이다 — 처음 읽는 사람이 그림부터 본다."""
     head = README[:README.index("## 목차")]
-    order = ("docs/brand/wordmark.svg", "한 장의 지도로 본다", "](docs/images/map-demo.", "## Quick start",
+    order = ("docs/brand/logo.svg", "한 장의 지도로 본다", "](docs/images/map-demo.", "## Quick start",
              "github.com/sponsors/")
     pos = [head.find(s) for s in order]
     assert -1 not in pos and pos == sorted(pos), dict(zip(order, pos))

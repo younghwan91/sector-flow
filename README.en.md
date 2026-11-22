@@ -1,7 +1,9 @@
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/brand/wordmark-dark.svg">
-  <img src="docs/brand/wordmark.svg" alt="sector-flow · 수급 지도" height="48">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/brand/logo-dark.svg">
+  <img alt="sector-flow" src="docs/brand/logo.svg" height="56">
 </picture>
+
+# sector-flow
 
 [한국어](README.md) · **English**
 
