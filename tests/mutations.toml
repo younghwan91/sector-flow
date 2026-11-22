@@ -13583,6 +13583,22 @@ file = "scripts/web_smoke.py"
 find = '''        if not (facts.get("map") or {}).get("stream"):'''
 replace = '''        if False:'''
 
+[[mutation]]
+id = "release-tag-not-checked-against-main"
+why = "main 밖의 커밋(CI 를 안 지난 것)에 태그를 달아도 Release 가 나간다."
+guards = ["tests/test_release.py::test_release_checks_the_tag_is_on_main_and_matches_the_version"]
+file = ".github/workflows/release.yml"
+find = 'git merge-base --is-ancestor "$GITHUB_SHA" origin/main || { echo "::error::태그 커밋이 main 에 없다"; exit 1; }'
+replace = 'true'
+
+[[mutation]]
+id = "release-attaches-extra-files"
+why = "Release 에 빌드 산출물·데모 GIF 밖의 파일(리포트 폴더 등)이 붙는다."
+guards = ["tests/test_release.py::test_release_attaches_only_build_outputs_and_the_demo_gif"]
+file = ".github/workflows/release.yml"
+find = 'dist/* docs/images/map-demo.gif --title'
+replace = 'dist/* docs/images/map-demo.gif reports/* --title'
+
 [[removed]]
 id = "ci-shard-denominator-hardcoded"
 why = "샤드를 없앴다 — 전체 검증은 잡 하나다(tests/test_ci_workflow.py 가 matrix 를 막는다)"

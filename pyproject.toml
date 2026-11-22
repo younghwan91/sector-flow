@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "sector-flow"
-version = "0.1.0"
+version = "0.2.0"
 description = "코스피·코스닥 섹터 자금흐름 일일 리포트와 터미널 화면(sw-flow·sw-ledger) — 동시기 측정이지 예측이 아니다"
 readme = "README.md"
 license = "MIT"
