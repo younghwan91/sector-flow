@@ -93,7 +93,14 @@ def test_tagline_uses_no_avoided_word():
 # ── 워드마크·파비콘 ──────────────────────────────────────────────────────────
 
 BRAND = REPO / "docs/brand"
-SVGS = {"wordmark.svg": 0, "wordmark-dark.svg": 1, "favicon.svg": 1}  # 파일 → 색 표의 열(0 라이트·1 다크)
+SVGS = {
+    "wordmark.svg": 0,
+    "wordmark-dark.svg": 1,
+    "favicon.svg": 1,
+    "logo.svg": 0,
+    "logo-dark.svg": 1,
+    "logo-mark.svg": 0,
+}  # 파일 → 색 표의 열(0 라이트·1 다크)
 
 
 @pytest.mark.parametrize("name", SVGS)
