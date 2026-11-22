@@ -13511,8 +13511,8 @@ id = "smoke-map-cards-skipped"
 why = "웹 스모크가 지도 카드 배치(?card=tall|wide)를 안 연다 — 카드에서만 나는 넘침·잘림이 지나간다."
 guards = ["tests/test_web_smoke.py::test_smoke_opens_the_map_at_three_widths_and_both_card_layouts"]
 file = "scripts/web_smoke.py"
-find = '''            + [(f"{page_name}?card={c}", w, h, f"?card={c}") for c, w, h in MAP_CARDS])'''
-replace = '''            + [])'''
+find = '''            + [(f"{page_name}?card={c}", w, h, f"?card={c}") for c, w, h in MAP_CARDS]'''
+replace = '''            + []'''
 
 [[mutation]]
 id = "smoke-map-measure-skipped"
@@ -13521,6 +13521,67 @@ guards = ["tests/test_web_smoke.py::test_smoke_opens_the_map_at_three_widths_and
 file = "scripts/web_smoke.py"
 find = '''                        facts.update(pg.evaluate(_MAP_MEASURE))'''
 replace = '''                        pass'''
+
+[[mutation]]
+id = "flowmap-stream-rest-dropped"
+why = "시간 흐름이 상위 섹터 밖을 버린다 — '기타' 띠가 없어 쌓인 높이가 그 주체의 하루 순매수보다 작다."
+guards = ["tests/test_flowmap.py::test_stream_series_orders_by_gross_and_bundles_the_rest"]
+file = "src/sectorflow/flowmap.py"
+find = '''    if rest:
+        series.append({"name": f"기타 {len(rest)}개 섹터", "rest": True,'''
+replace = '''    if False:
+        series.append({"name": f"기타 {len(rest)}개 섹터", "rest": True,'''
+
+[[mutation]]
+id = "flowmap-stream-unordered"
+why = "시간 흐름의 섹터를 크기 순이 아니라 페이로드 순으로 자른다 — 큰 섹터가 '기타' 로 숨는다."
+guards = ["tests/test_flowmap.py::test_stream_series_orders_by_gross_and_bundles_the_rest"]
+file = "src/sectorflow/flowmap.py"
+find = '''    rows.sort(key=lambda r: (-r[0], r[1]))
+    top, rest = rows[:STREAM_TOP], rows[STREAM_TOP:]'''
+replace = '''    top, rest = rows[:STREAM_TOP], rows[STREAM_TOP:]'''
+
+[[mutation]]
+id = "verify-stream-values-off"
+why = "M 층이 시간 흐름 띠의 하루 값을 안 맞춘다 — 날짜가 하루 밀린 띠가 통과한다."
+guards = ["tests/test_verify_report.py::test_m_layer_checks_the_time_flow_bands"]
+file = "scripts/verify_report.py"
+find = '''                bad = [j for j, (x, y) in enumerate(zip(g.get("v") or [], v)) if abs(x - y) > VM_STREAM_TOL]'''
+replace = '''                bad = []'''
+
+[[mutation]]
+id = "verify-stream-structure-off"
+why = "M 층이 시간 흐름 띠에 붙은 잇는 칸(섹터→섹터)을 안 본다."
+guards = ["tests/test_verify_report.py::test_m_layer_checks_the_time_flow_bands"]
+file = "scripts/verify_report.py"
+find = '''            if extra:
+                out["structure"].append(f"stream/'''
+replace = '''            if False:
+                out["structure"].append(f"stream/'''
+
+[[mutation]]
+id = "map-stream-reason-dropped"
+why = "시간 흐름 아래 '섹터와 섹터를 잇지 않는' 이유 문장이 빠진다 — 같은 날 빠진 섹터와 채워진 섹터를 같은 돈으로 읽게 된다."
+guards = ["tests/test_map_page.py::test_time_flow_view_keeps_its_reason_and_draws_straight_lines"]
+file = "scripts/templates/sector_map.html"
+find = '''      그래서 섹터와 섹터를 잇는 선은 긋지 않는다. 날마다의 값을 직선으로 이을 뿐 곡선으로 메우지 않는다.</p>'''
+replace = '''      날마다의 값을 직선으로 이을 뿐 곡선으로 메우지 않는다.</p>'''
+
+[[mutation]]
+id = "smoke-map-stream-not-opened"
+why = "웹 스모크가 지도의 두 번째 보기(시간 흐름)를 안 연다."
+guards = ["tests/test_web_smoke.py::test_smoke_opens_the_map_at_three_widths_and_both_card_layouts"]
+file = "scripts/web_smoke.py"
+find = '''            + [(f"{page_name}{MAP_STREAM}", w, 900 if w > 600 else 844, MAP_STREAM) for w in (1440, 390)])'''
+replace = '''            + [])'''
+
+[[mutation]]
+id = "smoke-map-stream-empty-passes"
+why = "시간 흐름이 빈 그림이어도 스모크가 통과한다."
+guards = ["tests/test_web_smoke.py::test_smoke_opens_the_map_at_three_widths_and_both_card_layouts"]
+file = "scripts/web_smoke.py"
+find = '''        if not (facts.get("map") or {}).get("stream"):'''
+replace = '''        if False:'''
 
 [[removed]]
 id = "ci-shard-denominator-hardcoded"

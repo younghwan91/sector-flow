@@ -422,3 +422,20 @@ def test_m_layer_runs_only_when_the_map_exists_unless_asked(tmp_path, capsys):
     vr = _load()
     vr.layer_m(P, None, False)
     assert "건너뜀" in capsys.readouterr().out and not vr.FAILS
+
+
+def test_m_layer_checks_the_time_flow_bands():
+    """두 번째 보기(시간 흐름)의 띠 — 하루 값·'기타' 합을 일별 배열에서 다시 센다. 띠에 잇는 칸이 생기면 구조 위반."""
+    vr = _load()
+    P = _map_payload()
+    data, _html = _map_html(P)
+    data["stream"]["views"]["거래소"]["inst"][0]["v"][-1] += 0.5
+    assert _bad(vr, P, _rerender(data))["stream"]
+    data, _html = _map_html(P)
+    rest = data["stream"]["views"]["전체"]["indiv"][-1]
+    assert rest.get("rest"), "시험 페이로드에 '기타' 띠가 있어야 한다"
+    rest["v"][0] += 1.0
+    assert _bad(vr, P, _rerender(data))["stream"]
+    data, _html = _map_html(P)
+    data["stream"]["views"]["전체"]["forgn"][0]["to"] = "가상1"
+    assert _bad(vr, P, _rerender(data))["structure"]

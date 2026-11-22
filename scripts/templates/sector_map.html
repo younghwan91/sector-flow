@@ -58,12 +58,25 @@ th:first-child,td:first-child{text-align:left}
 .scroll{overflow-x:auto}
 footer{margin-top:22px;color:var(--mute);font-size:12.5px;line-height:1.7}
 .node text{pointer-events:none}
+/* 두 보기 — 수급 지도 | 시간 흐름. 지도 쪽 묶음은 상자를 만들지 않는다(카드 배치의 세로 흐름을 그대로 둔다). */
+.views{margin:14px 0 0}
+#vmap:not([hidden]){display:contents}
+#vstream h1{margin-top:16px}
+.sub{color:var(--mute);margin:0 0 6px}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;margin:10px 0;font-size:13px}
+.legend button{background:none;border:0;color:var(--ink);font:inherit;cursor:pointer;padding:2px 0;display:flex;align-items:center;gap:6px;min-height:28px}
+.legend i{width:12px;height:12px;border-radius:3px;display:inline-block}
+.legend button[aria-pressed=false]{opacity:.35;text-decoration:line-through}
+.sfig{position:relative;height:clamp(420px,58vh,660px)}
+.sfig svg{position:absolute;inset:0;width:100%;height:100%}
+.why{color:var(--mute);font-size:13px;line-height:1.7;margin:10px 0 0}
+#tip table{border-collapse:collapse;width:100%}#tip td{padding:1px 4px;white-space:nowrap}#tip td:last-child{text-align:right;font-variant-numeric:tabular-nums}
 /* 카드 배치(map.html?card=tall|wide) — 정지, 조작 없음, 입자 없음. scripts/map_card.py 가 이 배치를 찍는다(1080×1350·1200×675). */
 .cardfoot{display:none}
 html.card,html.card body{width:var(--cw);height:var(--ch);overflow:hidden}
 html.card-tall{--cw:1080px;--ch:1350px}html.card-wide{--cw:1200px;--ch:675px}
 html.card .wrap{max-width:none;height:100%;display:flex;flex-direction:column;padding:40px 48px 30px}
-html.card #mkt,html.card .ctl,html.card .crumb,html.card details,html.card footer,html.card #tip,html.card canvas{display:none}
+html.card #mkt,html.card #vtab,html.card .ctl,html.card .crumb,html.card details,html.card footer,html.card #tip,html.card canvas{display:none}
 html.card .fig{flex:1 1 auto;height:auto;min-height:0}
 html.card .cardfoot{display:block;margin-top:14px;color:var(--mute);font-size:15px;line-height:1.6;border-top:1px solid var(--line);padding-top:10px}
 html.card .cardfoot b{color:var(--ink);font-weight:700}
@@ -82,6 +95,8 @@ html.card-wide .cardfoot{font-size:12.5px;margin-top:6px;padding-top:6px;line-he
     <div class="brand"><svg viewBox="0 0 395 48" class="wm" role="img" aria-label="sector-flow · 수급 지도"><title>sector-flow · 수급 지도</title><g transform="translate(0 4) scale(1.25)"><path fill="#5b8cff" d="M1 3C7.5 3 7.5 7 14 7L14 14C7.5 14 7.5 10 1 10Z M1 21C7.5 21 7.5 15 14 15L14 19C7.5 19 7.5 25 1 25Z"/><path fill="#f2546f" d="M18 7C24.5 7 24.5 4 31 4L31 8C24.5 8 24.5 11 18 11Z M18 12C24.5 12 24.5 18 31 18L31 26C24.5 26 24.5 20 18 20Z"/><rect x="14" y="5" width="4" height="22" fill="#eef1f8"/><circle cx="5" cy="6.4" r="0.75" fill="#eef1f8"/><circle cx="9.5" cy="9.4" r="0.6" fill="#eef1f8"/><circle cx="22.5" cy="14.4" r="0.6" fill="#eef1f8"/><circle cx="26.5" cy="20.6" r="0.75" fill="#eef1f8"/></g><path fill="#eef1f8" d="M61.28 38.64C67.16 38.64 70.52 35.92 70.52 31.68C70.52 28.56 68.8 26.48 64.64 25.16L62.4 24.44C59.32 23.48 58.4 22.32 58.4 20.72C58.4 18.68 60 17.36 62.68 17.36C63.88 17.36 64.8 17.6 65.8 18.08L67.04 22.48H69.08L69.32 17.72C67.08 16.56 65.16 15.92 62.56 15.92C57.04 15.92 53.96 18.8 53.96 22.72C53.96 25.96 56.08 27.96 59.56 29.04L61.8 29.8C65 30.76 65.84 31.96 65.84 33.72C65.84 35.96 64.12 37.2 60.92 37.2C59.52 37.2 58.44 36.96 57.36 36.52L56.28 31.6H54L53.8 36.8C56.08 38 58.36 38.64 61.28 38.64Z M84.6 38.64C88.56 38.64 91.56 36.84 93.24 33.6L92.52 33.08C91.12 34.96 89.24 36.08 86.4 36.08C82.4 36.08 79.4 33.48 79.24 27.2H93.12C93.28 26.48 93.36 25.76 93.36 24.76C93.36 19.8 90.2 15.92 84.32 15.92C78.64 15.92 73.56 20.04 73.56 27.24C73.56 34.64 78.12 38.64 84.6 38.64ZM79.24 25.8C79.44 19.92 81.56 17.28 84.12 17.28C86.68 17.28 88.28 19.28 88.28 22.8C88.28 24.96 87.8 25.8 86.08 25.8Z M107.16 38.64C111.44 38.64 114.04 37.04 115.96 33.68L115.24 33.16C113.72 35.04 111.8 36.08 109.44 36.08C105 36.08 102.12 32.72 102.12 26.88C102.12 20.84 104.88 17.28 108.64 17.28C109.2 17.28 109.72 17.32 110.24 17.48L110.84 20.52C111 22.96 112.12 23.76 113.6 23.76C114.8 23.76 115.6 23.2 115.96 21.92C115.32 18.48 112.12 15.92 108 15.92C101.76 15.92 96.44 20 96.44 27.6C96.44 34.68 101.16 38.64 107.16 38.64Z M127.24 38.64C130 38.64 131.84 37.64 133 35.76L132.4 35.08C131.32 35.92 130.6 36.28 129.52 36.28C127.88 36.28 126.88 35.32 126.88 33.04V18.16H132.08V16.56H126.88L126.96 10.16H123.48L121.76 16.52L118 16.88V18.16H121.48V28.6C121.48 30.2 121.44 31.24 121.44 32.72C121.44 36.84 123.4 38.64 127.24 38.64Z M145.6 38.64C151.92 38.64 156.48 34.4 156.48 27.2C156.48 20.04 151.52 15.92 145.6 15.92C139.72 15.92 134.76 20.08 134.76 27.2C134.76 34.32 139.24 38.64 145.6 38.64ZM145.6 37.32C142.36 37.32 140.48 34 140.48 27.28C140.48 20.52 142.36 17.28 145.6 17.28C148.84 17.28 150.72 20.52 150.72 27.28C150.72 34 148.84 37.32 145.6 37.32Z M162.32 38H171.68V36.8L167.96 36.44L167.88 28.6V25.08C168.8 22.08 170 20.28 171.76 19.08L172.08 19.44C173.08 20.72 173.96 21.52 175.28 21.52C177.08 21.52 177.88 20.32 177.96 18.6C177.56 16.64 176.08 15.92 174.32 15.92C171.84 15.92 169.16 18.08 167.88 21.88L167.56 16.32L167.04 16L159.2 18.2V19.16L162.32 19.44C162.44 21.4 162.48 22.92 162.48 25.6V28.6C162.48 30.8 162.44 34.2 162.4 36.52L159.48 36.8V38Z M179.84 28.08H191.08V25.44H179.84Z M197.24 38H206.68V36.8L202.88 36.48C202.8 33.84 202.76 31.2 202.76 28.6V18.16H208.24V16.56H202.72C202.56 12.24 202.88 9.56 204.16 7.56C204.52 7.04 205.08 6.52 205.72 6.16L206.4 7.24C207.44 9.12 208.56 9.84 209.92 9.84C211.56 9.84 212.48 8.84 212.52 7.48C212.04 5.56 210 4.8 207.76 4.8C205.44 4.8 203.2 5.52 201.16 7.4C199.2 9.12 197.88 11.76 197.44 16.52L194 16.88V18.16H197.36V28.6C197.36 31.24 197.32 33.88 197.28 36.52L194.24 36.8V38Z M213.32 38H221.96V36.8L218.96 36.56C218.88 34 218.84 31.12 218.84 28.6V11.96L219 5.6L218.4 5.24L210.32 6.8V7.88L213.44 8.08V28.6L213.36 36.52L210.32 36.8V38Z M235.6 38.64C241.92 38.64 246.48 34.4 246.48 27.2C246.48 20.04 241.52 15.92 235.6 15.92C229.72 15.92 224.76 20.08 224.76 27.2C224.76 34.32 229.24 38.64 235.6 38.64ZM235.6 37.32C232.36 37.32 230.48 34 230.48 27.28C230.48 20.52 232.36 17.28 235.6 17.28C238.84 17.28 240.72 20.52 240.72 27.28C240.72 34 238.84 37.32 235.6 37.32Z M274.68 17.76 278.2 18.12 273.8 32.8 268.76 18.08 272 17.76V16.56H262.08V17.76L265 18.08L260.12 32.84L255.48 18.04L258.84 17.76V16.56H247.76V17.76L249.96 18L257.08 38.12H259.4L265.24 21.84L270.8 38.12H273.12L279.92 18.16L282.88 17.76V16.56H274.68Z"/><rect x="297.0" y="15" width="1.5" height="26" fill="#8b93a8"/><path fill="#8b93a8" d="M320.16 39.02H321C321.28 37.94 321.48 35.98 321.48 34.92V31.4L327.2 31.36C327.8 31.36 328.98 31.4 329.52 31.46C329.7 31.36 329.94 31.06 329.94 30.72C329.94 30.54 329.82 30.42 329.68 30.38C329.22 30.22 328.16 30.1 327.44 30.08L326.72 30.4C325.32 30.48 315.14 30.62 313.92 30.6C313.3 30.58 312.36 30.5 311.7 30.38L311.56 30.66C311.54 30.74 311.56 30.8 311.62 30.84C312.12 31.26 312.86 31.66 313.58 31.9C314.06 31.74 315.08 31.56 315.58 31.52C316.02 31.48 317.92 31.44 320.06 31.42V35.38C320.06 36.3 320.1 38.12 320.16 39.02ZM325.08 25.64 321.16 23.72C321.56 23.24 321.92 22.72 322.2 22.2C322.26 22.1 322.32 21.94 322.32 21.74C322.32 21.56 322.26 21.42 322.06 21.32C321.64 21.08 320.62 20.8 319.9 20.7C319.76 20.68 319.68 20.7 319.62 20.78L319.38 21.18C319.82 21.4 320.24 21.76 320.44 22.04C319.24 24.26 316.64 26.58 313.34 28.22C313.26 28.26 313.24 28.34 313.28 28.4L313.5 28.64C313.56 28.68 313.62 28.68 313.7 28.64C316.48 27.64 318.86 26.16 320.54 24.42L327.1 27.74C327.28 27.84 327.52 27.92 327.66 27.92C327.88 27.9 328.16 27.66 328.16 27.4C328.16 27.28 328.08 27.1 327.86 26.9C327.56 26.64 326.92 26.16 326.44 25.86Z M345.7 22.62 345.98 21.96C346.02 21.86 346.02 21.78 345.94 21.7C345.78 21.58 345.32 21.32 345.08 21.22C345 21.18 344.84 21.18 344.74 21.22L344.06 21.56C342.56 21.62 336.78 21.72 335.78 21.7C335.2 21.7 334.4 21.62 333.78 21.5L333.66 21.78C333.62 21.84 333.64 21.9 333.74 21.98C334.2 22.36 334.84 22.72 335.46 22.94C335.92 22.78 336.78 22.62 337.22 22.6C338.12 22.54 342.36 22.48 344.04 22.5C343.98 23.96 343.7 26.2 343.32 27.78C339.78 27.86 334.12 27.92 333.24 27.9C332.62 27.9 331.68 27.82 331.02 27.7L330.88 27.98C330.86 28.06 330.88 28.12 330.94 28.16C331.44 28.58 332.18 28.98 332.9 29.22C333.38 29.06 334.4 28.86 334.9 28.82C335.96 28.76 345.12 28.64 346.52 28.66C347.12 28.66 348.3 28.7 348.84 28.76C349.02 28.68 349.26 28.36 349.26 28.02C349.26 27.86 349.14 27.74 349 27.7C348.54 27.54 347.48 27.42 346.76 27.4L346.04 27.7L344.28 27.76C344.94 26.26 345.52 24.14 345.7 22.62ZM345.2 37.5 344.8 37.34C344.92 36.88 344.98 36.18 344.98 35.64L345.02 32.3L345.08 31.52C345.08 31.36 345.04 31.28 344.88 31.2C344.38 31 343.32 30.82 342.66 30.78C342.52 30.78 342.46 30.8 342.44 30.88L342.28 31.36C342.82 31.54 343.3 31.8 343.6 32.06V33.96L337.1 34.02L337.12 32.92L337.14 32.12C337.14 31.94 337.08 31.84 336.92 31.8C336.44 31.66 335.4 31.54 334.8 31.56C334.66 31.56 334.62 31.6 334.58 31.64L334.46 32.1C334.94 32.22 335.42 32.48 335.68 32.72L335.78 37.82C335.78 38.16 335.84 38.6 335.94 38.92H336.7C336.82 38.78 336.94 38.58 337 38.3L345.18 38.26C345.28 38.16 345.36 37.94 345.36 37.7C345.36 37.6 345.3 37.54 345.2 37.5ZM343.6 34.86V37.36L337.08 37.4L337.1 34.9Z M369.64 39.16H370.48C370.76 38.02 370.96 36.14 370.96 34.98V21.92L371 20.86C371 20.66 370.94 20.52 370.76 20.46C370.18 20.22 368.94 19.96 368.2 19.94C368.04 19.94 368 19.98 367.98 20.04L367.82 20.52C368.54 20.76 369.18 21.12 369.54 21.54V35.48C369.54 36.36 369.58 38.32 369.64 39.16ZM356.16 34.14 356.42 34.36C356.46 34.4 356.52 34.4 356.6 34.34C358.88 33 360.98 31.24 362.62 29.36L366.34 33.18C366.46 33.32 366.66 33.5 366.78 33.52C367.02 33.6 367.38 33.46 367.48 33.22C367.54 33.1 367.5 32.92 367.38 32.66C367.2 32.28 366.82 31.6 366.5 31.16L365.6 30.82L363.24 28.62C364.34 27.24 365.18 25.82 365.7 24.46L366.1 23.9C366.16 23.82 366.16 23.72 366.08 23.66C365.88 23.56 365.4 23.32 365.14 23.22C365.06 23.2 364.92 23.2 364.8 23.22L364.16 23.54C363.22 23.6 359.32 23.64 358.56 23.64C358.08 23.64 357.38 23.6 356.86 23.52L356.74 23.76C356.72 23.8 356.74 23.88 356.8 23.92C357.2 24.26 357.78 24.58 358.3 24.78C358.68 24.64 359.44 24.5 359.82 24.48C360.36 24.44 362.78 24.4 363.9 24.42C362.66 27.6 359.86 31.18 356.18 33.96C356.1 34.04 356.1 34.08 356.16 34.14Z M390.52 34.32 389.8 34.62C389.2 34.66 386.98 34.7 384.54 34.74V30.04L389.48 29.96C389.58 29.96 389.68 29.92 389.74 29.86C389.84 29.78 389.94 29.54 389.94 29.2C389.94 29.06 389.84 28.96 389.68 28.92C389.3 28.84 388.38 28.78 387.8 28.78L387.2 29.1C385.92 29.18 381.88 29.24 380.48 29.22C380.14 29.22 380.02 29.08 380.02 28.74V25.5V23.72L389.28 23.54C389.42 23.54 389.52 23.52 389.58 23.44C389.68 23.34 389.78 23.08 389.78 22.78C389.78 22.62 389.68 22.52 389.52 22.48C389.08 22.42 388.18 22.36 387.62 22.38L387 22.7C385.9 22.76 381.88 22.82 380.04 22.84C379.46 22.74 378.06 22.64 377.44 22.64C377.32 22.64 377.26 22.68 377.24 22.76L377.14 23.2C377.68 23.34 378.2 23.54 378.56 23.8V28.46C378.56 29.58 379.04 30.1 380.26 30.1L383.14 30.06V34.76C380.34 34.8 377.6 34.82 377 34.82C376.38 34.82 375.44 34.74 374.78 34.62L374.64 34.9C374.62 34.98 374.64 35.04 374.7 35.08C375.2 35.5 375.94 35.9 376.66 36.14C377.14 35.98 378.16 35.78 378.66 35.74C379.72 35.68 388.88 35.56 390.28 35.58C390.88 35.58 392.06 35.62 392.6 35.68C392.78 35.6 393.02 35.28 393.02 34.94C393.02 34.78 392.9 34.66 392.76 34.62C392.3 34.46 391.24 34.34 390.52 34.32Z"/></svg> <span class="chip" id="asof"></span><span class="chip demo" id="demo" hidden>[합성 데모]</span></div>
     <div class="tabs" id="mkt" aria-label="시장"></div>
   </div>
+  <div class="tabs views" id="vtab" aria-label="보기"></div>
+  <section id="vmap">
   <h1 id="lead"></h1>
   <ul class="facts" id="facts"></ul>
   <div class="strip" id="strip"></div>
@@ -95,6 +110,17 @@ html.card-wide .cardfoot{font-size:12.5px;margin-top:6px;padding-top:6px;line-he
   <div class="heads" id="heads"><span class="g">◀ 넘긴 쪽 · 순매도</span><span>섹터</span><span class="t">넘겨받은 쪽 · 순매수 ▶</span></div>
   <div class="fig" id="fig"><svg id="svg" role="img" aria-label="수급 지도"></svg><canvas id="cv"></canvas></div>
   <details><summary>표로 보기</summary><div class="scroll"><table id="tbl"></table></div></details>
+  </section>
+  <section id="vstream" hidden>
+    <h1 id="st-title"></h1>
+    <p class="sub" id="st-sub"></p>
+    <div class="ctl"><div class="tabs" id="st-act" aria-label="주체"></div><div class="tabs" id="st-mode" aria-label="값"></div><div class="tabs" id="st-span" aria-label="기간"></div></div>
+    <div class="legend" id="st-legend" aria-label="섹터 — 누르면 빼고 다시 그린다"></div>
+    <div class="sfig"><svg id="st-svg" role="img" aria-label="섹터별 순매수 시간 흐름"></svg></div>
+    <p class="why">위는 순매수, 아래는 순매도다(하루·5일 합). 누적은 구간 첫날부터 더한 선이다. 같은 날 한 섹터가 순매도이고 다른 섹터가 순매수여도
+      같은 돈이라는 뜻은 아니다 — 돈에는 꼬리표가 없고, 실측상 섹터들은 반대보다 같은 방향으로 움직이는 날이 더 많다.
+      그래서 섹터와 섹터를 잇는 선은 긋지 않는다. 날마다의 값을 직선으로 이을 뿐 곡선으로 메우지 않는다.</p>
+  </section>
   <footer>
     <div id="basis">__BASIS__ · 단위 억원(종가 환산 근사)</div>
     <div>띠 하나는 (주체, 섹터) 한 칸의 순매수다. 섹터와 섹터, 주체와 주체를 잇지 않는다 — 누가 누구에게 넘겼는지는 관측되지 않는다.
@@ -118,7 +144,7 @@ const COL = k => getComputedStyle(document.documentElement).getPropertyValue("--
 const lab = k => D.labels[k] || k;
 const fmt = v => { const a = Math.abs(v); return a >= 10000 ? (a / 10000).toFixed(1) + "조" : Math.round(a).toLocaleString("ko-KR") + "억"; };
 const sfmt = v => (v > 0 ? "+" : v < 0 ? "−" : "") + fmt(v);
-const S = {m: D.markets[0], w: String(D.windows[0]), actor: null, day: null, playing: false, hi: null};
+const S = {m: D.markets[0], w: String(D.windows[0]), actor: null, day: null, playing: false, hi: null, view: "map"};
 /* 카드 배치 — ?card=tall|wide. 정지 그림(입자 없음)·조작 없음, 꼬리에 단위·근사·출처 줄(scripts/map_card.py 가 찍는다). */
 const CARD = ["tall", "wide"].find(c => c === new URLSearchParams(location.search).get("card")) || null;
 if (CARD) document.documentElement.classList.add("card", "card-" + CARD);
@@ -235,6 +261,7 @@ function nodeText(n) {
 }
 
 function draw() {
+  if (S.view !== "map") return;
   const W = svg.clientWidth, H = svg.clientHeight;
   geo = layout(model(), W, H);
   let out = `<defs><pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="2" height="6" fill="#ffffff30"/></pattern></defs><g id="edges">`;
@@ -271,7 +298,7 @@ function seed() {
 function bez(a, b, c, d, t) { const u = 1 - t; return u * u * u * a + 3 * u * u * t * b + 3 * u * t * t * c + t * t * t * d; }
 const colorCache = {};
 function tick() {
-  if (!reduce && geo && !document.hidden) {
+  if (!reduce && geo && !document.hidden && S.view === "map") {
     ctx.clearRect(0, 0, cv.clientWidth, cv.clientHeight);
     for (const p of particles) {
       const e = geo.edges[p.e]; p.t += p.sp; if (p.t > 1) p.t -= 1;
@@ -353,7 +380,8 @@ $("back").onclick = () => { S.actor = null; route(); draw(); };
 $("detail").onclick = e => { const b = e.target.closest("button"); if (b) { S.actor = b.dataset.v; route(); draw(); } };
 
 function controls() {
-  tabs($("mkt"), D.markets.map(m => [m, m === "거래소" ? "코스피" : m]), S.m, v => { S.m = v; syncDay(); route(); controls(); draw(); });
+  tabs($("mkt"), D.markets.map(m => [m, m === "거래소" ? "코스피" : m]), S.m, v => { S.m = v; T.off.clear(); syncDay(); route(); controls(); draw(); sdraw(); });
+  tabs($("vtab"), [["map", "수급 지도"], ["stream", "시간 흐름"]], S.view, setView);
   tabs($("win"), D.windows.map(w => [String(w), w === 1 ? "1일" : w + "일"]), S.day === null ? S.w : "", v => { stop(); S.day = null; S.w = v; route(); controls(); draw(); });
 }
 function syncDay() {
@@ -375,16 +403,110 @@ $("play").onclick = () => {
 $("day").oninput = e => { stop(); S.actor = null; S.day = +e.target.value; controls(); syncDay(); draw(); };
 
 /* 주소: #m<시장 순번>-w<창>[-a<주체>] — 다시 열면 같은 그림 */
-function route() { const mi = D.markets.indexOf(S.m); history.replaceState(null, "", `#m${mi}-w${S.w}${S.actor ? "-a" + S.actor.replace(":", "_") : ""}`); }
+/* 주소 끝 -ts 는 두 번째 보기(시간 흐름) */
+function route() { const mi = D.markets.indexOf(S.m); history.replaceState(null, "", `#m${mi}-w${S.w}${S.actor ? "-a" + S.actor.replace(":", "_") : ""}${S.view === "stream" ? "-ts" : ""}`); }
+
+/* ── 두 번째 보기: 시간 흐름 — 주체 하나의 섹터별 하루 순매수를 날짜축에 위(순매수)·아래(순매도)로 쌓는다.
+   섹터와 섹터를 잇는 선은 긋지 않는다(아래 이유 문장). 날마다의 값을 직선으로 잇고 곡선 보간은 하지 않는다(없는 값을 만든다). ── */
+const SD = D.stream || {dates: [], views: {}};
+const PAL = ["#ff6b6b", "#ffa94d", "#ffd43b", "#69db7c", "#38d9a9", "#4dabf7", "#748ffc", "#b197fc", "#f783ac", "#e599f7"], REST = "#66708a";
+const spans = () => { const L = SD.dates.length, xs = [20, 60, 120].filter(n => n <= L); return xs.length ? xs : L ? [L] : []; };
+const T = {a: "forgn", mode: "flow", span: 0, off: new Set(), g: null};
+T.span = spans().includes(60) ? 60 : spans().slice(-1)[0] || 0;
+function stTabs() {
+  tabs($("st-act"), Object.keys(SD.views[S.m] || {}).map(a => [a, lab(a)]), T.a, v => { T.a = v; T.off.clear(); stTabs(); sdraw(); });
+  tabs($("st-mode"), [["flow", "하루"], ["flow5", "5일 합"], ["cum", "누적"]], T.mode, v => { T.mode = v; stTabs(); sdraw(); });
+  tabs($("st-span"), spans().map(n => [String(n), n + "일"]), String(T.span), v => { T.span = +v; stTabs(); sdraw(); });
+}
+function sseries() {
+  const L = SD.dates.length, n = T.span;
+  const roll = v => T.mode === "flow5" ? v.map((_, i) => v.slice(Math.max(0, i - 4), i + 1).reduce((a, b) => a + b, 0)) : v;
+  return ((SD.views[S.m] || {})[T.a] || []).map((s, i) => ({...s, c: s.rest ? REST : PAL[i % PAL.length], v: roll(s.v).slice(L - n)}));
+}
+const sdates = () => SD.dates.slice(SD.dates.length - T.span);
+const line = pts => pts.length ? "M" + pts.map(p => p[0].toFixed(1) + "," + p[1].toFixed(1)).join("L") : "";
+function sdraw() {
+  if (S.view !== "stream") return;
+  const sv = $("st-svg"), W = sv.clientWidth, H = sv.clientHeight, narrow = W < 600;
+  const padL = narrow ? 46 : 64, padR = narrow ? 8 : 132, padT = 10, padB = 28;
+  const all = sseries(), ss = all.filter(s => !T.off.has(s.name)), ds = sdates(), n = ds.length;
+  if (!n) { sv.innerHTML = ""; $("st-title").textContent = "시간 흐름 — 날짜가 없다"; return; }
+  const x = i => padL + (W - padL - padR) * (n === 1 ? .5 : i / (n - 1));
+  let out = "", lo = 0, hi = 0, y;
+  if (T.mode !== "cum") {
+    const up = Array(n).fill(0), dn = Array(n).fill(0), bands = [];
+    for (const s of ss) {
+      const top = [], bot = [];
+      for (let i = 0; i < n; i++) { const v = s.v[i];
+        if (v >= 0) { bot.push(up[i]); up[i] += v; top.push(up[i]); } else { top.push(dn[i]); dn[i] += v; bot.push(dn[i]); } }
+      bands.push({s, top, bot});
+    }
+    hi = Math.max(1, ...up); lo = Math.min(-1, ...dn);
+    y = v => padT + (H - padT - padB) * (hi - v) / (hi - lo);
+    for (const b of bands) {
+      const A = b.top.map((v, i) => [x(i), y(v)]), B = b.bot.map((v, i) => [x(i), y(v)]).reverse();
+      out += `<path class="band" data-s="${esc(b.s.name)}" d="${line(A)}L${line(B).slice(1)}Z" fill="${b.s.c}" fill-opacity=".78" stroke="#070b16" stroke-width=".6"/>`;
+    }
+  } else {
+    const cs = ss.map(s => { let a = 0; return {s, c: s.v.map(v => (a += v))}; });
+    hi = Math.max(1, ...cs.flatMap(c => c.c)); lo = Math.min(-1, ...cs.flatMap(c => c.c));
+    y = v => padT + (H - padT - padB) * (hi - v) / (hi - lo);
+    const ends = [];
+    for (const c of cs) { out += `<path class="band" data-s="${esc(c.s.name)}" d="${line(c.c.map((v, i) => [x(i), y(v)]))}" fill="none" stroke="${c.s.c}" stroke-width="2.4"/>`; ends.push([y(c.c[n - 1]), c.s, c.c[n - 1]]); }
+    if (!narrow) { ends.sort((a, b) => a[0] - b[0]); let last = -1e9; for (const e of ends) { const yy = Math.max(e[0], last + 13); last = yy;
+      out += `<text x="${W - padR + 6}" y="${yy + 4}" font-size="11.5" fill="${e[1].c}">${esc(e[1].name)} ${sfmt(e[2])}</text>`; } }
+  }
+  const z = y(0);
+  let axis = `<line x1="${padL}" x2="${W - padR}" y1="${z}" y2="${z}" stroke="#e9eef8" stroke-opacity=".5"/>`;
+  const step = Math.max(1, Math.round(n / (narrow ? 4 : 8)));
+  for (let i = 0; i < n; i += step) axis += `<text x="${x(i)}" y="${H - 8}" font-size="11" fill="#8d9ab3" text-anchor="middle">${ds[i].slice(5)}</text>`;
+  for (const v of [hi, lo]) axis += `<text x="${padL - 6}" y="${y(v) + 4}" font-size="11" fill="${v > 0 ? "#ff5a6e" : "#4c8dff"}" text-anchor="end">${sfmt(v)}</text>`;
+  axis += `<text x="${padL - 6}" y="${z + 4}" font-size="11" fill="#8d9ab3" text-anchor="end">0</text>`;
+  sv.innerHTML = axis + out + `<line id="st-cross" y1="${padT}" y2="${H - padB}" stroke="#fff" stroke-opacity=".35" visibility="hidden"/>`;
+  T.g = {x, n};
+  $("st-legend").innerHTML = all.map(s => `<button type="button" data-s="${esc(s.name)}" aria-pressed="${!T.off.has(s.name)}"><i style="background:${s.c}"></i>${esc(s.name)}</button>`).join("");
+  const tot = ss.reduce((t, s) => t + s.v.reduce((a, b) => a + b, 0), 0);
+  $("st-title").textContent = `${lab(T.a)}의 섹터별 순매수, 최근 ${n}거래일 · ${S.m === "거래소" ? "코스피" : S.m}`;
+  const sums = all.filter(s => !s.rest).map(s => [s.name, s.v.reduce((a, b) => a + b, 0)]).sort((a, b) => a[1] - b[1]);
+  const lo1 = sums[0], hi1 = sums[sums.length - 1];
+  $("st-sub").textContent = `보이는 섹터 합계 ${sfmt(tot)} · ` +
+    (lo1 && lo1[1] < 0 ? `순매도가 가장 큰 섹터 ${lo1[0]} ${sfmt(lo1[1])}` : "순매도한 섹터 없음") + " · " +
+    (hi1 && hi1[1] > 0 ? `순매수가 가장 큰 섹터 ${hi1[0]} ${sfmt(hi1[1])}` : "순매수한 섹터 없음") + " · 범례를 누르면 그 섹터를 빼고 다시 그린다";
+}
+$("st-legend").onclick = e => { const b = e.target.closest("button"); if (!b) return; const s = b.dataset.s; T.off.has(s) ? T.off.delete(s) : T.off.add(s); sdraw(); };
+$("st-svg").addEventListener("pointermove", ev => {
+  if (!T.g) return; const r = $("st-svg").getBoundingClientRect(), px = ev.clientX - r.left;
+  let i = 0, best = 1e9; for (let k = 0; k < T.g.n; k++) { const d = Math.abs(T.g.x(k) - px); if (d < best) { best = d; i = k; } }
+  const cr = $("st-cross"); cr.setAttribute("x1", T.g.x(i)); cr.setAttribute("x2", T.g.x(i)); cr.setAttribute("visibility", "visible");
+  const rows = sseries().filter(s => !T.off.has(s.name)).map(s => [s, T.mode !== "cum" ? s.v[i] : s.v.slice(0, i + 1).reduce((a, b) => a + b, 0)]).sort((a, b) => b[1] - a[1]);
+  const hov = ev.target.closest(".band")?.dataset.s;
+  tip.innerHTML = `<b>${sdates()[i]}</b> ${T.mode === "flow" ? "그날" : T.mode === "flow5" ? "그날까지 5일 합" : "누적"}<table>` + rows.map(([s, v]) =>
+    `<tr style="${s.name === hov ? "background:#ffffff14" : ""}"><td><i style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${s.c}"></i> ${esc(s.name)}</td><td style="color:${v >= 0 ? "#ff5a6e" : "#4c8dff"}">${sfmt(v)}</td></tr>`).join("") + "</table>";
+  tip.style.display = "block"; tip.style.left = Math.min(ev.clientX + 16, innerWidth - 290) + "px"; tip.style.top = Math.min(ev.clientY + 12, innerHeight - tip.offsetHeight - 8) + "px";
+  document.querySelectorAll("#st-svg .band").forEach(p => p.style.opacity = !hov || p.dataset.s === hov ? 1 : .25);
+});
+$("st-svg").addEventListener("pointerleave", () => { tip.style.display = "none"; $("st-cross")?.setAttribute("visibility", "hidden"); document.querySelectorAll("#st-svg .band").forEach(p => p.style.opacity = 1); });
+
+function setView(v) {
+  if (v !== "map" && v !== "stream") return;
+  stop(); S.view = v; S.day = null;
+  $("vmap").hidden = v !== "map"; $("vstream").hidden = v !== "stream";
+  tip.style.display = "none"; route(); controls();
+  if (v === "map") { syncDay(); draw(); } else { stTabs(); sdraw(); }
+}
+
 (function fromHash() {
-  const m = /^#m(\d+)-w(\d+)(?:-a([\w]+))?$/.exec(location.hash); if (!m) return;
+  const m = /^#m(\d+)-w(\d+)(?:-a([\w]+))?(-ts)?$/.exec(location.hash); if (!m) return;
   if (D.markets[+m[1]]) S.m = D.markets[+m[1]];
   if (D.windows.includes(+m[2])) S.w = m[2];
   const a = m[3] && m[3].replace("_", ":"); if (a && view().actors[a]) S.actor = a;
+  if (m[4] && !CARD) S.view = "stream";
 })();
 
 controls(); syncDay();
+if (S.view === "stream") setView("stream");
 new ResizeObserver(() => draw()).observe(svg);
+new ResizeObserver(() => sdraw()).observe($("st-svg"));
 requestAnimationFrame(tick);
 }
 </script>

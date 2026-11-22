@@ -371,3 +371,56 @@ def test_flows_only_payload_ok(demo_payload):
     assert D["views"]["전체"]["5"]["exchange"] == FM.build_map_data(demo_payload)["views"]["전체"]["5"]["exchange"]
     assert "inst:invtrt" in D["views"]["전체"]["5"]["actors"], "라벨 표가 없어도 세부 키는 페이로드에서 읽는다"
     assert list(D["views"]["코스닥"]["1"]["actors"])[5:7] == ["inst:invtrt", "inst:penfnd_etc"]
+
+
+# ── 시간 흐름(두 번째 보기) — 주체 하나의 섹터별 하루 순매수 띠 ───────────────────────────
+
+# mutation-exempt: stream_series 시장 합산·결측 0·소수 1자리 반올림 불변 검사다
+def test_stream_series_adds_markets_and_keeps_daily_values():
+    """두 시장을 날마다 더한다(None 은 0). 그 시장에 없는 섹터도 0. 값은 반올림 자릿수까지 손계산과 같다."""
+    P = _payload()
+    T = FM.stream_series(P, ["거래소", "코스닥"], "indiv", n=3)
+    assert T["dates"] == P["dates"]
+    by = {s["name"]: s["v"] for s in T["series"]}
+    assert by["가"] == [-9, -18, -27] and by["나"] == [7, 0, 3]
+    assert FM.stream_series(P, ["거래소"], "inst", n=2) == {
+        "dates": P["dates"][1:], "series": [{"name": "가", "v": [8, 12]}, {"name": "나", "v": [-4, -4]}]}
+
+
+def test_stream_series_orders_by_gross_and_bundles_the_rest():
+    """구간 Σ|하루 값| 큰 순 STREAM_TOP 개, 나머지는 날마다 더한 '기타 N개 섹터' 한 띠(이름 목록 포함). 구간 내내 0 인 섹터는 없다."""
+    P = _long_payload(n_days=8, n_sec=14)
+    P["flows"]["거래소"]["섹13"]["inst"] = [0.0] * 8                     # 내내 0 — 띠도, 기타 이름에도 없다
+    T = FM.stream_series(P, ["거래소"], "inst", n=8)
+    named, rest = T["series"][:-1], T["series"][-1]
+    assert len(named) == FM.STREAM_TOP and rest["rest"] is True
+    gross = [sum(abs(x) for x in s["v"]) for s in named]
+    assert gross == sorted(gross, reverse=True)
+    assert rest["name"] == f"기타 {len(rest['names'])}개 섹터" and "섹13" not in rest["names"]
+    assert sorted([s["name"] for s in named] + rest["names"]) == sorted(f"섹{i}" for i in range(13))
+    for j in range(8):
+        want = sum(P["flows"]["거래소"][s]["inst"][j] for s in rest["names"])
+        assert rest["v"][j] == pytest.approx(want, abs=0.051)
+
+
+# mutation-exempt: 시간 흐름 데이터에 섹터→섹터 구조나 잔여 주체가 없음을 확인하는 구조 불변 검사다
+def test_stream_has_no_sector_to_sector_structure_and_rejects_unknown_actor():
+    """띠는 (섹터, 날짜) 값뿐 — 섹터와 섹터를 잇는 칸이 없다. 잔여는 주체가 아니라 시간 흐름에 없다."""
+    P = _long_payload(n_days=6, n_sec=12)
+    T = FM.stream_series(P, ["거래소"], "forgn", n=5)
+    for s in T["series"]:
+        assert set(s) <= {"name", "v", "rest", "names"} and len(s["v"]) == 5
+    with pytest.raises(KeyError):
+        FM.stream_series(P, ["거래소"], FM.RESID)
+
+
+# mutation-exempt: build_map_data 묶음에 stream 구조(날짜·시장×4주체)가 포함되는지 확인하는 계약 검사다
+def test_stream_data_in_the_map_bundle(demo_payload):
+    """지도 묶음의 stream — 날짜는 한 번, 시장(전체·각 시장) × 4주체. 120거래일(데모 260일), 날짜가 적으면 그만큼."""
+    D = FM.build_map_data(demo_payload)
+    S = D["stream"]
+    assert S["dates"] == demo_payload["dates"][-FM.STREAM_N:]
+    assert list(S["views"]) == D["markets"] and all(list(v) == list(FM.ACTORS) for v in S["views"].values())
+    assert S["views"]["코스닥"]["inst"] == FM.stream_series(demo_payload, ["코스닥"], "inst")["series"]
+    short = FM.build_map_data(_long_payload(n_days=25))["stream"]
+    assert len(short["dates"]) == 25 and all(len(s["v"]) == 25 for s in short["views"]["전체"]["inst"])

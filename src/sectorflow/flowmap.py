@@ -220,6 +220,45 @@ def frames(P: dict, markets: list[str], *, span: int = 1, n: int = 60) -> dict:
     return {"dates": P["dates"][first:], "order": order, "frames": out}
 
 
+#: 시간 흐름 — 한 그림에 따로 그리는 섹터 수(나머지는 ``기타 N개 섹터`` 한 띠), 날짜 수 상한, 값 자릿수(억원 소수 1자리).
+STREAM_TOP = 10
+STREAM_N = 120
+STREAM_DIGITS = 1
+
+
+def stream_series(P: dict, markets: list[str], actor: str, n: int = STREAM_N) -> dict:
+    """시간 흐름 — 주체 하나의 섹터별 **하루** 순매수, 마지막 ``n`` 거래일(``markets`` 를 더한다, None 은 0).
+
+    ``series`` 는 구간 Σ|하루 값| 큰 순 :data:`STREAM_TOP` 개 섹터, 같으면 페이로드 섹터 순서. 나머지 섹터(구간 내내 0 인 섹터는 뺀다)는
+    날마다 더해 ``기타 N개 섹터`` 한 띠(``rest: True``, ``names``)로 둔다. 값은 소수 :data:`STREAM_DIGITS` 자리로 반올림한다(화면 표시용 —
+    5일 합·누적은 화면이 이 값으로 더한다). 섹터와 섹터를 잇는 구조는 없다 — 한 섹터의 순매도와 다른 섹터의 순매수가 같은 날에
+    있어도 같은 돈이라는 관측이 아니다(돈에 꼬리표가 없다). ``actor`` 는 :data:`ACTORS` 의 하나, 아니면 ``KeyError``.
+    """
+    if actor not in ACTORS:
+        raise KeyError(actor)
+    N = len(P["dates"])
+    n = max(0, min(n, N))
+    i0 = N - n
+    rows = []
+    for k, s in enumerate(P["sectors"]):
+        v = [0.0] * n
+        for m in markets:
+            f = ((P["flows"].get(m) or {}).get(s) or {}).get(actor) or ()
+            for j, x in enumerate(f[i0:N]):
+                if x is not None:
+                    v[j] += x
+        g = sum(abs(x) for x in v)
+        if g > EPS:
+            rows.append((g, k, s, v))
+    rows.sort(key=lambda r: (-r[0], r[1]))
+    top, rest = rows[:STREAM_TOP], rows[STREAM_TOP:]
+    series = [{"name": s, "v": [round(x, STREAM_DIGITS) for x in v]} for _g, _k, s, v in top]
+    if rest:
+        series.append({"name": f"기타 {len(rest)}개 섹터", "rest": True, "names": [r[2] for r in rest],
+                       "v": [round(sum(r[3][j] for r in rest), STREAM_DIGITS) for j in range(n)]})
+    return {"dates": P["dates"][i0:], "series": series}
+
+
 #: 전체 시장 — ``P["markets"]`` 를 다 더한 것.
 ALL_MARKETS = "전체"
 #: 헤드라인 아래 사실 줄 수 — 간선 큰 순.
@@ -282,8 +321,16 @@ def actor_keys(P: dict) -> list[str]:
     return [*NODE_ORDER, *([DETAIL_PREFIX + k for k in (*det, INST_OTHER)] if det else [])]
 
 
+def stream_data(P: dict, markets: list[str], n: int = STREAM_N) -> dict:
+    """지도 페이지 두 번째 보기("시간 흐름")의 묶음 — 날짜는 한 번만, 시장(화면 이름) × 4주체마다 :func:`stream_series` 의 띠."""
+    n = max(0, min(n, len(P["dates"])))
+    return {"dates": P["dates"][len(P["dates"]) - n:],
+            "views": {m: {a: stream_series(P, market_list(P, m), a, n)["series"] for a in ACTORS} for m in markets}}
+
+
 def build_map_data(P: dict) -> dict:
-    """``map.html`` 에 심을 묶음 — 시장(전체·각 시장) × 창마다 보기 1(``exchange``)·보기 2(``actors``)·머리글, 그리고 타임랩스.
+    """``map.html`` 에 심을 묶음 — 시장(전체·각 시장) × 창마다 보기 1(``exchange``)·보기 2(``actors``)·머리글, 타임랩스,
+    그리고 두 번째 보기 시간 흐름(``stream``, :func:`stream_data`).
 
     쓰는 페이로드 키는 ``dates``·``sectors``·``markets``·``flows``·``detail``·``detail_labels`` 뿐이다(수익률 등 없이 —
     BYO 수급만 페이로드가 이 길을 탄다). 창 키는 JSON 과 같게 문자열(``"5"``)이다. 크기는 :data:`MAP_JSON_MAX` 안으로
@@ -307,7 +354,7 @@ def build_map_data(P: dict) -> dict:
            "markets": markets, "windows": windows, "labels": {**ACTOR_LABEL, **{DETAIL_PREFIX + k: v for k, v in
                                                                                   (P.get("detail_labels") or {}).items()},
                                                                DETAIL_PREFIX + INST_OTHER: "기관 나머지"},
-           "views": views, "timelapse": {}}
+           "views": views, "timelapse": {}, "stream": stream_data(P, markets)}
     n = min(TIMELAPSE_N, N)
     while True:
         out["timelapse"] = {m: frames(P, market_list(P, m), span=1, n=n) for m in markets}
