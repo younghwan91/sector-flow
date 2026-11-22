@@ -13374,7 +13374,7 @@ why = "sector-flow-byo map 의 --out 이 바뀌었는데 빠른 시작 문서는
 guards = ["tests/test_docs_cli_options.py::test_documented_console_commands_parse"]
 file = "src/sectorflow/byo.py"
 find = "    mp.add_argument(\"--out\", required=True"
-replace = "    mp.add_argument(\"--out-dir\", required=True"
+replace = "    mp.add_argument(\"--dest\", required=True"
 
 [[mutation]]
 id = "docs-collect-daily-map-only-renamed"
