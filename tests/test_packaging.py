@@ -101,8 +101,15 @@ def test_strip_remote_keeps_clickable_links():
 
 
 def test_shipped_code_talks_only_to_kiwoom_and_dart():
-    """설계 §4.2 — 네트워크 목적지는 키움과 (선택) OpenDART 둘뿐. 중계·공유 캐시·텔레메트리 없음."""
-    allowed = {"api.kiwoom.com", "opendart.fss.or.kr"}
+    """설계 §4.2 — 네트워크 목적지는 키움·(선택) OpenDART, 그리고 Phase 6b 의 증권사 어댑터 호스트(등록부에 있는 것만 —
+    사용자가 ``--broker`` 로 고른 하나만 부른다). 중계·공유 캐시·텔레메트리 없음."""
+    import importlib
+    from urllib.parse import urlparse
+
+    from sectorflow.collect.brokers import BROKERS
+    brokers = {urlparse(importlib.import_module(f"sectorflow.collect.brokers.{n}").PROD_URL).hostname
+               for n in BROKERS if n != "kiwoom"}
+    allowed = {"api.kiwoom.com", "opendart.fss.or.kr", *brokers}
     hosts: dict[str, set[str]] = {}
     shipped = list((REPO / "src/sectorflow").rglob("*.py")) + [REPO / "scripts" / Path(d).name
                                                               for d in FORCE.values() if d.endswith(".py")]

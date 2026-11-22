@@ -134,6 +134,22 @@ def _gap_days(since: str, end: str) -> int:
     return len(days) + len(unknown)
 
 
+def stored_listing(con, name: str) -> list[dict]:
+    """전 종목 목록 API 가 없는 증권사(:attr:`Broker.lists_stocks` 거짓)의 목록 — 저장된 ``stocks``. 비었으면 갈 길을 적고 멈춘다."""
+    rows = [dict(zip(("code", "name", "market", "sector", "kind", "sector_source"), r)) for r in con.execute(
+        "SELECT code, name, market, COALESCE(sector, ''), COALESCE(kind, ''), sector_source FROM stocks ORDER BY code")]
+    if not rows:
+        raise SystemExit(f"⏹ --broker {name} 는 전 종목 목록 API 가 없다 — 먼저 종목 목록을 넣는다: 키움 키로 "
+                         "universe --broker kiwoom, 또는 sectors --csv <표> --add-missing(docs/byo/brokers.md)")
+    return rows
+
+
+def listing(broker: Broker, con) -> list[dict]:
+    """증권사 목록(없으면 저장된 ``stocks``) — 섹터는 저장된 한 벌을 따른다(:func:`write.with_stored_sectors`)."""
+    rows = broker.universe() if broker.lists_stocks else stored_listing(con, broker.name)
+    return write.with_stored_sectors(con, rows)
+
+
 def _require_map_only(args, map_only: bool) -> None:
     """키움 밖의 증권사는 지도 전용 수집만 한다 — 일봉·주식수·업종지수 TR 이 어댑터에 없다."""
     name = getattr(args, "broker", DEFAULT_BROKER)
@@ -203,6 +219,9 @@ def _today() -> str:
 def cmd_universe(args) -> int:
     """전 시장 종목·업종 목록 → ``stocks``. 키움은 시장마다 1회 + 연속조회 쪽(토큰 1)."""
     broker = _broker(args)
+    if not broker.lists_stocks:
+        raise SystemExit(f"⏹ --broker {broker.name} 는 전 종목 목록 API 가 없다 — 키움 키로 universe --broker kiwoom 을 받거나 "
+                         "sectors --csv <표> --add-missing 으로 넣는다(docs/byo/brokers.md)")
     con = write.open_db(args.db)
     run_id = write.start_run(con, "universe")
     rows: dict = {}
@@ -316,7 +335,7 @@ def cmd_backfill(args) -> int:
 
         # 2) 종목 마스터 → 조각
         # 섹터는 저장된 한 벌을 따른다(사용자 표·다른 키로 받은 업종) — 조각(--sectors)도 그 섹터로 고른다.
-        stocks = write.with_stored_sectors(con, broker.universe())
+        stocks = listing(broker, con)
         sectors = {s.strip() for s in (args.sectors or "").split(",") if s.strip()}
         codes = {c.strip() for c in (args.codes or "").split(",") if c.strip()}
         if sectors or codes:
@@ -425,15 +444,15 @@ def cmd_daily(args) -> int:
     interrupted = ""
     targets: list = []
     try:
-        listing = {s["code"]: s for s in write.with_stored_sectors(con, broker.universe())}
-        for code in sorted(c for c in stale if c not in listing):
+        listed = {s["code"]: s for s in listing(broker, con)}
+        for code in sorted(c for c in stale if c not in listed):
             notes.append([code, broker.list_label, "상장 목록에 없다(폐지·이전상장?) — 받지 않는다"])
             write.mark_done(con, code, end, run_id)
-        new = sorted(c for c, s in listing.items() if c not in last_by_code and s["sector"] in sectors)
-        targets = sorted(c for c in stale if c in listing) + new
-        add("stocks", write.upsert_stocks(con, [listing[c] for c in targets]))
+        new = sorted(c for c, s in listed.items() if c not in last_by_code and s["sector"] in sectors)
+        targets = sorted(c for c in stale if c in listed) + new
+        add("stocks", write.upsert_stocks(con, [listed[c] for c in targets]))
         if not args.map_only:
-            _collect_indexes(broker.api, con, {listing[c]["sector"] for c in targets}, anchor,
+            _collect_indexes(broker.api, con, {listed[c]["sector"] for c in targets}, anchor,
                              oldest=newest.replace("-", ""), add=add, failed=failed)
         con.commit()
         print(f"📅 ~ {end} · {len(targets)}종목(신규 상장 {len(new)}){' · 지도 전용' if args.map_only else ''}")
@@ -478,8 +497,12 @@ def cmd_daily(args) -> int:
     return 0 if ok else 1
 
 
-#: 섹터 표 CSV 의 머리 이름 → 열. 영문(``code,sector``) 또는 KRX 정보데이터시스템 '업종분류 현황' 내려받기의 한글 머리.
-SECTOR_CSV_HEADERS = {"code": "code", "종목코드": "code", "sector": "sector", "업종명": "sector"}
+#: 섹터 표 CSV 의 머리 이름 → 열. 영문(``code,sector[,name,market]``) 또는 KRX 정보데이터시스템 '업종분류 현황'
+#: 내려받기의 한글 머리(``종목코드,종목명,시장구분,업종명``).
+SECTOR_CSV_HEADERS = {"code": "code", "종목코드": "code", "sector": "sector", "업종명": "sector",
+                      "name": "name", "종목명": "name", "market": "market", "시장구분": "market"}
+#: CSV 시장 구분 → ``stocks.market``(키움 ``marketName`` 과 같은 글자). 밖(코넥스 등)은 목록에 넣지 않는다.
+CSV_MARKETS = {"KOSPI": "거래소", "유가증권": "거래소", "거래소": "거래소", "KOSDAQ": "코스닥", "코스닥": "코스닥"}
 
 
 def _read_text(path: str) -> str:
@@ -491,39 +514,65 @@ def _read_text(path: str) -> str:
         return raw.decode("cp949")
 
 
-def read_sector_csv(path: str) -> dict[str, str]:
-    """섹터 표 CSV → ``{6자리 코드: 섹터}``. 머리는 :data:`SECTOR_CSV_HEADERS`(``code,sector`` 또는 ``종목코드,업종명``).
+def read_stock_csv(path: str) -> list[dict]:
+    """섹터 표 CSV → ``[{"code", "sector", "name", "market"}]``(이름·시장은 열이 없으면 빈 값). 머리는 :data:`SECTOR_CSV_HEADERS`.
 
-    숫자 코드는 앞 0 을 채운다(스프레드시트가 ``000120`` 을 ``120`` 으로 만든다).
+    숫자 코드는 앞 0 을 채운다(스프레드시트가 ``000120`` 을 ``120`` 으로 만든다). 코드나 섹터가 빈 줄은 뺀다.
     """
     reader = csv.DictReader(io.StringIO(_read_text(path)))
     cols = {SECTOR_CSV_HEADERS[h.strip()]: h for h in (reader.fieldnames or []) if h and h.strip() in SECTOR_CSV_HEADERS}
-    if set(cols) != {"code", "sector"}:
+    if not {"code", "sector"} <= set(cols):
         raise SystemExit(f"⏹ {path}: 머리줄에 code,sector(또는 종목코드,업종명)가 있어야 한다")
-    out: dict[str, str] = {}
+    out: list[dict] = []
     for row in reader:
-        code, sec = (row.get(cols["code"]) or "").strip(), (row.get(cols["sector"]) or "").strip()
-        code = code.zfill(6) if code.isdigit() else code
-        if code and sec:
-            out[code] = sec
+        rec = {k: (row.get(cols[k]) or "").strip() if k in cols else "" for k in ("code", "sector", "name", "market")}
+        rec["code"] = rec["code"].zfill(6) if rec["code"].isdigit() else rec["code"]
+        if rec["code"] and rec["sector"]:
+            out.append(rec)
+    return out
+
+
+def read_sector_csv(path: str) -> dict[str, str]:
+    """섹터 표 CSV → ``{6자리 코드: 섹터}``(:func:`read_stock_csv`)."""
+    return {r["code"]: r["sector"] for r in read_stock_csv(path)}
+
+
+def csv_listing(rows: list[dict]) -> list[dict]:
+    """CSV 행 중 ``stocks`` 에 새로 넣을 수 있는 보통주 — 이름·시장(코스피·코스닥)이 있고 코드가 6자리 숫자, 끝자리 0."""
+    out = []
+    for r in rows:
+        market = CSV_MARKETS.get(r["market"].upper() if r["market"].isascii() else r["market"])
+        s = {"code": r["code"], "name": r["name"], "market": market or "", "sector": "", "kind": "",
+             "sector_source": None}
+        if r["name"] and market and len(r["code"]) == 6 and r["code"].isdigit() and fetch.is_common_stock(s):
+            out.append(s)
     return out
 
 
 def cmd_sectors(args) -> int:
-    """사용자 섹터 표 → ``stocks.sector``(출처 ``csv:<이름>``). 증권사를 부르지 않는다. 먼저 ``universe`` 로 목록을 받는다."""
-    table = read_sector_csv(args.csv)
+    """자기 섹터 표 → ``stocks.sector``(출처 ``csv:<이름>``). 증권사를 부르지 않는다.
+
+    ``--add-missing`` 이면 표에 이름·시장이 있는 보통주 중 ``stocks`` 에 없는 것을 먼저 넣는다 — 전 종목 목록 API 가 없는
+    증권사(한국투자·NH)로 수집할 때의 종목 목록이 된다.
+    """
+    rows = read_stock_csv(args.csv)
     label = args.label or os.path.splitext(os.path.basename(args.csv))[0]
     con = write.open_db(args.db)
+    added = 0
     try:
-        got = write.import_sectors(con, table, label)
+        if args.add_missing:
+            have = {r[0] for r in con.execute("SELECT code FROM stocks").fetchall()}
+            added = write.upsert_stocks(con, [s for s in csv_listing(rows) if s["code"] not in have])
+        got = write.import_sectors(con, {r["code"]: r["sector"] for r in rows}, label)
         con.commit()
     finally:
         con.close()
-    print(json.dumps({"ok": got["updated"] > 0, "source": write.CSV_SOURCE + label, "rows": len(table),
-                      "updated": got["updated"], "unknown": len(got["unknown"]),
+    print(json.dumps({"ok": got["updated"] > 0, "source": write.CSV_SOURCE + label, "rows": len(rows),
+                      "added": added, "updated": got["updated"], "unknown": len(got["unknown"]),
                       "unknown_head": got["unknown"][:5]}, ensure_ascii=False, indent=1))
     if not got["updated"]:
-        print("⏹ 바꾼 종목이 없다 — 먼저 universe 로 종목 목록을 받는다(코드가 stocks 에 있어야 한다)", file=sys.stderr)
+        print("⏹ 바꾼 종목이 없다 — 먼저 universe 로 종목 목록을 받거나, 이름·시장 열이 있는 표에 --add-missing 을 준다",
+              file=sys.stderr)
         return 1
     return 0
 
@@ -590,7 +639,8 @@ def main(argv: "list[str] | None" = None) -> int:
     ap = argparse.ArgumentParser(prog="sector-flow-collect", description=__doc__.splitlines()[0])
     ap.add_argument("--env-file", default=os.environ.get("SECTORFLOW_ENV_FILE"),
                     help="KIWOOM_APP_KEY/SECRET 가 든 .env(환경변수가 먼저)")
-    ap.add_argument("--rate", type=float, default=0.9, help="TR 하나의 속도[req/s] (기본 0.9)")
+    ap.add_argument("--rate", type=float, default=None,
+                    help="요청 속도[req/s] — 기본은 증권사마다(키움 TR 하나 0.9, 한국투자 5). 증권사 공지 상한은 넘지 않는다")
     ap.add_argument("--max-calls", type=int, default=3000, help="이 실행의 총 호출 상한")
     ap.add_argument("--busy-file", default=os.environ.get(BUSY_ENV),
                     help="같은 앱키를 쓰는 다른 프로그램의 운영 창(TOML). 없으면 창 없음 + 경고")
@@ -622,6 +672,9 @@ def main(argv: "list[str] | None" = None) -> int:
     sc.add_argument("--db", required=True, help="sqlite 경로(먼저 universe)")
     sc.add_argument("--csv", required=True, help="머리줄 code,sector(또는 KRX 내려받기의 종목코드,업종명)인 CSV")
     sc.add_argument("--label", help="섹터 출처 이름(지도에 '사용자 표(이름)'으로 나온다, 기본: 파일 이름)")
+    sc.add_argument("--add-missing", action="store_true",
+                    help="표에 이름·시장(name,market 또는 종목명,시장구분)이 있는 보통주 중 stocks 에 없는 것을 넣는다 — "
+                         "목록 API 가 없는 증권사용")
     rs = sub.add_parser("reseed", help="저장된 스냅숏·기업행동으로 주식수 시드를 다시 만든다(호출 없음)")
     rs.add_argument("--db", required=True)
     ds = sub.add_parser("dart-shares", help="DART 분기 발행주식총수로 주식수 이력을 채운다(본인 DART_API_KEY, 선택)")

@@ -117,8 +117,11 @@ def test_broker_registry_names(monkeypatch):
     assert list(BROKERS)[0] == DEFAULT == "kiwoom"
     assert set(BROKERS) <= set(PLANNED) and list(BROKERS) == [n for n in PLANNED if n in BROKERS]
     assert set(CAPABILITIES) == set(BROKERS)
-    monkeypatch.setenv("KIWOOM_APP_KEY", "k")
-    monkeypatch.setenv("KIWOOM_APP_SECRET", "s")
+    import importlib
+    for name in BROKERS:                         # 어댑터 모듈마다 키 이름이 다르다 — 가짜 값만 둔다
+        mod = importlib.import_module(f"sectorflow.collect.brokers.{name}")
+        monkeypatch.setenv(mod.KEY_ENV, "k")
+        monkeypatch.setenv(mod.SECRET_ENV, "s")
     for name, make in BROKERS.items():
         b = make(Settings(transport=lambda *a: (500, {}, {})))
         assert isinstance(b, Broker) and b.name == name and b.capability is CAPABILITIES[name], name

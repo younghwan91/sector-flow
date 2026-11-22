@@ -11,12 +11,13 @@ from __future__ import annotations
 
 from typing import Callable
 
-from . import kiwoom
-from .base import Broker, Capability, Settings
+from . import kis, kiwoom
+from .base import Broker, Capability, NoListing, Settings
 
 #: 이름 → 어댑터 생성기. 순서가 CLI ``--broker`` 선택지 순서다(키움이 기본·처음).
 BROKERS: dict[str, Callable[[Settings], Broker]] = {
     "kiwoom": kiwoom.make,
+    "kis": kis.make,
 }
 DEFAULT = "kiwoom"
 
@@ -29,6 +30,7 @@ def capability(name: str) -> Capability:
 #: 이름 → 능력 — 지도·대조 명령이 수급 행의 ``source`` 로 찾는다.
 CAPABILITIES: dict[str, Capability] = {
     "kiwoom": kiwoom.CAPABILITY,
+    "kis": kis.CAPABILITY,
 }
 
-__all__ = ["BROKERS", "CAPABILITIES", "DEFAULT", "Broker", "Capability", "Settings", "capability"]
+__all__ = ["BROKERS", "CAPABILITIES", "DEFAULT", "Broker", "Capability", "NoListing", "Settings", "capability"]

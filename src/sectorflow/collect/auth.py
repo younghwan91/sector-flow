@@ -38,16 +38,21 @@ def _from_env_file(env_path: "str | Path | None", names: tuple[str, ...]) -> dic
     return out
 
 
-def load_keys(env_path: "str | Path | None" = None) -> tuple[str, str]:
-    """``(app_key, app_secret)``. 환경변수 → ``env_path``(.env 형식) 순서로 찾는다."""
-    key = os.environ.get(KEY_ENV, "")
-    secret = os.environ.get(SECRET_ENV, "")
+def load_pair(env_path: "str | Path | None", key_env: str, secret_env: str) -> tuple[str, str]:
+    """``(key, secret)`` — 환경변수 ``key_env``·``secret_env`` → ``env_path``(.env 형식) 순서로 찾는다. 증권사 어댑터마다 이름이 다르다."""
+    key = os.environ.get(key_env, "")
+    secret = os.environ.get(secret_env, "")
     if not key or not secret:
-        f = _from_env_file(env_path, (KEY_ENV, SECRET_ENV))
-        key, secret = key or f.get(KEY_ENV, ""), secret or f.get(SECRET_ENV, "")
+        f = _from_env_file(env_path, (key_env, secret_env))
+        key, secret = key or f.get(key_env, ""), secret or f.get(secret_env, "")
     if not key or not secret:
-        raise MissingKeys(f"{KEY_ENV} / {SECRET_ENV} 가 환경변수나 .env 에 없다.")
+        raise MissingKeys(f"{key_env} / {secret_env} 가 환경변수나 .env 에 없다.")
     return key, secret
+
+
+def load_keys(env_path: "str | Path | None" = None) -> tuple[str, str]:
+    """키움 ``(app_key, app_secret)``. 환경변수 → ``env_path``(.env 형식) 순서로 찾는다."""
+    return load_pair(env_path, KEY_ENV, SECRET_ENV)
 
 
 def load_dart_key(env_path: "str | Path | None" = None) -> str:
@@ -59,7 +64,7 @@ def load_dart_key(env_path: "str | Path | None" = None) -> str:
 
 
 _BEARER = re.compile(r"(?i)(bearer\s+)[A-Za-z0-9._\-+/=]+")
-_JSON_SECRET = re.compile(r"""(?i)(["']?(?:token|appkey|secretkey|app_key|app_secret|authorization|crtfc_key)["']?"""
+_JSON_SECRET = re.compile(r"""(?i)(["']?(?:token|appkey|appsecret|client_secret|secretkey|app_key|app_secret|authorization|crtfc_key)["']?"""
                           r"""\s*[:=]\s*["']?)[^"',\s}&]+""")
 
 
