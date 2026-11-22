@@ -21,7 +21,7 @@ REPO = Path(__file__).resolve().parent.parent
 MANIFEST = REPO / "docs" / "SCREENSHOTS.md"
 
 #: | docs/images/….png(.gif) | 감시 경로 | sha |
-ROW = re.compile(r"^\|\s*(docs/images/\S+?\.(?:png|gif))\s*\|\s*(\S+?)/?\s*\|\s*([0-9a-f]{40})\s*\|",
+ROW = re.compile(r"^\|\s*(docs/(?:images|brand)/\S+?\.(?:png|gif))\s*\|\s*(\S+?)/?\s*\|\s*([0-9a-f]{40})\s*\|",
                  re.MULTILINE)
 #: 마크다운 ``](…)`` 과 HTML ``src="…"`` 둘 다 — README 머리 그림은 폭을 정하려고 ``<img>`` 로 쓴다.
 README_IMG = re.compile(r"(?:\]\(|src=\")(docs/images/[\w.-]+\.(?:png|gif))[)\"]")
@@ -84,8 +84,9 @@ def test_stamp_rewrites_every_manifest_row_and_only_those():
     S = _shots()
     text = MANIFEST.read_text("utf-8")
     new = S.stamp_manifest(text, "a" * 40)
-    assert len(_rows()) == new.count("a" * 40) and new.split("|---")[0] == text.split("|---")[0]
-    assert set(S.watched(text)) == {p.rstrip("/") for _i, p, _s in _rows()}
+    rows = [r for r in _rows() if r[0].startswith("docs/images/")]      # docs/brand 줄은 social_preview.py 가 고친다
+    assert len(rows) == new.count("a" * 40) and new.split("|---")[0] == text.split("|---")[0]
+    assert set(S.watched(text)) == {p.rstrip("/") for _i, p, _s in rows}
     assert {"src/sectorflow/demo.py", "src/sectorflow/tui", "scripts/templates"} <= set(S.watched(text))
 
 
