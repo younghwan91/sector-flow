@@ -115,7 +115,7 @@ PLANNED = ("kiwoom", "kis", "ls", "toss", "db", "nh")
 def test_broker_registry_names(monkeypatch):
     from sectorflow.collect.brokers import BROKERS, CAPABILITIES, DEFAULT, Broker, Settings
     assert list(BROKERS)[0] == DEFAULT == "kiwoom"
-    assert set(BROKERS) <= set(PLANNED) and list(BROKERS) == [n for n in PLANNED if n in BROKERS]
+    assert list(BROKERS) == list(PLANNED), "계획의 어댑터 여섯이 그 순서로 다 있다"
     assert set(CAPABILITIES) == set(BROKERS)
     import importlib
     for name in BROKERS:                         # 어댑터 모듈마다 키 이름이 다르다 — 가짜 값만 둔다
