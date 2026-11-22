@@ -338,6 +338,7 @@ def test_demo_module_never_reads_a_real_db_env():
     assert re.search(r'if k != "KR_QUANT_DB"', src)
 
 
+# mutation-exempt: wheel 설치본에 sector_map.py 가 없어도 데모 지문·생성이 멈추지 않음을 확인하는 호환성 검사다
 def test_installed_copy_without_the_map_generator_still_fingerprints(monkeypatch):
     """설치본(wheel)에는 웹 전용 sector_map.py 가 없다 — 지도만 빠지고 데모 지문·생성은 멈추지 않는다."""
     real = demo.script_path
