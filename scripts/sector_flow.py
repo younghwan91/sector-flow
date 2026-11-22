@@ -147,6 +147,56 @@ def byo_venue(con) -> "str | None":
     return venues.pop()
 
 
+#: 페이로드 주체 키 ← ``supply_demand`` 칸(:data:`ACTORS` 의 거꾸로).
+_PAYLOAD_ACTOR = {raw: short for raw, short in ACTORS}
+
+
+def byo_capability(con, sector_source: "dict | None" = None) -> "dict | None":
+    """BYO sqlite 를 채운 증권사 어댑터의 능력 — 지도가 이것대로 그린다(없는 주체를 그리지 않는다). kr_quant 는 ``None``.
+
+    여러 어댑터의 행이 섞였으면(같은 거래소 기준끼리만 섞인다) 주체는 **모두가 주는 것만**(교집합), 검증은 모두가 검증됐을 때만 참.
+    ``actors`` 는 페이로드 주체 키(``indiv``·``forgn``·``inst``·``etc``), ``detail`` 은 기관 세부 키(:data:`INST_DETAIL`)다.
+    """
+    venue = byo_venue(con)
+    if venue is None:
+        return None
+    from sectorflow.collect.brokers import CAPABILITIES
+    names = [s for s in _sd_sources(con) if s in CAPABILITIES]
+    caps = [CAPABILITIES[s] for s in names]
+    have = set.intersection(*(set(c.actors) for c in caps)) if caps else set()
+    return {"brokers": names, "broker_labels": [BROKER_LABEL[s] for s in names],
+            "actors": [short for raw, short in ACTORS if raw in have],
+            "detail": [k for k, _ in INST_DETAIL if k in have],
+            "venue": venue, "verified": bool(caps) and all(c.verified for c in caps), "sector_source": sector_source}
+
+
+def apply_capability(payload: dict, cap: "dict | None") -> dict:
+    """주지 않는 주체를 수급만 페이로드에서 뺀다 — 0 으로 남기면 지도·잔여가 '순매매 없음' 으로 읽는다(NULL 은 모름이다).
+
+    ``flows`` 의 그 주체 배열과 ``detail``·``detail_labels`` 의 그 세부를 지우고, 종목 창(``names``)의 그 칸은 ``None`` 이다.
+    """
+    if cap is None:
+        return payload
+    drop = {short for _raw, short in ACTORS} - set(cap["actors"])
+    drop_det = {k for k, _ in INST_DETAIL} - set(cap["detail"])
+    for by_sec in payload["flows"].values():
+        for f in by_sec.values():
+            for a in drop:
+                f.pop(a, None)
+    for by_sec in payload["detail"].values():
+        for d in by_sec.values():
+            for k in drop_det:
+                d.pop(k, None)
+    payload["detail_labels"] = {k: v for k, v in payload["detail_labels"].items() if k not in drop_det}
+    for n in payload["names"].values():
+        for cell in n["win"].values():
+            for k in drop | drop_det:
+                if k in cell:
+                    cell[k] = None
+    payload["capability"] = cap
+    return payload
+
+
 def _has_sector_source(con) -> bool:
     """BYO sqlite 의 ``stocks.sector_source``(섹터 출처, ``sectorflow.collect.write``)가 있나. kr_quant(Postgres)에는 없다."""
     if not isinstance(con, sqlite3.Connection):
@@ -432,14 +482,20 @@ def name_block(df: pd.DataFrame, dates: list[str], caps: "pd.DataFrame | None") 
 #: 수급만 페이로드(``--flows-only``)의 키 — 수급 지도(``sectorflow.flowmap.build_map_data``)가 읽는 것과 종목 집계.
 #: 수익률·시총·오늘 블록이 없다. 수치표·TUI 는 ``flows_only`` 를 보고 :data:`sectorflow.basis.FLOWS_ONLY_NOTICE` 로 끝낸다.
 FLOWS_ONLY_KEYS = ("dates", "sectors", "markets", "n_by_sector", "flows", "detail", "detail_labels", "names",
-                   "n_names", "flows_only", "sector_source", "venue")
+                   "n_names", "flows_only", "sector_source", "venue", "capability")
 
 
-def build_flows_payload(df: pd.DataFrame, dates: list[str], venue: "str | None" = None) -> dict:
-    """수급만 페이로드 — 지도 전용 수집(ka10099·ka10059) sqlite 로 선다. ``flows``·``detail`` 은 :func:`build_payload` 와 같다."""
+def build_flows_payload(df: pd.DataFrame, dates: list[str], venue: "str | None" = None,
+                        con=None) -> dict:
+    """수급만 페이로드 — 지도 전용 수집(ka10099·ka10059) sqlite 로 선다. ``flows``·``detail`` 은 :func:`build_payload` 와 같다.
+
+    BYO sqlite(``con``)면 ``capability``(:func:`byo_capability`)를 싣고 주지 않는 주체를 뺀다(:func:`apply_capability`).
+    """
+    sec_src = sector_source_counts(df)
     out = {"dates": dates, **flow_blocks(df, dates), "detail_labels": {k: ko for k, ko in INST_DETAIL},
            "names": name_block(df, dates, None), "n_names": int(df["code"].nunique()), "flows_only": True,
-           "sector_source": sector_source_counts(df), "venue": venue}
+           "sector_source": sec_src, "venue": venue, "capability": None}
+    out = apply_capability(out, byo_capability(con, sec_src) if con is not None else None)
     return {k: out[k] for k in FLOWS_ONLY_KEYS}
 
 
@@ -2027,8 +2083,8 @@ def main():
         con = connect(a.db)
         df, dates = load(con, a.days, asof=a.asof, returns=False)
         venue = byo_venue(con)
+        flows = build_flows_payload(df, dates, venue, con=con)
         con.close()
-        flows = build_flows_payload(df, dates, venue)
         with open(a.json, "w", encoding="utf-8") as f:
             json.dump(flows, f, ensure_ascii=False)
         print(f"wrote {a.json}  ({dates[0]} ~ {dates[-1]}, {len(dates)}거래일, {flows['n_names']}종목, 수급만)")

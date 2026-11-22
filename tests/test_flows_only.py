@@ -63,8 +63,8 @@ def test_flows_only_payload_builds_map(built):
     F, P = built["flows"], built["full"]
     assert F["flows_only"] is True and "flows_only" not in P
     assert set(F) == {"dates", "sectors", "markets", "n_by_sector", "flows", "detail", "detail_labels", "names",
-                      "n_names", "flows_only", "sector_source", "venue"}
-    assert F["sector_source"] is None and F["venue"] is None, "데모(storage.SCHEMA)에는 섹터 출처 열이 없다 — 배치와 같다"
+                      "n_names", "flows_only", "sector_source", "venue", "capability"}
+    assert F["sector_source"] is None and F["venue"] is None and F["capability"] is None, "데모(storage.SCHEMA)에는 섹터 출처 열이 없다 — 배치와 같다"
     for k in ("dates", "sectors", "markets", "n_by_sector", "flows", "detail", "detail_labels", "n_names"):
         assert F[k] == P[k], k
     assert FM.build_map_data(F)["views"] == FM.build_map_data(P)["views"], "수급만으로 지은 지도가 전체 지도와 같다"

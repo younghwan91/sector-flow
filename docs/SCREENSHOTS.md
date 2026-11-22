@@ -17,29 +17,29 @@ GIF 는 `scripts/map_video.py`(가짜 시계로 타임랩스를 30fps 로 찍어
 
 | 이미지 | 감시 경로 | 찍은 커밋 |
 |---|---|---|
-| docs/images/kqflow-today.png | src/sectorflow/tui/ | 66b25a2b36925237b8b95bf1a8039ef7064d5069 |
-| docs/images/kqflow-today.png | src/sectorflow/demo.py | 66b25a2b36925237b8b95bf1a8039ef7064d5069 |
-| docs/images/kqflow-table.png | src/sectorflow/tui/ | 66b25a2b36925237b8b95bf1a8039ef7064d5069 |
-| docs/images/kqflow-table.png | src/sectorflow/demo.py | 66b25a2b36925237b8b95bf1a8039ef7064d5069 |
-| docs/images/kqflow-names.png | src/sectorflow/tui/ | 66b25a2b36925237b8b95bf1a8039ef7064d5069 |
-| docs/images/kqflow-names.png | src/sectorflow/demo.py | 66b25a2b36925237b8b95bf1a8039ef7064d5069 |
-| docs/images/kqflow-combined.png | src/sectorflow/tui/ | 66b25a2b36925237b8b95bf1a8039ef7064d5069 |
-| docs/images/kqflow-combined.png | src/sectorflow/demo.py | 66b25a2b36925237b8b95bf1a8039ef7064d5069 |
-| docs/images/kqledger-table.png | src/sectorflow/tui/ | 66b25a2b36925237b8b95bf1a8039ef7064d5069 |
-| docs/images/kqledger-table.png | src/sectorflow/demo.py | 66b25a2b36925237b8b95bf1a8039ef7064d5069 |
-| docs/images/web-today.png | scripts/templates/ | 66b25a2b36925237b8b95bf1a8039ef7064d5069 |
-| docs/images/web-today.png | src/sectorflow/demo.py | 66b25a2b36925237b8b95bf1a8039ef7064d5069 |
-| docs/images/web-today-mobile.png | scripts/templates/ | 66b25a2b36925237b8b95bf1a8039ef7064d5069 |
-| docs/images/web-today-mobile.png | src/sectorflow/demo.py | 66b25a2b36925237b8b95bf1a8039ef7064d5069 |
-| docs/images/map-demo.png | scripts/templates/ | 66b25a2b36925237b8b95bf1a8039ef7064d5069 |
-| docs/images/map-demo.png | scripts/sector_map.py | 66b25a2b36925237b8b95bf1a8039ef7064d5069 |
-| docs/images/map-demo.png | src/sectorflow/flowmap.py | 66b25a2b36925237b8b95bf1a8039ef7064d5069 |
-| docs/images/map-demo.png | src/sectorflow/demo.py | 66b25a2b36925237b8b95bf1a8039ef7064d5069 |
-| docs/images/map-demo.gif | scripts/templates/ | 66b25a2b36925237b8b95bf1a8039ef7064d5069 |
-| docs/images/map-demo.gif | scripts/sector_map.py | 66b25a2b36925237b8b95bf1a8039ef7064d5069 |
-| docs/images/map-demo.gif | scripts/map_video.py | 66b25a2b36925237b8b95bf1a8039ef7064d5069 |
-| docs/images/map-demo.gif | src/sectorflow/flowmap.py | 66b25a2b36925237b8b95bf1a8039ef7064d5069 |
-| docs/images/map-demo.gif | src/sectorflow/demo.py | 66b25a2b36925237b8b95bf1a8039ef7064d5069 |
+| docs/images/kqflow-today.png | src/sectorflow/tui/ | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
+| docs/images/kqflow-today.png | src/sectorflow/demo.py | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
+| docs/images/kqflow-table.png | src/sectorflow/tui/ | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
+| docs/images/kqflow-table.png | src/sectorflow/demo.py | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
+| docs/images/kqflow-names.png | src/sectorflow/tui/ | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
+| docs/images/kqflow-names.png | src/sectorflow/demo.py | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
+| docs/images/kqflow-combined.png | src/sectorflow/tui/ | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
+| docs/images/kqflow-combined.png | src/sectorflow/demo.py | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
+| docs/images/kqledger-table.png | src/sectorflow/tui/ | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
+| docs/images/kqledger-table.png | src/sectorflow/demo.py | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
+| docs/images/web-today.png | scripts/templates/ | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
+| docs/images/web-today.png | src/sectorflow/demo.py | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
+| docs/images/web-today-mobile.png | scripts/templates/ | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
+| docs/images/web-today-mobile.png | src/sectorflow/demo.py | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
+| docs/images/map-demo.png | scripts/templates/ | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
+| docs/images/map-demo.png | scripts/sector_map.py | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
+| docs/images/map-demo.png | src/sectorflow/flowmap.py | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
+| docs/images/map-demo.png | src/sectorflow/demo.py | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
+| docs/images/map-demo.gif | scripts/templates/ | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
+| docs/images/map-demo.gif | scripts/sector_map.py | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
+| docs/images/map-demo.gif | scripts/map_video.py | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
+| docs/images/map-demo.gif | src/sectorflow/flowmap.py | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
+| docs/images/map-demo.gif | src/sectorflow/demo.py | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
 
 ## 소셜 미리보기
 
@@ -53,10 +53,10 @@ uv run --with playwright --with pillow python scripts/social_preview.py
 
 | 이미지 | 감시 경로 | 찍은 커밋 |
 |---|---|---|
-| docs/brand/social-preview.png | scripts/social_preview.py | 66b25a2b36925237b8b95bf1a8039ef7064d5069 |
-| docs/brand/social-preview.png | scripts/templates/sector_map.html | 66b25a2b36925237b8b95bf1a8039ef7064d5069 |
-| docs/brand/social-preview.png | scripts/sector_map.py | 66b25a2b36925237b8b95bf1a8039ef7064d5069 |
-| docs/brand/social-preview.png | src/sectorflow/flowmap.py | 66b25a2b36925237b8b95bf1a8039ef7064d5069 |
-| docs/brand/social-preview.png | src/sectorflow/demo.py | 66b25a2b36925237b8b95bf1a8039ef7064d5069 |
-| docs/brand/social-preview.png | docs/brand/wordmark-dark.svg | 66b25a2b36925237b8b95bf1a8039ef7064d5069 |
-| docs/brand/social-preview.png | docs/brand/README.md | 66b25a2b36925237b8b95bf1a8039ef7064d5069 |
+| docs/brand/social-preview.png | scripts/social_preview.py | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
+| docs/brand/social-preview.png | scripts/templates/sector_map.html | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
+| docs/brand/social-preview.png | scripts/sector_map.py | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
+| docs/brand/social-preview.png | src/sectorflow/flowmap.py | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
+| docs/brand/social-preview.png | src/sectorflow/demo.py | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
+| docs/brand/social-preview.png | docs/brand/wordmark-dark.svg | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
+| docs/brand/social-preview.png | docs/brand/README.md | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
