@@ -146,7 +146,7 @@ def test_card_layout_is_still_and_carries_its_labels(tmp_path):
             b.close()
 
 
-# mutation-exempt: CI 에 Playwright 가 없어 가짜 브라우저로 shoot·main 분기 커버리지를 보장한다
+# mutation-exempt: CI 에 Playwright 가 없어 가짜 브라우저로 shoot·main 분기 커버리지를 보장한다(ci trigger)
 def test_shoot_and_main_with_fake_playwright(tmp_path, monkeypatch):
     import sys
     import types
