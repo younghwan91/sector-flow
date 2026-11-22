@@ -13583,6 +13583,38 @@ file = "scripts/web_smoke.py"
 find = '''        if not (facts.get("map") or {}).get("stream"):'''
 replace = '''        if False:'''
 
+[[mutation]]
+id = "release-tag-not-checked-against-main"
+why = "main 밖의 커밋(CI 를 안 지난 것)에 태그를 달아도 Release 가 나간다."
+guards = ["tests/test_release.py::test_release_checks_the_tag_is_on_main_and_matches_the_version"]
+file = ".github/workflows/release.yml"
+find = 'git merge-base --is-ancestor "$GITHUB_SHA" origin/main || { echo "::error::태그 커밋이 main 에 없다"; exit 1; }'
+replace = 'true'
+
+[[mutation]]
+id = "release-attaches-extra-files"
+why = "Release 에 빌드 산출물·데모 GIF 밖의 파일(리포트 폴더 등)이 붙는다."
+guards = ["tests/test_release.py::test_release_attaches_only_build_outputs_and_the_demo_gif"]
+file = ".github/workflows/release.yml"
+find = 'dist/* docs/images/map-demo.gif --title'
+replace = 'dist/* docs/images/map-demo.gif reports/* --title'
+
+[[mutation]]
+id = "release-runs-on-main-pushes"
+why = "릴리스가 태그가 아니라 main 푸시마다 돈다 — 머지할 때마다 Release 가 새로 나간다."
+guards = ["tests/test_release.py::test_release_runs_only_on_version_tags"]
+file = ".github/workflows/release.yml"
+find = '    tags: ["v*"]'
+replace = '    branches: [main]'
+
+[[mutation]]
+id = "changelog-misses-current-version"
+why = "판을 올렸는데 CHANGELOG 에 그 판 절이 없다 — 태그를 밀면 Release 가 본문 없이 멈춘다."
+guards = ["tests/test_release.py::test_changelog_has_a_section_for_the_current_version"]
+file = "CHANGELOG.md"
+find = "## [0.2.0] - 2026-11-23"
+replace = "## [0.1.9] - 2026-11-23"
+
 [[removed]]
 id = "ci-shard-denominator-hardcoded"
 why = "샤드를 없앴다 — 전체 검증은 잡 하나다(tests/test_ci_workflow.py 가 matrix 를 막는다)"

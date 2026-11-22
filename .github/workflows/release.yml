@@ -1,0 +1,41 @@
+name: Release
+
+# 태그(v*)를 밀면 GitHub Release 를 만든다 — 설치본(wheel·sdist)과 README 의 데모 타임랩스 GIF(합성 데모)를 붙이고,
+# 본문은 CHANGELOG.md 의 그 판 절이다. 실데이터는 이 길로 나갈 수 없다: 붙이는 것은 빌드 산출물과 docs/images 의 데모 그림뿐이다.
+# 태그는 main 에 있는 커밋에만 — main 은 ruleset(CI green)을 지나야 들어간다. 판 번호(pyproject)와 태그가 다르면 멈춘다.
+# 청구: 태그를 밀 때만 잡 하나 약 1분. main·PR 푸시에는 돌지 않는다.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v10.3.3
+      - name: Tag is on main and matches the version
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || { echo "::error::태그 커밋이 main 에 없다"; exit 1; }
+          want="v$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml)"
+          [ "$GITHUB_REF_NAME" = "$want" ] || { echo "::error::태그 $GITHUB_REF_NAME 와 pyproject 판 $want 이 다르다"; exit 1; }
+      - name: Notes from CHANGELOG
+        run: |
+          set -euo pipefail
+          ver="${GITHUB_REF_NAME#v}"
+          awk -v v="$ver" '$0 ~ "^## \\[" v "\\]" {on=1; next} on && /^## \[/ {exit} on {print}' CHANGELOG.md > notes.md
+          [ -s notes.md ] || { echo "::error::CHANGELOG.md 에 [$ver] 절이 없다"; exit 1; }
+      - name: Build
+        run: uv build
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* docs/images/map-demo.gif --title "$GITHUB_REF_NAME" --notes-file notes.md --verify-tag
