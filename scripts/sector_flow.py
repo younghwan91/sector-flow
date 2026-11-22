@@ -1980,10 +1980,10 @@ def main():
         con = connect(a.db)
         df, dates = load(con, a.days, asof=a.asof, returns=False)
         con.close()
-        payload = build_flows_payload(df, dates)
+        flows = build_flows_payload(df, dates)
         with open(a.json, "w", encoding="utf-8") as f:
-            json.dump(payload, f, ensure_ascii=False)
-        print(f"wrote {a.json}  ({dates[0]} ~ {dates[-1]}, {len(dates)}거래일, {payload['n_names']}종목, 수급만)")
+            json.dump(flows, f, ensure_ascii=False)
+        print(f"wrote {a.json}  ({dates[0]} ~ {dates[-1]}, {len(dates)}거래일, {flows['n_names']}종목, 수급만)")
         return
 
     if a.from_json:
