@@ -8855,7 +8855,7 @@ id = "quick-start-drops-demo-web-command"
 why = "데모를 웹으로 여는 명령이 없으면 첫 독자가 404 를 만난다"
 guards = ["tests/test_serve_reports.py::test_quick_start_and_demo_cli_show_the_web_command"]
 file = "README.md"
-find = "uv run sector-flow-demo --out ~/sf-demo && uv run python scripts/serve_reports.py --root ~/sf-demo   # 같은 데모를 웹으로 — http://127.0.0.1:8765/\n"
+find = "uv run sector-flow-demo --out ~/sf-demo && uv run python scripts/serve_reports.py --root ~/sf-demo   # 수급 지도·수치표를 웹으로 — http://127.0.0.1:8765/\n"
 replace = ""
 
 [[mutation]]
@@ -9822,7 +9822,7 @@ id = "quick-start-needs-a-folder"
 why = "Quick start 첫 블록이 다시 리포트 폴더를 요구한다 — 첫 실행이 막힌다"
 guards = ["tests/test_first_reader.py::test_quick_start_starts_with_something_that_runs"]
 file = "README.md"
-find = "uv run sw-flow --demo      # 섹터 자금 흐름 — DB·데이터 없이 바로 뜬다"
+find = "uv run sw-flow --demo      # 터미널 — DB·데이터 없이 바로 뜬다"
 replace = "uv run sw-flow --dir <리포트 폴더>"
 
 [[mutation]]
@@ -10596,8 +10596,8 @@ id = "english-quick-start-drifts"
 why = """영어 README 의 Quick start 명령이 한국어와 갈린다 — 영어로 온 사람이 낡은 명령을 친다"""
 guards = ["tests/test_first_reader.py::test_english_quick_start_runs_the_same_commands"]
 file = "README.en.md"
-find = "uv run sw-ledger --demo    # flow ledger"
-replace = "uv run sw-ledger           # flow ledger"
+find = "uv run sw-flow --demo      # terminal — no database"
+replace = "uv run sw-flow             # terminal — no database"
 
 [[mutation]]
 id = "card-buy-sell-colors-swapped"
@@ -14259,3 +14259,28 @@ guards = ["tests/test_social_preview.py::test_stamp_rewrites_only_the_preview_ro
 file = "scripts/social_preview.py"
 find = 'ROW = re.compile(r"^(\|\s*docs/brand/social-preview\.png\s*\|'
 replace = 'ROW = re.compile(r"^(\|\s*docs/\S+?\.(?:png|gif)\s*\|'
+
+
+[[mutation]]
+id = "demo-folder-without-map"
+why = """데모 폴더에 수급 지도가 빠진다 — README Quick start 의 웹 줄로는 첫 그림을 볼 수 없다"""
+guards = ["tests/test_demo.py::test_demo_has_map"]
+file = "src/sectorflow/demo.py"
+find = 'if _script_or_none("sector_map.py"):'
+replace = 'if False:'
+
+[[mutation]]
+id = "readme-head-drops-the-map"
+why = """README 머리에서 데모 지도 그림이 빠진다 — 처음 읽는 사람이 무엇을 보는 도구인지 글로만 읽는다"""
+guards = ["tests/test_first_reader.py::test_readme_head_reads_top_to_bottom"]
+file = "README.md"
+find = "](docs/images/map-demo.gif)"
+replace = "](docs/images/)"
+
+[[mutation]]
+id = "readme-tagline-drifts-from-the-guide"
+why = """README 의 한 줄 소개만 고쳐 브랜드 가이드와 갈린다 — 레포 설명·소셜 미리보기가 다른 말을 한다"""
+guards = ["tests/test_first_reader.py::test_readme_tagline_is_the_brand_guide_tagline"]
+file = "README.md"
+find = "**오늘 누가 어느 섹터를 넘기고 넘겨받았는지, 투자 주체별 순매매를 한 장의 지도로 본다.**"
+replace = "**오늘 누가 어느 섹터를 사고팔았는지, 투자 주체별 순매매를 한 장의 지도로 본다.**"

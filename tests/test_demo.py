@@ -236,6 +236,12 @@ def test_web_pages_carry_the_banner_and_title(built, page):
     assert "<title>[합성 데모]" in html
 
 
+def test_demo_has_map(built):
+    """README Quick start 의 웹 줄이 수급 지도까지 연다 — 데모 폴더에 map.html 이 없으면 첫 그림이 문서에만 있다."""
+    html = (built["dir"] / "map.html").read_text("utf-8")
+    assert "<title>[합성 데모]" in html and '"demo":true' in html and DEMO_NOTICE in html
+
+
 def test_fixed_date_demo_does_not_warn_about_age(built):
     """고정 기준일이라 '며칠 지난 리포트' 는 뜻이 없다 — 받은 폴더를 위한 경고가 데모를 고장처럼 보이게 한다."""
     assert flow_app.load(str(built["dir"]))["report_warnings"] == []
@@ -330,3 +336,19 @@ def test_demo_module_never_reads_a_real_db_env():
     """생성기를 띄울 때 ``KR_QUANT_DB`` 를 지운다 — sector_flow 기본값이 실 DB 를 보면 데모가 실데이터가 된다."""
     src = (REPO / "src/sectorflow/demo.py").read_text("utf-8")
     assert re.search(r'if k != "KR_QUANT_DB"', src)
+
+
+# mutation-exempt: wheel 설치본에 sector_map.py 가 없어도 데모 지문·생성이 멈추지 않음을 확인하는 호환성 검사다
+def test_installed_copy_without_the_map_generator_still_fingerprints(monkeypatch):
+    """설치본(wheel)에는 웹 전용 sector_map.py 가 없다 — 지도만 빠지고 데모 지문·생성은 멈추지 않는다."""
+    real = demo.script_path
+
+    def _no_map(name):
+        if name == "sector_map.py":
+            raise SystemExit("없음")
+        return real(name)
+
+    with_map = demo._fingerprint()
+    monkeypatch.setattr(demo, "script_path", _no_map)
+    assert demo._script_or_none("sector_map.py") is None
+    assert demo._fingerprint() != with_map              # 지도 생성기가 생기거나 빠지면 데모를 다시 짓는다

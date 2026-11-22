@@ -183,3 +183,24 @@ def test_research_inputs_point_at_the_archive(study):
     text = (REPO / "research/validation" / study / "README.md").read_text("utf-8")
     assert "reports/.archive/" in text
     assert "지금 `reports/` 그대로" not in text
+
+
+def test_readme_head_reads_top_to_bottom():
+    """머리는 로고(심볼, #77·#86) → 한 줄 소개 → 데모 지도 → Quick start → 후원 한 줄 → 목차 순이다 — 처음 읽는 사람이 그림부터 본다."""
+    head = README[:README.index("## 목차")]
+    order = ("docs/brand/logo.svg", "한 장의 지도로 본다", "](docs/images/map-demo.", "## Quick start",
+             "github.com/sponsors/")
+    pos = [head.find(s) for s in order]
+    assert -1 not in pos and pos == sorted(pos), dict(zip(order, pos))
+    from sectorflow.wording import banned_hits, map_hits
+    assert not banned_hits(head) and not map_hits(head), (banned_hits(head), map_hits(head))
+
+
+def test_readme_tagline_is_the_brand_guide_tagline():
+    """한 줄 소개의 정본은 브랜드 가이드다 — README 가 따로 고치면 레포 설명·소셜 미리보기와 갈린다."""
+    brand = (REPO / "docs/brand/README.md").read_text("utf-8")
+    m = re.search(r"<!-- brand:tagline -->\s*>\s*\*\*[^*]+\*\*\s*—\s*(.+?)\.\s", brand, re.S)
+    assert m, "브랜드 가이드에서 한 줄 소개를 못 읽었다"
+    first = " ".join(m.group(1).split()) + "."
+    head = " ".join(README[:README.index("## Quick start")].split())
+    assert f"**{first}**" in head, first
