@@ -7,6 +7,40 @@
 > 받은 sqlite·`payload.json`·`map.html`·카드를 남에게 넘기거나 공개하지 않는다. 남에게 보여 줄 때는 합성 데모
 > (`sector-flow-demo`)를 쓴다. 이 도구는 투자 조언이 아니다. 지도는 그날까지 누가 어느 섹터를 순매수·순매도했는지만 그린다.
 
+## 증권사 고르기 (`--broker`)
+
+아래 1~6 은 **키움** 기준이다. 다른 증권사 키로도 지도 전용 수집을 할 수 있다 — 명령에 `--broker <이름>` 을 붙이고 키 파일의 변수 이름만
+바꾼다. 키움 밖 어댑터는 공개 문서의 응답 모양으로만 만들어 **미검증**이다(지도 머리에 "미검증 어댑터" 배지). 키움 키도 있으면 대조해서
+[검증 이슈](https://github.com/younghwan91/sector-flow/issues/new?template=broker-verify.yml)로 올려 주면 고마운 일이다(`docs/byo/brokers.md` §6.2).
+
+| `--broker` | 키 발급(한 줄) | 키 파일 변수 | IP 등록 | 속도(도구 기본) | 약관에서 주의할 것 |
+|---|---|---|---|---|---|
+| `kiwoom` | 키움 REST API 포털(`openapi.kiwoom.com`)에서 신청 → 앱키·시크릿 | `KIWOOM_APP_KEY`·`KIWOOM_APP_SECRET` | 필수(최대 10개) | TR당 0.9/초, 초 5·분 100·시간 1,000 | 본인 이용만, 제3자 제공 금지 |
+| `kis` | 한국투자 KIS Developers(`apiportal.koreainvestment.com`) 가입·계좌 인증 → **실전** 앱키(이 수급 TR 은 모의투자 미지원) | `KIS_APP_KEY`·`KIS_APP_SECRET` | 미확인 | 5/초(공지 18 을 넘지 않는다) | 1년 이용 실적이 없으면 해지 사유 |
+| `ls` | LS증권 계좌 → 홈페이지 고객센터 > 매매시스템 > OPEN API > 사용등록 | `LS_APP_KEY`·`LS_APP_SECRET` | 미확인 | 1/초(t1702 상한) | **3개월 주문체결 20회 이하는 해지 사유** — `--i-understand-ls-terms` 없이는 멈춘다 |
+| `toss` | 토스증권 WTS 로그인 → 설정 > Open API 에서 client_id·client_secret | `TOSS_CLIENT_ID`·`TOSS_CLIENT_SECRET` | **필수**(없으면 403) | 5/초 | 본인 매매 목적에만 · 수급이 **KRX+NXT 통합**이라 KRX 단독 sqlite 와 섞지 않는다 |
+| `db` | DB증권 OPEN API 포털(`openapi.dbsec.co.kr`)에서 신청 | `DB_APP_KEY`·`DB_APP_SECRET` | 미확인 | 2/초 | 약관 미확인 · 주체가 개인·외국인·기관계 셋뿐 |
+| `nh` | NH투자증권 PLUG(`nhplug.com`) — 계좌 필수 | `NH_APP_KEY`·`NH_APP_SECRET` | 미확인 | 4/초(공지 5 아래) | 약관 미확인 · 주체 셋뿐 · 토큰을 실행마다 한 번 받는다(보안 알림이 갈 수 있다) |
+
+순서는 키움과 같다 — 종목 목록 → 지도 전용 백필 → 지도. 예(한국투자):
+
+```bash
+# kis.env — KIS_APP_KEY=…, KIS_APP_SECRET=…
+sector-flow-collect --env-file kiwoom.env universe --db data/byo.db                 # 목록·업종: 키움 키가 있으면
+sector-flow-collect sectors --db data/byo.db --csv krx.csv --add-missing            # 없으면: 각자 내려받은 KRX '업종분류 현황' CSV
+sector-flow-collect --env-file kis.env backfill --db data/byo.db --broker kis --map-only --sectors "운송/창고,오락/문화"
+sector-flow-byo map --db data/byo.db --out data/map
+```
+
+- **종목 목록**: 키움·LS·토스·DB 는 `universe --broker <이름>` 으로 받는다. 한국투자·NH 는 목록 API 가 없어 키움 키로 받거나
+  `sectors --csv … --add-missing` 으로 넣는다.
+- **섹터**: 키움 밖 어댑터의 목록에는 업종이 없거나(LS·DB·토스 — 토스 섹터는 한 종목이 여러 섹터라 쓰지 않는다) 체계가 다르다.
+  섹터는 sqlite 에 한 벌로 남고 목록을 다시 받아도 지워지지 않는다. 키움 업종명이 없으면 `sectors --csv` 의 자기 표를 쓴다.
+- **LS**: `sector-flow-collect --env-file ls.env universe --db data/byo.db --broker ls --i-understand-ls-terms` — 시작할 때 약관 조항을 찍는다.
+- **토스**: 수급이 KRX+NXT 통합이라 키움·한국투자·LS 로 받은 sqlite 에는 넣지 않는다(다른 `--db`). 지도 표지가 `KRX+NXT 통합` 으로 바뀐다.
+- **매일**: `sector-flow-collect --env-file kis.env daily --db data/byo.db --broker kis --map-only`.
+- 키움 밖 증권사는 지도 전용(`--map-only`)만 받는다 — 일봉·주식수가 없어 수치표·터미널 화면은 짓지 않는다.
+
 ## 0. 준비물
 
 - 키움증권 계좌와 키움 REST API 이용 신청(앱키·시크릿키)
