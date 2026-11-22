@@ -3309,8 +3309,8 @@ id = "verify-layer-name-list-drifts"
 why = "main 이 도는 층이 --layers 이름표에 없다 — 그 층은 고를 수 없고 부분 실행에서 조용히 빠진다"
 guards = ["tests/test_pipeline_e2e.py::test_every_layer_main_runs_is_selectable"]
 file = "scripts/verify_report.py"
-find = '''LAYERS = ("A", "A3", "B", "C", "D", "E", "G", "H", "T", "W", "F", "X")'''
-replace = '''LAYERS = ("A", "A3", "B", "C", "D", "E", "G", "H", "T", "F", "X")'''
+find = '''LAYERS = ("A", "A3", "B", "C", "D", "E", "G", "H", "T", "W", "F", "X", "M")'''
+replace = '''LAYERS = ("A", "A3", "B", "C", "D", "E", "G", "H", "T", "F", "X", "M")'''
 
 # ── 하네스 자신(verify_merge.py) — 빨라진 하네스가 판정을 바꾸면 이 게이트는 장식이 된다 ──
 
@@ -13158,6 +13158,87 @@ guards = ["tests/test_byo_map.py::test_byo_is_a_console_script"]
 file = "pyproject.toml"
 find = "sector-flow-byo = \"sectorflow.byo:main\""
 replace = "sector-flow-map = \"sectorflow.byo:main\""
+
+[[mutation]]
+id = "map-verify-cell-sum-off"
+why = "지도 층 M 이 섹터 칸의 간선 값을 다시 센 창 합과 맞추지 않는다 — flowmap 이 창을 하루 밀어 세도 지도가 통과한다."
+guards = ["tests/test_verify_report.py::test_m_layer_catches_a_changed_cell_and_a_broken_conservation"]
+file = "scripts/verify_report.py"
+find = '''        out["exchange"] += _vm_dict_diff(f"{tag}/{r.get('name')}/넘긴", r.get("give"), g)
+        out["exchange"] += _vm_dict_diff(f"{tag}/{r.get('name')}/넘겨받은", r.get("take"), t)'''
+replace = '        pass'
+
+[[mutation]]
+id = "map-verify-conservation-off"
+why = "섹터 보존식(Σ넘긴 = Σ넘겨받은, 잔여가 닫는다)을 안 본다 — 잔여를 빠뜨린 지도가 통과한다."
+guards = ["tests/test_verify_report.py::test_m_layer_catches_a_changed_cell_and_a_broken_conservation"]
+file = "scripts/verify_report.py"
+find = '        if not _vm_close(sum((r.get("give") or {}).values()), sum((r.get("take") or {}).values())):'
+replace = '        if False:'
+
+[[mutation]]
+id = "map-verify-tail-off"
+why = "꼬리 '기타 N개 섹터' 의 합을 안 본다 — 숨긴 섹터를 두 번 세거나 빠뜨린 꼬리가 통과한다."
+guards = ["tests/test_verify_report.py::test_m_layer_catches_a_wrong_tail_sum"]
+file = "scripts/verify_report.py"
+find = '        out["tail"] += _vm_dict_diff(f"{tag}/꼬리 넘겨받은", tail.get("take"), tt)'
+replace = '        pass'
+
+[[mutation]]
+id = "map-verify-actor-view-off"
+why = "보기 2(주체 하나)의 섹터 값을 안 본다 — 기관 세부를 다른 키로 센 지도가 통과한다."
+guards = ["tests/test_verify_report.py::test_m_layer_catches_actor_views_timelapse_and_headline"]
+file = "scripts/verify_report.py"
+find = '        out["actors"] += _vm_pairs_diff(f"{tag}/{side}", lst, want)'
+replace = '        pass'
+
+[[mutation]]
+id = "map-verify-structure-off"
+why = "섹터→섹터·주체→주체 구조를 안 본다 — 관측되지 않은 짝(섹터 쌍 이전량)이 데이터에 실려도 통과한다."
+guards = ["tests/test_verify_report.py::test_m_layer_rejects_any_sector_to_sector_structure"]
+file = "scripts/verify_report.py"
+find = '    walk(M.get("views") or {}, "views", False)'
+replace = '    pass'
+
+[[mutation]]
+id = "map-verify-wording-off"
+why = "지도 글의 금칙어·피할 말(유입·유출·몰림…)을 안 본다."
+guards = ["tests/test_verify_report.py::test_m_layer_catches_avoided_words_in_the_page_text"]
+file = "scripts/verify_report.py"
+find = '    out["wording"] = _vm_text(html, M)'
+replace = '    out["wording"] = []'
+
+[[mutation]]
+id = "map-verify-layer-not-run"
+why = "main 이 M 층을 부르지 않는다 — 배치의 --layers M 이 아무것도 안 보고 통과한다."
+guards = ["tests/test_verify_report.py::test_m_layer_runs_only_when_the_map_exists_unless_asked"]
+file = "scripts/verify_report.py"
+find = '    go("M", layer_m, payload, open(map_p, encoding="utf-8").read() if os.path.isfile(map_p) else None, "M" in want)'
+replace = '    pass'
+
+[[mutation]]
+id = "map-verify-window-off-by-one"
+why = "M 층이 창을 하루 더 길게 센다 — 맞게 지은 지도를 빨갛게 만들어 배치가 멀쩡한 지도를 뺀다(거짓 경보도 결함이다)."
+guards = ["tests/test_verify_report.py::test_m_layer_is_green_on_a_built_map_without_calling_flowmap"]
+file = "scripts/verify_report.py"
+find = '''            sums = _vm_sums(P, ms, N - w, N - 1, det)'''
+replace = '''            sums = _vm_sums(P, ms, N - w - 1, N - 1, det)'''
+
+[[mutation]]
+id = "batch-map-not-verified"
+why = "배치가 지은 지도를 M 층에 맞추지 않는다 — 페이로드와 다른 숫자를 그리는 지도가 게시된다."
+guards = ["tests/test_daily_report_flow.py::test_map_is_checked_by_the_m_layer_and_withheld_when_it_disagrees"]
+file = "scripts/daily_report.sh"
+find = '"${UVR[@]}" python scripts/verify_report.py --dir "$BUILD" --layers M \'
+replace = '"${UVR[@]}" python scripts/verify_report.py --dir "$BUILD" --layers X \'
+
+[[mutation]]
+id = "batch-map-verify-failure-keeps-map"
+why = "M 층에 걸린 지도를 빼지 않는다 — 검증에 걸린 그림이 웹에 그대로 뜬다."
+guards = ["tests/test_daily_report_flow.py::test_map_is_checked_by_the_m_layer_and_withheld_when_it_disagrees"]
+file = "scripts/daily_report.sh"
+find = '    rm -f "$BUILD/map.html"'
+replace = '    :'
 
 [[removed]]
 id = "ci-shard-denominator-hardcoded"

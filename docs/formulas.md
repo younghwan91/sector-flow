@@ -1,5 +1,5 @@
 # sw-flow · sw-ledger 화면 값의 수식 정의
-<!-- refs-verified-at: 05469b460c5c9676899671215785304d3b6a1677 -->
+<!-- refs-verified-at: 63fb839d0ff2a6bf84879a20488f8987220c3c05 -->
 
 두 터미널 화면(`sw-flow`·`sw-ledger`)에 뜨는 모든 값의 정의를 코드 위치와 함께 모은 **정본**이다. 식마다 그것을
 계산하는 `파일:줄` 이 붙어 있고, 지표마다 **근거 수준**(앞날 수익률에 대해 검증된 것이 있나)을 적었다.
@@ -962,7 +962,7 @@ KRX 주체(기타외국인 등)의 순매수 추정치에 결측과 식 (1)의 �
 |---|---|---|
 | `장중·미확정` | 기준일이 오늘이고 KST 17시 전 | `_finalized` `scripts/sector_flow.py:66-73`, `FINALIZED_KST_HOUR = 17` `scripts/sector_flow.py:57` |
 | `마감·잠정` | 수집 창이 지났다(시계만 본다). 당일 수급은 잠정치다 | `src/sectorflow/tui/flow_view.py:2000-2009`(`status_chip`) |
-| `마감·확정` | 화~토 08:20 확정 모드가 `daily_finalize`(`finalize_both`·`rebuild_adjusted`) 성공을 확인하고 확정치로 다시 만든 리포트. 페이로드에 `final: true`, 폴더에 `FINAL.txt` | `scripts/daily_report.sh:209-266`(`FINAL_OK`), `scripts/daily_report.sh:422-457`, `scripts/finalize_done.py:100-148`(`def finalize_done`), `scripts/sector_flow.py:2021-2023` |
+| `마감·확정` | 화~토 08:20 확정 모드가 `daily_finalize`(`finalize_both`·`rebuild_adjusted`) 성공을 확인하고 확정치로 다시 만든 리포트. 페이로드에 `final: true`, 폴더에 `FINAL.txt` | `scripts/daily_report.sh:209-266`(`FINAL_OK`), `scripts/daily_report.sh:434-469`, `scripts/finalize_done.py:100-148`(`def finalize_done`), `scripts/sector_flow.py:2021-2023` |
 | `⚠ 검증 실패(VERIFY_FAILED.txt)` | 저장 직후 자기 검증에 걸렸다. 게시는 하고 다음 크론이 다시 만든다 — 다만 같은 기준일에 검증을 통과한 게시본이 있으면 바꿔 끼우지 않고 걸린 판을 `.rejected/` 에 비켜 둔다(1 로 알림) | `report_warnings` `src/sectorflow/tui/flow_view.py:2011-2029`, `scripts/daily_report.sh:370-392`(`VERIFY_RC`) |
 | `⚠ MM-DD 수집 미완` | 더 뒤 기준일 폴더에 `INCOMPLETE.txt` — 완전성 관문이 막아 `latest` 가 전날에 머문다 | `src/sectorflow/tui/flow_view.py:2027-2028`, `scripts/daily_report.sh:295-331`(`GATE_RC`) |
 | `⚠ N일 지난 리포트` | 기준일이 달력 4일 이상 지났다 | `STALE_DAYS = 4` `src/sectorflow/tui/flow_view.py:2034`, `staleness_warning` `src/sectorflow/tui/flow_view.py:2047-2053` |

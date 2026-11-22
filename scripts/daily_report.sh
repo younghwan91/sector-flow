@@ -399,6 +399,18 @@ if ! UV_OFFLINE=1 _bounded "${KR_QUANT_MAP_TIMEOUT:-2m}" "${UVR[@]}" python scri
   echo "[$(date '+%F %T')] ⚠️ 수급 지도(map.html)를 못 만들었다 — 리포트는 그대로 게시한다" >&2
   SIDE_FAIL+="map.html "
 fi
+# 지도 검증(verify_report.py M 층) — 지도 데이터의 창 합·간선·보존식·꼬리·주체별 보기를 flowmap 없이 일별 배열에서 다시 센다.
+# 지도는 위 검증 뒤에 지어져 위 검증이 못 본다. 걸리면 지도를 빼고 게시한다 — 페이로드와 다른 숫자를 그리는 그림보다 없는 것이 낫다.
+# 기록은 VERIFY_MAP.txt(통과해도 남긴다).
+if [ -f "$BUILD/map.html" ]; then
+  if ! _bounded "${KR_QUANT_MAP_VERIFY_TIMEOUT:-2m}" "${UVR[@]}" python scripts/verify_report.py --dir "$BUILD" --layers M \
+       > "$BUILD/VERIFY_MAP.txt" 2>&1; then
+    echo "[$(date '+%F %T')] ⚠️ 수급 지도가 페이로드와 다른 숫자를 그린다(M 층) — 지도를 빼고 게시한다: $DEST/VERIFY_MAP.txt" >&2
+    grep -F '[FAIL]' "$BUILD/VERIFY_MAP.txt" >&2 || true
+    rm -f "$BUILD/map.html"
+    SIDE_FAIL+="map-verify "
+  fi
+fi
 # 오늘의 수급 다이제스트(scripts/digest.py, 끄려면 KR_QUANT_DIGEST=0) — 폴더에만 쓴다(밖으로 보내지 않는다). 상한 5분·오프라인·판 고정.
 if [ "${KR_QUANT_DIGEST:-1}" != "0" ]; then UV_OFFLINE=1 _bounded "${KR_QUANT_DIGEST_TIMEOUT:-5m}" "${UVR[@]}" --with 'playwright==1.48.0' python scripts/digest.py --dir "$BUILD" || { echo "[$(date '+%F %T')] ⚠️ 다이제스트를 못 만들었다(실패 또는 시간 초과) — 리포트는 그대로 게시한다" >&2; SIDE_FAIL+="digest "; }; fi
 # 다이제스트 검증(verify_report.py X 층) — 글의 시장 줄·요약·가장 큰 주체·상·하위·극단·부호 바뀜·20일 변동이 페이로드·화면과
