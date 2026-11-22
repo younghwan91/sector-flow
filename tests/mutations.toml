@@ -14327,6 +14327,30 @@ file = "src/sectorflow/collect/equiv.py"
 find = "BROKER_BAR = 0.005\n"
 replace = "BROKER_BAR = 0.0\n"
 
+[[mutation]]
+id = "broker-verify-form-real-data-check-optional"
+why = "검증 이슈의 '실데이터를 붙이지 않았다' 체크가 선택이 된다 — sqlite·지도가 공개 이슈로 들어온다."
+guards = ["tests/test_github_templates.py::test_broker_verify_form_takes_only_the_equiv_output"]
+file = ".github/ISSUE_TEMPLATE/broker-verify.yml"
+find = "        - label: 대조 명령 출력만 붙였다 — 실데이터(sqlite·페이로드·지도·카드·종목별 수급·스크린샷)를 붙이지 않았다\n          required: true\n"
+replace = "        - label: 대조 명령 출력만 붙였다 — 실데이터(sqlite·페이로드·지도·카드·종목별 수급·스크린샷)를 붙이지 않았다\n          required: false\n"
+
+[[mutation]]
+id = "broker-verify-form-output-optional"
+why = "검증 이슈가 대조 출력 없이 열린다 — 판정할 근거가 없는 이슈가 쌓인다."
+guards = ["tests/test_github_templates.py::test_broker_verify_form_takes_only_the_equiv_output"]
+file = ".github/ISSUE_TEMPLATE/broker-verify.yml"
+find = "      render: json\n    validations:\n      required: true\n"
+replace = "      render: json\n"
+
+[[mutation]]
+id = "broker-verify-table-claims-verified"
+why = "검증 현황 표가 미검증 어댑터를 '검증' 으로 적는다 — 문서와 지도 배지가 서로 다르게 말한다."
+guards = ["tests/test_collect_brokers.py::test_verification_table_matches_the_capabilities"]
+file = "docs/byo/brokers.md"
+find = "| `kis` | 미검증 | — | — | — | — |"
+replace = "| `kis` | 검증 | — | — | — | — |"
+
 [[removed]]
 id = "ci-shard-denominator-hardcoded"
 why = "샤드를 없앴다 — 전체 검증은 잡 하나다(tests/test_ci_workflow.py 가 matrix 를 막는다)"

@@ -161,3 +161,18 @@ def test_other_brokers_only_collect_for_the_map():
     R._require_map_only(argparse.Namespace(broker="kis"), True)
     with pytest.raises(SystemExit, match="--map-only"):
         R._require_map_only(argparse.Namespace(broker="kis"), False)
+
+
+def test_verification_table_matches_the_capabilities():
+    """``docs/byo/brokers.md`` §6.2 검증 현황 표가 등록부의 어댑터 전부를 적고, 상태가 ``Capability.verified`` 와 같다."""
+    import re
+    from pathlib import Path
+
+    from sectorflow.collect.brokers import BROKERS, CAPABILITIES
+    text = (Path(__file__).resolve().parent.parent / "docs/byo/brokers.md").read_text("utf-8")
+    table = text.split("## 6.2 검증 현황", 1)[1].split("\n## ", 1)[0]
+    rows = dict(re.findall(r"^\| `(\w+)` \| ([^|]+?) \|", table, re.M))
+    assert list(rows) == list(BROKERS), "표가 등록부의 어댑터를 그 순서로 다 적지 않았다"
+    for name, state in rows.items():
+        want = "기준" if name == "kiwoom" else ("검증" if CAPABILITIES[name].verified else "미검증")
+        assert state.strip() == want, (name, state)

@@ -1,0 +1,62 @@
+name: 증권사 어댑터 검증
+description: 키움 키와 다른 증권사 키가 둘 다 있을 때 — 대조 명령(sector-flow-collect equiv) 출력만 올린다
+title: "[검증] "
+labels: [broker-verify]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        키움 밖 증권사 어댑터(한국투자·LS·토스·DB·NH)는 공개 문서의 응답 모양으로만 만들어 **미검증**입니다. 두 키가 다 있으면
+        같은 기간·종목을 각자 받아 대조해 주세요(증권사를 부르지 않습니다):
+
+        ```bash
+        sector-flow-collect equiv --broker kis --db kis.db --against kiwoom.db --sectors "운송/창고,오락/문화"
+        ```
+
+        **대조 명령의 JSON 출력만 붙이세요.** 그 출력에는 일치 여부·칸 수·최대 상대오차뿐이라 실데이터 숫자가 없습니다.
+        **실데이터를 붙이지 마세요** — sqlite·`payload.json`·`map.html`·카드·종목별 수급 숫자·스크린샷은 각 증권사·KRX 이용 범위상
+        남에게 줄 수 없습니다. 받은 데이터의 이용은 각자 약관을 따릅니다. 투자 질문은 받지 않습니다.
+  - type: checkboxes
+    id: safe
+    attributes:
+      label: 확인
+      options:
+        - label: 대조 명령 출력만 붙였다 — 실데이터(sqlite·페이로드·지도·카드·종목별 수급·스크린샷)를 붙이지 않았다
+          required: true
+        - label: 두 sqlite 는 같은 기간·종목을 각자 자기 키로 받았다(남에게 받은 파일이 아니다)
+          required: true
+  - type: dropdown
+    id: broker
+    attributes:
+      label: 어댑터
+      options:
+        - kis
+        - ls
+        - toss
+        - db
+        - nh
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: 대조 명령 출력
+      description: "`sector-flow-collect equiv …` 가 찍은 JSON 그대로"
+      render: json
+    validations:
+      required: true
+  - type: input
+    id: sectors
+    attributes:
+      label: 고른 섹터
+      description: "`--sectors` 에 준 값(안 줬으면 비운다)"
+  - type: input
+    id: version
+    attributes:
+      label: 버전
+      description: "`sector-flow-collect --help` 를 친 설치본의 커밋 또는 `git rev-parse --short HEAD`"
+  - type: textarea
+    id: notes
+    attributes:
+      label: 메모
+      description: 받으며 만난 오류·경고(키·토큰·계좌번호는 지우고), 대조 명령의 note
