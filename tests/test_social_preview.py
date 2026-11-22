@@ -43,11 +43,13 @@ def test_card_quotes_the_guide_tagline():
         assert part in text
 
 
+# mutation-exempt: 카드 본문은 가이드 한 줄 소개에서 오며 금칙어 표 통과 여부를 보는 정책 검사다
 def test_card_text_passes_the_wording_tables():
     text = _visible(_card())
     assert not banned_hits(text) and not map_hits(text), (banned_hits(text), map_hits(text))
 
 
+# mutation-exempt: 생성된 카드 HTML 이 외부 http(s) 요청을 포함하지 않는지 보는 정적 불변 검사다
 def test_card_makes_no_network_request():
     """그림은 data URI, 글꼴은 설치본 — 찍는 기기마다 원격 글꼴 유무로 모양이 갈리지 않게."""
     assert not re.search(r"https?://(?!www\.w3\.org/2000/svg)", _card())
@@ -59,6 +61,7 @@ def test_refuses_a_folder_that_is_not_the_synthetic_demo(tmp_path):
         SP.shoot(tmp_path, tmp_path / "x.png")
 
 
+# mutation-exempt: 커밋된 PNG 파일(바이너리 산출물)의 규격(1280×640·1MB 미만)을 검사한다
 def test_committed_preview_is_1280_by_640():
     png = (REPO / "docs/brand/social-preview.png").read_bytes()
     assert png[:8] == b"\x89PNG\r\n\x1a\n"
