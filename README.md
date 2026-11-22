@@ -25,7 +25,7 @@ uv run sector-flow-demo --out ~/sf-demo && uv run python scripts/serve_reports.p
 
 데모의 숫자와 이름은 전부 난수이고, 화면마다 `[합성 데모]` 가 붙는다. 실제 리포트를 만들고 여는 법은 [§4](#4-설치와-실행) —
 일일 배치는 [quant-airflow](https://github.com/younghwan91/quant-airflow) 가 적재한 DB 를 읽기만 한다. 자기 키움 키로 sqlite 를
-채우는 BYO 수집기(`sector-flow-collect`, `sector-flow-byo`)는 [`docs/byo/quickstart.md`](docs/byo/quickstart.md) 참고.
+채우는 BYO 수집기(`src/sectorflow/collect/`, `sector-flow-collect`, `sector-flow-byo`)는 [`docs/byo/quickstart.md`](docs/byo/quickstart.md) 참고.
 
 > **리포트 폴더는 제3자에게 넘기지 않는다.** 실제 종목별 수급이 들어 있고, KRX·키움의 데이터 이용 범위상
 > 재배포할 수 없다. 본인 기기 사이에서만 옮기고, 남에게 보여 줄 때는 합성 데모를 쓴다(§4.3).
