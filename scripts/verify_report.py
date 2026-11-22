@@ -15,6 +15,7 @@
   T. 오늘   — 1일 값·1년 백분위·시장 합계·직전 리포트 대비를 일별 배열에서 다시 센다
   W. 웹     — numbers.html·viewer.html 을 node 로 **그려** 칸의 글자를 페이로드·TUI 와 맞춘다
   X. 글     — digest.md·digest.json 의 순위·극단·가장 큰 주체를 페이로드에서 다시 세고 화면 목록과 맞춘다(다이제스트를 지은 뒤)
+  M. 지도   — map.html 의 창 합·간선·보존식·꼬리·주체별 보기를 flowmap 없이 일별 배열에서 다시 센다(지도를 지은 뒤)
 
 A~D 는 전부 *파일 안의 값끼리* 정합한지만 본다. 그래서 producer 가 임펄스를
 통째로 잘못 계산해도(수량을 금액으로 착각, `flu_rt` 의 bp 단위를 놓침 — 둘 다
@@ -40,6 +41,7 @@ U=½kx² 를 검산하면 1e-3 오차가 나서 멀쩡한 수식이 FAIL 로 뜬
 Run:  python scripts/verify_report.py --dir reports/2026-08-27
       python scripts/verify_report.py --dir <폴더> --db-check     # B·F 층까지
       python scripts/verify_report.py --dir <폴더> --layers X     # 다이제스트를 지은 뒤 — 글 = 페이로드·화면
+      python scripts/verify_report.py --dir <폴더> --layers M     # 수급 지도를 지은 뒤 — 지도 = 페이로드
 """
 
 from __future__ import annotations
@@ -5265,9 +5267,306 @@ def layer_x(P: dict, d: str, required: bool) -> None:
         chk("X", name, not bad[key], (f"{len(bad[key])}건  " + "; ".join(bad[key][:2])) if bad[key] else "")
 
 
+# ─────────────────────────────────────────────── M. 수급 지도 — map.html 의 숫자가 페이로드와 같은가
+#
+# 지도(``scripts/sector_map.py``)는 ``sectorflow.flowmap`` 이 지은 묶음을 ``const D = {...};`` 한 줄로 심는다. 이 층은
+# flowmap 을 **부르지 않고** 페이로드 일별 배열(``flows``·``detail``)에서 창 합을 여기서 다시 센다 — 같은 버그를 두 번 통과시키지
+# 않게(F 층과 같은 이유). 보는 것: 창·시장·기준일, 보기 1 의 (주체, 섹터) 간선과 주체 노드 높이, 섹터마다 넘긴 쪽 = 넘겨받은 쪽
+# (잔여가 닫는 보존식), 꼬리 합, 보기 2(주체별), 타임랩스 하루 값, 머리글, 섹터→섹터 구조가 없는 것, 글의 금칙어·피할 말.
+# 허용오차는 절대값 ``TOL_FLOW``(상대오차 금지 — 머리말). 배치는 지도를 지은 뒤 ``--layers M`` 으로 따로 부른다.
+
+#: 지도의 4주체와 잔여(= −Σ4주체) — 노드 순서. ``flowmap.ACTORS``·``RESID`` 와 같은 뜻을 여기 따로 적는다(부르지 않는다).
+VM_ACTORS = ("indiv", "forgn", "inst", "etc")
+VM_RESID = "resid"
+VM_NODES = (*VM_ACTORS, VM_RESID)
+VM_LABEL = {"indiv": "개인", "forgn": "외국인", "inst": "기관", "etc": "기타법인", "resid": "잔여"}
+#: 리포트의 기존 창 — 날짜 수보다 긴 창은 지도에 없어야 한다.
+VM_WINDOWS = (1, 5, 20, 60, 120)
+VM_ALL = "전체"
+VM_DETAIL = "inst:"
+VM_INST_OTHER = "inst:inst_other"
+#: 이보다 작은 |값| 은 간선이 아니다(부동소수 찌꺼기).
+VM_EPS = 1e-9
+#: 이런 이름의 키는 두 끝을 잇는 구조다 — 지도 데이터 어디에도 없어야 한다(간선은 주체 하나·섹터 하나의 칸뿐).
+VM_LINK_KEYS = ("links", "pairs", "source", "target", "matrix", "between")
+
+
+def _vm_span(vals, i0: int, i1: int) -> float:
+    return float(sum(v for v in (vals or ())[i0:i1 + 1] if v is not None))
+
+
+def _vm_sums(P: dict, markets: list[str], i0: int, i1: int, det_keys: list[str]) -> dict[str, dict[str, float]]:
+    """섹터 → 주체(4주체·잔여·``inst:<세부>``·``inst:inst_other``) → 억원, 날짜 색인 양끝 포함. None 은 0."""
+    out = {}
+    for s in P["sectors"]:
+        row = {a: 0.0 for a in VM_ACTORS}
+        det = {k: 0.0 for k in det_keys}
+        for m in markets:
+            f = (P["flows"].get(m) or {}).get(s) or {}
+            for a in VM_ACTORS:
+                row[a] += _vm_span(f.get(a), i0, i1)
+            d = ((P.get("detail") or {}).get(m) or {}).get(s) or {}
+            for k in det_keys:
+                det[k] += _vm_span(d.get(k[len(VM_DETAIL):]), i0, i1)
+        row[VM_RESID] = -sum(row[a] for a in VM_ACTORS)
+        if det_keys:
+            row.update(det)
+            row[VM_INST_OTHER] = row["inst"] - sum(det.values())
+        out[s] = row
+    return out
+
+
+def _vm_close(a, b) -> bool:
+    return isinstance(a, (int, float)) and isinstance(b, (int, float)) and abs(a - b) <= TOL_FLOW
+
+
+def _vm_split(row: dict) -> tuple[dict, dict]:
+    give = {a: -row[a] for a in VM_NODES if row[a] < -VM_EPS}
+    take = {a: row[a] for a in VM_NODES if row[a] > VM_EPS}
+    return give, take
+
+
+def _vm_dict_diff(tag: str, got: dict, want: dict) -> list[str]:
+    """두 주체 → 금액 사전이 같은 키·같은 값(절대 허용오차)인가. 0 근처 키는 있든 없든 같다."""
+    out = []
+    for a in sorted(set(got or {}) | set(want), key=str):
+        g, w = (got or {}).get(a, 0.0), want.get(a, 0.0)
+        if not _vm_close(g, w):
+            out.append(f"{tag}/{a} {g} vs 다시 셈 {w}")
+    return out
+
+
+def _vm_exchange(tag: str, G: dict, sums: dict, out: dict) -> None:
+    """보기 1 한 장 — 간선·주체 노드·보존식·꼬리."""
+    want = {s: _vm_split(r) for s, r in sums.items()}
+    live = {s for s, (g, t) in want.items() if g or t}
+    shown = [r.get("name") for r in G.get("sectors") or []]
+    tail = G.get("tail") or {}
+    names = shown + list(tail.get("names") or [])
+    if sorted(names) != sorted(live) or len(set(names)) != len(names):
+        out["exchange"].append(f"{tag} 섹터 {len(names)}개(겹침 {len(names) - len(set(names))}) vs 간선 있는 섹터 {len(live)}개")
+    for r in G.get("sectors") or []:
+        g, t = want.get(r.get("name"), ({}, {}))
+        out["exchange"] += _vm_dict_diff(f"{tag}/{r.get('name')}/넘긴", r.get("give"), g)
+        out["exchange"] += _vm_dict_diff(f"{tag}/{r.get('name')}/넘겨받은", r.get("take"), t)
+        if not _vm_close(sum((r.get("give") or {}).values()), sum((r.get("take") or {}).values())):
+            out["conserve"].append(f"{tag}/{r.get('name')} Σ넘긴 {sum((r.get('give') or {}).values())} ≠ "
+                                   f"Σ넘겨받은 {sum((r.get('take') or {}).values())}")
+    left = {a: sum(want[s][0].get(a, 0.0) for s in live) for a in VM_NODES}
+    right = {a: sum(want[s][1].get(a, 0.0) for s in live) for a in VM_NODES}
+    out["exchange"] += _vm_dict_diff(f"{tag}/왼쪽 주체", G.get("left"), left)
+    out["exchange"] += _vm_dict_diff(f"{tag}/오른쪽 주체", G.get("right"), right)
+    gl, gr = sum((G.get("left") or {}).values()), sum((G.get("right") or {}).values())
+    if not (_vm_close(gl, gr) and _vm_close(gl, G.get("gross"))):
+        out["conserve"].append(f"{tag} Σ왼쪽 {gl} · Σ오른쪽 {gr} · gross {G.get('gross')} 가 같지 않다")
+    if tail:
+        tg = {a: sum(want[s][0].get(a, 0.0) for s in tail.get("names") or [] if s in want) for a in VM_NODES}
+        tt = {a: sum(want[s][1].get(a, 0.0) for s in tail.get("names") or [] if s in want) for a in VM_NODES}
+        out["tail"] += _vm_dict_diff(f"{tag}/꼬리 넘긴", tail.get("give"), tg)
+        out["tail"] += _vm_dict_diff(f"{tag}/꼬리 넘겨받은", tail.get("take"), tt)
+        size = {s: max(sum(g.values()), sum(t.values())) for s, (g, t) in want.items()}
+        lo = min((size.get(s, 0.0) for s in shown), default=None)
+        big = [s for s in tail.get("names") or [] if lo is not None and size.get(s, 0.0) > lo + TOL_FLOW]
+        if big:
+            out["tail"].append(f"{tag} 꼬리에 보이는 섹터보다 큰 섹터 {big[:3]}")
+
+
+def _vm_pairs_diff(tag: str, got: list, want: dict[str, float]) -> list[str]:
+    """[[섹터, 금액], …] 이 다시 센 섹터 → 금액과 같은가(그 목록에 실린 섹터만)."""
+    out = []
+    for item in got or []:
+        s, v = item[0], item[1]
+        if s not in want or not _vm_close(v, want[s]):
+            out.append(f"{tag}/{s} {v} vs 다시 셈 {want.get(s)}")
+    return out
+
+
+def _vm_actor(tag: str, A: dict, sums: dict, actor: str, out: dict) -> None:
+    """보기 2 한 주체 — 넘긴·넘겨받은 섹터 값, 꼬리 합, 순매수 합계."""
+    vals = {s: r.get(actor, 0.0) for s, r in sums.items()}
+    gave = {s: -v for s, v in vals.items() if v < -VM_EPS}
+    took = {s: v for s, v in vals.items() if v > VM_EPS}
+    for side, lst, tail, want in (("넘긴", A.get("gave"), A.get("tail_gave"), gave),
+                                  ("넘겨받은", A.get("took"), A.get("tail_took"), took)):
+        out["actors"] += _vm_pairs_diff(f"{tag}/{side}", lst, want)
+        names = [x[0] for x in lst or []] + list((tail or [[], 0])[0])
+        if sorted(names) != sorted(want):
+            out["actors"].append(f"{tag}/{side} 섹터 {len(names)}개 vs 다시 셈 {len(want)}개")
+        if tail and not _vm_close(tail[1], sum(want.get(s, 0.0) for s in tail[0])):
+            out["tail"].append(f"{tag}/{side} 꼬리 {tail[1]} vs 다시 셈 {sum(want.get(s, 0.0) for s in tail[0])}")
+    net = sum(vals.values())
+    if not _vm_close(A.get("net"), net):
+        out["actors"].append(f"{tag} 순매수 합계 {A.get('net')} vs 다시 셈 {net}")
+    shown = sum(v for _s, v in A.get("took") or []) - sum(v for _s, v in A.get("gave") or [])
+    tails = (A.get("tail_took") or [[], 0.0])[1] - (A.get("tail_gave") or [[], 0.0])[1]
+    if not _vm_close(shown + tails, A.get("net")):
+        out["conserve"].append(f"{tag} Σ넘겨받은 − Σ넘긴(꼬리 포함) {shown + tails} ≠ 순매수 합계 {A.get('net')}")
+
+
+def _vm_big(v: float) -> str:
+    from sectorflow import summary as SUM
+    return SUM.fmt_big(v).replace("-", "−")
+
+
+def _vm_headline(tag: str, H: dict, sums: dict, market: str, win: int, out: dict) -> None:
+    """머리글 — 가장 큰 순매도·순매수 주체(``summary.dominant`` 를 부호별로)와 |간선| 큰 순 사실 3줄. 주변합만."""
+    from sectorflow import summary as SUM
+    from sectorflow.josa import josa
+
+    net = {a: {"v": sum(r[a] for r in sums.values())} for a in VM_ACTORS}
+    gave = SUM.dominant({a: f for a, f in net.items() if f["v"] < -VM_EPS})
+    took = SUM.dominant({a: f for a, f in net.items() if f["v"] > VM_EPS})
+    parts = ([f"{josa(VM_LABEL[gave], '이/가')} 가장 크게 순매도 {_vm_big(net[gave]['v'])}"] if gave else []) + \
+            ([f"{josa(VM_LABEL[took], '이/가')} 가장 크게 순매수 {_vm_big(net[took]['v'])}"] if took else [])
+    lead = (f"{'기준일' if win == 1 else f'최근 {win}거래일'} {market} — "
+            + (" · ".join(parts) if parts else "순매수·순매도가 없다"))
+    if (H or {}).get("lead") != lead:
+        out["headline"].append(f"{tag} 머리 '{(H or {}).get('lead')}' vs '{lead}'")
+    edges = sorted(((abs(r[a]), i, j, s, a, r[a]) for i, (s, r) in enumerate(sums.items())
+                    for j, a in enumerate(VM_ACTORS) if abs(r[a]) > VM_EPS), key=lambda e: (-e[0], e[1], e[2]))
+    facts = [f"{s} — {VM_LABEL[a]} {_vm_big(v)}" for _m, _i, _j, s, a, v in edges[:len((H or {}).get("facts") or [])]]
+    if (H or {}).get("facts") != facts or (len(edges) >= 3 and len(facts) < 3):
+        out["headline"].append(f"{tag} 사실 {((H or {}).get('facts') or [])[:1]} vs {facts[:1]}")
+
+
+def _vm_no_links(M: dict, sectors: set, out: dict) -> None:
+    """섹터→섹터·주체→주체 구조가 없는가 — 간선 칸의 키는 주체뿐, 목록 칸은 [섹터, 금액], 섹터 아래 섹터 없음, 잇는 이름 없음."""
+    nodes = set(VM_NODES)
+
+    def walk(o, path, under_sector):
+        if isinstance(o, dict):
+            for k, v in o.items():
+                if k in VM_LINK_KEYS:
+                    out["structure"].append(f"{path}/{k} — 두 끝을 잇는 이름의 칸")
+                if k in sectors and under_sector:
+                    out["structure"].append(f"{path}/{k} — 섹터 아래 섹터")
+                if k in ("give", "take", "left", "right") and isinstance(v, dict) and set(v) - nodes:
+                    out["structure"].append(f"{path}/{k} 의 키 {sorted(set(v) - nodes)[:3]} 는 주체가 아니다")
+                walk(v, f"{path}/{k}", under_sector or k in sectors or (isinstance(v, dict) and v.get("name") in sectors))
+        elif isinstance(o, list):
+            for i, v in enumerate(o):
+                walk(v, f"{path}[{i}]", under_sector)
+
+    walk(M.get("views") or {}, "views", False)
+    walk(M.get("timelapse") or {}, "timelapse", False)
+    for m, by_w in (M.get("views") or {}).items():
+        for w, V in by_w.items():
+            for a, A in (V.get("actors") or {}).items():
+                for side in ("gave", "took"):
+                    bad = [x for x in A.get(side) or [] if not (isinstance(x, list) and len(x) == 2
+                                                                 and x[0] in sectors and isinstance(x[1], (int, float)))]
+                    if bad:
+                        out["structure"].append(f"{m}/{w}/{a}/{side} 칸 {bad[:1]} 이 [섹터, 금액] 이 아니다")
+
+
+def _vm_text(html: str, M: dict) -> list[str]:
+    """사람이 읽는 글의 금칙어·지도용 피할 말 — 템플릿 글(심은 데이터 줄 밖)과 데이터 안의 머리글·라벨.
+    섹터 이름은 벤더 고유명사라 사실 줄에서 뗀다(``wording.rendered_page_hits`` 와 같은 이유)."""
+    from sectorflow.wording import map_hits
+
+    text = re.sub(r"^const D = .*$", "", html, flags=re.M)
+    said = [*(M.get("labels") or {}).values(), M.get("basis") or ""]
+    for by_w in (M.get("views") or {}).values():
+        for V in by_w.values():
+            H = V.get("headline") or {}
+            said += [H.get("lead") or ""] + [f.split(" — ", 1)[-1] for f in H.get("facts") or []]
+    return map_hits(text + "\n" + "\n".join(said))
+
+
+def map_data_of(html: str) -> dict:
+    """``map.html`` 에 심은 지도 데이터 — ``const D = {...};`` 한 줄. 없으면 ValueError."""
+    m = re.search(r"^const D = (\{.*\});$", html, re.M)
+    if not m:
+        raise ValueError("map.html 에 'const D = {...};' 데이터 줄이 없다")
+    return json.loads(m.group(1).replace("<\\/", "</"))
+
+
+def map_mismatches(P: dict, html: str) -> dict[str, list[str]]:
+    """지도 페이지(``html``)의 데이터·글이 페이로드 ``P`` 와 어긋난 곳 — 검사 키(:data:`VM_CHECKS`) → 어긋남.
+
+    ``sectorflow.flowmap`` 을 부르지 않는다. 창 합은 :func:`_vm_sums` 가 일별 배열에서 다시 센다."""
+    out: dict[str, list[str]] = {k: [] for k, _n in VM_CHECKS}
+    M = map_data_of(html)
+    dates = P.get("dates") or []
+    N = len(dates)
+    want_w = [w for w in VM_WINDOWS if w <= N]
+    want_m = [VM_ALL, *(P.get("markets") or [])]
+    if M.get("windows") != want_w or M.get("markets") != want_m or M.get("asof") != (dates[-1] if N else None):
+        out["frame"].append(f"창 {M.get('windows')} 시장 {M.get('markets')} 기준일 {M.get('asof')} vs "
+                            f"{want_w} {want_m} {dates[-1] if N else None}")
+    if bool(M.get("demo")) != bool(P.get("demo")):
+        out["frame"].append(f"데모 표지 {M.get('demo')} vs 페이로드 {P.get('demo')}")
+    sectors = set(P.get("sectors") or [])
+    for m in want_m:
+        ms = list(P.get("markets") or []) if m == VM_ALL else [m]
+        for w in want_w:
+            V = ((M.get("views") or {}).get(m) or {}).get(str(w))
+            if not V:
+                out["frame"].append(f"{m}/{w}일 보기가 없다")
+                continue
+            det = [a for a in V.get("actors") or {} if a.startswith(VM_DETAIL) and a != VM_INST_OTHER]
+            sums = _vm_sums(P, ms, N - w, N - 1, det)
+            tag = f"{m}/{w}일"
+            _vm_exchange(tag, V.get("exchange") or {}, {s: {a: r[a] for a in VM_NODES} for s, r in sums.items()}, out)
+            want_actors = list(VM_NODES) + ([*det, VM_INST_OTHER] if det else [])
+            if list(V.get("actors") or {}) != want_actors:
+                out["actors"].append(f"{tag} 주체 {list(V.get('actors') or {})} vs {want_actors}")
+            for a in want_actors:
+                if a in (V.get("actors") or {}):
+                    _vm_actor(f"{tag}/{a}", V["actors"][a], sums, a, out)
+            _vm_headline(tag, V.get("headline"), sums, m, w, out)
+        T = (M.get("timelapse") or {}).get(m) or {}
+        n = len(T.get("frames") or [])
+        if (T.get("dates") or []) != (dates[N - n:] if n else []):
+            out["timelapse"].append(f"{m} 타임랩스 날짜 {(T.get('dates') or [])[:1]}… vs 페이로드 끝 {n}일")
+        for j, F in enumerate(T.get("frames") or []):
+            i = N - n + j
+            day = {s: _vm_split({a: r[a] for a in VM_NODES}) for s, r in _vm_sums(P, ms, i, i, []).items()}
+            tag = f"{m}/{dates[i]}"
+            for r in [*(F.get("sectors") or []), *({"name": s} for s in ((F.get("tail") or {}).get("names") or []))]:
+                g, t = day.get(r.get("name"), ({}, {}))
+                if "give" in r:
+                    out["timelapse"] += _vm_dict_diff(f"{tag}/{r.get('name')}/넘긴", r.get("give"), g)
+                    out["timelapse"] += _vm_dict_diff(f"{tag}/{r.get('name')}/넘겨받은", r.get("take"), t)
+                elif not (g or t):
+                    out["timelapse"].append(f"{tag} 꼬리에 그날 간선 없는 섹터 {r.get('name')}")
+            out["timelapse"] += _vm_dict_diff(f"{tag}/왼쪽 주체", F.get("left"),
+                                              {a: sum(g.get(a, 0.0) for g, _t in day.values()) for a in VM_NODES})
+            out["timelapse"] += _vm_dict_diff(f"{tag}/오른쪽 주체", F.get("right"),
+                                              {a: sum(t.get(a, 0.0) for _g, t in day.values()) for a in VM_NODES})
+    _vm_no_links(M, sectors, out)
+    out["wording"] = _vm_text(html, M)
+    return out
+
+
+#: M 층 검사 — (:func:`map_mismatches` 의 키, 이름).
+VM_CHECKS = (("frame", "창·시장·기준일·데모 표지 = 페이로드"),
+             ("exchange", "보기 1 (주체, 섹터) 간선·주체 노드 = 일별 배열에서 다시 센 창 합"),
+             ("conserve", "보존식 — 섹터마다 Σ넘긴 = Σ넘겨받은(잔여 포함), Σ왼쪽 = Σ오른쪽 = gross, 보기 2 순매수 합계"),
+             ("tail", "꼬리 '기타 N개 섹터' = 숨긴 섹터들의 합, 보이는 섹터보다 크지 않다"),
+             ("actors", "보기 2 주체별 넘긴·넘겨받은 섹터 = 다시 센 값"),
+             ("timelapse", "타임랩스 하루 값 = 그날 일별 배열"),
+             ("headline", "머리글 = 다시 센 가장 큰 주체(summary.dominant)·|간선| 큰 순 사실"),
+             ("structure", "섹터→섹터·주체→주체 구조가 데이터에 없다"),
+             ("wording", "글에 금칙어·지도용 피할 말(wording.map_hits)이 없다"))
+
+
+def layer_m(P: dict, html: "str | None", required: bool = False) -> None:
+    print("\nM. 수급 지도 — map.html 의 숫자가 페이로드 일별 배열에서 다시 센 값과 같은가")
+    if html is None:
+        if required:
+            chk("M", "수급 지도(map.html)가 있는가", False, "폴더에 없다")
+        else:
+            print("  수급 지도 없음 — 건너뜀(배치는 지도를 지은 뒤 --layers M 으로 따로 돈다)")
+        return
+    bad = map_mismatches(P, html)
+    for key, name in VM_CHECKS:
+        chk("M", name, not bad[key], (f"{len(bad[key])}건  " + "; ".join(bad[key][:2])) if bad[key] else "")
+
+
 #: main 이 도는 층 — ``--layers`` 가 고를 수 있는 이름. 층을 더하면 여기에도 적는다(모르는 이름은 거부).
-#: X(다이제스트)는 전 층에서는 다이제스트가 있을 때만 돈다 — 배치는 다이제스트를 지은 뒤 ``--layers X`` 로 따로 부른다.
-LAYERS = ("A", "A3", "B", "C", "D", "E", "G", "H", "T", "W", "F", "X")
+#: X(다이제스트)·M(수급 지도)은 전 층에서는 그 산출물이 있을 때만 돈다 — 배치는 지은 뒤 ``--layers X``·``--layers M`` 으로 따로 부른다.
+LAYERS = ("A", "A3", "B", "C", "D", "E", "G", "H", "T", "W", "F", "X", "M")
 
 
 def run_layer(layer: str, fn, *args) -> None:
@@ -5352,6 +5651,8 @@ def main() -> int:
     if a.db_check and a.db:
         go("F", layer_f, payload, a.db)
     go("X", layer_x, payload, d, "X" in want)
+    map_p = os.path.join(d, "map.html")
+    go("M", layer_m, payload, open(map_p, encoding="utf-8").read() if os.path.isfile(map_p) else None, "M" in want)
 
     print(f"\n검사 {CHECKS}건 · 실패 {len(FAILS)}건 · 문서 주장 어긋남 {len(CLAIMS)}건")
     if WARNS:

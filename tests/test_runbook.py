@@ -122,6 +122,7 @@ MESSAGES: list[tuple[str, str, str]] = [
     # daily_report.sh — 부속 산출물(다이제스트·검증 페이지): 리포트는 게시되고 75 로 알린다
     ("scripts/daily_report.sh", "다이제스트를 못 만들었다", "다이제스트를 못 만들었다"),
     ("scripts/daily_report.sh", "수급 지도(map.html)를 못 만들었다", "수급 지도(map.html)를 못 만들었다"),
+    ("scripts/daily_report.sh", "수급 지도가 페이로드와 다른 숫자를 그린다(M 층)", "수급 지도가 페이로드와 다른 숫자를 그린다(M 층)"),
     ("scripts/daily_report.sh", "다이제스트 카드(digest.png)를 못 찍었다", "다이제스트 카드(digest.png)를 못 찍었다"),
     ("scripts/daily_report.sh", "다이제스트가 페이로드·화면과 다른 말을 한다(X 층)", "다이제스트가 페이로드·화면과 다른 말을 한다(X 층)"),
     ("scripts/daily_report.sh", "검증·품질 페이지를 못 만들었다", "검증·품질 페이지를 못 만들었다"),

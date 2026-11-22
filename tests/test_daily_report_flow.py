@@ -50,6 +50,9 @@ a = sys.argv
 if "--layers" in a and a[a.index("--layers") + 1] == "X":      # 다이제스트 검증 — 배선만 본다(진짜는 test_digest·계약 검사)
     pathlib.Path(a[a.index("--dir") + 1], "VERIFY_X_CALLED").write_text("x")
     sys.exit(int(os.environ.get("FAKE_VERIFY_X_RC", "0")))
+if "--layers" in a and a[a.index("--layers") + 1] == "M":      # 지도 검증 — 배선만 본다(진짜는 test_verify_report 의 M 층 검사)
+    pathlib.Path(a[a.index("--dir") + 1], "VERIFY_M_CALLED").write_text("m")
+    sys.exit(int(os.environ.get("FAKE_VERIFY_M_RC", "0")))
 if "--asof" in a:
     pathlib.Path(a[a.index("--dir") + 1], "VERIFY_ASOF").write_text(a[a.index("--asof") + 1])
 sys.exit(int(os.environ.get("FAKE_VERIFY_RC", "0")))
@@ -1044,4 +1047,19 @@ def test_map_failure_warns_without_blocking(repo, tmp_path):
     assert r.returncode == 75 and "수급 지도(map.html)를 못 만들었다" in r.stderr, r.stderr
     dest = repo / "reports" / TODAY
     assert (dest / "numbers.html").exists() and "부속 산출물 실패: map.html" in (dest / "VERIFY.txt").read_text()
+    assert not (dest / "VERIFY_FAILED.txt").exists(), "리포트 숫자의 실패가 아니다"
+
+
+def test_map_is_checked_by_the_m_layer_and_withheld_when_it_disagrees(repo, tmp_path):
+    """지도는 검증 뒤에 지어진다 — 배치가 지은 뒤 M 층(``--layers M``)을 부르고, 걸리면 지도를 빼고 게시한다(75).
+    페이로드와 다른 숫자를 그리는 그림보다 없는 것이 낫다. 리포트 숫자의 실패는 아니다(VERIFY_FAILED 아님)."""
+    _seed(repo.parent / "db.sqlite", today_kosdaq=50)
+    r = _run(repo)
+    assert r.returncode == 0, r.stderr
+    dest = repo / "reports" / TODAY
+    assert (dest / "VERIFY_M_CALLED").exists() and (dest / "map.html").exists() and (dest / "VERIFY_MAP.txt").exists()
+    r = _run(repo, KR_QUANT_FORCE="1", FAKE_VERIFY_M_RC="1")
+    assert r.returncode == 75 and "수급 지도가 페이로드와 다른 숫자를 그린다(M 층)" in r.stderr, r.stderr
+    assert not (dest / "map.html").exists(), "검증에 걸린 지도가 게시됐다"
+    assert (dest / "numbers.html").exists() and "부속 산출물 실패: map-verify" in (dest / "VERIFY.txt").read_text()
     assert not (dest / "VERIFY_FAILED.txt").exists(), "리포트 숫자의 실패가 아니다"

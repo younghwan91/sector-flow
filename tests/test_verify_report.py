@@ -290,3 +290,135 @@ def test_empty_sector_index_coverage_warns_but_does_not_fail_the_report():
     VR.layer_b(P, None)
     assert not [f for f in VR.FAILS if "업종지수" in f], VR.FAILS
     assert "B/업종지수 커버리지(화면 미사용 iret)" in VR.WARNS
+
+
+# ─────────────────────────────── M 층 — 수급 지도(map.html)의 숫자가 페이로드에서 다시 센 값과 같은가
+
+def _map_payload() -> dict:
+    """2시장 × 11섹터 × 6일 + 기관 세부 — 작은 섹터 셋이 꼬리로 묶이고, 하루 값에 None·0 이 섞인다. 손 페이로드(실데이터 아님)."""
+    names = [f"가상{i}" for i in range(11)]
+    dates = [f"2026-01-{5 + i:02d}" for i in range(6)]
+    flows, detail = {}, {}
+    for mi, m in enumerate(("거래소", "코스닥")):
+        flows[m], detail[m] = {}, {}
+        for si, s in enumerate(names):
+            if m == "코스닥" and si == 10:
+                continue                                    # 그 시장에 없는 섹터
+            k = (12 - si) ** 2 * (1 + mi)                    # 뒤 섹터일수록 작다 — 꼬리
+            ind = [(-1) ** (d + si) * k * (d + 1) for d in range(6)]
+            ind[2] = None if si == 3 else ind[2]
+            fo = [0.6 * k * (1 if (d + si) % 3 else -1) for d in range(6)]
+            ins = [0.3 * k * (1 if (d * si) % 2 else -1) for d in range(6)]
+            et = [0.0] * 6
+            flows[m][s] = {"indiv": ind, "forgn": fo, "inst": ins, "etc": et}
+            detail[m][s] = {"invtrt": [x * 0.4 for x in ins], "penfnd_etc": [x * 0.3 for x in ins]}
+    return {"dates": dates, "sectors": names, "markets": ["거래소", "코스닥"], "flows": flows, "detail": detail,
+            "detail_labels": {"invtrt": "투신", "penfnd_etc": "연기금"}}
+
+
+def _map_html(P: dict | None = None, data=None) -> tuple[dict, str]:
+    spec = importlib.util.spec_from_file_location("sector_map", REPO / "scripts" / "sector_map.py")
+    SM = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(SM)
+    data = data if data is not None else SM.build_map_data(P or _map_payload())
+    return data, SM.render(data, Path(SM.TEMPLATE).read_text("utf-8"))
+
+
+def _rerender(data: dict) -> str:
+    return _map_html(data=data)[1]
+
+
+def _bad(vr, P, html) -> dict:
+    return {k: v for k, v in vr.map_mismatches(P, html).items() if v}
+
+
+def test_m_layer_is_green_on_a_built_map_without_calling_flowmap(monkeypatch):
+    """지은 지도는 통과한다 — 그리고 층 M 은 flowmap 을 부르지 않는다(같은 버그를 두 번 통과시키지 않게)."""
+    import sectorflow.flowmap as FM
+
+    vr = _load()
+    P = _map_payload()
+    data, html = _map_html(P)
+    assert data["views"]["전체"]["5"]["exchange"]["tail"], "시험 페이로드에 꼬리가 있어야 꼬리 합을 본다"
+    for name in ("window_sums", "exchange_graph", "actor_graph", "frames", "build_map_data", "map_headline", "inst_detail_sums"):
+        monkeypatch.setattr(FM, name, lambda *a, **k: (_ for _ in ()).throw(AssertionError("flowmap 을 불렀다")))
+    assert _bad(vr, P, html) == {}
+
+
+def test_m_layer_catches_a_changed_cell_and_a_broken_conservation():
+    """지도 데이터의 (주체, 섹터) 한 칸을 바꾸면 간선 대조와 섹터 보존식(Σ넘긴 = Σ넘겨받은)이 같이 빨개진다."""
+    vr = _load()
+    P = _map_payload()
+    data, _html = _map_html(P)
+    row = data["views"]["전체"]["5"]["exchange"]["sectors"][0]
+    a = next(iter(row["give"]))
+    row["give"][a] += 1.0
+    bad = _bad(vr, P, _rerender(data))
+    assert bad["exchange"] and bad["conserve"], bad
+
+
+def test_m_layer_catches_a_wrong_tail_sum():
+    vr = _load()
+    P = _map_payload()
+    data, _html = _map_html(P)
+    tail = data["views"]["전체"]["5"]["exchange"]["tail"]
+    a = next(iter(tail["take"]))
+    tail["take"][a] += 5.0
+    assert _bad(vr, P, _rerender(data))["tail"]
+
+
+def test_m_layer_catches_actor_views_timelapse_and_headline():
+    vr = _load()
+    P = _map_payload()
+    data, _html = _map_html(P)
+    A = data["views"]["코스닥"]["1"]["actors"]["inst:invtrt"]
+    (A["took"] or A["gave"])[0][1] += 3.0
+    data["timelapse"]["전체"]["frames"][-1]["sectors"][0]["give"] = {"indiv": 123456.0}
+    data["views"]["거래소"]["5"]["headline"]["lead"] = "최근 5거래일 거래소 — 다른 말"
+    bad = _bad(vr, P, _rerender(data))
+    assert bad["actors"] and bad["timelapse"] and bad["headline"], bad
+
+
+def test_m_layer_rejects_any_sector_to_sector_structure():
+    """섹터→섹터 구조는 관측되지 않는다 — 데이터에 잇는 칸이나 섹터 아래 섹터가 생기면 빨개진다."""
+    vr = _load()
+    P = _map_payload()
+    data, _html = _map_html(P)
+    data["views"]["전체"]["20" if "20" in data["views"]["전체"] else "5"]["links"] = [["가상0", "가상1", 10.0]]
+    assert _bad(vr, P, _rerender(data))["structure"]
+    data, _html = _map_html(P)
+    data["views"]["전체"]["1"]["exchange"]["sectors"][0]["give"]["가상1"] = 1.0
+    assert _bad(vr, P, _rerender(data))["structure"]
+
+
+def test_m_layer_catches_avoided_words_in_the_page_text():
+    vr = _load()
+    P = _map_payload()
+    _data, html = _map_html(P)
+    assert _bad(vr, P, html.replace("<footer>", "<footer>섹터로 유입된 돈 "))["wording"]
+
+
+def test_m_layer_runs_only_when_the_map_exists_unless_asked(tmp_path, capsys):
+    """전 층에서는 지도가 있을 때만 돈다(X 와 같은 규칙). ``--layers M`` 은 지도가 없으면 실패다. 배치가 이 명령을 부른다."""
+    import json as _json
+    import subprocess
+    import sys
+
+    P = _map_payload()
+    (tmp_path / "payload.json").write_text(_json.dumps(P, ensure_ascii=False), "utf-8")
+    (tmp_path / "numbers.html").write_text('const D = {"blocks": {}};\n', "utf-8")
+    run = lambda: subprocess.run([sys.executable, str(REPO / "scripts" / "verify_report.py"), "--dir", str(tmp_path),  # noqa: E731
+                                  "--layers", "M"], capture_output=True, text=True)
+    r = run()
+    assert r.returncode == 1 and "수급 지도(map.html)가 있는가" in r.stdout, r.stdout
+    data, html = _map_html(P)
+    (tmp_path / "map.html").write_text(html, "utf-8")
+    r = run()
+    assert r.returncode == 0 and "[FAIL]" not in r.stdout and "M · 보존식" in r.stdout, r.stdout
+    data["views"]["전체"]["1"]["exchange"]["gross"] += 9.0
+    (tmp_path / "map.html").write_text(_rerender(data), "utf-8")
+    r = run()
+    assert r.returncode == 1 and "M/보존식" in r.stdout, r.stdout
+    vr = _load()
+    vr.layer_m(P, None, False)
+    assert "건너뜀" in capsys.readouterr().out and not vr.FAILS
