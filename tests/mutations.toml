@@ -13727,6 +13727,38 @@ file = "src/sectorflow/collect/brokers/kiwoom.py"
 find = "        return [{**s, \"sector_source\": self.name}"
 replace = "        return [{**s}"
 
+[[mutation]]
+id = "sector-csv-cp949-unread"
+why = "KRX 내려받기 CSV(CP949)를 못 읽어 깨진 글자로 섹터를 넣는다."
+guards = ["tests/test_collect_sectors.py::test_sector_csv_reads_the_krx_download_headers_in_cp949"]
+file = "src/sectorflow/collect/run.py"
+find = "        return raw.decode(\"cp949\")\n"
+replace = "        return raw.decode(\"utf-8\", \"replace\")\n"
+
+[[mutation]]
+id = "sector-csv-code-not-padded"
+why = "스프레드시트가 지운 앞 0 을 채우지 않는다 — 044490 이 44490 으로 남아 어떤 종목과도 안 맞는다."
+guards = ["tests/test_collect_sectors.py::test_sector_csv_reads_the_krx_download_headers_in_cp949", "tests/test_collect_sectors.py::test_user_table_wins_over_later_listings"]
+file = "src/sectorflow/collect/run.py"
+find = "        code = code.zfill(6) if code.isdigit() else code\n"
+replace = ""
+
+[[mutation]]
+id = "sector-csv-header-unchecked"
+why = "머리줄이 틀린 CSV 를 갈 길 없이 KeyError 로 죽는다."
+guards = ["tests/test_collect_sectors.py::test_sectors_without_a_listing_fails_loudly"]
+file = "src/sectorflow/collect/run.py"
+find = "    if set(cols) != {\"code\", \"sector\"}:\n"
+replace = "    if False:\n"
+
+[[mutation]]
+id = "sector-csv-nothing-updated-is-success"
+why = "목록이 없어 아무 종목도 안 바꿨는데 성공(0)으로 끝난다 — 지도는 그대로 (미분류)다."
+guards = ["tests/test_collect_sectors.py::test_sectors_without_a_listing_fails_loudly"]
+file = "src/sectorflow/collect/run.py"
+find = "    if not got[\"updated\"]:\n"
+replace = "    if False:\n"
+
 [[removed]]
 id = "ci-shard-denominator-hardcoded"
 why = "샤드를 없앴다 — 전체 검증은 잡 하나다(tests/test_ci_workflow.py 가 matrix 를 막는다)"
