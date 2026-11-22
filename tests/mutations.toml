@@ -14263,6 +14263,70 @@ file = "scripts/sector_flow.py"
 find = "\"verified\": bool(caps) and all(c.verified for c in caps)"
 replace = "\"verified\": False"
 
+[[mutation]]
+id = "broker-equiv-bar-ignored"
+why = "섹터 합이 0.5% 를 넘게 갈려도 '일치' 라 한다 — 미검증 어댑터가 검증된 것으로 올라온다."
+guards = ["tests/test_collect_broker_equiv.py::test_output_carries_no_real_numbers"]
+file = "src/sectorflow/collect/equiv.py"
+find = "    out[\"verdict\"] = \"일치\" if worst <= bar else \"불일치\"\n"
+replace = "    out[\"verdict\"] = \"일치\"\n"
+
+[[mutation]]
+id = "broker-equiv-counts-unsupplied-actor"
+why = "어댑터가 주지 않는 주체(한국투자 국가)까지 대조 주체로 적는다."
+guards = ["tests/test_collect_broker_equiv.py::test_identical_flows_match"]
+file = "src/sectorflow/collect/equiv.py"
+find = "    actors = [c for c in INVESTOR_COLUMNS if c in cap.actors]\n"
+replace = "    actors = list(INVESTOR_COLUMNS)\n"
+
+[[mutation]]
+id = "broker-equiv-sectors-ignored"
+why = "--sectors 를 무시한다 — 고른 섹터 밖의 차이로 판정이 갈린다."
+guards = ["tests/test_collect_broker_equiv.py::test_sectors_narrow_the_comparison", "tests/test_collect_broker_equiv.py::test_no_overlap_or_another_venue_cannot_be_judged"]
+file = "src/sectorflow/collect/equiv.py"
+find = "    if sectors:\n        meta = meta[meta[\"sector\"].isin(sectors)]\n"
+replace = ""
+
+[[mutation]]
+id = "broker-equiv-venue-unchecked"
+why = "KRX+NXT 통합(토스)을 KRX 단독 키움과 맞대 '불일치' 로 판정한다 — 기준이 달라 판정할 수 없다."
+guards = ["tests/test_collect_broker_equiv.py::test_no_overlap_or_another_venue_cannot_be_judged"]
+file = "src/sectorflow/collect/equiv.py"
+find = "    if cap.venue != CAPABILITIES[\"kiwoom\"].venue:\n"
+replace = "    if False:\n"
+
+[[mutation]]
+id = "broker-equiv-leaks-codes"
+why = "대조 출력에 종목코드를 싣는다 — 이슈에 붙이면 실데이터의 모양이 공개된다."
+guards = ["tests/test_collect_broker_equiv.py::test_output_carries_no_real_numbers"]
+file = "src/sectorflow/collect/equiv.py"
+find = "    out[\"dates\"], out[\"codes\"] = int(m[\"date\"].nunique()), int(m[\"code\"].nunique())\n"
+replace = "    out[\"dates\"], out[\"codes\"] = int(m[\"date\"].nunique()), sorted(m[\"code\"].unique().tolist())\n"
+
+[[mutation]]
+id = "broker-equiv-mixed-source-accepted"
+why = "여러 출처가 섞인 --db 를 받아 맞댄다 — 키움 행끼리 맞대 거짓 '일치' 가 나온다."
+guards = ["tests/test_collect_broker_equiv.py::test_wrong_sources_are_refused"]
+file = "src/sectorflow/collect/equiv.py"
+find = "    if got != {broker}:\n"
+replace = "    if False:\n"
+
+[[mutation]]
+id = "broker-equiv-exit-always-zero"
+why = "불일치·판정 불가에도 종료코드 0 — 스크립트가 대조 실패를 모른다."
+guards = ["tests/test_collect_broker_equiv.py::test_output_carries_no_real_numbers"]
+file = "src/sectorflow/collect/run.py"
+find = "    return {\"일치\": 0, \"불일치\": 1}.get(res[\"verdict\"], 2)\n"
+replace = "    return 0\n"
+
+[[mutation]]
+id = "broker-equiv-bar-zero"
+why = "바를 0 으로 잡는다 — 반올림·정정 수준의 작은 차이에도 어댑터가 '불일치' 로 남는다."
+guards = ["tests/test_collect_broker_equiv.py::test_small_differences_stay_under_the_bar"]
+file = "src/sectorflow/collect/equiv.py"
+find = "BROKER_BAR = 0.005\n"
+replace = "BROKER_BAR = 0.0\n"
+
 [[removed]]
 id = "ci-shard-denominator-hardcoded"
 why = "샤드를 없앴다 — 전체 검증은 잡 하나다(tests/test_ci_workflow.py 가 matrix 를 막는다)"

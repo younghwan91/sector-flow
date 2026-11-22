@@ -591,6 +591,24 @@ def cmd_sectors(args) -> int:
     return 0
 
 
+def cmd_equiv(args) -> int:
+    """증권사 대조 — 같은 기간·종목을 그 증권사와 키움으로 받은 두 sqlite 를 맞댄다. 증권사를 부르지 않는다.
+
+    출력은 일치 여부·칸 수·최대 상대오차뿐이다(실데이터 숫자 없음) — 검증 이슈(``.github/ISSUE_TEMPLATE/broker-verify.yml``)에 붙인다.
+    종료코드: 일치 0 · 불일치 1 · 판정 불가 2.
+    """
+    from .equiv import BROKER_EQUIV_KEYS, broker_equiv
+    sectors = [x.strip() for x in (args.sectors or "").split(",") if x.strip()]
+    for p in (args.db, args.against):
+        if not os.path.isfile(p):
+            raise SystemExit(f"⏹ {p} 가 없다")
+    res = broker_equiv(args.db, args.against, args.broker, sectors=sectors or None)
+    print(json.dumps({k: res[k] for k in BROKER_EQUIV_KEYS}, ensure_ascii=False, indent=1))
+    print("ℹ️ 위 결과에는 실데이터 숫자가 없다(일치 여부·칸 수·최대 상대오차뿐) — 검증 이슈에 그대로 붙여도 된다.",
+          file=sys.stderr)
+    return {"일치": 0, "불일치": 1}.get(res["verdict"], 2)
+
+
 def cmd_reseed(args) -> int:
     con = write.open_db(args.db)
     try:
@@ -691,6 +709,11 @@ def main(argv: "list[str] | None" = None) -> int:
     sc.add_argument("--add-missing", action="store_true",
                     help="표에 이름·시장(name,market 또는 종목명,시장구분)이 있는 보통주 중 stocks 에 없는 것을 넣는다 — "
                          "목록 API 가 없는 증권사용")
+    eq = sub.add_parser("equiv", help="증권사 어댑터 대조 — 그 증권사 sqlite 와 키움 sqlite(같은 기간·종목)를 맞댄다(호출 없음)")
+    eq.add_argument("--broker", required=True, choices=[b for b in BROKERS if b != "kiwoom"], help="--db 를 채운 어댑터")
+    eq.add_argument("--db", required=True, help="--broker 로 받은 sqlite")
+    eq.add_argument("--against", required=True, help="같은 기간·종목을 키움으로 받은 sqlite")
+    eq.add_argument("--sectors", default="", help="쉼표로 준 키움 업종명만 본다(기본: 겹치는 전부)")
     rs = sub.add_parser("reseed", help="저장된 스냅숏·기업행동으로 주식수 시드를 다시 만든다(호출 없음)")
     rs.add_argument("--db", required=True)
     ds = sub.add_parser("dart-shares", help="DART 분기 발행주식총수로 주식수 이력을 채운다(본인 DART_API_KEY, 선택)")
@@ -703,7 +726,8 @@ def main(argv: "list[str] | None" = None) -> int:
     args = ap.parse_args(argv)
     try:
         return {"smoke": cmd_smoke, "universe": cmd_universe, "backfill": cmd_backfill, "daily": cmd_daily,
-                "reseed": cmd_reseed, "dart-shares": cmd_dart_shares, "sectors": cmd_sectors}[args.cmd](args)
+                "reseed": cmd_reseed, "dart-shares": cmd_dart_shares, "sectors": cmd_sectors,
+                "equiv": cmd_equiv}[args.cmd](args)
     except MissingKeys as e:
         # 처음 치는 사람이 가장 먼저 만나는 실패다 — 트레이스백 대신 갈 길 한 줄(docs/byo/quickstart.md §1).
         raise SystemExit(f"⏹ {e} --env-file 로 키 파일을 주거나 환경변수를 둔다(docs/byo/quickstart.md)") from None
