@@ -122,3 +122,18 @@ def test_console_drift_reads_a_typo_and_a_good_command(monkeypatch, capsys):
                          "sector-flow-collect — 산문 · `sector-flow-collect daily --db … [--map-only]`",
                          monkeypatch) == []
     capsys.readouterr()
+
+
+def test_quickstart_shows_every_broker():
+    """시작하기 문서가 등록부의 증권사마다 키 이름과 ``--broker`` 를 적는다 — 어댑터를 더하고 문서를 빠뜨리지 않게."""
+    import importlib
+
+    from sectorflow.collect.brokers import BROKERS
+    text = (REPO / "docs/byo/quickstart.md").read_text("utf-8")
+    table = text.split("## 증권사 고르기", 1)[1].split("\n## ", 1)[0]
+    rows = {m[0]: m[1] for m in re.findall(r"^\| `(\w+)` \|(.*)$", table, re.M)}
+    assert list(rows) == list(BROKERS), "증권사 표가 등록부의 어댑터를 그 순서로 다 적지 않았다"
+    for name, row in rows.items():
+        mod = importlib.import_module(f"sectorflow.collect.brokers.{name}")
+        assert f"`{mod.KEY_ENV}`" in row and f"`{mod.SECRET_ENV}`" in row, f"{name}: 키 변수 이름이 문서와 다르다"
+    assert "--i-understand-ls-terms" in table and "KRX+NXT" in table

@@ -14351,6 +14351,22 @@ file = "docs/byo/brokers.md"
 find = "| `kis` | 미검증 | — | — | — | — |"
 replace = "| `kis` | 검증 | — | — | — | — |"
 
+[[mutation]]
+id = "quickstart-broker-key-name-drift"
+why = "시작하기 문서의 키 변수 이름이 어댑터와 다르다 — 그대로 적은 키 파일을 도구가 못 읽는다."
+guards = ["tests/test_docs_cli_options.py::test_quickstart_shows_every_broker"]
+file = "docs/byo/quickstart.md"
+find = "| `KIS_APP_KEY`·`KIS_APP_SECRET` |"
+replace = "| `KIS_KEY`·`KIS_SECRET` |"
+
+[[mutation]]
+id = "quickstart-broker-row-missing"
+why = "증권사 표에서 한 증권사(NH)가 빠진다 — 등록부에 있는 어댑터를 문서가 말하지 않는다."
+guards = ["tests/test_docs_cli_options.py::test_quickstart_shows_every_broker"]
+file = "docs/byo/quickstart.md"
+find = "| `nh` | NH투자증권 PLUG"
+replace = "| nh | NH투자증권 PLUG"
+
 [[removed]]
 id = "ci-shard-denominator-hardcoded"
 why = "샤드를 없앴다 — 전체 검증은 잡 하나다(tests/test_ci_workflow.py 가 matrix 를 막는다)"
