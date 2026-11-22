@@ -12343,8 +12343,8 @@ id = "ci-main-mutations-only-changed"
 why = "main 이 바뀐 변이만 돈다 — 머리 커밋이 전체 변이를 안 지나는데 초록이다"
 guards = ["tests/test_ci_workflow.py::test_skipping_fails_closed_and_main_runs_every_mutation", "tests/test_ci_workflow.py::test_full_gate_is_one_job_and_its_budget_adds_up"]
 file = ".github/workflows/ci.yml"
-find = "--only mutations --full-baseline --workers 2 --budget-min 35"
-replace = "--only mutations --scope changed --full-baseline --workers 2 --budget-min 35"
+find = "--only mutations --full-baseline --workers 2 --budget-min 45"
+replace = "--only mutations --scope changed --full-baseline --workers 2 --budget-min 45"
 
 [[mutation]]
 id = "ci-gate-no-full-baseline"
@@ -12359,39 +12359,39 @@ id = "ci-gate-split-into-shards"
 why = "gate 를 matrix 로 나누면 설치·기준선이 몫마다 돌아 머지당 분이 표를 넘는다"
 guards = ["tests/test_ci_workflow.py::test_full_gate_is_one_job_and_its_budget_adds_up"]
 file = ".github/workflows/ci.yml"
-find = "    timeout-minutes: 75\n    steps:"
-replace = "    timeout-minutes: 75\n    strategy:\n      matrix:\n        shard: [1, 2]\n    steps:"
+find = "    timeout-minutes: 100\n    steps:"
+replace = "    timeout-minutes: 100\n    strategy:\n      matrix:\n        shard: [1, 2]\n    steps:"
 
 [[mutation]]
 id = "ci-gate-budget-over-the-table"
 why = "하네스 예산이 표보다 크면 머지당 상한을 넘어도 안 빨개진다"
 guards = ["tests/test_ci_workflow.py::test_full_gate_is_one_job_and_its_budget_adds_up"]
 file = ".github/workflows/ci.yml"
-find = "--workers 2 --budget-min 35"
-replace = "--workers 2 --budget-min 45"
+find = "--workers 2 --budget-min 45"
+replace = "--workers 2 --budget-min 55"
 
 [[mutation]]
 id = "ci-gate-job-dies-before-the-harness-stops"
 why = "잡 상한이 예산의 두 배보다 짧으면 이유 없이 시간 초과로 죽는다"
 guards = ["tests/test_ci_workflow.py::test_full_gate_is_one_job_and_its_budget_adds_up"]
 file = ".github/workflows/ci.yml"
-find = "    timeout-minutes: 75\n"
-replace = "    timeout-minutes: 60\n"
+find = "    timeout-minutes: 100\n"
+replace = "    timeout-minutes: 80\n"
 
 [[mutation]]
 id = "ci-merge-minutes-over-ceiling"
 why = "머지당 분이 상한을 넘었다 — 포함량을 16~24건에 다 쓰던 그 소모로 돌아간다"
 guards = ["tests/test_ci_workflow.py::test_code_merge_stays_under_the_minutes_ceiling"]
 file = "scripts/ci_plan.py"
-find = "\"gate\": 37, \"pages\": 2}"
-replace = "\"gate\": 50, \"pages\": 2}"
+find = "\"gate\": 47, \"pages\": 2}"
+replace = "\"gate\": 65, \"pages\": 2}"
 
 [[mutation]]
 id = "ci-header-disagrees-with-the-table"
 why = "머리말의 머지당 분이 표와 다르다 — 낡은 37.3분처럼 남는다"
 guards = ["tests/test_ci_workflow.py::test_code_merge_stays_under_the_minutes_ceiling"]
 file = ".github/workflows/ci.yml"
-find = "코드 머지당 **60분 이하**"
+find = "코드 머지당 **70분 이하**"
 replace = "코드 머지당 **48분 이하**"
 
 [[mutation]]

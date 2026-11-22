@@ -9,7 +9,7 @@
 - 테스트: `uv run --extra dev pytest -q` — DB·네트워크 불요.
 - 린트: `uv run --extra dev ruff check src/ tests/ scripts/ research/` 와 `uv run python -m compileall -q research` (CI 의 Lint·Research compiles 와 같다)
 - TUI 수정 뒤: `uv run python scripts/verify_merge.py <워크트리> --only render,pty` (수 분). 실 리포트가 없으면 이 코드로 지은 합성 데모(`--demo`, 수십 초)로 돈다. 인자 없이 돌리면 변이 전부까지라 37분(2026-11-09 실측, 변이 1367건, 다른 작업과 겹치면 더. 바뀐 범위만은 `--scope changed`, `--help`). 무거우니 다른 무거운 작업과 겹치지 않게.
-  변이 범위: 로컬 pre-push 는 `changed`(바뀐 파일에 닿는 것), PR CI 는 `direct`(직접 건드린 것), main push 는 전체를 잡 하나(`gate`)에서, 문서만 바뀌면 안 돈다. 머지당 청구 분 상한 60분(`scripts/ci_plan.py --minutes`), 넘기는 변경은 `tests/test_ci_workflow.py` 가 막는다. 그 이유와 `pull-all --ci-gate` 와의 관계는 `.github/workflows/ci.yml` 머리말.
+  변이 범위: 로컬 pre-push 는 `changed`(바뀐 파일에 닿는 것), PR CI 는 `direct`(직접 건드린 것), main push 는 전체를 잡 하나(`gate`)에서, 문서만 바뀌면 안 돈다. 머지당 분 상한 80분(공개 레포라 청구가 아니라 피드백 속도 — `scripts/ci_plan.py --minutes`), 넘기는 변경은 `tests/test_ci_workflow.py` 가 막는다. 그 이유와 `pull-all --ci-gate` 와의 관계는 `.github/workflows/ci.yml` 머리말.
 - 리포트 다시 만들기: `KR_QUANT_FORCE=1 scripts/daily_report.sh`. 다른 곳에 쓰려면 `KR_QUANT_REPORTS=<폴더>`.
 - 지난 기준일 재구성(지금 코드·확정 데이터, 읽기는 그날 이하): `KR_QUANT_ASOF=YYYY-MM-DD scripts/daily_report.sh`, 여러 날은
   `scripts/rebuild_history.py --root <폴더> --from … --to …`(오래된 날부터 — `change` 가 직전 폴더를 읽는다). 폴더에 `REBUILT.txt`(`commit:` 전체 sha·`finalize:`).
