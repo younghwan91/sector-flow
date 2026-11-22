@@ -1,10 +1,20 @@
-# sector-flow
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/brand/wordmark-dark.svg">
+  <img alt="sector-flow" src="docs/images/brand/wordmark-light.svg" height="56">
+</picture>
 
-**오늘 코스피·코스닥 어느 섹터에 누구의 돈이 들어왔는지를 터미널과 브라우저에서 본다.** 일일 배치가
-수급 DB 에서 리포트 폴더를 만들고 저장 직후 스스로 검사한다. 화면은 그 폴더만 읽으므로 SSH 에서
-바로 뜬다. 숫자는 동시기(同時期) 측정값이고, 돈이 들어온 섹터가 앞으로 오른다는 주장이 아니다([§8](#8-주의--이-숫자들은-예측이-아니다)).
+**한국어** | [English](README.en.md)
 
+**오늘 코스피·코스닥 어느 섹터에 누구의 돈이 들어왔는지를 터미널(`sw-flow`·`sw-ledger`)과 브라우저에서 본다.**
+
+[![CI](https://github.com/younghwan91/sector-flow/actions/workflows/ci.yml/badge.svg)](https://github.com/younghwan91/sector-flow/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-younghwan--chae-0A66C2?logo=linkedin&logoColor=white)](https://www.linkedin.com/in/younghwan-chae/)
+
+- **가속 정렬 + 1년 %ile 맥락:** 단순 금액이 아니라 시총 대비 가속(누적 순매수 ÷ 섹터 시총)으로 정렬하고, 오늘 순매수와 연속 일수를 1년(260거래일) 분포 안 백분위로 읽는다.
+- **오프라인 폴더 + 자기 검증:** 일일 배치가 수급 DB에서 리포트 폴더를 만들고 저장 직후 11계층 자기 검증(`verify_report.py`)을 통과시킨다. 화면(`sw-flow`·`sw-ledger`·웹)은 폴더만 읽으므로 SSH에서 바로 뜬다.
+- **동시기(同時期) 측정이지 예측이 아니다:** 돈이 들어온 섹터가 앞으로 오른다는 주장이 아니다([§8](#8-주의--이-숫자들은-예측이-아니다)).
 
 ## Quick start
 
