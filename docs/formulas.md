@@ -1,5 +1,5 @@
 # sw-flow · sw-ledger 화면 값의 수식 정의
-<!-- refs-verified-at: 4e54e8351a72e0fab86dc142d55155c44050e433 -->
+<!-- refs-verified-at: 0e83700a812165f85846d4ab6dd05bb8b4bb9c0d -->
 
 두 터미널 화면(`sw-flow`·`sw-ledger`)에 뜨는 모든 값의 정의를 코드 위치와 함께 모은 **정본**이다. 식마다 그것을
 계산하는 `파일:줄` 이 붙어 있고, 지표마다 **근거 수준**(앞날 수익률에 대해 검증된 것이 있나)을 적었다.
@@ -124,7 +124,7 @@ DB(`supply_demand`)는 주체별 순매매 **수량**만 준다. 금액은 그�
 
 **(1)** $\quad f^A_{c,i} = q^A_{c,i}\times|P_{c,i}|\,/\,10^8$ [억원]
 
-`scripts/sector_flow.py:115-116` · 종가 절댓값 `scripts/sector_flow.py:104`(DB 가 상하한 표시를 음수 부호로 싣는 경우가 있다) ·
+`scripts/sector_flow.py:116-117` · 종가 절댓값 `scripts/sector_flow.py:105`(DB 가 상하한 표시를 음수 부호로 싣는 경우가 있다) ·
 `EOK = 1e8` `scripts/sector_flow.py:46`. $P$ 는 `supply_demand.close`(키움, 원 종가)다.
 
 이 근사가 문서 전체의 하한이다. 참값은 주체별 체결가 합이고 VWAP 환산도 근사다. 방향과 상대 크기를 보는 값이지 원 단위 정확도를 주장하지 않는다
@@ -156,21 +156,21 @@ $V$ 는 통합 세션 VWAP 다. 5% 를 넘으면 화면·웹이 `종가·VWAP �
 
 **(2)** $\quad f^A_{m,s,i} = \sum_{c\in(m,s)} f^A_{c,i}$
 
-`scripts/sector_flow.py:314-323`. 섹터가 비어 있는 종목은 `(미분류)` 로 묶인다(`scripts/sector_flow.py:105`).
-기관 세부 6개(금투·보험·투신·은행·연기금·사모)도 같은 식으로 환산해 `detail` 에 싣는다(`scripts/sector_flow.py:117-118`, `scripts/sector_flow.py:325-334`).
+`scripts/sector_flow.py:324-333`. 섹터가 비어 있는 종목은 `(미분류)` 로 묶인다(`scripts/sector_flow.py:106`).
+기관 세부 6개(금투·보험·투신·은행·연기금·사모)도 같은 식으로 환산해 `detail` 에 싣는다(`scripts/sector_flow.py:118-119`, `scripts/sector_flow.py:335-344`).
 `natn`(국가)은 90일 내내 0 이라 뺐다(`scripts/sector_flow.py:61-63`).
 
 ### 1.2 거래대금
 
 **(3)** $\quad tv_{c,i} = Q_{c,i}\times|P_{c,i}|\,/\,10^8,\quad Q=$ `acc_trde_qty`
 
-`scripts/sector_flow.py:119`. `daily_bars.trade_value` 가 아니라 **수급 표의 누적 거래량 × 수급 표의 종가**다. 섹터 합은 (2)와 같다.
+`scripts/sector_flow.py:120`. `daily_bars.trade_value` 가 아니라 **수급 표의 누적 거래량 × 수급 표의 종가**다. 섹터 합은 (2)와 같다.
 
 ### 1.3 종목 일별 수익률 — 조정 종가 비
 
 **(4)** $\quad r_{c,i} = \left(\dfrac{P^{adj}_{c,i}}{P^{adj}_{c,\,\text{직전}}}-1\right)\times100$ [%]
 
-`adjusted_returns` `scripts/sector_flow.py:151-177`(직전 거래일 종가 확보 `scripts/sector_flow.py:166`, 비율 `scripts/sector_flow.py:174`).
+`adjusted_returns` `scripts/sector_flow.py:161-187`(직전 거래일 종가 확보 `scripts/sector_flow.py:176`, 비율 `scripts/sector_flow.py:184`).
 $P^{adj}$ 는 `daily_bars_adjusted.close`, "직전" 은 그 종목의 바로 앞 조정 종가 행이다. 분할·병합은 그 표에서 백조정돼 있다.
 
 - **그날 조정 종가가 없으면 $r=$ NaN** 이다 — 0 으로 채우지 않는다. 완전성 관문이 기준일 조정 종가 커버리지 97% 를
@@ -184,7 +184,7 @@ $P^{adj}$ 는 `daily_bars_adjusted.close`, "직전" 은 그 종목의 바로 앞
   15:30)와 같은 날 갈린다 — 11-06 거래소 자체 바구니 −4.37% vs 코스피 −6.02%. 정규장 종가(`regular_close`)로 다시 재면 0.01%p
   안에서 맞고, 09-14 전 차이는 ~0.01%p, 뒤로는 평균 ~0.8%p·최대 2.3%p 다. 화면·웹은 수익률에 `~20시`(통합 종가) 라벨을 달고
   첫 화면·오늘 패널에 `KRX 지수(정규장)` 를 나란히 적는다(§2.18). 09-14 이전 날이 섞인 긴 구간은 그 날들만 정규장 종가다.
-- 단위 함정: $r$ 은 **퍼센트**다. $1+r$ 을 곱하면 하루 +2.5% 가 +250% 가 된다(`scripts/sector_flow.py:395-397`).
+- 단위 함정: $r$ 은 **퍼센트**다. $1+r$ 을 곱하면 하루 +2.5% 가 +250% 가 된다(`scripts/sector_flow.py:405-407`).
 
 ### 1.4 시가총액
 
@@ -214,8 +214,8 @@ $P^{adj}$ 는 `daily_bars_adjusted.close`, "직전" 은 그 종목의 바로 앞
 | $C_c$ (종목 시총) | 페이로드 기준일의 그 종목 시총 | 시총대비·시총 열(§3.8) |
 | $C_{c,i-1}$ (전일 시총) | 종목별 일별 시총의 1일 지연 | 섹터 수익률의 가중치(§2.6) |
 
-`sector_cap` `scripts/sector_flow.py:238-256` · `attach_daily_cap` `scripts/sector_flow.py:180-192`(`cap_lag` `scripts/sector_flow.py:191`) ·
-페이로드 `cap` `scripts/sector_flow.py:432-434`(`caps`) · `names[c]["cap"]` `scripts/sector_flow.py:372`.
+`sector_cap` `scripts/sector_flow.py:248-266` · `attach_daily_cap` `scripts/sector_flow.py:190-202`(`cap_lag` `scripts/sector_flow.py:201`) ·
+페이로드 `cap` `scripts/sector_flow.py:442-444`(`caps`) · `names[c]["cap"]` `scripts/sector_flow.py:382`.
 블록은 언제나 페이로드 기준일에서 끝나므로(§2.1) $C_s$ 는 곧 **구간말** 시총이다.
 
 전일 시총으로 가중하는 이유: 같은 날 거래대금이나 같은 날 시총으로 가중하면 그날 급등한 종목이 가중치도 커서 섹터 수익률이
@@ -226,7 +226,7 @@ $P^{adj}$ 는 `daily_bars_adjusted.close`, "직전" 은 그 종목의 바로 앞
 **(6)** `read_supply_demand(..., sources=("kiwoom",), allow_individual_survivorship=True, require_delisted=False)`
 
 `scripts/sector_flow.py:90-98`. 개인과 기관 세부는 키움에만 있다. 소스를 안 좁히면 지표마다 유니버스가 달라진다. 대가는
-생존편향이다(§7.4). 종목 메타는 `stocks`(현재 상장 마스터)와 inner join 한다(`scripts/sector_flow.py:100-101`).
+생존편향이다(§7.4). 종목 메타는 `stocks`(현재 상장 마스터)와 inner join 한다(`scripts/sector_flow.py:101-102`).
 
 **유니버스는 보통주 마스터다.** `stocks` 는 `kind = 'A'` 만 담는다 — 우선주·리츠·인프라펀드 등은 `stocks`·`supply_demand`·`daily_bars`
 어디에도 없어 모든 화면과 시장 합계에서 빠진다. 2026-11-06 기준 139종목(거래소 137·코스닥 2), 시총 약 160조(삼성전자우 약 125조),
@@ -247,7 +247,7 @@ $P^{adj}$ 는 `daily_bars_adjusted.close`, "직전" 은 그 종목의 바로 앞
 
 **(8)** $\quad \nu^{W}_c[\mathrm{ret}] = \Big(\prod_{i=N-W}^{N-1}(1+r_{c,i}/100)-1\Big)\times100$ [%]
 
-`scripts/sector_flow.py:385-404`(기하 누적 `scripts/sector_flow.py:398-399`) · `NAME_WINDOWS` `scripts/sector_flow.py:54`.
+`scripts/sector_flow.py:395-414`(기하 누적 `scripts/sector_flow.py:408-409`) · `NAME_WINDOWS` `scripts/sector_flow.py:54`.
 **결측일($r$=NaN)은 1 배로 본다**(그날 0%). 조정 종가가 하루 비어도 다음 유효일의 수익률이 직전 유효 종가에서 재므로 구간
 누적은 보존된다. 그 구간에 한 번도 거래가 없으면 그 창의 키 자체가 없다 — 이것이 §2.13·§3.1 의 "그 구간에 거래된 종목" 이다.
 
@@ -336,7 +336,7 @@ z-점수를 안 쓰는 이유: 창이 겹쳐 자기상관이 크고 260일 안�
 
 **(17)** $\quad \Delta v_s = \Big(\prod_{i=i_0}^{i_1}\big(1+\bar r_{s,i}/100\big)-1\Big)\times100$ [%], 여기서 $\bar r_{s,i}$ 는 고른 시장들의 가중합 $\sum_m w_{m,s,i}\bar r_{m,s,i}/\sum_m w_{m,s,i}$
 
-일별 가중평균 `scripts/sector_flow.py:442-451`(유효 종목만 `scripts/sector_flow.py:448`) · 구간 기하누적 `scripts/sector_numbers.py:149-162` ·
+일별 가중평균 `scripts/sector_flow.py:452-461`(유효 종목만 `scripts/sector_flow.py:458`) · 구간 기하누적 `scripts/sector_numbers.py:149-162` ·
 열 `src/sectorflow/tui/flow_view.py:2189`.
 
 - **수익률이 없는 종목은 분자에서도 가중치에서도 뺀다.** 남기면 평균이 0 쪽으로 끌린다.
@@ -962,7 +962,7 @@ KRX 주체(기타외국인 등)의 순매수 추정치에 결측과 식 (1)의 �
 |---|---|---|
 | `장중·미확정` | 기준일이 오늘이고 KST 17시 전 | `_finalized` `scripts/sector_flow.py:67-74`, `FINALIZED_KST_HOUR = 17` `scripts/sector_flow.py:58` |
 | `마감·잠정` | 수집 창이 지났다(시계만 본다). 당일 수급은 잠정치다 | `src/sectorflow/tui/flow_view.py:2000-2009`(`status_chip`) |
-| `마감·확정` | 화~토 08:20 확정 모드가 `daily_finalize`(`finalize_both`·`rebuild_adjusted`) 성공을 확인하고 확정치로 다시 만든 리포트. 페이로드에 `final: true`, 폴더에 `FINAL.txt` | `scripts/daily_report.sh:209-266`(`FINAL_OK`), `scripts/daily_report.sh:442-477`, `scripts/finalize_done.py:100-148`(`def finalize_done`), `scripts/sector_flow.py:2044-2046` |
+| `마감·확정` | 화~토 08:20 확정 모드가 `daily_finalize`(`finalize_both`·`rebuild_adjusted`) 성공을 확인하고 확정치로 다시 만든 리포트. 페이로드에 `final: true`, 폴더에 `FINAL.txt` | `scripts/daily_report.sh:209-266`(`FINAL_OK`), `scripts/daily_report.sh:442-477`, `scripts/finalize_done.py:100-148`(`def finalize_done`), `scripts/sector_flow.py:2054-2056` |
 | `⚠ 검증 실패(VERIFY_FAILED.txt)` | 저장 직후 자기 검증에 걸렸다. 게시는 하고 다음 크론이 다시 만든다 — 다만 같은 기준일에 검증을 통과한 게시본이 있으면 바꿔 끼우지 않고 걸린 판을 `.rejected/` 에 비켜 둔다(1 로 알림) | `report_warnings` `src/sectorflow/tui/flow_view.py:2011-2029`, `scripts/daily_report.sh:370-392`(`VERIFY_RC`) |
 | `⚠ MM-DD 수집 미완` | 더 뒤 기준일 폴더에 `INCOMPLETE.txt` — 완전성 관문이 막아 `latest` 가 전날에 머문다 | `src/sectorflow/tui/flow_view.py:2027-2028`, `scripts/daily_report.sh:295-331`(`GATE_RC`) |
 | `⚠ N일 지난 리포트` | 기준일이 달력 4일 이상 지났다 | `STALE_DAYS = 4` `src/sectorflow/tui/flow_view.py:2034`, `staleness_warning` `src/sectorflow/tui/flow_view.py:2047-2053` |
