@@ -2,7 +2,8 @@
 
 코스피·코스닥 섹터 자금흐름 일일 리포트(`scripts/daily_report.sh`)와 터미널 화면(`sw-flow`·`sw-ledger`). 2026-11-02 swing-it 에서
 히스토리째 분리했다. 일일 배치의 수집은 quant-airflow, 알파 심사·전략은 swing-it 소관이다. 여기는 관측만 한다.
-`src/sectorflow/collect/` 는 자기 키움 키로 sqlite 를 채우는 BYO 수집기로 일일 배치와 별개다(`docs/byo/`).
+`src/sectorflow/collect/` 는 자기 증권사 키로 sqlite 를 채우는 BYO 수집기로 일일 배치와 별개다(`docs/byo/`). 증권사는 `--broker`
+(키움 기본 · 한국투자·LS·토스·DB·NH 는 지도 전용·**미검증** — 어댑터 `collect/brokers/`, 조사·검증 현황 `docs/byo/brokers.md`).
 
 ## 명령
 - 테스트: `uv run --extra dev pytest -q` — DB·네트워크 불요.
