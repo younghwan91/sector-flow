@@ -9870,7 +9870,7 @@ id = "readme-denies-the-byo-collector"
 why = "BYO 수집기를 빼고 말한다 — 수집 문구가 코드와 어긋난다"
 guards = ["tests/test_first_reader.py::test_collection_wording_admits_the_byo_collector"]
 file = "CLAUDE.md"
-find = "`src/sectorflow/collect/` 는 자기 키움 키로 sqlite 를 채우는 BYO 수집기로 일일 배치와 별개다(`docs/byo/`).\n"
+find = "`src/sectorflow/collect/` 는 자기 증권사 키로 sqlite 를 채우는 BYO 수집기로 일일 배치와 별개다(`docs/byo/`). 증권사는 `--broker`\n"
 replace = ""
 
 [[mutation]]
