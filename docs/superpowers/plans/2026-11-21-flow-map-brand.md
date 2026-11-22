@@ -50,6 +50,7 @@
 | 33–40 | 브랜드 | 브랜딩 | | |
 | 41–46 | 후원·커뮤니티·랜딩 | 브랜딩 | | |
 | 47–52 | BYO | 개발 | | |
+| 55–64 | 증권사 어댑터 | 개발 | | |
 | 53–54 | 릴리스·마감 | 기획 | | |
 
 레인: **개발**(5→32 순서 의존), **브랜딩**(33→46, 33·34 뒤 병렬 가능, 45 는 Task 25 뒤), **BYO**(47→52, 개발 레인과 독립, 50 은 Task 13 뒤). 레인끼리 병렬.
@@ -394,6 +395,61 @@ def exchange_graph(sums: Sums) -> dict:
 - [ ] 소유자 키로 두 섹터 조각(`--sectors "운송/창고,오락/문화"`), 배치 시간(18:00~20:30·08:00~10:30) 피해 `busy.py` 준수로 문서 명령을 그대로 실행, 지도가 뜨는지와 kr_quant 판 지도 데이터 차 0 을 `docs/byo/phase3-map.md` 에 기록(실데이터 숫자는 적지 않고 일치 여부·호출 수·시간만). → 커밋 `docs(byo): 지도 경로 실측`
 
 ---
+
+## Phase 6b — 증권사 어댑터 (2026-11-21 추가, 조사 `docs/byo/brokers.md`)
+
+소유자 요청: 각자 자기 증권사 키를 넣으면 지도가 뜨게. 소유자는 키움 외 실제 키가 없다 — 어댑터는 공개 문서의 응답 모양으로 만들고
+가짜 전송으로 시험하며, 실제 키로 키움과 대조하기 전까지 **미검증** 표지를 단다. 검증은 키가 있는 사용자가 대조 명령을 돌려 이슈로 올린다.
+벤더 명세 파일·공식 클라이언트 코드를 레포에 복사하지 않는다(키움 공식 클라이언트는 복제·수정 금지 라이선스). 시험용 응답은 문서를 보고 손으로 쓴 최소 표본이다.
+
+### Task 55: 어댑터 구조
+
+**Files:** Create `src/sectorflow/collect/brokers/{__init__,base}.py`; Modify `run.py`(`--broker`), `kiwoom.py`·`fetch.py`(키움을 첫 어댑터로 옮김 — 동작·호출 불변)
+
+**Interfaces — Produces:**
+```python
+@dataclass(frozen=True)
+class Capability:
+    actors: frozenset[str]          # storage.INVESTOR_COLUMNS 중 주는 것
+    venue: str                      # "KRX" | "KRX+NXT"
+    verified: bool                  # 실제 키로 키움과 대조했나
+    terms_note: str                 # 약관상 주의(한 줄)
+class Broker(Protocol):
+    name: str; capability: Capability
+    def universe(self) -> list[dict]: ...                      # stocks 행 (sector 는 없을 수 있다)
+    def investor_daily(self, code: str, start: str, end: str) -> list[dict]: ...  # supply_demand 행
+BROKERS: dict[str, Callable[[Settings], Broker]]               # "kiwoom", "kis", "ls", "toss", "db", "nh"
+```
+- [ ] 테스트 `test_kiwoom_adapter_byte_identical`(기존 백필 가짜 전송 기록 = 옮긴 뒤 기록), `test_broker_registry_names`. 커밋 `refactor(collect): 증권사 어댑터 구조, 키움을 첫 어댑터로`
+
+### Task 56: 섹터 표를 증권사와 떼기
+
+수급만 증권사에서 받고 섹터는 한 벌로(조사 §1.3). 키움 외 사용자는 키움 업종을 받을 수 없으므로 섹터 출처를 정한다: (a) 그 증권사가 주는 업종(코드 체계가 다르면 표지), (b) 사용자가 가진 다른 키, (c) 공개 출처(공공데이터 `KRX상장종목정보` 는 "이용허락범위 제한 없음" — 업종 필드 유무 확인). 레포에 키움 업종표 사본을 싣지 않는다(재배포).
+- [ ] `stocks.sector_source` 열, 지도 표지에 섹터 출처. 테스트 `test_sector_source_labelled`. 커밋 `feat(collect): 섹터 출처를 증권사와 떼어 표지`
+
+### Task 57: KIS 어댑터
+- [ ] 토큰 발급·갱신, `FHPTJ04160001`(KRX `J`), 필드 대응(증권→금융투자, 종금→기타금융, 기금→연기금, 국가 결측 — 기타·기타단체를 국가로 넣지 않는다), 상한 초 18 → 기본 보수적 5. 실전 키 전용 경고. 테스트: 손 표본 응답 → `supply_demand` 행 기대값, 연속조회. 커밋 `feat(collect): 한국투자 어댑터(미검증)`
+
+### Task 58: LS 어댑터
+- [ ] `t1702`(`K`), 1:1 대응, 초당 1건. 시작 시 약관 경고("3개월 주문체결 20회 이하 해지 사유")를 출력하고 `--i-understand-ls-terms` 없이는 멈춘다. 커밋 `feat(collect): LS 어댑터(미검증)`
+
+### Task 59: 토스 어댑터
+- [ ] `/api/v1/stocks/{symbol}/investor-trading`, `venue="KRX+NXT"`. 페이로드·지도 표지가 `DATA_BASIS` 대신 통합 기준 문구를 쓴다(`basis.py` 에 통합 문구 추가, KRX 단독과 섞이면 수집이 거부). 토스 섹터는 쓰지 않는다(다중 소속). 커밋 `feat(collect): 토스 어댑터(미검증, KRX+NXT 통합)`
+
+### Task 60: DB·NH 어댑터(기관계만)
+- [ ] `DAYSTOCKTJJ`, `currentInvestor`. 주는 주체만 채우고 나머지는 NULL(0 아님 — 데이터 함정: NULL 은 모름). 기타법인을 잔여로 메우지 않는다. 커밋 `feat(collect): DB·NH 어댑터(기관계만, 미검증)`
+
+### Task 61: 능력에 따른 지도
+- [ ] 페이로드에 `capability`(주체·거래소·검증 여부·섹터 출처). `flowmap` 은 없는 주체를 노드로 그리지 않고 "이 증권사는 X 를 주지 않는다" 표지, 잔여 노드는 4주체가 다 있을 때만. 미검증이면 지도 머리에 "미검증 어댑터" 배지. 테스트 `test_missing_actor_not_drawn`, `test_resid_only_with_all_four`. 커밋 `feat(map): 증권사 능력에 맞춘 지도`
+
+### Task 62: 대조 명령
+- [ ] `sector-flow-collect equiv --broker kis --db kis.db --against kiwoom.db [--sectors …]`: 겹치는 (날짜, 종목, 주체) 차와 섹터 합 상대오차(0.5% 바, Phase 1 과 같다) — 출력은 일치 여부·칸 수·최대 상대오차만(실데이터 숫자 없음, 이슈에 붙여도 안전하게). 커밋 `feat(collect): 증권사 대조 명령`
+
+### Task 63: 검증 기여 길
+- [ ] 이슈 템플릿 `.github/ISSUE_TEMPLATE/broker-verify.yml`(대조 명령 출력만 붙이게, 실데이터 금지 안내), `docs/byo/brokers.md` 에 검증 현황 표(검증자·날짜·결과). 커밋 `docs(byo): 증권사 어댑터 검증 기여 안내`
+
+### Task 64: 온보딩에 증권사 고르기
+- [ ] `docs/byo/quickstart.md`(Task 51)에 증권사별 키 발급·IP 등록·상한·약관 주의 한 줄씩, `--broker` 예시. `tests/test_docs_cli_options.py`. 커밋 `docs(byo): 증권사별 시작하기`
 
 ## Phase 7 — 릴리스·마감
 
