@@ -62,7 +62,7 @@ def test_card_has_basis_line():
     assert "[합성 데모]" in demo and DEMO_NOTICE in demo
 
 
-def test_card_refuses_a_published_folder_and_clears_stale_cards(tmp_path, capsys):
+def test_card_refuses_a_published_folder_and_clears_stale_cards(tmp_path, capsys, monkeypatch):
     """게시된 폴더(이름이 기준일)에는 쓰지 않는다. 지도가 없으면 실패하고 옛 카드를 남기지 않는다 — 어제 카드가 오늘 것처럼 걸린다."""
     pub = tmp_path / "2026-01-10"
     pub.mkdir()
@@ -74,6 +74,16 @@ def test_card_refuses_a_published_folder_and_clears_stale_cards(tmp_path, capsys
     assert MC.main(["--dir", str(build)]) == 1
     assert not any((build / n).exists() for n in MC.OUTPUTS), "옛 카드가 남았다"
     assert "map.html" in capsys.readouterr().err
+    # 브라우저가 없어 못 찍은 날(종료 2)에도 옛 카드는 지운다 — 찍기 전에 비운다.
+    (build / "map.html").write_text("<html></html>", "utf-8")
+    for n in MC.OUTPUTS:
+        (build / n).write_bytes(b"old")
+
+    def no_browser(*_a):
+        raise MC.NoBrowser("Chromium 없음")
+    monkeypatch.setattr(MC, "shoot", no_browser)
+    assert MC.main(["--dir", str(build)]) == 2
+    assert not any((build / n).exists() for n in MC.OUTPUTS), "브라우저 없는 날 옛 카드가 남았다"
 
 
 def _png_size(p: Path) -> tuple[int, int]:
