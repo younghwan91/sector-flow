@@ -25,7 +25,8 @@ LEDGER = REPO / "docs" / "SCREENSHOTS.md"
 
 #: 공개되는 경로. README 는 ``docs/images/`` 의 그림을 싣는다. ``_site/`` 는 Pages 에 올라가는 빌드 산출물(gitignore) —
 #: 있을 때만 보인다. Pages 워크플로가 짓고 나서 이 검사를 돌린 뒤 배포한다(``.github/workflows/pages.yml``).
-PUBLIC_GLOBS = ("README.md", "README.en.md", "docs/images/**", "docs/brand/**", "site/**", "_site/**")
+PUBLIC_GLOBS = ("README.md", "README.en.md", "docs/images/**/*", "docs/brand/**/*", "site/**/*", "_site/**/*")
+#: ``**/*`` 로 쓴다 — 3.11·3.12 의 ``glob("x/**")`` 는 폴더만 준다(3.13 부터 파일도). main 의 gate 는 3.11 이라 여기서 그림 0개로 빨갰다(2026-11-22).
 #: 원장이 받는 그림 — README 머리의 타임랩스는 GIF 다(``scripts/map_video.py``).
 PICTURES = (".png", ".gif")
 
