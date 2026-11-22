@@ -3,7 +3,7 @@
 
     uv run --with playwright --with pillow --with imageio-ffmpeg python scripts/demo_shots.py   # docs/images 그림 + 원장 sha
 
-터미널은 tmux 160×45 ``capture-pane -e`` → ANSI → HTML → Chromium(128색), 웹은 Chromium 1440·390(DPR 2, 64색).
+터미널은 tmux 160×45 ``capture-pane -e`` → ANSI → HTML → Chromium(128색), 웹은 Chromium 1440·390(DPR 2, 64색 — 수급 지도는 128색).
 수급 지도 타임랩스 GIF(``map-demo.gif``)는 ``scripts/map_video.py`` 로 — ffmpeg 가 없으면 아무것도 찍기 전에 멈춘다.
 그림은 **HEAD 의 화면 코드**여야 뜻이 있다 — ``docs/SCREENSHOTS.md`` 의 감시 경로에 커밋 안 한 변경이 있으면 찍지 않는다.
 원장 sha 를 HEAD 로 고쳐 쓰고 ``tests/test_screenshots_fresh.py`` 가 그 뒤의 화면 변경을 잡는다.
@@ -242,7 +242,7 @@ def shoot(report: Path, out: Path) -> None:
             bottom = pg.evaluate("(()=>{const r=document.getElementById('fig').getBoundingClientRect();"
                                  "return Math.ceil(r.bottom+scrollY)+8;})()")
             pg.screenshot(path=str(out / "map-demo.png"), full_page=True, clip={"x": 0, "y": 0, "width": 1440, "height": bottom})
-            _quantize(out / "map-demo.png", 64)
+            _quantize(out / "map-demo.png", 128)   # 64색이면 머리 표지의 파랑이 청록으로 바랜다
             ctx.close()
             browser.close()
     finally:

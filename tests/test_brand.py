@@ -116,3 +116,16 @@ def test_logo_colours_come_from_the_table(name):
     allowed = {cells[2 * col] for cells in _rows().values()}
     used = set(re.findall(r'fill="(#[0-9a-f]{6})"', (BRAND / name).read_text("utf-8")))
     assert used and used <= allowed, f"{name}: 표에 없는 색 {sorted(used - allowed)}"
+
+
+def test_map_page_carries_the_same_wordmark_and_favicon():
+    """지도 페이지 머리의 워드마크·파비콘은 이 폴더 파일의 사본이다 — 파일만 고치고 페이지를 잊으면 둘이 갈린다."""
+    from urllib.parse import unquote
+    page = (REPO / "scripts/templates/sector_map.html").read_text("utf-8")
+    body = (BRAND / "wordmark-dark.svg").read_text("utf-8").strip()
+    body = body[body.index("<title>"):]                      # 여는 태그(크기·xmlns)만 페이지에 맞게 다르다
+    assert body in page, "지도 페이지 머리의 워드마크가 docs/brand/wordmark-dark.svg 와 다르다"
+    m = re.search(r'<link rel="icon" type="image/svg\+xml" href="data:image/svg\+xml,([^"]+)">', page)
+    assert m, "지도 페이지에 파비콘 링크가 없다"
+    fav = (BRAND / "favicon.svg").read_text("utf-8").strip().replace('"', "'")
+    assert unquote(m.group(1)) == fav, "지도 페이지 파비콘이 docs/brand/favicon.svg 와 다르다"
