@@ -25,6 +25,24 @@ ACTOR_LABEL = {"indiv": "개인", "forgn": "외국인", "inst": "기관", "etc":
 Sums = dict[str, dict[str, float]]
 
 
+def present_actors(P: dict) -> tuple[str, ...]:
+    """이 페이로드가 가진 주체 — BYO 증권사 능력(``P["capability"]["actors"]``)이 있으면 그것, 없으면(배치·데모) 4주체 다.
+
+    기관계만 주는 증권사(DB·NH)는 기타법인이 없다. 없는 주체는 노드·간선·머리글·시간 흐름 어디에도 그리지 않는다 — 0 으로 그리면
+    "순매매 없음" 으로 읽힌다(NULL 은 모름이다).
+    """
+    cap = P.get("capability")
+    if not cap:
+        return ACTORS
+    have = set(cap.get("actors") or ())
+    return tuple(a for a in ACTORS if a in have)
+
+
+def has_resid(P: dict) -> bool:
+    """잔여 노드를 그리나 — 4주체가 **다** 있을 때만. 하나라도 없으면 −Σ 가 그 주체를 삼켜 잔여가 아니게 된다."""
+    return len(present_actors(P)) == len(ACTORS)
+
+
 def _span(vals, i0: int, i1: int) -> float:
     return float(sum(v for v in vals[i0:i1 + 1] if v is not None))
 
@@ -33,18 +51,21 @@ def window_sums(P: dict, markets: list[str], i0: int, i1: int) -> Sums:
     """``markets`` 를 더한 섹터별 주체 순매수 — 날짜 색인 ``i0`` 부터 ``i1`` 까지(**양끝 포함**).
 
     ``None`` 은 0 으로 센다(미보고·결측 — 0 과 구별하지 않는다, 합계 자리라서). 그 시장에 없는 섹터도 0 이다.
-    섹터 순서는 ``P["sectors"]`` 이고, :data:`RESID` 는 4주체 합의 부호를 뒤집은 값이다.
+    섹터 순서는 ``P["sectors"]`` 이고, :data:`RESID` 는 4주체 합의 부호를 뒤집은 값이다. 주체는 :func:`present_actors` 뿐이고
+    잔여는 :func:`has_resid` 일 때만 있다.
     """
     out: Sums = {}
+    actors, resid = present_actors(P), has_resid(P)
     for s in P["sectors"]:
-        row = {a: 0.0 for a in ACTORS}
+        row = {a: 0.0 for a in actors}
         for m in markets:
             f = (P["flows"].get(m) or {}).get(s)
             if not f:
                 continue
-            for a in ACTORS:
+            for a in actors:
                 row[a] += _span(f.get(a) or (), i0, i1)
-        row[RESID] = 0.0 - sum(row[a] for a in ACTORS)    # 0.0 − : 합이 0 이면 −0.0 이 아니라 0.0
+        if resid:
+            row[RESID] = 0.0 - sum(row[a] for a in actors)    # 0.0 − : 합이 0 이면 −0.0 이 아니라 0.0
         out[s] = row
     return out
 
@@ -285,7 +306,8 @@ def map_headline(P: dict, market: str, win: int) -> dict:
     """
     N = len(P["dates"])
     sums = window_sums(P, market_list(P, market), N - win, N - 1)
-    net = {a: {"v": sum(r[a] for r in sums.values())} for a in ACTORS}
+    actors = present_actors(P)
+    net = {a: {"v": sum(r[a] for r in sums.values())} for a in actors}
     gave = summary.dominant({a: f for a, f in net.items() if f["v"] < -EPS})
     took = summary.dominant({a: f for a, f in net.items() if f["v"] > EPS})
     period = "기준일" if win == 1 else f"최근 {win}거래일"
@@ -296,7 +318,7 @@ def map_headline(P: dict, market: str, win: int) -> dict:
         parts.append(f"{josa(ACTOR_LABEL[took], '이/가')} 가장 크게 순매수 {_big(net[took]['v'])}")
     lead = f"{period} {market} — " + (" · ".join(parts) if parts else "순매수·순매도가 없다")
     edges = [(abs(row[a]), i, j, s, a, row[a]) for i, (s, row) in enumerate(sums.items())
-             for j, a in enumerate(ACTORS) if abs(row[a]) > EPS]
+             for j, a in enumerate(actors) if abs(row[a]) > EPS]
     edges.sort(key=lambda e: (-e[0], e[1], e[2]))
     facts = [f"{s} — {ACTOR_LABEL[a]} {_big(v)}" for _m, _i, _j, s, a, v in edges[:N_FACTS]]
     return {"lead": lead, "facts": facts}
@@ -317,15 +339,34 @@ def _size(o) -> int:
 
 def actor_keys(P: dict) -> list[str]:
     """보기 2 에서 누를 수 있는 주체 — 4주체·잔여, 그리고 기관 세부(``inst:<키>``, 투신·연기금 먼저)와 기관 나머지."""
-    det = detail_keys(P)
-    return [*NODE_ORDER, *([DETAIL_PREFIX + k for k in (*det, INST_OTHER)] if det else [])]
+    det = detail_keys(P) if "inst" in present_actors(P) else []
+    return [*present_actors(P), *([RESID] if has_resid(P) else []),
+            *([DETAIL_PREFIX + k for k in (*det, INST_OTHER)] if det else [])]
 
 
 def stream_data(P: dict, markets: list[str], n: int = STREAM_N) -> dict:
     """지도 페이지 두 번째 보기("시간 흐름")의 묶음 — 날짜는 한 번만, 시장(화면 이름) × 4주체마다 :func:`stream_series` 의 띠."""
     n = max(0, min(n, len(P["dates"])))
     return {"dates": P["dates"][len(P["dates"]) - n:],
-            "views": {m: {a: stream_series(P, market_list(P, m), a, n)["series"] for a in ACTORS} for m in markets}}
+            "views": {m: {a: stream_series(P, market_list(P, m), a, n)["series"] for a in present_actors(P)}
+                      for m in markets}}
+
+
+def capability_marks(P: dict) -> dict:
+    """지도 머리의 증권사 표지 — ``actors``(그릴 주체 노드 순서, 잔여는 4주체가 다 있을 때만), ``missing``(주지 않는 주체 이름),
+    ``broker``(어댑터 이름, 배치는 ``None``), ``verified``(실제 키로 키움과 대조했나 — 거짓이면 "미검증 어댑터" 배지), ``cap_note``.
+    """
+    cap = P.get("capability") or {}
+    actors = present_actors(P)
+    missing = [ACTOR_LABEL[a] for a in ACTORS if a not in actors]
+    names = cap.get("broker_labels") or []
+    who = "·".join(names) or "이 증권사"
+    note = None
+    if missing:
+        note = (f"{who} 어댑터는 {josa('·'.join(missing), '을/를')} 주지 않는다 — 그 주체와 잔여는 그리지 않는다"
+                f"(0 이 아니라 모름)")
+    return {"actors": [*actors, *([RESID] if has_resid(P) else [])], "missing": missing,
+            "broker": who if names else None, "verified": bool(cap.get("verified", True)), "cap_note": note}
 
 
 def build_map_data(P: dict) -> dict:
@@ -346,14 +387,15 @@ def build_map_data(P: dict) -> dict:
         views[m] = {}
         for w in windows:
             sums = window_sums(P, ms, N - w, N - 1)
-            full = with_detail(sums, inst_detail_sums(P, ms, N - w, N - 1)) if len(keys) > len(NODE_ORDER) else sums
+            full = with_detail(sums, inst_detail_sums(P, ms, N - w, N - 1)) if any(
+                k.startswith(DETAIL_PREFIX) for k in keys) else sums
             views[m][str(w)] = {"exchange": exchange_graph(sums),
                                 "actors": {a: actor_graph(full, a) for a in keys},
                                 "headline": map_headline(P, m, w)}
     # 거래소 기준 표지 — KRX+NXT 통합(토스 어댑터 BYO)이면 KRX 단독 문구 대신 통합 문구(basis.DATA_BASIS_INTEGRATED).
     basis = DATA_BASIS_INTEGRATED_SHORT if P.get("venue") == "KRX+NXT" else DATA_BASIS_SHORT
     out = {"asof": P["dates"][-1] if N else None, "demo": bool(P.get("demo")), "basis": basis,
-           "sector_source": sector_source_label(P.get("sector_source")),
+           "sector_source": sector_source_label(P.get("sector_source")), **capability_marks(P),
            "markets": markets, "windows": windows, "labels": {**ACTOR_LABEL, **{DETAIL_PREFIX + k: v for k, v in
                                                                                   (P.get("detail_labels") or {}).items()},
                                                                DETAIL_PREFIX + INST_OTHER: "기관 나머지"},

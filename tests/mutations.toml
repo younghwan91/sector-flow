@@ -12583,8 +12583,8 @@ id = "flowmap-resid-dropped"
 why = "잔여를 0 으로 두면 4주체 합의 잔차가 사라져 섹터마다 넘긴 쪽과 넘겨받은 쪽이 안 맞는다(원장 §2.3)"
 guards = ["tests/test_flowmap.py::test_resid_is_negative_sum"]
 file = "src/sectorflow/flowmap.py"
-find = "        row[RESID] = 0.0 - sum(row[a] for a in ACTORS)"
-replace = "        row[RESID] = 0.0"
+find = "            row[RESID] = 0.0 - sum(row[a] for a in actors)"
+replace = "            row[RESID] = 0.0"
 
 [[mutation]]
 id = "flowmap-none-not-skipped"
@@ -12764,8 +12764,8 @@ id = "headline-zero-edge-fact"
 why = "0 간선을 사실 줄로 세우면 '가 — 기관 +0억' 같은 관측 아닌 줄이 나간다"
 guards = ["tests/test_flowmap.py::test_headline_facts_are_marginal_edges"]
 file = "src/sectorflow/flowmap.py"
-find = "             for j, a in enumerate(ACTORS) if abs(row[a]) > EPS]"
-replace = "             for j, a in enumerate(ACTORS)]"
+find = "             for j, a in enumerate(actors) if abs(row[a]) > EPS]"
+replace = "             for j, a in enumerate(actors)]"
 
 [[mutation]]
 id = "headline-says-inflow"
@@ -13439,8 +13439,8 @@ id = "map-card-source-line-missing"
 why = "카드 꼬리의 출처 줄이 빈다 — 데모 카드가 실데이터 출처를 달거나 실 카드에 출처가 없다."
 guards = ["tests/test_map_card.py::test_card_has_basis_line"]
 file = "scripts/sector_map.py"
-find = '''            .replace("__SOURCE__", DEMO_SOURCE if data.get("demo") else SOURCE)'''
-replace = '''            .replace("__SOURCE__", SOURCE)'''
+find = '''            .replace("__SOURCE__", DEMO_SOURCE if data.get("demo")'''
+replace = '''            .replace("__SOURCE__", SOURCE if True'''
 
 [[mutation]]
 id = "map-card-writes-published-folder"
@@ -13700,8 +13700,8 @@ id = "sector-source-not-in-payload"
 why = "수급만 페이로드에 섹터 출처를 싣지 않는다 — 지도 머리의 섹터 출처 표지가 사라진다."
 guards = ["tests/test_collect_sectors.py::test_sector_source_labelled"]
 file = "scripts/sector_flow.py"
-find = "           \"sector_source\": sector_source_counts(df), \"venue\": venue}"
-replace = "           \"sector_source\": None, \"venue\": venue}"
+find = "    sec_src = sector_source_counts(df)\n"
+replace = "    sec_src = None\n"
 
 [[mutation]]
 id = "sector-source-not-in-map-data"
@@ -14182,6 +14182,70 @@ guards = ["tests/test_collect_brokers.py::test_broker_registry_names"]
 file = "src/sectorflow/collect/brokers/__init__.py"
 find = "    \"nh\": nh.make,\n"
 replace = ""
+
+[[mutation]]
+id = "map-missing-actor-drawn"
+why = "증권사 능력을 무시하고 4주체를 다 그린다 — 기관계만 주는 증권사의 기타법인이 0 으로 지도에 선다('모름'이 '순매매 없음'이 된다)."
+guards = ["tests/test_map_capability.py::test_missing_actor_not_drawn", "tests/test_map_capability.py::test_db_sqlite_payload_carries_the_capability_and_drops_what_it_lacks"]
+file = "src/sectorflow/flowmap.py"
+find = "    if not cap:\n        return ACTORS\n"
+replace = "    if True:\n        return ACTORS\n"
+
+[[mutation]]
+id = "map-resid-without-all-four"
+why = "주체가 빠져도 잔여 노드를 그린다 — −(개인+외국인+기관)이 기타법인을 삼켜 잔여가 아니다."
+guards = ["tests/test_map_capability.py::test_resid_only_with_all_four", "tests/test_map_capability.py::test_missing_actor_not_drawn"]
+file = "src/sectorflow/flowmap.py"
+find = "    return len(present_actors(P)) == len(ACTORS)\n"
+replace = "    return True\n"
+
+[[mutation]]
+id = "payload-missing-actor-kept-as-zero"
+why = "주지 않는 주체의 0 배열을 수급만 페이로드에 남긴다 — 다른 소비자가 '순매매 없음' 으로 읽는다."
+guards = ["tests/test_map_capability.py::test_db_sqlite_payload_carries_the_capability_and_drops_what_it_lacks"]
+file = "scripts/sector_flow.py"
+find = "            for a in drop:\n                f.pop(a, None)\n"
+replace = "            pass\n"
+
+[[mutation]]
+id = "payload-capability-union"
+why = "여러 어댑터가 섞인 sqlite 의 주체를 합집합으로 잡는다 — 한쪽만 주는 주체가 다른 쪽 종목에서 0 으로 더해진다."
+guards = ["tests/test_map_capability.py::test_mixed_brokers_keep_only_what_both_give"]
+file = "scripts/sector_flow.py"
+find = "    have = set.intersection(*(set(c.actors) for c in caps)) if caps else set()\n"
+replace = "    have = set.union(*(set(c.actors) for c in caps)) if caps else set()\n"
+
+[[mutation]]
+id = "payload-mixed-verified-if-any"
+why = "미검증 어댑터가 섞여도 검증됨으로 표시한다 — 배지가 사라진다."
+guards = ["tests/test_map_capability.py::test_mixed_brokers_keep_only_what_both_give"]
+file = "scripts/sector_flow.py"
+find = "\"verified\": bool(caps) and all(c.verified for c in caps)"
+replace = "\"verified\": bool(caps) and any(c.verified for c in caps)"
+
+[[mutation]]
+id = "map-unverified-badge-lost"
+why = "미검증 어댑터의 지도가 검증된 것처럼 보인다 — '미검증 어댑터' 배지가 안 선다."
+guards = ["tests/test_map_capability.py::test_db_sqlite_payload_carries_the_capability_and_drops_what_it_lacks"]
+file = "src/sectorflow/flowmap.py"
+find = "\"verified\": bool(cap.get(\"verified\", True)),"
+replace = "\"verified\": True,"
+
+[[mutation]]
+id = "map-missing-actor-note-lost"
+why = "주지 않는 주체를 말하지 않는다 — 기타법인 노드가 없는 이유가 지도에 없다."
+guards = ["tests/test_map_capability.py::test_missing_actor_not_drawn"]
+file = "src/sectorflow/flowmap.py"
+find = "    note = None\n    if missing:\n"
+replace = "    note = None\n    if False:\n"
+
+[[mutation]]
+id = "map-byo-source-says-kiwoom"
+why = "다른 증권사로 받은 지도의 출처 줄이 '키움증권 API로 수집' 이라 적는다."
+guards = ["tests/test_map_capability.py::test_db_sqlite_payload_carries_the_capability_and_drops_what_it_lacks"]
+file = "scripts/sector_map.py"
+find = "                     else BYO_SOURCE.format(broker=data[\"broker\"]) if data.get(\"broker\") else SOURCE)"
+replace = "                     else SOURCE)"
 
 [[removed]]
 id = "ci-shard-denominator-hardcoded"

@@ -21,6 +21,8 @@ from sectorflow.flowmap import build_map_data  # noqa: E402
 
 #: 지도·카드의 출처 줄. 데모는 실데이터가 아니므로 출처를 따로 적는다.
 SOURCE = "자료: 한국거래소 투자자별 매매동향(키움증권 API로 수집) · 금액은 순매수 수량×종가 근사 · 섹터 구분은 자체 분류"
+#: BYO 증권사 어댑터로 받은 지도의 출처 줄 — 어댑터 이름이 들어간다(``flowmap.capability_marks`` 의 ``broker``).
+BYO_SOURCE = "자료: 투자자별 매매동향({broker} API로 각자 수집) · 금액은 순매수 수량×종가 근사"
 DEMO_SOURCE = "자료: 합성 데모(sectorflow.demo 가 난수로 만든 가짜 숫자·가짜 이름) — 실데이터 아님"
 
 TEMPLATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates", "sector_map.html")
@@ -31,7 +33,8 @@ def render(data: dict, template: str) -> str:
     blob = json.dumps(data, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
     return (template.replace("__DATA__", blob)
             .replace("__BASIS__", data.get("basis") or DATA_BASIS_SHORT)
-            .replace("__SOURCE__", DEMO_SOURCE if data.get("demo") else SOURCE)
+            .replace("__SOURCE__", DEMO_SOURCE if data.get("demo")
+                     else BYO_SOURCE.format(broker=data["broker"]) if data.get("broker") else SOURCE)
             .replace("__DEMO_NOTICE__", DEMO_NOTICE))
 
 
