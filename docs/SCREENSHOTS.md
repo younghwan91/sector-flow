@@ -53,10 +53,10 @@ uv run --with playwright --with pillow python scripts/social_preview.py
 
 | 이미지 | 감시 경로 | 찍은 커밋 |
 |---|---|---|
-| docs/brand/social-preview.png | scripts/social_preview.py | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
-| docs/brand/social-preview.png | scripts/templates/sector_map.html | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
-| docs/brand/social-preview.png | scripts/sector_map.py | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
-| docs/brand/social-preview.png | src/sectorflow/flowmap.py | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
-| docs/brand/social-preview.png | src/sectorflow/demo.py | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
-| docs/brand/social-preview.png | docs/brand/wordmark-dark.svg | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
-| docs/brand/social-preview.png | docs/brand/README.md | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
+| docs/brand/social-preview.png | scripts/social_preview.py | 5deaa41bf5ff9dc9b3d4e67080ea0326b36c3274 |
+| docs/brand/social-preview.png | scripts/templates/sector_map.html | 5deaa41bf5ff9dc9b3d4e67080ea0326b36c3274 |
+| docs/brand/social-preview.png | scripts/sector_map.py | 5deaa41bf5ff9dc9b3d4e67080ea0326b36c3274 |
+| docs/brand/social-preview.png | src/sectorflow/flowmap.py | 5deaa41bf5ff9dc9b3d4e67080ea0326b36c3274 |
+| docs/brand/social-preview.png | src/sectorflow/demo.py | 5deaa41bf5ff9dc9b3d4e67080ea0326b36c3274 |
+| docs/brand/social-preview.png | docs/brand/wordmark-dark.svg | 5deaa41bf5ff9dc9b3d4e67080ea0326b36c3274 |
+| docs/brand/social-preview.png | docs/brand/README.md | 5deaa41bf5ff9dc9b3d4e67080ea0326b36c3274 |
