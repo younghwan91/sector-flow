@@ -17,29 +17,29 @@ GIF 는 `scripts/map_video.py`(가짜 시계로 타임랩스를 30fps 로 찍어
 
 | 이미지 | 감시 경로 | 찍은 커밋 |
 |---|---|---|
-| docs/images/kqflow-today.png | src/sectorflow/tui/ | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
-| docs/images/kqflow-today.png | src/sectorflow/demo.py | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
-| docs/images/kqflow-table.png | src/sectorflow/tui/ | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
-| docs/images/kqflow-table.png | src/sectorflow/demo.py | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
-| docs/images/kqflow-names.png | src/sectorflow/tui/ | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
-| docs/images/kqflow-names.png | src/sectorflow/demo.py | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
-| docs/images/kqflow-combined.png | src/sectorflow/tui/ | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
-| docs/images/kqflow-combined.png | src/sectorflow/demo.py | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
-| docs/images/kqledger-table.png | src/sectorflow/tui/ | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
-| docs/images/kqledger-table.png | src/sectorflow/demo.py | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
-| docs/images/web-today.png | scripts/templates/ | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
-| docs/images/web-today.png | src/sectorflow/demo.py | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
-| docs/images/web-today-mobile.png | scripts/templates/ | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
-| docs/images/web-today-mobile.png | src/sectorflow/demo.py | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
-| docs/images/map-demo.png | scripts/templates/ | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
-| docs/images/map-demo.png | scripts/sector_map.py | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
-| docs/images/map-demo.png | src/sectorflow/flowmap.py | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
-| docs/images/map-demo.png | src/sectorflow/demo.py | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
-| docs/images/map-demo.gif | scripts/templates/ | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
-| docs/images/map-demo.gif | scripts/sector_map.py | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
-| docs/images/map-demo.gif | scripts/map_video.py | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
-| docs/images/map-demo.gif | src/sectorflow/flowmap.py | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
-| docs/images/map-demo.gif | src/sectorflow/demo.py | 3b9d693ebcd273285a0e6633121cdcf7519175eb |
+| docs/images/kqflow-today.png | src/sectorflow/tui/ | ed68438134c631a5f7306a915800684513da5067 |
+| docs/images/kqflow-today.png | src/sectorflow/demo.py | ed68438134c631a5f7306a915800684513da5067 |
+| docs/images/kqflow-table.png | src/sectorflow/tui/ | ed68438134c631a5f7306a915800684513da5067 |
+| docs/images/kqflow-table.png | src/sectorflow/demo.py | ed68438134c631a5f7306a915800684513da5067 |
+| docs/images/kqflow-names.png | src/sectorflow/tui/ | ed68438134c631a5f7306a915800684513da5067 |
+| docs/images/kqflow-names.png | src/sectorflow/demo.py | ed68438134c631a5f7306a915800684513da5067 |
+| docs/images/kqflow-combined.png | src/sectorflow/tui/ | ed68438134c631a5f7306a915800684513da5067 |
+| docs/images/kqflow-combined.png | src/sectorflow/demo.py | ed68438134c631a5f7306a915800684513da5067 |
+| docs/images/kqledger-table.png | src/sectorflow/tui/ | ed68438134c631a5f7306a915800684513da5067 |
+| docs/images/kqledger-table.png | src/sectorflow/demo.py | ed68438134c631a5f7306a915800684513da5067 |
+| docs/images/web-today.png | scripts/templates/ | ed68438134c631a5f7306a915800684513da5067 |
+| docs/images/web-today.png | src/sectorflow/demo.py | ed68438134c631a5f7306a915800684513da5067 |
+| docs/images/web-today-mobile.png | scripts/templates/ | ed68438134c631a5f7306a915800684513da5067 |
+| docs/images/web-today-mobile.png | src/sectorflow/demo.py | ed68438134c631a5f7306a915800684513da5067 |
+| docs/images/map-demo.png | scripts/templates/ | ed68438134c631a5f7306a915800684513da5067 |
+| docs/images/map-demo.png | scripts/sector_map.py | ed68438134c631a5f7306a915800684513da5067 |
+| docs/images/map-demo.png | src/sectorflow/flowmap.py | ed68438134c631a5f7306a915800684513da5067 |
+| docs/images/map-demo.png | src/sectorflow/demo.py | ed68438134c631a5f7306a915800684513da5067 |
+| docs/images/map-demo.gif | scripts/templates/ | ed68438134c631a5f7306a915800684513da5067 |
+| docs/images/map-demo.gif | scripts/sector_map.py | ed68438134c631a5f7306a915800684513da5067 |
+| docs/images/map-demo.gif | scripts/map_video.py | ed68438134c631a5f7306a915800684513da5067 |
+| docs/images/map-demo.gif | src/sectorflow/flowmap.py | ed68438134c631a5f7306a915800684513da5067 |
+| docs/images/map-demo.gif | src/sectorflow/demo.py | ed68438134c631a5f7306a915800684513da5067 |
 
 ## 소셜 미리보기
 
