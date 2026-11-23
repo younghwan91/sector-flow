@@ -72,4 +72,4 @@
 - `perf` 변경은 리포트가 바이트 동일함을 확인하고 메시지에 적는다.
 
 ## 커밋
-- 한국어 conventional(`fix(flow): ...`). 신원은 레포 설정 그대로, 에이전트는 `Co-Authored-By` 로만.
+- 커밋 메시지는 **영어** Conventional Commits(`fix(flow): ...`), 왜는 본문에. 제목·본문에 한글을 섞지 않는다(인용이 필요하면 뜻을 영어로). 신원은 레포 설정 그대로, 에이전트는 `Co-Authored-By` 로만.
