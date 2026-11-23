@@ -24,7 +24,7 @@ def _load(name):
 
 
 #: 사람이 읽는 산출물의 원천 — 코드가 아니라 글이 나오는 곳.
-SOURCES = ["README.md", "README.en.md", "scripts/templates/sector_numbers.html", "scripts/templates/sector_flow.html",
+SOURCES = ["README.md", "README.en.md", "docs/guide.md", "scripts/templates/sector_numbers.html", "scripts/templates/sector_flow.html",
            "scripts/templates/trust.html", "scripts/templates/digest_card.html"]
 #: 화면 글이 문자열로 든 코드 — 주석·독스트링은 사람에게 안 보이니 문자열 상수만 본다.
 CODE_SOURCES = ["src/sectorflow/tui/flow_view.py", "src/sectorflow/tui/ledger_view.py", "scripts/sector_numbers.py"]

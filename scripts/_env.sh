@@ -23,6 +23,6 @@ if [ -f "$ENV_FILE" ]; then
   set -a; . "$ENV_FILE"; set +a
 elif [ -z "${KR_QUANT_DB:-}" ]; then
   echo "[$(date '+%F %T')] DB 접속정보가 없다 — .env 도 quant-airflow/.env 도 KR_QUANT_DB 도 없다." >&2
-  echo "    cp .env.example .env 뒤 KR_QUANT_DB 를 채워라. 화면만 볼 때는 이 배치가 필요 없다 — 합성 데이터는 uv run sw-flow --demo, 받은 폴더는 --dir <폴더>(README §4.3)." >&2
+  echo "    cp .env.example .env 뒤 KR_QUANT_DB 를 채워라. 화면만 볼 때는 이 배치가 필요 없다 — 합성 데이터는 uv run sw-flow --demo, 받은 폴더는 --dir <폴더>(docs/guide.md §4.3)." >&2
   exit 1
 fi

@@ -2,4 +2,4 @@ blank_issues_enabled: false
 contact_links:
   - name: 이 숫자는 예측이 아니다 — 투자 질문은 받지 않습니다
     url: https://github.com/younghwan91/sector-flow#8-주의--이-숫자들은-예측이-아니다
-    about: 무엇을 살지, 어느 섹터가 오를지는 답하지 않습니다. 숫자의 뜻은 README §8 에 있습니다.
+    about: 무엇을 살지, 어느 섹터가 오를지는 답하지 않습니다. 숫자의 뜻은 docs/guide.md §8 에 있습니다.

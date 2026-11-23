@@ -4500,9 +4500,9 @@ replace = "`scripts/finalize_dne.py`"
 id = "doc-link-points-nowhere"
 why = "상대 링크가 없는 파일을 가리킨다"
 guards = ["tests/test_doc_paths.py::test_every_repo_path_in_the_docs_exists"]
-file = "README.md"
-find = "가이드](docs/reading-guide.md) 를 보라"
-replace = "가이드](docs/reading-guid.md) 를 보라"
+file = "docs/guide.md"
+find = "가이드](reading-guide.md) 를 보라"
+replace = "가이드](reading-guid.md) 를 보라"
 
 [[mutation]]
 id = "doc-path-allowance-outlives-its-mention"
@@ -8047,8 +8047,8 @@ replace = "if(a) t+=sum(a,i0,i1);}); return t;});"
 id = "readme-loses-disclaimer-link"
 why = """README 의 '예측이 아니다' 절에서 고지 링크가 빠진다 — 권리자가 연락 경로를 못 찾는다"""
 guards = ["tests/test_first_reader.py::test_readers_can_find_the_disclaimer"]
-file = "README.md"
-find = " — [고지](DISCLAIMER.md) · [보안 정책](SECURITY.md)."
+file = "docs/guide.md"
+find = " — [고지](../DISCLAIMER.md) · [보안 정책](../SECURITY.md)."
 replace = "."
 
 [[mutation]]
@@ -9574,7 +9574,7 @@ replace = 'fill="#000000"'
 id = "readme-says-banned-word"
 why = """README 에 금칙어가 들어간다"""
 guards = ["tests/test_wording.py::test_no_output_source_uses_a_banned_word"]
-file = "README.md"
+file = "docs/guide.md"
 find = '''## 7. 숫자의 정의
 '''
 replace = '''## 7. 숫자의 정의
@@ -9750,7 +9750,7 @@ id = "batch-error-forgets-the-demo"
 why = "배치의 'DB 접속정보가 없다' 가 화면으로 가는 길을 안 적는다 — 순환의 다른 쪽"
 guards = ["tests/test_demo.py::test_batch_without_db_points_back_to_the_demo"]
 file = "scripts/_env.sh"
-find = "합성 데이터는 uv run sw-flow --demo, 받은 폴더는 --dir <폴더>(README §4.3)."
+find = "합성 데이터는 uv run sw-flow --demo, 받은 폴더는 --dir <폴더>(docs/guide.md §4.3)."
 replace = "받은 폴더를 쓴다."
 
 [[mutation]]
@@ -9765,7 +9765,7 @@ replace = "디스크·권한을 보라(README §3.1)."
 id = "readme-tree-misses-a-script"
 why = "§2 트리에서 스크립트가 빠진다 — 있는 도구를 독자가 모른다"
 guards = ["tests/test_first_reader.py::test_every_script_is_in_the_readme_tree"]
-file = "README.md"
+file = "docs/guide.md"
 find = "├── digest.py               # (선택) 다이제스트 글·카드 — 폴더에만 쓴다\n"
 replace = ""
 
@@ -9797,7 +9797,7 @@ replace = "용어집"
 id = "comparison-drops-moneyrecipe"
 why = "더 빠른 경쟁자를 비교표에서 뺀다 — 고유 항목이 부풀려진다"
 guards = ["tests/test_first_reader.py::test_comparison_table_names_what_competitors_do"]
-file = "README.md"
+file = "docs/guide.md"
 find = "| 머니레시피 업종별 투자자 수급 분석 | KRX·WICS 중분류 × 외국인·기관·개인·금융투자·투신·연기금·사모, 12M~1M 누적, 평일 16:10 잠정·21:30 확정 | 잠정 게시가 여기(18:10)보다 빠르고, WICS 분류를 쓴다. 오늘의 강세·약세 Top3 는 있지만 1년 %ile 은 못 찾았다 |\n"
 replace = ""
 
@@ -9805,7 +9805,7 @@ replace = ""
 id = "comparison-says-nothing-else-exists"
 why = "'못 찾았다' 를 '없다' 로 쓴다 — 조사 범위를 넘는 주장"
 guards = ["tests/test_first_reader.py::test_comparison_table_names_what_competitors_do"]
-file = "README.md"
+file = "docs/guide.md"
 find = "못 찾았다는 말이지 없다는 말은 아니다."
 replace = "다른 곳에는 없다."
 
@@ -9813,7 +9813,7 @@ replace = "다른 곳에는 없다."
 id = "folder-sharing-warning-gone"
 why = "§4.3 에서 제3자 전달 금지가 빠진다 — 실데이터를 넘기라는 안내가 된다"
 guards = ["tests/test_first_reader.py::test_received_folder_warning_is_at_both_entrances"]
-file = "README.md"
+file = "docs/guide.md"
 find = "> ⚠️ **제3자 전달 금지.** 폴더에는 실제 종목별 수급이 들어 있고 KRX·키움의 데이터 이용 범위상 재배포할 수 없다.\n"
 replace = "> 폴더에는 실제 종목별 수급이 들어 있다.\n"
 
@@ -9853,7 +9853,7 @@ replace = "SK하이닉스   +4,743"
 id = "readme-explore-label-misquoted"
 why = "README 의 탐색 표지 인용이 화면 글자와 다르다"
 guards = ["tests/test_first_reader.py::test_exploration_label_quote_matches_the_screen"]
-file = "README.md"
+file = "docs/guide.md"
 find = "`[탐색 — 검정 결과 앞날 증거 없음(G 판정 불가) · 종목 투신+연기금 축은 검정 부호와 반대]`"
 replace = "`[탐색 — 검정 결과 앞날 증거 없음(G 판정 불가)]`"
 
@@ -9861,7 +9861,7 @@ replace = "`[탐색 — 검정 결과 앞날 증거 없음(G 판정 불가)]`"
 id = "readme-counts-unclassified-as-vendor"
 why = "27 칸을 벤더 분류 27개로 적는다 — (미분류) 가 들어 있다"
 guards = ["tests/test_first_reader.py::test_readme_sector_count_says_what_27_is"]
-file = "README.md"
+file = "docs/guide.md"
 find = "벤더 분류(`stocks.sector`) 26개와 `(미분류)` 를 합친 27칸"
 replace = "벤더 분류(`stocks.sector`) 27개"
 
@@ -14366,6 +14366,14 @@ guards = ["tests/test_docs_cli_options.py::test_quickstart_shows_every_broker"]
 file = "docs/byo/quickstart.md"
 find = "| `nh` | NH투자증권 PLUG"
 replace = "| nh | NH투자증권 PLUG"
+
+[[mutation]]
+id = "readme-grows-back"
+why = "README 가 다시 길어진다 — 572줄 시절처럼 운영·수식 설명이 입구를 막는다. 긴 설명은 docs/guide.md 로."
+guards = ["tests/test_first_reader.py::test_readme_stays_short"]
+file = "README.md"
+find = "## 라이선스\n"
+replace = "## 라이선스\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
 
 [[removed]]
 id = "ci-shard-denominator-hardcoded"

@@ -1,17 +1,23 @@
+<div align="center">
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/brand/logo-dark.svg">
-  <img alt="sector-flow" src="docs/brand/logo.svg" height="56">
+  <img alt="sector-flow" src="docs/brand/logo.svg" height="64">
 </picture>
 
 # sector-flow
 
-[한국어](README.md) · **English**
+**Who sold and who bought which sector today — net buying by investor type, as one map.**
 
-**sector-flow · 수급 지도 (flow map)** — who sold and who bought which sector today: net buying by investor type
-(individuals, foreigners, institutions, other corporations) across KOSPI and KOSDAQ sectors, in a terminal and a browser.
-The numbers are same-period observations, not forecasts.
+KOSPI and KOSDAQ sector flows in a terminal and a browser. Same-period observations, not forecasts.
 
+[![Release](https://img.shields.io/github/v/release/younghwan91/sector-flow)](https://github.com/younghwan91/sector-flow/releases)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
+[Live demo](https://younghwan91.github.io/sector-flow/) · [Guide (Korean)](docs/guide.md) · [Bring your own key](docs/byo/quickstart.md) · [한국어](README.md) · [Sponsor](https://github.com/sponsors/younghwan91)
+
+</div>
 
 ![Flow map time-lapse (synthetic demo) — investors that net sold on the left, sectors in the middle, investors that net bought on the right. Band width is the amount; the map is redrawn day by day](docs/images/map-demo.gif)
 
@@ -28,7 +34,7 @@ every demo screen carries a `[합성 데모]` ("synthetic demo") label. The firs
 `~/.cache/sector-flow/demo`; later runs open at once.
 
 The screens and documents are in Korean. The full guide — what each column means, how the daily batch runs, how the report
-checks itself — is the [Korean README](README.md).
+checks itself — is [docs/guide.md](docs/guide.md) (Korean).
 
 ## Data policy
 

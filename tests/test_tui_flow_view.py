@@ -3511,7 +3511,7 @@ def test_all_stocks_screen_header_carries_the_evidence_badges(data):
     lines, nh = all_lines(st, 160)
     assert nh == 3 and B_G in lines[1] and B_NEG in lines[1], lines[:3]
     from pathlib import Path
-    readme = (Path(__file__).resolve().parent.parent / "README.md").read_text("utf-8")
+    readme = (Path(__file__).resolve().parent.parent / "docs" / "guide.md").read_text("utf-8")
     assert f"`{B_G}`" in readme and f"`{B_NEG}`" in readme
     assert B_G in all_lines(st, view_width(80))[0][1]
 
@@ -3648,7 +3648,7 @@ def test_ime_reverse_key_note_is_one_sentence_in_both_helps_and_the_readme():
         return " ".join(d.strip() for _n, d in entries)
     for name, entries in (("flow", HELP), ("ledger", LEDGER_HELP)):
         assert IME_NOTE in joined(entries), f"{name} 도움말이 IME_NOTE 와 다르다"
-    readme = _re.sub(r"\s+", " ", (Path(__file__).resolve().parent.parent / "README.md").read_text("utf-8"))
+    readme = _re.sub(r"\s+", " ", (Path(__file__).resolve().parent.parent / "docs" / "guide.md").read_text("utf-8"))
     assert IME_NOTE in readme, "README 가 IME_NOTE 와 다르다"
     # 사실 — 대문자로 정규화되는 자모는 W(ㅉ)·R(ㄲ) 뿐이고, 흐름에서 R 은 듣는 키가 아니다.
     uppers = {v for v in FA.JAMO_TO_ASCII.values() if v.isupper()}
