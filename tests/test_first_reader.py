@@ -87,7 +87,7 @@ def test_comparison_table_names_what_competitors_do():
 
 def test_received_folder_warning_is_at_both_entrances():
     """폴더를 주고받는 말이 나오는 두 곳 모두 제3자 전달 금지를 적는다."""
-    readme = _section(README, "## 자기 데이터로 보기", "## 이 숫자는")
+    readme = _section(README, "## 내 데이터로 보기", "## 이 숫자는")
     share = _section(MANUAL, "### 4.3 ", "### 4.4 ")
     for sec in (readme, share):
         assert "제3자" in sec and "재배포" in sec, sec[:200]
@@ -152,7 +152,7 @@ def test_readme_sector_count_says_what_27_is():
 def test_collection_wording_admits_the_byo_collector():
     """`src/sectorflow/collect/` 가 있는데 '수집은 이 저장소에 없다' 는 틀렸다."""
     assert "데이터 수집은 이 저장소에 없다" not in README
-    assert "src/sectorflow/collect/" in _section(README, "## 자기 데이터로 보기", "## 이 숫자는")
+    assert "src/sectorflow/collect/" in _section(README, "## 내 데이터로 보기", "## 이 숫자는")
     assert "src/sectorflow/collect/" in (REPO / "CLAUDE.md").read_text("utf-8")
 
 
@@ -198,7 +198,7 @@ def test_readme_head_reads_top_to_bottom():
     """머리는 트렌딩 레포 꼴이다(2026-11-24): 로고 → 한 줄 소개 → 링크 줄(데모·가이드·후원) → 데모 지도 → Quick start.
     처음 읽는 사람이 그림부터 보고, 긴 설명은 가이드로 간다."""
     head = README[:README.index("## 무엇을 보나")]
-    order = ("docs/brand/logo.svg", "한 장의 지도로 본다", "](docs/guide.md)", "github.com/sponsors/",
+    order = ("docs/brand/logo.svg", "한 장의 지도로 봅니다", "](docs/guide.md)", "github.com/sponsors/",
              "](docs/images/map-demo.", "## Quick start")
     pos = [head.find(s) for s in order]
     assert -1 not in pos and pos == sorted(pos), dict(zip(order, pos))

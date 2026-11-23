@@ -1,4 +1,4 @@
-"""``sector-flow-byo`` — 자기 키로 채운 sqlite 에서 수급 지도까지 한 명령(``docs/byo/quickstart.md``).
+"""``sector-flow-byo`` — 내 키로 채운 sqlite 에서 수급 지도까지 한 명령(``docs/byo/quickstart.md``).
 
     sector-flow-byo map --db data/byo.db --out data/map
 

@@ -9543,8 +9543,8 @@ id = "brand-tagline-says-avoided-word"
 why = """한 줄 소개가 '몰림' 을 쓴다 — README 머리·랜딩·레포 설명이 그대로 옮긴다"""
 guards = ["tests/test_brand.py::test_tagline_uses_no_avoided_word"]
 file = "docs/brand/README.md"
-find = "투자 주체별 순매매를 한 장의 지도로 본다."
-replace = "투자 주체별 순매매의 쏠림을 한 장의 지도로 본다."
+find = "투자 주체별 순매매를 한 장의 지도로 봅니다."
+replace = "투자 주체별 순매매의 쏠림을 한 장의 지도로 봅니다."
 
 [[mutation]]
 id = "wordmark-depends-on-a-font"
@@ -13261,8 +13261,8 @@ id = "landing-drops-no-perk-line"
 why = "후원 혜택 없음 줄이 빠진다 — 후원하면 실데이터를 더 본다고 읽힐 수 있다."
 guards = ["tests/test_site.py::test_landing_carries_the_notices_and_the_sponsor_line"]
 file = "site/index.html"
-find = "후원해도 더 보이는 것은 없다."
-replace = "후원하면 고맙다."
+find = "후원해도 더 보이는 것은 없습니다."
+replace = "후원하면 고맙습니다."
 
 [[mutation]]
 id = "landing-byo-option-typo"
@@ -15074,5 +15074,5 @@ id = "readme-tagline-drifts-from-the-guide"
 why = """README 의 한 줄 소개만 고쳐 브랜드 가이드와 갈린다 — 레포 설명·소셜 미리보기가 다른 말을 한다"""
 guards = ["tests/test_first_reader.py::test_readme_tagline_is_the_brand_guide_tagline"]
 file = "README.md"
-find = "**오늘 누가 어느 섹터를 넘기고 넘겨받았는지, 투자 주체별 순매매를 한 장의 지도로 본다.**"
-replace = "**오늘 누가 어느 섹터를 사고팔았는지, 투자 주체별 순매매를 한 장의 지도로 본다.**"
+find = "**오늘 누가 어느 섹터를 넘기고 넘겨받았는지, 투자 주체별 순매매를 한 장의 지도로 봅니다.**"
+replace = "**오늘 누가 어느 섹터를 사고팔았는지, 투자 주체별 순매매를 한 장의 지도로 봅니다.**"
