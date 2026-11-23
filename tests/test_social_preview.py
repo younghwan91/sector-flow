@@ -37,7 +37,7 @@ def test_card_shows_the_demo_mark_on_the_picture_and_under_the_text():
 def test_card_quotes_the_guide_tagline():
     """문구의 정본은 가이드다 — 카드가 따로 지어 쓰면 README·레포 설명과 갈린다."""
     head, rest, tail = SP.tagline(SP.GUIDE.read_text("utf-8"))
-    assert head.startswith("오늘 누가") and rest.endswith("본다.") and "예측이 아니다" in tail
+    assert head.startswith("오늘 누가") and rest.endswith("봅니다.") and "예측이 아닙니다" in tail
     text = " ".join(_visible(_card()).split())
     for part in (head, rest, tail):
         assert part in text

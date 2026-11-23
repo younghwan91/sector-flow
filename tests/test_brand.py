@@ -83,7 +83,7 @@ def test_avoid_table_lists_every_word_the_wording_table_bans():
 def test_tagline_uses_no_avoided_word():
     """한 줄 소개는 README 머리·랜딩·레포 설명이 옮긴다 — 금칙어 검사와 가이드의 '안 쓰는 말' 둘 다 통과해야 한다."""
     tagline = GUIDE.split("<!-- brand:tagline -->")[1].split("<!-- /brand:tagline -->")[0]
-    assert "수급 지도" in tagline and "예측이 아니다" in tagline
+    assert "수급 지도" in tagline and "예측이 아닙니다" in tagline
     assert W.page_hits(tagline) == [], W.page_hits(tagline)
     flat = re.sub(r"\s+", "", tagline)
     hits = [w for w in _avoid_words() if re.sub(r"\s+", "", w) in flat]
