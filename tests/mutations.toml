@@ -9750,7 +9750,7 @@ id = "batch-error-forgets-the-demo"
 why = "배치의 'DB 접속정보가 없다' 가 화면으로 가는 길을 안 적는다 — 순환의 다른 쪽"
 guards = ["tests/test_demo.py::test_batch_without_db_points_back_to_the_demo"]
 file = "scripts/_env.sh"
-find = "합성 데이터는 uv run sw-flow --demo, 받은 폴더는 --dir <폴더>(README §4.3)."
+find = "합성 데이터는 uv run sw-flow --demo, 받은 폴더는 --dir <폴더>(docs/guide.md §4.3)."
 replace = "받은 폴더를 쓴다."
 
 [[mutation]]
