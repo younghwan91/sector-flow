@@ -57,7 +57,7 @@ def test_landing_has_no_script_and_talks_only_to_known_hosts():
 def test_landing_carries_the_notices_and_the_sponsor_line():
     """고지(투자 조언 아님·예측 아님·각자 이용 조건·권리자 연락)와 후원 줄(혜택 없음·데이터 판매 아님) — 설계 §6.3."""
     text = _visible(LANDING)
-    for must in ("투자 조언이 아니다", "예측이 아니다", "각자의 이용 조건", "권리자 연락", "후원해도 더 보이는 것은 없다",
+    for must in ("투자 조언이 아닙니다", "예측이 아닙니다", "각자의 이용 조건", "권리자 연락", "후원해도 더 보이는 것은 없습니다",
                  "데이터를 팔지 않고", DATA_BASIS_SHORT):
         assert must in text, must
     for link in ("DISCLAIMER.md", "SECURITY.md", "github.com/sponsors/younghwan91", "/issues"):
