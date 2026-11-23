@@ -15,7 +15,7 @@ KOSPI and KOSDAQ sector flows in a terminal and a browser. Same-period observati
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-[Live demo](https://younghwan91.github.io/sector-flow/) · [Guide (Korean)](docs/guide.md) · [Bring your own key](docs/byo/quickstart.md) · [한국어](README.md) · [Sponsor](https://github.com/sponsors/younghwan91)
+[Live demo](https://younghwan91.github.io/sector-flow/) · [Guide (Korean)](docs/guide.md) · [Bring your own key](docs/byo/quickstart.md) · [한국어](README.md)
 
 </div>
 
@@ -64,11 +64,10 @@ The screens and documents are in Korean. The full guide — every column, the da
   inconclusive); they are shown as observations only. Rights holders can reach the maintainer through GitHub issues, and
   requests are acted on promptly — see [DISCLAIMER.md](DISCLAIMER.md) and [SECURITY.md](SECURITY.md) (Korean).
 
-## Contributing · Sponsoring
+## Contributing
 
 - **Issues** — bugs, questions and ideas in [Issues](https://github.com/younghwan91/sector-flow/issues); reproduce with `--demo`, not real data.
 - **Contributing** — [CONTRIBUTING.md](CONTRIBUTING.md) (Korean) and the [code of conduct](CODE_OF_CONDUCT.md).
-- **Sponsoring** — if the code is useful to you, [GitHub Sponsors](https://github.com/sponsors/younghwan91). It buys no perks — sponsors see no extra data, screens or numbers — and no data is ever sold.
 
 ## License
 

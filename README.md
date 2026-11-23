@@ -15,7 +15,7 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-[데모](https://younghwan91.github.io/sector-flow/) · [가이드](docs/guide.md) · [증권사 키로 시작하기](docs/byo/quickstart.md) · [English](README.en.md) · [후원](https://github.com/sponsors/younghwan91)
+[데모](https://younghwan91.github.io/sector-flow/) · [가이드](docs/guide.md) · [증권사 키로 시작하기](docs/byo/quickstart.md) · [English](README.en.md)
 
 </div>
 
@@ -87,11 +87,10 @@ BYO 수집기 코드는 `src/sectorflow/collect/`(`sector-flow-collect`) 에 있
 | [BYO](docs/byo/) | 증권사 키 수집기 안내·증권사 비교·실측 |
 | [변경 기록](CHANGELOG.md) | 판마다 바뀐 것 |
 
-## 기여 · 후원
+## 기여
 
 - **이슈** — 버그·질문·제안은 [Issues](https://github.com/younghwan91/sector-flow/issues). 실데이터 대신 `--demo` 로 재현해 붙여 주세요.
 - **기여** — [CONTRIBUTING.md](CONTRIBUTING.md). 보안 문제·권리자 연락은 [SECURITY.md](SECURITY.md).
-- **후원** — 코드가 쓸모 있었다면 [GitHub Sponsors](https://github.com/sponsors/younghwan91). 코드·유지보수에 대한 것이고 혜택은 없습니다. 데이터는 팔지 않습니다.
 
 ## 라이선스
 
