@@ -87,7 +87,7 @@ def test_comparison_table_names_what_competitors_do():
 
 def test_received_folder_warning_is_at_both_entrances():
     """폴더를 주고받는 말이 나오는 두 곳 모두 제3자 전달 금지를 적는다."""
-    readme = _section(README, "## 자기 데이터로 보기", "## 이 숫자는")
+    readme = _section(README, "## 내 데이터로 보기", "## 이 숫자는")
     share = _section(MANUAL, "### 4.3 ", "### 4.4 ")
     for sec in (readme, share):
         assert "제3자" in sec and "재배포" in sec, sec[:200]
@@ -152,7 +152,7 @@ def test_readme_sector_count_says_what_27_is():
 def test_collection_wording_admits_the_byo_collector():
     """`src/sectorflow/collect/` 가 있는데 '수집은 이 저장소에 없다' 는 틀렸다."""
     assert "데이터 수집은 이 저장소에 없다" not in README
-    assert "src/sectorflow/collect/" in _section(README, "## 자기 데이터로 보기", "## 이 숫자는")
+    assert "src/sectorflow/collect/" in _section(README, "## 내 데이터로 보기", "## 이 숫자는")
     assert "src/sectorflow/collect/" in (REPO / "CLAUDE.md").read_text("utf-8")
 
 

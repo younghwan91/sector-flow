@@ -65,7 +65,7 @@ def test_landing_carries_the_notices_and_the_sponsor_line():
 
 
 def test_byo_commands_on_the_landing_exist():
-    """'자기 키로 보는 법' 의 명령을 그대로 쳤는데 argparse 가 거절하면 그 안내는 거짓말이다."""
+    """'내 키로 보는 법' 의 명령을 그대로 쳤는데 argparse 가 거절하면 그 안내는 거짓말이다."""
     code = html.unescape("\n".join(re.findall(r"<pre><code>(.*?)</code></pre>", LANDING, re.S)))
     code = re.sub(r"<[^>]+>", " ", code)
     assert "scripts/sector_flow.py" in code and "scripts/sector_map.py" in code

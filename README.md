@@ -15,7 +15,7 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-[데모](https://younghwan91.github.io/sector-flow/) · [가이드](docs/guide.md) · [자기 키로 시작하기](docs/byo/quickstart.md) · [English](README.en.md) · [후원](https://github.com/sponsors/younghwan91)
+[데모](https://younghwan91.github.io/sector-flow/) · [가이드](docs/guide.md) · [증권사 키로 시작하기](docs/byo/quickstart.md) · [English](README.en.md) · [후원](https://github.com/sponsors/younghwan91)
 
 </div>
 
@@ -56,9 +56,9 @@ uv run sector-flow-demo --out ~/sf-demo && uv run python scripts/serve_reports.p
 - **같은 바구니로 잰다.** 순매수·시총·수익률이 같은 종목 묶음에서 나와 분자와 분모가 어긋나지 않는다.
 - **스스로 검증한다.** 리포트마다 13개 층이 값을 다시 센다. 검사가 살아 있는지는 변이로 다시 본다.
 
-## 자기 데이터로 보기
+## 내 데이터로 보기
 
-- **자기 증권사 키(BYO)** — 키움 키로 전 종목 목록 → 지도 전용 수집 → `sector-flow-byo map --db data/byo.db --out data/map`.
+- **내 증권사 키(BYO)** — 키움 키로 전 종목 목록 → 지도 전용 수집 → `sector-flow-byo map --db data/byo.db --out data/map`.
   한국투자·LS·토스·DB·NH 어댑터(`--broker`)도 있지만 미검증이다. [시작하기](docs/byo/quickstart.md) · [증권사 비교](docs/byo/brokers.md)
 - **수급 DB 배치** — DB 에서 리포트 폴더를 만들고 저장 직후 스스로 검증한다(`scripts/daily_report.sh`). [가이드 §3·§4](docs/guide.md#4-설치와-실행)
 
@@ -84,7 +84,7 @@ BYO 수집기 코드는 `src/sectorflow/collect/`(`sector-flow-collect`) 에 있
 | [수식 정본](docs/formulas.md) | 모든 열·표시의 식과 코드 위치, 지표별 근거 수준 |
 | [검증 기록](docs/validation/) | 지표 검증과 수급 쓸모 검정 — 사전등록과 결과 |
 | [운영 런북](docs/runbook.md) | 알림 문구별 원인과 할 일 |
-| [BYO](docs/byo/) | 자기 키 수집기 안내·증권사 비교·실측 |
+| [BYO](docs/byo/) | 증권사 키 수집기 안내·증권사 비교·실측 |
 | [변경 기록](CHANGELOG.md) | 판마다 바뀐 것 |
 
 ## 기여 · 후원
