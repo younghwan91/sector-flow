@@ -577,7 +577,7 @@ class State:
         쓴다 — 줄세울 키가 없다. 그런데 `s`·`r` 은 눌리기는 해서 헤더 라벨과
         힌트바가 따라 움직였고, 표는 그대로였다. 사용자는 라벨이 바뀌는 것을
         보고 정렬이 됐다고 믿는다 — 이 저장소가 리포트 쪽에서 CI 로 막아 온
-        부류다(README §7 D 계층: "파라미터를 바꿨는데 계산은 동일").
+        부류다(docs/guide.md §7 D 계층: "파라미터를 바꿨는데 계산은 동일").
 
         판정을 여기 한 곳에 둔다. 키를 받는 쪽(`handle_key`)과 화면에 적는 쪽
         (`header_lines`)이 다른 답을 내면 그 순간 다시 거짓말이 된다.
@@ -2040,8 +2040,8 @@ def no_report_help(prog: str) -> str:
     예전 문구는 ``daily_report.sh`` 만 가리켰고 그 스크립트는 'DB 접속정보가 없다' 로 되돌려 보내 순환이었다.
     """
     return (f"  DB 없이 화면부터 보려면: {prog} --demo   (합성 데이터 — 실데이터 아님)\n"
-            f"  받은 리포트 폴더가 있으면: {prog} --dir <폴더>   (README §4.3)\n"
-            f"  수급 DB 에 접속할 수 있으면: scripts/daily_report.sh   (README §4.1)")
+            f"  받은 리포트 폴더가 있으면: {prog} --dir <폴더>   (docs/guide.md §4.3)\n"
+            f"  수급 DB 에 접속할 수 있으면: scripts/daily_report.sh   (docs/guide.md §4.1)")
 
 
 def staleness_warning(asof: str, today: date | None = None) -> list[str]:
@@ -2644,7 +2644,7 @@ def all_lines(st: State, width: int) -> tuple[list[str], int]:
                                bases[2]))
     title = tier_for(tiers, width)
     head = pad(" ".join(pad(c.header, c.width, c.right) for c in cols), width)
-    # 점수 열의 증거 표지는 도움말에만 있었다 — 이 화면은 그 점수로 줄을 세우니 머리글에서 바로 말한다(README §8).
+    # 점수 열의 증거 표지는 도움말에만 있었다 — 이 화면은 그 점수로 줄을 세우니 머리글에서 바로 말한다(docs/guide.md §8).
     note = pad(_first_fitting(width, [f" 증거: 곱·섹터G {B_G} · 종목선정 {B_NEG} — 추천 아님",
                                       f" 곱·섹터G {B_G} · 종목선정 {B_NEG}",
                                       f" 곱·섹터G {B_G} · 선정 [쓸 수 없음]"]), width)

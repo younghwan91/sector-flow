@@ -427,7 +427,7 @@ def test_documented_lint_commands_match_ci():
     ci = _src(".github/workflows/ci.yml")
     ruff = re.search(r"ruff check ([^\n]+)", ci).group(1).strip()
     compile_ = re.search(r"python -m compileall -q (\S+)", ci).group(1)
-    for doc in ("CLAUDE.md", "README.md"):
+    for doc in ("CLAUDE.md", "docs/guide.md"):          # README 의 개발 절은 가이드 §10 으로 옮겼다
         text = _src(doc)
         assert f"ruff check {ruff}" in text, f"{doc} 의 린트 범위가 CI({ruff}) 와 다르다"
         assert f"compileall -q {compile_}" in text, f"{doc} 에 CI 의 compileall({compile_}) 이 없다"

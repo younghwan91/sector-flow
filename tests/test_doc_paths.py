@@ -79,9 +79,9 @@ def test_every_repo_path_in_the_docs_exists(doc):
 # mutation-exempt: 검사기(정규식) 자체가 눈을 떴는지 보는 검사다 — 주입할 소스가 아니라 이 파일의 정규식이 대상이다
 def test_scanner_sees_paths_and_links():
     """정규식이 꼴 변화로 아무것도 못 보면 위 검사가 빈손으로 초록이다."""
-    said = {s for s, _ in _mentions(REPO / "README.md")}
+    said = {s for s, _ in _mentions(REPO / "docs/guide.md")}      # README 의 긴 절은 가이드로 옮겼다(2026-11-24)
     assert {"scripts/daily_report.sh", "deploy/crontab.simnode"} <= said, sorted(said)[:20]
-    assert any(s.endswith(".md") or s.endswith("/") for s, p in _mentions(REPO / "README.md") if "](" not in s)
+    assert any(s.endswith(".md") or s.endswith("/") for s, p in _mentions(REPO / "docs/guide.md") if "](" not in s)
 
 
 def test_allowed_entries_are_still_mentioned():

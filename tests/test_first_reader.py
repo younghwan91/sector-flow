@@ -14,6 +14,8 @@ from sectorflow.tui.flow_view import B_SHORT, EXPLORE_LABEL_TIERS
 
 REPO = Path(__file__).resolve().parent.parent
 README = (REPO / "README.md").read_text("utf-8")
+#: README 의 긴 절(§1~§11)은 2026-11-24 가이드로 옮겼다 — 트렌딩 레포처럼 README 는 머리·데모·빠른 시작·링크만.
+MANUAL = (REPO / "docs/guide.md").read_text("utf-8")
 GUIDE = (REPO / "docs/reading-guide.md").read_text("utf-8")
 GLOSSARY = (REPO / "docs/glossary.md").read_text("utf-8")
 
@@ -24,7 +26,7 @@ def _section(text: str, start: str, end: str) -> str:
 
 
 def _tree() -> str:
-    sec = _section(README, "## 2. 구조", "## 3. 일일 배치")
+    sec = _section(MANUAL, "## 2. 구조", "## 3. 일일 배치")
     return re.findall(r"^```\w*\n(.*?)^```$", sec, re.S | re.M)[-1]
 
 
@@ -49,8 +51,8 @@ def test_glossary_defines_the_term(term):
 
 @pytest.mark.parametrize("mark", ["네이버 시장값", "분봉 밖 거래 큼", "금투÷기관", "거래대금 집중", "신규"])
 def test_first_screen_marks_are_explained_in_the_guide_and_readme(mark):
-    """화면에 뜨는 표지는 가이드와 README §5.1 에서 찾을 수 있다 — 없어진 칩 `금액 근사 오차 ⚠` 만 적혀 있었다."""
-    assert mark in GUIDE and mark in _section(README, "### 5.1 키", "### 5.2"), mark
+    """화면에 뜨는 표지는 읽기 가이드와 가이드 §5.1 에서 찾을 수 있다 — 없어진 칩 `금액 근사 오차 ⚠` 만 적혀 있었다."""
+    assert mark in GUIDE and mark in _section(MANUAL, "### 5.1 키", "### 5.2"), mark
     assert "금액 근사 오차" not in GUIDE and "금액 근사 오차" not in GLOSSARY.split("## 검증")[0]
 
 
@@ -66,14 +68,15 @@ def test_readers_can_find_the_glossary():
 
 def test_readers_can_find_the_disclaimer():
     """투자 조언 아님·데이터 이용 조건·권리자 연락은 '예측이 아니다' 절에서 바로 찾을 수 있어야 한다."""
-    sec = _section(README, "## 8. 주의", "## 9.")
-    assert "](DISCLAIMER.md)" in sec and "](SECURITY.md)" in sec
+    sec = _section(MANUAL, "## 8. 주의", "## 9.")
+    assert "](../DISCLAIMER.md)" in sec and "](../SECURITY.md)" in sec
+    assert "](DISCLAIMER.md)" in _section(README, "## 이 숫자는 예측이 아니다", "## 문서"), "README 에서도 고지로 바로 간다"
     assert (REPO / "DISCLAIMER.md").exists() and (REPO / "SECURITY.md").exists()
 
 
 def test_comparison_table_names_what_competitors_do():
     """'확인 못 해 뺐다' 고 적었지만 조사 노트가 그 페이지를 인용했다 — 비교에서 빼면 부풀림이다."""
-    sec = _section(README, "### 1.1 다른 자료와", "**못하는 것도 있다.**")
+    sec = _section(MANUAL, "### 1.1 다른 자료와", "**못하는 것도 있다.**")
     for must in ("[0789]", "[0797]", "[1051]", "머니레시피", "16:10", "21:30", "WICS", "코스캐너", "KRX+NXT"):
         assert must in sec, must
     assert "미검증" in sec and "400 LOGOUT" in sec, "KRX 는 미검증과 익명 거부를 그대로 적는다"
@@ -84,9 +87,9 @@ def test_comparison_table_names_what_competitors_do():
 
 def test_received_folder_warning_is_at_both_entrances():
     """폴더를 주고받는 말이 나오는 두 곳 모두 제3자 전달 금지를 적는다."""
-    quick = _section(README, "## Quick start", "## 목차")
-    share = _section(README, "### 4.3 ", "### 4.4 ")
-    for sec in (quick, share):
+    readme = _section(README, "## 자기 데이터로 보기", "## 이 숫자는")
+    share = _section(MANUAL, "### 4.3 ", "### 4.4 ")
+    for sec in (readme, share):
         assert "제3자" in sec and "재배포" in sec, sec[:200]
 
 
@@ -97,7 +100,7 @@ def _commands(block: str) -> list[str]:
 def test_english_quick_start_runs_the_same_commands():
     """영어 README 는 한국어 Quick start 의 첫 블록을 옮긴 것이다 — 명령이 갈리면 한쪽이 낡았다."""
     en = (REPO / "README.en.md").read_text("utf-8")
-    ko_first = re.search(r"```bash\n(.*?)```", _section(README, "## Quick start", "## 목차"), re.S).group(1)
+    ko_first = re.search(r"```bash\n(.*?)```", _section(README, "## Quick start", "## 무엇을 보나"), re.S).group(1)
     en_first = re.search(r"```bash\n(.*?)```", _section(en, "## Quick start", "## Data policy"), re.S).group(1)
     assert _commands(en_first) == _commands(ko_first)
     assert "](README.en.md)" in README.split("## Quick start")[0], "한국어 README 머리에 영어 링크가 없다"
@@ -106,9 +109,15 @@ def test_english_quick_start_runs_the_same_commands():
 
 def test_quick_start_starts_with_something_that_runs():
     """첫 코드 블록은 DB·폴더 없이 도는 명령이어야 한다 — '리포트 폴더가 있어야 뜬다' 가 입구를 막았다."""
-    first = re.search(r"```bash\n(.*?)```", _section(README, "## Quick start", "## 목차"), re.S).group(1)
+    first = re.search(r"```bash\n(.*?)```", _section(README, "## Quick start", "## 무엇을 보나"), re.S).group(1)
     assert "uv sync" in first and "sw-flow --demo" in first
     assert "<리포트 폴더>" not in first
+
+
+def test_readme_stays_short():
+    """README 는 입구다 — 572줄로 자라 첫 화면 뒤가 운영·수식 설명이었다(2026-11-24 가이드로 옮김). 다시 자라면 가이드로."""
+    assert len(README.splitlines()) <= 150, len(README.splitlines())
+    assert "](docs/guide.md" in README and MANUAL.startswith("# sector-flow 가이드")
 
 
 def test_readme_has_no_badge_that_private_repo_breaks():
@@ -116,13 +125,13 @@ def test_readme_has_no_badge_that_private_repo_breaks():
     assert "actions/workflows/ci.yml/badge.svg" not in README
 
 
-@pytest.mark.parametrize("doc,text", [("README", README), ("가이드", GUIDE)])
+@pytest.mark.parametrize("doc,text", [("README", README), ("가이드", MANUAL), ("읽기 가이드", GUIDE)])
 def test_docs_do_not_name_columns_that_are_gone(doc, text):
     for gone in ("포텐셜", "U = ½kx²", "U 는 x 의", "투신+연금5일", "trading-guide"):
         assert gone not in text, f"{doc} 가 없어진 것을 말한다: {gone}"
 
 
-@pytest.mark.parametrize("doc,text", [("README", README), ("가이드", GUIDE)])
+@pytest.mark.parametrize("doc,text", [("README", README), ("가이드", MANUAL), ("읽기 가이드", GUIDE)])
 def test_docs_use_no_real_stock_name(doc, text):
     """데이터 이용 범위상 문서의 예도 합성 데모로 만든다."""
     for name in ("삼성전자", "SK하이닉스", "NAVER", "삼성에스디에스", "LG씨엔에스", "아이티센글로벌"):
@@ -131,19 +140,19 @@ def test_docs_use_no_real_stock_name(doc, text):
 
 def test_exploration_label_quote_matches_the_screen():
     """README 가 인용하는 표지가 화면의 표지와 같은 글자다."""
-    assert f"`[{EXPLORE_LABEL_TIERS[0]}]`" in README and "`[탐색]`" in README
+    assert f"`[{EXPLORE_LABEL_TIERS[0]}]`" in MANUAL and "`[탐색]`" in MANUAL
 
 
 def test_readme_sector_count_says_what_27_is():
     """27 칸에는 `(미분류)` 가 들어 있다 — '벤더 분류 27개' 는 틀렸다."""
-    assert "벤더 분류(`stocks.sector`) 26개와 `(미분류)` 를 합친 27칸" in README
-    assert "`stocks.sector`) 27개" not in README
+    assert "벤더 분류(`stocks.sector`) 26개와 `(미분류)` 를 합친 27칸" in MANUAL
+    assert "`stocks.sector`) 27개" not in README + MANUAL
 
 
 def test_collection_wording_admits_the_byo_collector():
     """`src/sectorflow/collect/` 가 있는데 '수집은 이 저장소에 없다' 는 틀렸다."""
     assert "데이터 수집은 이 저장소에 없다" not in README
-    assert "src/sectorflow/collect/" in _section(README, "## Quick start", "## 목차")
+    assert "src/sectorflow/collect/" in _section(README, "## 자기 데이터로 보기", "## 이 숫자는")
     assert "src/sectorflow/collect/" in (REPO / "CLAUDE.md").read_text("utf-8")
 
 
@@ -186,10 +195,11 @@ def test_research_inputs_point_at_the_archive(study):
 
 
 def test_readme_head_reads_top_to_bottom():
-    """머리는 로고(심볼, #77·#86) → 한 줄 소개 → 데모 지도 → Quick start → 후원 한 줄 → 목차 순이다 — 처음 읽는 사람이 그림부터 본다."""
-    head = README[:README.index("## 목차")]
-    order = ("docs/brand/logo.svg", "한 장의 지도로 본다", "](docs/images/map-demo.", "## Quick start",
-             "github.com/sponsors/")
+    """머리는 트렌딩 레포 꼴이다(2026-11-24): 로고 → 한 줄 소개 → 링크 줄(데모·가이드·후원) → 데모 지도 → Quick start.
+    처음 읽는 사람이 그림부터 보고, 긴 설명은 가이드로 간다."""
+    head = README[:README.index("## 무엇을 보나")]
+    order = ("docs/brand/logo.svg", "한 장의 지도로 본다", "](docs/guide.md)", "github.com/sponsors/",
+             "](docs/images/map-demo.", "## Quick start")
     pos = [head.find(s) for s in order]
     assert -1 not in pos and pos == sorted(pos), dict(zip(order, pos))
     from sectorflow.wording import banned_hits, map_hits

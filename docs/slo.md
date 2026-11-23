@@ -1,6 +1,6 @@
 # SLO — 언제까지 나와야 "제때"인가
 
-리포트 배치(README §3)의 서비스 목표다. 측정은 전부 운영 사건 원장 `reports/events.jsonl` 로 한다 —
+리포트 배치([가이드 §3](guide.md#3-일일-배치--언제-무엇이-도나))의 서비스 목표다. 측정은 전부 운영 사건 원장 `reports/events.jsonl` 로 한다 —
 폴더 바꿔 끼우기가 흔적(INCOMPLETE·mtime)을 지우고 `cron.log` 는 5MB 에서 돌아, 원장 없이는 나중에 잴 수 없다.
 형식·통계는 [`scripts/ops_ledger.py`](../scripts/ops_ledger.py) 머리말, 쓰는 쪽은 `daily_report.sh`·`cron_run.sh`·`serve.sh`([`scripts/_ledger.sh`](../scripts/_ledger.sh))와
 `freshness_check.py` 다. 원장은 웹 허용 목록에 없다 — 밖에 안 보인다.
