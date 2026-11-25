@@ -83,7 +83,7 @@ BYO 수집기 코드는 `src/sectorflow/collect/`(`sector-flow-collect`) 에 있
 | 레포 | 무엇 | sector-flow 와의 관계 |
 |---|---|---|
 | [kiwoom-client](https://github.com/younghwan91/kiwoom-client) | 키움 REST API 파이썬 클라이언트(엔드포인트 182개) | sector-flow 의 수급 자료는 키움 REST API 에서 옵니다. BYO 수집기는 필요한 TR 6개만 담은 자체 어댑터를 쓰고, 다른 TR 을 직접 부르고 싶을 때 kiwoom-client 를 씁니다. |
-| [fin-checkup](https://github.com/younghwan91/fin-checkup) | 상장사 재무제표 신호등(DART 공시, 지표 17개) | 지도에서 눈에 띈 섹터의 종목을 재무제표 쪽에서 봅니다. 키 없이 [사이트](https://younghwan91.github.io/fin-checkup/)에서 바로 열립니다. |
+| [fin-checkup](https://github.com/younghwan91/fin-checkup) | 상장사 재무제표 건강검진(DART 공시로 계산한 지표 17개) | 지도에서 눈에 띈 섹터의 종목을 재무제표 쪽에서 봅니다. 키 없이 [사이트](https://younghwan91.github.io/fin-checkup/)에서 바로 열립니다. |
 
 ## 문서
 
