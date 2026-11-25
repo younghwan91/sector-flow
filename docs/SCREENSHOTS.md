@@ -41,6 +41,20 @@ GIF 는 `scripts/map_video.py`(가짜 시계로 타임랩스를 30fps 로 찍어
 | docs/images/map-demo.gif | src/sectorflow/flowmap.py | ed68438134c631a5f7306a915800684513da5067 |
 | docs/images/map-demo.gif | src/sectorflow/demo.py | ed68438134c631a5f7306a915800684513da5067 |
 
+## 날짜 카드
+
+공개 랜딩의 날짜 영구 링크(`d/<날짜>/`)가 링크 미리보기(`og:image`)로 쓰는 카드 `docs/images/days/<날짜>.png`(1200×675)다.
+합성 데모의 마지막 5거래일마다 그날까지 자른 지도를 배치 카드와 같은 길(`scripts/map_card.py`, `?card=wide`)로 찍는다(128색).
+`demo_shots.py` 는 이 표를 건드리지 않는다. 감시 경로를 커밋한 뒤:
+
+```
+uv run --with 'playwright==1.48.0' --with pillow python scripts/day_cards.py
+```
+
+<!-- day-cards -->
+| 이미지 | 감시 경로 | 찍은 커밋 |
+|---|---|---|
+
 ## 소셜 미리보기
 
 `docs/brand/social-preview.png`(1280×640, GitHub 레포 링크 카드)는 따로 찍는다 — 지도 페이지·데모·워드마크·브랜드 가이드(한 줄 소개)가

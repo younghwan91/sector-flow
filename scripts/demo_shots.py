@@ -265,8 +265,8 @@ def _git(*args: str) -> str:
     return subprocess.run(["git", "-C", str(REPO), *args], check=True, capture_output=True, text=True).stdout.strip()
 
 
-#: 원장 행 — | 이미지 | 감시 경로 | 커밋 |.
-ROW = re.compile(r"^(\|\s*docs/images/\S+?\.(?:png|gif)\s*\|\s*(\S+?)\s*\|\s*)[0-9a-f]{40}(\s*\|)$", re.M)
+#: 원장 행 — | 이미지 | 감시 경로 | 커밋 |. 날짜 카드(``docs/images/days/``)는 ``scripts/day_cards.py`` 가 찍고 고친다.
+ROW = re.compile(r"^(\|\s*docs/images/(?!days/)\S+?\.(?:png|gif)\s*\|\s*(\S+?)\s*\|\s*)[0-9a-f]{40}(\s*\|)$", re.M)
 
 
 def watched(text: str) -> list[str]:

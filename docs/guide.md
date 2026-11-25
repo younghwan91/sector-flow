@@ -92,6 +92,7 @@ flowchart TD
 src/sectorflow/
 ├── storage.py              # 읽기 전용 DB 접근 — 리포트가 쓰는 만큼만
 ├── demo.py                 # 합성 데모 리포트(실데이터 아님) — sw-flow --demo · sector-flow-demo
+├── caption.py              # 하루 지도의 게시용 글 초안(X·텔레그램) — 표준 출력에만, 보내지 않는다
 ├── collect/                # BYO 수집기 sector-flow-collect — 자기 키움 키 → sqlite (일일 배치는 안 쓴다)
 └── tui/                    # sw-flow · sw-ledger — 렌더(*_view.py)는 순수함수, curses 는 *_app.py 만
 scripts/
@@ -109,6 +110,7 @@ scripts/
 ├── krx_truth.py            # 네이버 시장값과 시장 합계 대조 (내부 전용)
 ├── demo_shots.py           # README 그림·화면 예시를 합성 데모로 다시 만든다
 ├── social_preview.py       # GitHub 소셜 미리보기(1280×640, 합성 데모)
+├── day_cards.py            # 랜딩 날짜 영구 링크의 공유 카드(1200×675, 합성 데모 5거래일)
 ├── krx_calendar.py         # KRX 휴장 달력 — 거래일 판정·SLO 분모
 ├── digest.py               # (선택) 다이제스트 글·카드 — 폴더에만 쓴다
 ├── trust_page.py           # 검증·품질 페이지 trust.html
