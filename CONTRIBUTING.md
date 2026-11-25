@@ -18,6 +18,11 @@ sector-flow 에 관심을 가져 주셔서 고맙습니다. 버그 제보·문�
 - 데모로 재현되지 않는 문제라면 숫자 대신 **꼴**(어느 화면·어느 열·무엇이 어떻게 틀렸나)만 적어 주세요.
 - 투자 질문(무엇을 살까, 이 섹터가 오를까)은 받지 않습니다.
 
+## 처음이라면
+
+[`good first issue`](https://github.com/younghwan91/sector-flow/labels/good%20first%20issue) 목록에서 시작하세요.
+이슈마다 볼 파일·줄, 완료 기준, 로컬 테스트 명령이 적혀 있습니다.
+
 ## 개발 환경
 
 Python 3.11+ 와 [uv](https://docs.astral.sh/uv/) 가 필요합니다. 테스트는 DB·네트워크 없이 돕니다.
