@@ -68,7 +68,7 @@ def shoot(payload: dict, out: Path) -> list[Path]:
             target = out / f"{day}.png"
             Image.open(d / "map_wide.png").convert("RGB").quantize(colors=COLORS, method=Image.MEDIANCUT).save(
                 target, optimize=True)
-            print(f"{target.relative_to(REPO)}: {target.stat().st_size:,} bytes")
+            print(f"{target.name}: {target.stat().st_size:,} bytes")
             done.append(target)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
@@ -125,7 +125,7 @@ def main(argv: "list[str] | None" = None) -> int:
         print(f"찍지 않았다 — {e}", file=sys.stderr)
         return 1
     MANIFEST.write_text(stamp(MANIFEST.read_text("utf-8"), [p.name for p in done], _git("rev-parse", "HEAD")), "utf-8")
-    print(f"wrote {MANIFEST.relative_to(REPO)}")
+    print(f"wrote {MANIFEST.name}")
     return 0
 
 
