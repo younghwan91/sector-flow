@@ -72,11 +72,12 @@ def test_cli_prints_only_and_warns_on_real_data(tmp_path, capsys):
     p.write_text(json.dumps(_payload(demo=False), ensure_ascii=False), "utf-8")
     assert C.main(["--payload", str(p)]) == 0
     out, err = capsys.readouterr()
-    assert DEMO_MARK not in out and "https://" not in out, "실데이터 글에 공개 링크를 붙이지 않는다"
+    assert DEMO_MARK not in out and "https://" not in out
     assert "게시하지 않는다" in err
     p.write_text(json.dumps(_payload(), ensure_ascii=False), "utf-8")
-    assert C.main(["--payload", str(p), "--date", "2026-01-06"]) == 0
-    assert capsys.readouterr().out.rstrip().endswith(C.permalink("2026-01-06"))
+    assert C.main(["--payload", str(p), "--date", "2026-01-05", "--url", "https://example.invalid/d/2026-01-05/"]) == 0
+    out, err = capsys.readouterr()
+    assert out.startswith(f"{DEMO_MARK} 01/05") and out.rstrip().endswith("/d/2026-01-05/") and not err
 
 
 def test_x_weight_counts_hangul_double_and_links_flat():

@@ -12908,8 +12908,8 @@ id = "shots-ledger-skips-gif"
 why = "그림을 다시 찍어도 원장의 GIF 줄은 옛 커밋으로 남는다 — 신선도 검사가 새로 찍은 GIF 를 낡았다고 한다."
 guards = ["tests/test_screenshots_fresh.py::test_stamp_rewrites_every_manifest_row_and_only_those"]
 file = "scripts/demo_shots.py"
-find = 'ROW = re.compile(r"^(\|\s*docs/images/\S+?\.(?:png|gif)\s*\|'
-replace = 'ROW = re.compile(r"^(\|\s*docs/images/\S+?\.(?:png)\s*\|'
+find = 'ROW = re.compile(r"^(\|\s*docs/images/(?!days/)\S+?\.(?:png|gif)\s*\|'
+replace = 'ROW = re.compile(r"^(\|\s*docs/images/(?!days/)\S+?\.(?:png)\s*\|'
 
 [[mutation]]
 id = "video-overwrites-users-map"
@@ -14374,6 +14374,78 @@ guards = ["tests/test_first_reader.py::test_readme_stays_short"]
 file = "README.md"
 find = "## 라이선스\n"
 replace = "## 라이선스\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
+
+[[mutation]]
+id = "caption-implies-who-sold-to-whom"
+why = "게시용 글이 '쌍별 거래가 아님' 을 떼어, 순매도 주체가 순매수 주체에게 넘긴 것처럼 읽힌다 — 주변합으로 정해지지 않는 말이다."
+guards = ["tests/test_caption.py::test_names_the_biggest_seller_and_buyer_with_their_top_sector_separately"]
+file = "src/sectorflow/caption.py"
+find = 'TAIL = "주체별 순매매 합계(누가 누구에게 판 것이 아님) · 동시기 관측, 예측·투자 조언 아님"'
+replace = 'TAIL = "동시기 관측, 예측·투자 조언 아님"'
+
+[[mutation]]
+id = "caption-picks-unclassified-as-sector"
+why = "(미분류) 묶음을 섹터로 골라 글에 '(미분류)를 가장 많이 받았습니다' 가 나간다 — 섹터가 아니다."
+guards = ["tests/test_caption.py::test_names_the_biggest_seller_and_buyer_with_their_top_sector_separately"]
+file = "src/sectorflow/caption.py"
+find = "    sums = {s: row for s, row in sums.items() if s != summary.UNCLASSIFIED}"
+replace = "    sums = dict(sums)"
+
+[[mutation]]
+id = "caption-skips-wording-check"
+why = "지도 낱말 검사(유입·몰림·추천 …)를 건너뛰어 피할 말이 든 글을 낸다."
+guards = ["tests/test_caption.py::test_refuses_avoided_words"]
+file = "src/sectorflow/caption.py"
+find = "    if bad:\n        raise CaptionError"
+replace = "    if False:\n        raise CaptionError"
+
+[[mutation]]
+id = "caption-upto-keeps-day-blocks"
+why = "지난 날로 자른 페이로드가 마지막 날의 today·change 를 그대로 들고 간다 — 다른 날의 요약이 섞인다."
+guards = ["tests/test_caption.py::test_upto_cuts_the_date_axis_and_drops_day_only_blocks"]
+file = "src/sectorflow/caption.py"
+find = "    out = {key: P[key] for key in MAP_KEYS if key in P}"
+replace = "    out = dict(P)"
+
+[[mutation]]
+id = "site-day-og-image-relative"
+why = "날짜 쪽 og:image 가 상대 경로라 카카오톡·X·긱뉴스가 그림을 못 읽고 글만 보인다."
+guards = ["tests/test_site.py::test_day_permalinks_carry_their_own_card_and_caption"]
+file = "site/build.py"
+find = '            image, w, h = url + "card.png", 1200, 675'
+replace = '            image, w, h = "card.png", 1200, 675'
+
+[[mutation]]
+id = "site-day-map-not-cut"
+why = "날짜 쪽의 지도가 그날이 아니라 데모 마지막 날을 그린다 — 링크의 날짜와 그림이 다르다."
+guards = ["tests/test_site.py::test_day_permalinks_carry_their_own_card_and_caption"]
+file = "site/build.py"
+find = '        files[f"d/{day}/map.html"] = sm.render(sm.build_map_data(P), template).encode("utf-8")'
+replace = '        files[f"d/{day}/map.html"] = sm.render(sm.build_map_data(payload), template).encode("utf-8")'
+
+[[mutation]]
+id = "landing-drops-twitter-image"
+why = "랜딩에 twitter:image 가 없어 X 카드가 그림 없이 뜬다."
+guards = ["tests/test_site.py::test_landing_link_preview_shows_the_map_picture"]
+file = "site/index.html"
+find = '<meta name="twitter:image" content="https://younghwan91.github.io/sector-flow/social-preview.png">'
+replace = ''
+
+[[mutation]]
+id = "day-cards-stamp-drops-watched-paths"
+why = "날짜 카드 원장이 감시 경로 하나만 적어, 지도 코드가 바뀌어도 카드 재촬영을 요구하지 않는다."
+guards = ["tests/test_screenshots_fresh.py::test_day_cards_restamp_their_own_table_only"]
+file = "scripts/day_cards.py"
+find = "manifest_rows(names, list(WATCHED), sha)"
+replace = "manifest_rows(names, list(WATCHED)[:1], sha)"
+
+[[mutation]]
+id = "demo-shots-restamps-day-cards"
+why = "demo_shots.py 가 찍지 않은 날짜 카드 줄까지 HEAD 로 고쳐, 낡은 카드가 새것처럼 적힌다."
+guards = ["tests/test_screenshots_fresh.py::test_stamp_rewrites_every_manifest_row_and_only_those"]
+file = "scripts/demo_shots.py"
+find = 'docs/images/(?!days/)\S+?'
+replace = 'docs/images/\S+?'
 
 [[removed]]
 id = "ci-shard-denominator-hardcoded"

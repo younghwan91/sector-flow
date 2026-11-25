@@ -8,6 +8,7 @@ data/
 *.png
 !docs/images/*.png
 !docs/brand/social-preview.png
+!docs/images/days/*.png
 
 # 일일 리포트 산출물 (scripts/daily_report.sh) — 생성물이지 소스가 아니다
 /reports/

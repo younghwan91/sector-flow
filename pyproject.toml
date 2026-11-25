@@ -32,6 +32,8 @@ sector-flow-demo = "sectorflow.demo:main"
 sector-flow-collect = "sectorflow.collect.run:main"
 # BYO sqlite → 수급만 페이로드 → map.html 한 명령(docs/byo/quickstart.md).
 sector-flow-byo = "sectorflow.byo:main"
+# 하루 지도의 게시용 글 초안(X·텔레그램) — 표준 출력에만 쓴다, 보내지 않는다(src/sectorflow/caption.py).
+sector-flow-caption = "sectorflow.caption:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/sectorflow"]

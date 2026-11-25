@@ -35,6 +35,8 @@ sys.path.insert(0, str(REPO / "src"))
 
 #: 랜딩에 그대로 싣는 데모 그림 — README 가 쓰는 것과 같은 파일(스크린샷 원장이 데모로 찍었다고 적는다).
 IMAGES = ("map-demo.gif", "map-demo.png")
+#: 공개 랜딩의 절대 주소 — 링크 미리보기는 상대 경로를 못 읽는다. 날짜 영구 링크는 ``<URL>d/<날짜>/``.
+URL = "https://younghwan91.github.io/sector-flow/"
 #: 링크 미리보기(og:image) — 1280×640, ``scripts/social_preview.py`` 가 찍어 원장에 적는다.
 PREVIEW = REPO / "docs" / "brand" / "social-preview.png"
 #: 날짜 카드 폴더 이름(``docs/images/days/<날짜>.png``) — ``scripts/day_cards.py``.
@@ -71,6 +73,10 @@ def local_refs(html: str) -> list[str]:
     """HTML 이 가리키는 상대 경로(외부 주소·같은 쪽 안 링크·``./`` 는 뺀다). 폴더(``d/``)는 그 ``index.html`` 로 센다."""
     return sorted({r + "index.html" if r.endswith("/") else r for r in _LOCAL_REF.findall(html)
                    if r not in ("./", ".") and not r.startswith(("/", "../"))})
+
+
+def permalink(day: str) -> str:
+    return f"{URL}d/{day}/"
 
 
 def _caption():
@@ -124,14 +130,14 @@ def day_pages(payload: dict, images: Path, sm) -> dict[str, bytes]:
     files: dict[str, bytes] = {}
     for day in days:
         P = cap.upto(payload, day)
-        url = cap.permalink(day)
+        url = permalink(day)
         text = cap.caption(P, url=url, today=False)
         card = images / DAYS_DIR / f"{day}.png"
         if card.is_file():
             files[f"d/{day}/card.png"] = card.read_bytes()
             image, w, h = url + "card.png", 1200, 675
         else:
-            image, w, h = cap.SITE + PREVIEW.name, 1280, 640
+            image, w, h = URL + PREVIEW.name, 1280, 640
         title = f"{day} 섹터 수급 지도 [합성 데모] · sector-flow"
         desc = " ".join(text.splitlines()[1:3])
         alt = f"{day} 섹터 수급 지도 카드(합성 데모) — 왼쪽 순매도 주체, 가운데 섹터, 오른쪽 순매수 주체"
@@ -146,7 +152,7 @@ def day_pages(payload: dict, images: Path, sm) -> dict[str, bytes]:
     items = "\n".join(f'<li><a href="{d}/">{d}</a></li>' for d in reversed(days))
     title = "날짜별 섹터 수급 지도 [합성 데모] · sector-flow"
     desc = "하루마다 한 장 — 그날 누가 어느 섹터를 넘기고 넘겨받았는지. 이 사이트의 날짜·숫자는 합성 데모입니다."
-    head = _meta(title, desc, cap.SITE + "d/", cap.SITE + PREVIEW.name, "sector-flow 수급 지도(합성 데모)", 1280, 640)
+    head = _meta(title, desc, URL + "d/", URL + PREVIEW.name, "sector-flow 수급 지도(합성 데모)", 1280, 640)
     body = (f'<nav><a href="../">sector-flow</a></nav>\n<h1>날짜별 섹터 수급 지도</h1>\n'
             f"<p>{escape(desc)} 날짜마다 그날까지 자른 지도와 공유용 카드가 있습니다.</p>\n<ul>\n{items}\n</ul>")
     files["d/index.html"] = _page(head, body, title).encode("utf-8")

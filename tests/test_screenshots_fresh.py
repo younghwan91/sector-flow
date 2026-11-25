@@ -84,10 +84,25 @@ def test_stamp_rewrites_every_manifest_row_and_only_those():
     S = _shots()
     text = MANIFEST.read_text("utf-8")
     new = S.stamp_manifest(text, "a" * 40)
-    rows = [r for r in _rows() if r[0].startswith("docs/images/")]      # docs/brand 줄은 social_preview.py 가 고친다
+    # docs/brand 줄은 social_preview.py, docs/images/days 줄은 day_cards.py 가 고친다
+    rows = [r for r in _rows() if r[0].startswith("docs/images/") and not r[0].startswith("docs/images/days/")]
     assert len(rows) == new.count("a" * 40) and new.split("|---")[0] == text.split("|---")[0]
     assert set(S.watched(text)) == {p.rstrip("/") for _i, p, _s in rows}
     assert {"src/sectorflow/demo.py", "src/sectorflow/tui", "scripts/templates"} <= set(S.watched(text))
+
+
+def test_day_cards_restamp_their_own_table_only():
+    """날짜 카드 표는 day_cards.py 가 다시 쓴다 — 찍은 파일 × 감시 경로, 다른 표는 그대로."""
+    spec = importlib.util.spec_from_file_location("_day_cards", REPO / "scripts" / "day_cards.py")
+    D = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(D)
+    text = MANIFEST.read_text("utf-8")
+    new = D.stamp(text, ["2026-01-02.png"], "b" * 40)
+    assert new.count("b" * 40) == len(D.WATCHED) and "docs/images/days/2026-01-02.png" in new
+    assert [r for r in ROW.findall(new) if not r[0].startswith("docs/images/days/")] == \
+        [r for r in ROW.findall(text) if not r[0].startswith("docs/images/days/")]
+    rows = [r for r in _rows() if r[0].startswith("docs/images/days/")]
+    assert rows and {p for _i, p, _s in rows} == set(D.WATCHED), "원장의 날짜 카드 줄이 감시 경로와 어긋난다"
 
 
 def test_ansi_to_html_keeps_color_width_and_trims_only_when_asked():

@@ -1,7 +1,8 @@
 """하루 수급 지도의 게시용 글 **초안** — ``payload.json`` → X·텔레그램에 붙일 짧은 글. 표준 라이브러리만.
 
-    uv run python -m sectorflow.caption --demo                        # 합성 데모의 마지막 날(표지 [합성 데모])
-    uv run python -m sectorflow.caption --payload reports/latest/payload.json --date 2026-11-25
+    uv run sector-flow-caption --demo                         # 합성 데모의 마지막 날(표지 [합성 데모])
+    uv run sector-flow-caption --demo --long                  # 텔레그램용 — 시장 4주체 줄과 큰 칸 셋
+    uv run sector-flow-caption --payload reports/latest/payload.json      # 실데이터 — 초안으로만
 
 **보내지 않는다.** 표준 출력에 글을 쓸 뿐이고 네트워크를 쓰지 않는다. 게시는 사람이 정한다 — 실데이터 글은 KRX·키움 자료의
 재배포 권리 회신 전에는 밖에 게시하지 않는다(``scripts/digest.py`` 머리말과 같은 사정). 실데이터면 표준 오류에 그 경고를 낸다.
@@ -11,7 +12,8 @@
 쌍별 이전량이 정해지지 않는다). 그래서 "가장 크게 순매도한 주체가 가장 많이 넘긴 섹터" 와 "가장 크게 순매수한 주체가 가장 많이
 받은 섹터" 를 **따로** 적는다. 지도 낱말 검사(``wording.map_hits``)에 걸리면 글을 내지 않는다.
 
-하루 폴더가 아니라 지난 날의 지도(영구 링크 ``/d/<날짜>/``)를 지을 때는 :func:`upto` 로 페이로드를 그날까지 자른다.
+링크는 ``--url`` 로 받는다 — 이 모듈은 설치본에 실리므로 주소를 적지 않는다(``tests/test_packaging.py`` 의 목적지 검사). 하루 폴더가
+아니라 지난 날의 지도(공개 랜딩의 영구 링크 ``d/<날짜>/``)를 지을 때는 :func:`upto` 로 페이로드를 그날까지 자른다.
 """
 from __future__ import annotations
 
@@ -25,8 +27,6 @@ from sectorflow.basis import DEMO_MARK
 from sectorflow.josa import josa
 from sectorflow.wording import map_hits
 
-#: 공개 랜딩 — 글 끝의 링크. 날짜 영구 링크는 ``<SITE>d/<날짜>/``(``site/build.py``).
-SITE = "https://younghwan91.github.io/sector-flow/"
 #: 공개 랜딩이 날짜 영구 링크를 짓는 날 수 — 합성 데모의 마지막 이만큼(``site/build.py``·카드 ``scripts/day_cards.py``).
 PERMALINK_DAYS = 5
 #: 지도가 쓰는 페이로드 키(``flowmap.build_map_data`` 머리말) — :func:`upto` 는 이것만 남긴다. 그날의 ``today``·``change`` 등은
@@ -137,10 +137,6 @@ def caption(P: dict, *, url: "str | None" = None, long: bool = False, today: boo
     return text
 
 
-def permalink(day: str, site: str = SITE) -> str:
-    return f"{site}d/{day}/"
-
-
 def main(argv: "list[str] | None" = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     src = ap.add_mutually_exclusive_group(required=True)
@@ -148,7 +144,7 @@ def main(argv: "list[str] | None" = None) -> int:
     src.add_argument("--demo", action="store_true", help="합성 데모로(sectorflow.demo 가 짓는다, 처음 한 번 수십 초)")
     ap.add_argument("--date", help="그날까지 자른 지도로(기본: 마지막 날)")
     ap.add_argument("--long", action="store_true", help="텔레그램용 — 시장 4주체 줄과 큰 칸 셋을 더한다")
-    ap.add_argument("--url", help="글 끝 링크(기본: 데모면 공개 랜딩의 날짜 영구 링크, 실데이터면 없음)")
+    ap.add_argument("--url", help="글 끝에 붙일 링크(기본 없음). 데모의 날짜 쪽은 공개 랜딩의 d/<날짜>/ 다(site/build.py)")
     a = ap.parse_args(argv)
     if a.demo:
         from sectorflow import demo  # noqa: PLC0415 — pandas 등이 데모를 지을 때만 필요하다
@@ -160,8 +156,7 @@ def main(argv: "list[str] | None" = None) -> int:
     try:
         if a.date:
             P = upto(P, a.date)
-        url = a.url or (permalink(P["dates"][-1]) if P.get("demo") else None)
-        text = caption(P, url=url, long=a.long, today=not a.date)
+        text = caption(P, url=a.url, long=a.long, today=not a.date)
     except CaptionError as e:
         print(f"[caption] {e}", file=sys.stderr)
         return 1

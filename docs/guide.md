@@ -256,6 +256,22 @@ http://<서버의 Tailscale 주소>:8765/latest/map.html      #            — �
 배치가 리포트 폴더에 같이 짓고, 옛 폴더는 `uv run python scripts/sector_map.py --payload <리포트 폴더>/payload.json --html map.html` 로 짓는다.
 실데이터 지도도 리포트 폴더와 같다 — 본인 기기에서만 본다.
 
+**공유 카드와 글 초안.** 배치는 지도 옆에 공유 카드 `map.png`(1080×1350)·`map_wide.png`(1200×675, 링크 미리보기 비율)를 같이 찍는다
+(`scripts/map_card.py`). 그날 글 초안은 `uv run sector-flow-caption --payload reports/latest/payload.json` 이 표준 출력에 쓴다 —
+가장 크게 순매도한 주체가 가장 많이 넘긴 섹터와 가장 크게 순매수한 주체가 가장 많이 받은 섹터를 **따로** 적는다(주변합으로는
+누가 누구에게 팔았는지 정해지지 않는다). `--long` 은 텔레그램용으로 시장 4주체 줄과 지도의 큰 칸 셋을 더하고, `--url` 은 글 끝 링크다.
+지도 낱말 검사(`sectorflow.wording.map_hits`)에 걸리면 글을 내지 않는다. 보내는 기능은 없다 — 실데이터 카드·글은 KRX·키움 재배포
+권리 회신 전에는 밖에 올리지 않는다. 키 없이 모양을 보려면 `uv run sector-flow-caption --demo`.
+
+```
+[합성 데모] 10/30 섹터 수급 지도
+오늘 개인은 가상전자를 가장 많이 넘겼고(−2,927억), 기관은 가상전자를 가장 많이 받았습니다(+2,417억).
+주체별 순매매 합계(누가 누구에게 판 것이 아님) · 동시기 관측, 예측·투자 조언 아님
+```
+
+공개 랜딩(GitHub Pages)에는 합성 데모의 마지막 5거래일마다 날짜 영구 링크 `d/<날짜>/` 가 있다 — 그날까지 자른 지도, 위 글 초안,
+그날 카드를 `og:image` 로 단 쪽이라 카카오톡·X 에 링크를 붙이면 그날 그림이 뜬다(`site/build.py`, 카드는 `scripts/day_cards.py`).
+
 `/latest/trust.html` 은 검증·품질 페이지(첫 게시 결과·정정의 크기·지표 검정 결과·알려진 한계)이고 근거 문서 사본이 `/latest/validation/` 에 같이 있다.
 `/latest/digest.md`·`/latest/digest.png` 는 그날의 수급 다이제스트다 — 이 비공개 웹에서만 읽고 밖으로 보내는 길은 없다.
 
