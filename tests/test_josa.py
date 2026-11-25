@@ -25,5 +25,6 @@ def test_josa_rieul_and_readings():
     assert josa("IT", "은/는") == "IT는" and josa("URL", "으로/로") == "URL로" and josa("ETF", "을/를") == "ETF를"
     assert josa("KRX", "이/가") == "KRX가" and josa("NXT", "과/와") == "NXT와" and josa("CMN", "이/가") == "CMN이"
     assert josa("가상전자(코스닥)", "이/가") == "가상전자(코스닥)이"
+    assert josa("3%", "은/는") == "3%는" and josa("3%", "으로/로") == "3%로" and josa("10%", "이/가") == "10%가"
     with pytest.raises(KeyError):
         josa("기관", "의")
