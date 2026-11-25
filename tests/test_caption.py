@@ -24,7 +24,7 @@ def test_names_the_biggest_seller_and_buyer_with_their_top_sector_separately():
     text = C.caption(_payload(), url="https://example.invalid/d/2026-01-06/")
     lines = text.splitlines()
     assert lines[0] == f"{DEMO_MARK} 01/06 섹터 수급 지도"
-    # 순매도 1위 개인(−260) 의 맨 위 섹터 가상전자 −300, 순매수 1위 기관(+230) 의 맨 위 섹터 가상전자 +170 — (미분류)는 빼고 센다
+    # 시장 합은 (미분류) 포함(지도 머리글과 같다) — 순매도 1위 개인 −1,259, 순매수 1위 기관 +1,229. 맨 위 섹터는 (미분류)를 빼고 고른다
     assert lines[1] == "오늘 개인은 가상전자를 가장 많이 넘겼고(−300억), 기관은 가상전자를 가장 많이 받았습니다(+170억)."
     assert "누가 누구에게 판 것이 아님" in text and "예측·투자 조언 아님" in text
     assert lines[-1] == "https://example.invalid/d/2026-01-06/"
@@ -35,12 +35,12 @@ def test_numbers_match_the_map_window_sums():
     P = _payload()
     f = C.day_facts(P)
     sums = flowmap.window_sums(P, ["거래소"], 1, 1)
-    assert f["gave"]["sector_v"] == sums["가상전자"]["indiv"] and f["took"]["total"] == 230
+    assert f["gave"]["sector_v"] == sums["가상전자"]["indiv"] and f["took"]["total"] == 1229
 
 
 def test_long_form_adds_market_line_and_map_headline_facts():
     text = C.caption(_payload(), long=True, today=False)
-    assert "시장 전체 순매매: 개인 −260억 · 외국인 +30억 · 기관 +230억 · 기타법인 0억" in text.replace("+0억", "0억")
+    assert "시장 전체 순매매: 개인 −1,259억 · 외국인 +30억 · 기관 +1,229억 · 기타법인 0억" in text.replace("+0억", "0억")
     assert "· 가상전자 — 개인 −300억" in text and not text.splitlines()[1].startswith("오늘")
 
 

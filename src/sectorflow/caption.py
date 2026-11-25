@@ -72,9 +72,9 @@ def day_facts(P: dict, market: str = flowmap.ALL_MARKETS) -> dict:
     if not N:
         raise CaptionError("날짜가 없다")
     sums = flowmap.window_sums(P, flowmap.market_list(P, market), N - 1, N - 1)
-    sums = {s: row for s, row in sums.items() if s != summary.UNCLASSIFIED}
     actors = flowmap.present_actors(P)
-    net = {a: sum(r[a] for r in sums.values()) for a in actors}
+    net = {a: sum(r[a] for r in sums.values()) for a in actors}      # 시장 합 — 지도 머리글과 같다((미분류) 포함)
+    sums = {s: row for s, row in sums.items() if s != summary.UNCLASSIFIED}   # 섹터를 고를 때만 뺀다 — 섹터가 아니다
     pick = {f: {a: {"v": v} for a, v in net.items() if (v < -flowmap.EPS if f == "gave" else v > flowmap.EPS)}
             for f in ("gave", "took")}
     out = {"date": P["dates"][-1], "market": market, "demo": bool(P.get("demo")), "net": net}
