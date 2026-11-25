@@ -14447,6 +14447,46 @@ file = "scripts/demo_shots.py"
 find = 'docs/images/(?!days/)\S+?'
 replace = 'docs/images/\S+?'
 
+[[mutation]]
+id = "caption-real-data-no-warning"
+why = "실데이터로 글을 만들어도 게시 보류 경고가 없다 — 재배포 회신 전인 숫자를 그대로 올리게 된다."
+guards = ["tests/test_caption.py::test_cli_prints_only_and_warns_on_real_data"]
+file = "src/sectorflow/caption.py"
+find = '    if not P.get("demo"):'
+replace = '    if False:'
+
+[[mutation]]
+id = "caption-long-drops-market-line"
+why = "텔레그램용 글에 시장 4주체 줄 대신 잔여까지 섞이거나 줄이 빠진다 — 지도 머리글과 숫자가 갈린다."
+guards = ["tests/test_caption.py::test_long_form_adds_market_line_and_map_headline_facts"]
+file = "src/sectorflow/caption.py"
+find = '        lines.append("시장 전체 순매매: "'
+replace = '        lines.append("시장 순매매: "'
+
+[[mutation]]
+id = "caption-window-is-two-days"
+why = "글이 그날이 아니라 이틀 합을 센다 — 카드·지도의 '기준일' 숫자와 다르다."
+guards = ["tests/test_caption.py::test_numbers_match_the_map_window_sums"]
+file = "src/sectorflow/caption.py"
+find = "    sums = flowmap.window_sums(P, flowmap.market_list(P, market), N - 1, N - 1)"
+replace = "    sums = flowmap.window_sums(P, flowmap.market_list(P, market), max(0, N - 2), N - 1)"
+
+[[mutation]]
+id = "caption-writes-empty-day"
+why = "아무도 순매매하지 않은 날(휴장 데이터·빈 폴더)에도 '오늘 .' 같은 빈 글을 낸다."
+guards = ["tests/test_caption.py::test_refuses_when_nothing_moved"]
+file = "src/sectorflow/caption.py"
+find = "    if not g and not t:\n        raise CaptionError"
+replace = "    if False:\n        raise CaptionError"
+
+[[mutation]]
+id = "caption-x-weight-counts-links-raw"
+why = "X 무게가 링크를 글자 수대로 세어 짧은 글도 280 을 넘는다고 경고한다."
+guards = ["tests/test_caption.py::test_x_weight_counts_hangul_double_and_links_flat"]
+file = "src/sectorflow/caption.py"
+find = "            w += 23"
+replace = "            w += len(tok)"
+
 [[removed]]
 id = "ci-shard-denominator-hardcoded"
 why = "샤드를 없앴다 — 전체 검증은 잡 하나다(tests/test_ci_workflow.py 가 matrix 를 막는다)"
