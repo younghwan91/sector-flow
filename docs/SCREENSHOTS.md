@@ -54,41 +54,41 @@ uv run --with 'playwright==1.48.0' --with pillow python scripts/day_cards.py
 <!-- day-cards -->
 | 이미지 | 감시 경로 | 찍은 커밋 |
 |---|---|---|
-| docs/images/days/2026-10-26.png | scripts/day_cards.py | 82d8c45d7bcf0c2898bd32bc09921c6ddbe8a56c |
-| docs/images/days/2026-10-26.png | scripts/map_card.py | 82d8c45d7bcf0c2898bd32bc09921c6ddbe8a56c |
-| docs/images/days/2026-10-26.png | scripts/templates/sector_map.html | 82d8c45d7bcf0c2898bd32bc09921c6ddbe8a56c |
-| docs/images/days/2026-10-26.png | scripts/sector_map.py | 82d8c45d7bcf0c2898bd32bc09921c6ddbe8a56c |
-| docs/images/days/2026-10-26.png | src/sectorflow/flowmap.py | 82d8c45d7bcf0c2898bd32bc09921c6ddbe8a56c |
-| docs/images/days/2026-10-26.png | src/sectorflow/caption.py | 82d8c45d7bcf0c2898bd32bc09921c6ddbe8a56c |
-| docs/images/days/2026-10-26.png | src/sectorflow/demo.py | 82d8c45d7bcf0c2898bd32bc09921c6ddbe8a56c |
-| docs/images/days/2026-10-27.png | scripts/day_cards.py | 82d8c45d7bcf0c2898bd32bc09921c6ddbe8a56c |
-| docs/images/days/2026-10-27.png | scripts/map_card.py | 82d8c45d7bcf0c2898bd32bc09921c6ddbe8a56c |
-| docs/images/days/2026-10-27.png | scripts/templates/sector_map.html | 82d8c45d7bcf0c2898bd32bc09921c6ddbe8a56c |
-| docs/images/days/2026-10-27.png | scripts/sector_map.py | 82d8c45d7bcf0c2898bd32bc09921c6ddbe8a56c |
-| docs/images/days/2026-10-27.png | src/sectorflow/flowmap.py | 82d8c45d7bcf0c2898bd32bc09921c6ddbe8a56c |
-| docs/images/days/2026-10-27.png | src/sectorflow/caption.py | 82d8c45d7bcf0c2898bd32bc09921c6ddbe8a56c |
-| docs/images/days/2026-10-27.png | src/sectorflow/demo.py | 82d8c45d7bcf0c2898bd32bc09921c6ddbe8a56c |
-| docs/images/days/2026-10-28.png | scripts/day_cards.py | 82d8c45d7bcf0c2898bd32bc09921c6ddbe8a56c |
-| docs/images/days/2026-10-28.png | scripts/map_card.py | 82d8c45d7bcf0c2898bd32bc09921c6ddbe8a56c |
-| docs/images/days/2026-10-28.png | scripts/templates/sector_map.html | 82d8c45d7bcf0c2898bd32bc09921c6ddbe8a56c |
-| docs/images/days/2026-10-28.png | scripts/sector_map.py | 82d8c45d7bcf0c2898bd32bc09921c6ddbe8a56c |
-| docs/images/days/2026-10-28.png | src/sectorflow/flowmap.py | 82d8c45d7bcf0c2898bd32bc09921c6ddbe8a56c |
-| docs/images/days/2026-10-28.png | src/sectorflow/caption.py | 82d8c45d7bcf0c2898bd32bc09921c6ddbe8a56c |
-| docs/images/days/2026-10-28.png | src/sectorflow/demo.py | 82d8c45d7bcf0c2898bd32bc09921c6ddbe8a56c |
-| docs/images/days/2026-10-29.png | scripts/day_cards.py | 82d8c45d7bcf0c2898bd32bc09921c6ddbe8a56c |
-| docs/images/days/2026-10-29.png | scripts/map_card.py | 82d8c45d7bcf0c2898bd32bc09921c6ddbe8a56c |
-| docs/images/days/2026-10-29.png | scripts/templates/sector_map.html | 82d8c45d7bcf0c2898bd32bc09921c6ddbe8a56c |
-| docs/images/days/2026-10-29.png | scripts/sector_map.py | 82d8c45d7bcf0c2898bd32bc09921c6ddbe8a56c |
-| docs/images/days/2026-10-29.png | src/sectorflow/flowmap.py | 82d8c45d7bcf0c2898bd32bc09921c6ddbe8a56c |
-| docs/images/days/2026-10-29.png | src/sectorflow/caption.py | 82d8c45d7bcf0c2898bd32bc09921c6ddbe8a56c |
-| docs/images/days/2026-10-29.png | src/sectorflow/demo.py | 82d8c45d7bcf0c2898bd32bc09921c6ddbe8a56c |
-| docs/images/days/2026-10-30.png | scripts/day_cards.py | 82d8c45d7bcf0c2898bd32bc09921c6ddbe8a56c |
-| docs/images/days/2026-10-30.png | scripts/map_card.py | 82d8c45d7bcf0c2898bd32bc09921c6ddbe8a56c |
-| docs/images/days/2026-10-30.png | scripts/templates/sector_map.html | 82d8c45d7bcf0c2898bd32bc09921c6ddbe8a56c |
-| docs/images/days/2026-10-30.png | scripts/sector_map.py | 82d8c45d7bcf0c2898bd32bc09921c6ddbe8a56c |
-| docs/images/days/2026-10-30.png | src/sectorflow/flowmap.py | 82d8c45d7bcf0c2898bd32bc09921c6ddbe8a56c |
-| docs/images/days/2026-10-30.png | src/sectorflow/caption.py | 82d8c45d7bcf0c2898bd32bc09921c6ddbe8a56c |
-| docs/images/days/2026-10-30.png | src/sectorflow/demo.py | 82d8c45d7bcf0c2898bd32bc09921c6ddbe8a56c |
+| docs/images/days/2026-10-26.png | scripts/day_cards.py | 5cfbb9e52ac0f358c5705b25bdff68db05488bf8 |
+| docs/images/days/2026-10-26.png | scripts/map_card.py | 5cfbb9e52ac0f358c5705b25bdff68db05488bf8 |
+| docs/images/days/2026-10-26.png | scripts/templates/sector_map.html | 5cfbb9e52ac0f358c5705b25bdff68db05488bf8 |
+| docs/images/days/2026-10-26.png | scripts/sector_map.py | 5cfbb9e52ac0f358c5705b25bdff68db05488bf8 |
+| docs/images/days/2026-10-26.png | src/sectorflow/flowmap.py | 5cfbb9e52ac0f358c5705b25bdff68db05488bf8 |
+| docs/images/days/2026-10-26.png | src/sectorflow/caption.py | 5cfbb9e52ac0f358c5705b25bdff68db05488bf8 |
+| docs/images/days/2026-10-26.png | src/sectorflow/demo.py | 5cfbb9e52ac0f358c5705b25bdff68db05488bf8 |
+| docs/images/days/2026-10-27.png | scripts/day_cards.py | 5cfbb9e52ac0f358c5705b25bdff68db05488bf8 |
+| docs/images/days/2026-10-27.png | scripts/map_card.py | 5cfbb9e52ac0f358c5705b25bdff68db05488bf8 |
+| docs/images/days/2026-10-27.png | scripts/templates/sector_map.html | 5cfbb9e52ac0f358c5705b25bdff68db05488bf8 |
+| docs/images/days/2026-10-27.png | scripts/sector_map.py | 5cfbb9e52ac0f358c5705b25bdff68db05488bf8 |
+| docs/images/days/2026-10-27.png | src/sectorflow/flowmap.py | 5cfbb9e52ac0f358c5705b25bdff68db05488bf8 |
+| docs/images/days/2026-10-27.png | src/sectorflow/caption.py | 5cfbb9e52ac0f358c5705b25bdff68db05488bf8 |
+| docs/images/days/2026-10-27.png | src/sectorflow/demo.py | 5cfbb9e52ac0f358c5705b25bdff68db05488bf8 |
+| docs/images/days/2026-10-28.png | scripts/day_cards.py | 5cfbb9e52ac0f358c5705b25bdff68db05488bf8 |
+| docs/images/days/2026-10-28.png | scripts/map_card.py | 5cfbb9e52ac0f358c5705b25bdff68db05488bf8 |
+| docs/images/days/2026-10-28.png | scripts/templates/sector_map.html | 5cfbb9e52ac0f358c5705b25bdff68db05488bf8 |
+| docs/images/days/2026-10-28.png | scripts/sector_map.py | 5cfbb9e52ac0f358c5705b25bdff68db05488bf8 |
+| docs/images/days/2026-10-28.png | src/sectorflow/flowmap.py | 5cfbb9e52ac0f358c5705b25bdff68db05488bf8 |
+| docs/images/days/2026-10-28.png | src/sectorflow/caption.py | 5cfbb9e52ac0f358c5705b25bdff68db05488bf8 |
+| docs/images/days/2026-10-28.png | src/sectorflow/demo.py | 5cfbb9e52ac0f358c5705b25bdff68db05488bf8 |
+| docs/images/days/2026-10-29.png | scripts/day_cards.py | 5cfbb9e52ac0f358c5705b25bdff68db05488bf8 |
+| docs/images/days/2026-10-29.png | scripts/map_card.py | 5cfbb9e52ac0f358c5705b25bdff68db05488bf8 |
+| docs/images/days/2026-10-29.png | scripts/templates/sector_map.html | 5cfbb9e52ac0f358c5705b25bdff68db05488bf8 |
+| docs/images/days/2026-10-29.png | scripts/sector_map.py | 5cfbb9e52ac0f358c5705b25bdff68db05488bf8 |
+| docs/images/days/2026-10-29.png | src/sectorflow/flowmap.py | 5cfbb9e52ac0f358c5705b25bdff68db05488bf8 |
+| docs/images/days/2026-10-29.png | src/sectorflow/caption.py | 5cfbb9e52ac0f358c5705b25bdff68db05488bf8 |
+| docs/images/days/2026-10-29.png | src/sectorflow/demo.py | 5cfbb9e52ac0f358c5705b25bdff68db05488bf8 |
+| docs/images/days/2026-10-30.png | scripts/day_cards.py | 5cfbb9e52ac0f358c5705b25bdff68db05488bf8 |
+| docs/images/days/2026-10-30.png | scripts/map_card.py | 5cfbb9e52ac0f358c5705b25bdff68db05488bf8 |
+| docs/images/days/2026-10-30.png | scripts/templates/sector_map.html | 5cfbb9e52ac0f358c5705b25bdff68db05488bf8 |
+| docs/images/days/2026-10-30.png | scripts/sector_map.py | 5cfbb9e52ac0f358c5705b25bdff68db05488bf8 |
+| docs/images/days/2026-10-30.png | src/sectorflow/flowmap.py | 5cfbb9e52ac0f358c5705b25bdff68db05488bf8 |
+| docs/images/days/2026-10-30.png | src/sectorflow/caption.py | 5cfbb9e52ac0f358c5705b25bdff68db05488bf8 |
+| docs/images/days/2026-10-30.png | src/sectorflow/demo.py | 5cfbb9e52ac0f358c5705b25bdff68db05488bf8 |
 
 ## 소셜 미리보기
 
