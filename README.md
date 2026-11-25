@@ -15,9 +15,11 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-[데모](https://younghwan91.github.io/sector-flow/) · [가이드](docs/guide.md) · [증권사 키로 시작하기](docs/byo/quickstart.md) · [English](README.en.md)
+[데모](https://younghwan91.github.io/sector-flow/) · [날짜별 지도](https://younghwan91.github.io/sector-flow/d/) · [가이드](docs/guide.md) · [증권사 키로 시작하기](docs/byo/quickstart.md) · [English](README.en.md)
 
 </div>
+
+> **키 없이 한 줄로 보기** — 브라우저는 [데모 사이트](https://younghwan91.github.io/sector-flow/), 터미널은 `uvx --from git+https://github.com/younghwan91/sector-flow sw-flow --demo` 입니다(합성 데모, 클론·증권사 키 불필요).
 
 ![수급 지도 타임랩스(합성 데모) — 왼쪽은 순매도한 주체, 가운데는 섹터, 오른쪽은 순매수한 주체. 띠 굵기는 금액이고, 하루씩 넘기며 다시 그립니다](docs/images/map-demo.gif)
 
@@ -75,6 +77,13 @@ BYO 수집기 코드는 `src/sectorflow/collect/`(`sector-flow-collect`) 에 있
 - **KRX 체결만 셉니다.** 넥스트레이드(NXT)는 없고 장중 실시간도 아닙니다. 평일 18:10 에 잠정치를 내고 다음날 확정합니다.
 
 투자 조언이 아닙니다 — [고지](DISCLAIMER.md).
+
+## 같이 쓰면 좋은 것
+
+| 레포 | 무엇 | sector-flow 와의 관계 |
+|---|---|---|
+| [kiwoom-client](https://github.com/younghwan91/kiwoom-client) | 키움 REST API 파이썬 클라이언트(엔드포인트 182개) | sector-flow 의 수급 자료는 키움 REST API 에서 옵니다. BYO 수집기는 필요한 TR 6개만 담은 자체 어댑터를 쓰고, 다른 TR 을 직접 부르고 싶을 때 kiwoom-client 를 씁니다. |
+| [fin-checkup](https://github.com/younghwan91/fin-checkup) | 상장사 재무제표 건강검진(DART 공시로 계산한 지표 17개) | 지도에서 눈에 띈 섹터의 종목을 재무제표 쪽에서 봅니다. 키 없이 [사이트](https://younghwan91.github.io/fin-checkup/)에서 바로 열립니다. |
 
 ## 문서
 

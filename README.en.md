@@ -15,9 +15,11 @@ KOSPI and KOSDAQ sector flows in a terminal and a browser. Same-period observati
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-[Live demo](https://younghwan91.github.io/sector-flow/) · [Guide (Korean)](docs/guide.md) · [Bring your own key](docs/byo/quickstart.md) · [한국어](README.md)
+[Live demo](https://younghwan91.github.io/sector-flow/) · [Maps by date](https://younghwan91.github.io/sector-flow/d/) · [Guide (Korean)](docs/guide.md) · [Bring your own key](docs/byo/quickstart.md) · [한국어](README.md)
 
 </div>
+
+> **See it in one line, no keys** — in a browser, the [live demo](https://younghwan91.github.io/sector-flow/); in a terminal, `uvx --from git+https://github.com/younghwan91/sector-flow sw-flow --demo` (synthetic demo, no clone, no broker key).
 
 ![Flow map time-lapse (synthetic demo) — investors that net sold on the left, sectors in the middle, investors that net bought on the right. Band width is the amount; the map is redrawn day by day](docs/images/map-demo.gif)
 
@@ -63,6 +65,11 @@ The screens and documents are in Korean. The full guide — every column, the da
 - Not investment advice. Sector indicators were tested as predictors of future returns and showed no evidence (or were
   inconclusive); they are shown as observations only. Rights holders can reach the maintainer through GitHub issues, and
   requests are acted on promptly — see [DISCLAIMER.md](DISCLAIMER.md) and [SECURITY.md](SECURITY.md) (Korean).
+
+## Works well with
+
+- [kiwoom-client](https://github.com/younghwan91/kiwoom-client) — Python client for the Kiwoom REST API. sector-flow's flow data comes from that API; the BYO collector carries its own adapter for the six calls it needs, and kiwoom-client is there when you want to call anything else.
+- [fin-checkup](https://github.com/younghwan91/fin-checkup) — traffic-light check of a listed company's financial statements (DART filings, 17 metrics). Use it to look at the companies behind a sector that stood out on the map.
 
 ## Contributing
 

@@ -104,7 +104,9 @@ def _images(tmp_path: Path) -> Path:
 def test_build_makes_the_site_from_a_demo_folder(tmp_path):
     out = tmp_path / "_site"
     names = B.build(_demo(tmp_path), out, images=_images(tmp_path))
-    assert set(names) == {"index.html", "map.html", *B.IMAGES}
+    days = ("2026-01-05", "2026-01-06")
+    assert set(names) == {"index.html", "map.html", *B.IMAGES, B.PREVIEW.name, "d/index.html",
+                          *(f"d/{d}/{n}" for d in days for n in ("index.html", "map.html"))}
     assert (out / "index.html").read_text("utf-8") == LANDING
     page = (out / "map.html").read_text("utf-8")
     assert "const D = {" in page and '"demo":true' in page.replace(" ", "")
@@ -157,4 +159,47 @@ def test_local_refs_skip_external_and_in_page_links():
     page = ('<a href="map.html">x</a><a href="#byo">y</a><a href="https://github.com/x">z</a><a href="./">h</a>'
             '<link rel="icon" href="data:image/svg+xml,%3Csvg"><source srcset="a.png"><img src="b.gif">')
     assert B.local_refs(page) == ["a.png", "b.gif", "map.html"]
-    assert set(B.local_refs(LANDING)) == {"map.html", *B.IMAGES}
+    assert set(B.local_refs(LANDING)) == {"map.html", "d/index.html", *B.IMAGES}
+    assert B.local_refs('<a href="d/">x</a><a href="../">up</a>') == ["d/index.html"]
+
+
+# ── 링크 미리보기·날짜 영구 링크 — 카카오톡·X·긱뉴스에 붙인 링크가 그림을 보인다 ───────────────────────────
+def _metas(page: str) -> dict[str, str]:
+    return dict(re.findall(r'<meta (?:property|name)="([^"]+)" content="([^"]*)"', page))
+
+
+def _assert_card_meta(page: str, url: str) -> None:
+    m = _metas(page)
+    for k in ("og:title", "og:description", "og:image", "og:image:alt", "og:url", "twitter:title", "twitter:description",
+              "twitter:image"):
+        assert m.get(k), k
+    assert m["twitter:card"] == "summary_large_image" and m["og:url"] == url
+    assert m["og:image"] == m["twitter:image"] and m["og:image"].startswith("https://") and m["og:image"].endswith(".png")
+    assert DEMO_MARK in m["og:description"] or DEMO_MARK in m["og:title"], "링크 미리보기에도 데모 표지"
+
+
+def test_landing_link_preview_shows_the_map_picture():
+    """링크 카드는 절대 주소의 PNG 를 본다(상대 경로는 카카오톡·X 가 못 읽는다) — 그 PNG 가 사이트에 실린다."""
+    _assert_card_meta(LANDING, "https://younghwan91.github.io/sector-flow/")
+    img = _metas(LANDING)["og:image"]
+    assert img == "https://younghwan91.github.io/sector-flow/" + B.PREVIEW.name and B.PREVIEW.is_file()
+
+
+def test_day_permalinks_carry_their_own_card_and_caption(tmp_path):
+    """날짜마다 쪽 하나 — og:image 는 그날 카드(있으면), 글은 caption 초안, 지도는 그날까지 자른 것. 링크가 다 산다."""
+    images = _images(tmp_path)
+    (images / B.DAYS_DIR).mkdir()
+    (images / B.DAYS_DIR / "2026-01-06.png").write_bytes(b"card")
+    out = tmp_path / "_site"
+    B.build(_demo(tmp_path), out, images=images)
+    url = "https://younghwan91.github.io/sector-flow/d/2026-01-06/"
+    page = (out / "d/2026-01-06/index.html").read_text("utf-8")
+    _assert_card_meta(page, url)
+    assert _metas(page)["og:image"] == url + "card.png" and (out / "d/2026-01-06/card.png").read_bytes() == b"card"
+    old = (out / "d/2026-01-05/index.html").read_text("utf-8")
+    assert _metas(old)["og:image"].endswith("/" + B.PREVIEW.name), "카드가 없는 날은 소셜 미리보기로"
+    for p in (page, old, (out / "d/index.html").read_text("utf-8")):
+        assert html_problems(p) == [] and tracking_hits(p) == [] and "<script" not in p
+        assert map_hits(_visible(p)) == []
+    m = json.loads(re.search(r"const D = (\{.*?\});\n", (out / "d/2026-01-05/map.html").read_text("utf-8"), re.S).group(1))
+    assert m["asof"] == "2026-01-05" and m["demo"] is True
