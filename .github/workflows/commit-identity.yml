@@ -11,6 +11,10 @@ name: Commit Identity Guard
 #
 # 허용 목록을 바꾸려면 ALLOWED_EMAILS를 수정하라.
 # dependabot[bot] 은 봇 신원이다 — 회사 주소가 아니라서 허용한다.
+#
+# 2026-11-27: 바깥 기여자의 커밋은 보지 않는다. 이 검사가 required 인데 허용 목록이 소유자 주소뿐이라
+# 기여자 PR(#111)이 영원히 빨갰다 — 공개 레포가 기여를 못 받는다. 사고는 "소유자 이름으로 다른 주소"였으니
+# author/committer 이름이 OWNER_NAMES 에 있는 쪽만 허용 목록에 댄다. 기여자 주소는 그 사람 것이다.
 
 on:
   push:
@@ -43,6 +47,10 @@ jobs:
             48156556+younghwan91@users.noreply.github.com
             noreply@github.com
             49699333+dependabot[bot]@users.noreply.github.com
+          # 이 이름으로 된 author/committer 만 허용 목록에 댄다(소유자 신원). 다른 이름은 기여자다.
+          OWNER_NAMES: |
+            Younghwan Chae
+            younghwan91
         run: |
           set -euo pipefail
 
@@ -77,16 +85,23 @@ jobs:
           echo "$ALLOWED" | sed 's/^/  /'
           echo
 
+          OWNERS=$(echo "$OWNER_NAMES" | sed 's/^ *//;s/ *$//' | grep -v '^$' | sort -u)
+
           BAD=0
-          while IFS='|' read -r sha author committer subject; do
+          while IFS='|' read -r sha aname author cname committer subject; do
             [ -z "$sha" ] && continue
-            for email in "$author" "$committer"; do
+            for pair in "$aname|$author" "$cname|$committer"; do
+              name="${pair%%|*}"; email="${pair#*|}"
+              if ! echo "$OWNERS" | grep -Fxq "$name"; then
+                echo "  ${sha:0:8} 기여자 신원 — 보지 않는다: $name"
+                continue
+              fi
               if ! echo "$ALLOWED" | grep -Fxq "$email"; then
                 echo "::error::${sha:0:8} 허용되지 않은 이메일: $email  ($subject)"
                 BAD=1
               fi
             done
-          done < <(git log --format='%H|%ae|%ce|%s' "$RANGE" 2>/dev/null || true)
+          done < <(git log --format='%H|%an|%ae|%cn|%ce|%s' "$RANGE" 2>/dev/null || true)
 
           if [ "$BAD" -eq 1 ]; then
             echo

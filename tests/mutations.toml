@@ -15228,3 +15228,19 @@ guards = ["tests/test_first_reader.py::test_readme_tagline_is_the_brand_guide_ta
 file = "README.md"
 find = "**오늘 누가 어느 섹터를 넘기고 넘겨받았는지, 투자 주체별 순매매를 한 장의 지도로 봅니다.**"
 replace = "**오늘 누가 어느 섹터를 사고팔았는지, 투자 주체별 순매매를 한 장의 지도로 봅니다.**"
+
+[[mutation]]
+id = "identity-checks-nobody"
+why = "소유자 이름 갈래가 모두를 기여자로 본다 — 소유자 이름에 회사 주소가 섞여도(2026-08-29 사고) 통과한다."
+guards = ["tests/test_ci_workflow.py::test_identity_check_flags_owner_leaks_but_not_contributors"]
+file = ".github/workflows/commit-identity.yml"
+find = '              if ! echo "$OWNERS" | grep -Fxq "$name"; then'
+replace = '              if true; then'
+
+[[mutation]]
+id = "identity-checks-contributors-again"
+why = "기여자 커밋도 소유자 허용 목록에 댄다 — required 검사라 바깥 기여 PR 이 영원히 머지되지 못한다(#111)."
+guards = ["tests/test_ci_workflow.py::test_identity_check_flags_owner_leaks_but_not_contributors"]
+file = ".github/workflows/commit-identity.yml"
+find = '              if ! echo "$OWNERS" | grep -Fxq "$name"; then'
+replace = '              if false; then'

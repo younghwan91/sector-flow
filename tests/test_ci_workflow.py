@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import re
 from pathlib import Path
 
@@ -273,3 +274,53 @@ def test_pages_outage_warns_instead_of_blocking_the_batch_deploy():
     assert warn and "::warning" in warn
     assert re.search(r"^concurrency:\n  group: pages\n  cancel-in-progress: false", PAGES, re.M), \
         "머리의 배포가 끊기면 cancelled 라 관문이 보류한다"
+
+
+def _identity_script() -> tuple[str, dict]:
+    """commit-identity.yml 의 검사 스텝을 PR 이벤트로 풀어 낸다 — 셸 본문과 env(허용 목록·소유자 이름)."""
+    import textwrap
+    wf = (REPO / ".github" / "workflows" / "commit-identity.yml").read_text("utf-8")
+    step = wf.split("- name: 커밋 신원 검사\n", 1)[1]
+    env_txt, run_txt = step.split("        run: |\n", 1)
+    env = {}
+    for key in ("ALLOWED_EMAILS", "OWNER_NAMES"):
+        block = env_txt.split(f"          {key}: |\n", 1)[1]
+        lines = []
+        for ln in block.splitlines():
+            if not ln.startswith("            "):
+                break
+            lines.append(ln.strip())
+        env[key] = "\n".join(lines) + "\n"
+    return textwrap.dedent(run_txt), env
+
+
+def test_identity_check_flags_owner_leaks_but_not_contributors(tmp_path):
+    """소유자 이름에 허용 밖 주소면 빨강, 바깥 기여자는 통과 — 기여자 PR 이 required 검사에 영원히 막히던 것(#111)."""
+    import subprocess
+    script, env = _identity_script()
+    repo = tmp_path / "r"
+    repo.mkdir()
+
+    def g(*a, name="x", email="x@example.com"):
+        # 전역 설정·훅(신원 허용 목록 pre-commit)을 끊는다 — 이 저장소는 가짜 신원을 일부러 만든다
+        e = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1", "GIT_AUTHOR_NAME": name, "GIT_AUTHOR_EMAIL": email,
+             "GIT_COMMITTER_NAME": name, "GIT_COMMITTER_EMAIL": email}
+        return subprocess.run(["git", *a], cwd=repo, env=e, check=True, capture_output=True, text=True).stdout.strip()
+
+    g("init", "-q")
+    g("commit", "-q", "--allow-empty", "-m", "base", name="Younghwan Chae", email="chyohw97@gmail.com")
+    base = g("rev-parse", "HEAD")
+
+    def verdict(name: str, email: str) -> int:
+        g("checkout", "-q", "--detach", base)
+        g("commit", "-q", "--allow-empty", "-m", "c", name=name, email=email)
+        head = g("rev-parse", "HEAD")
+        body = (script.replace("${{ github.event_name }}", "pull_request")
+                .replace("${{ github.event.pull_request.base.sha }}", base)
+                .replace("${{ github.event.pull_request.head.sha }}", head))
+        return subprocess.run(["bash", "-c", body], cwd=repo, env={**os.environ, **env},
+                              capture_output=True, text=True).returncode
+
+    assert verdict("Younghwan Chae", "chyohw97@gmail.com") == 0
+    assert verdict("Younghwan Chae", "someone@corp.example") == 1, "소유자 이름에 다른 주소 — 2026-08-29 사고"
+    assert verdict("A Contributor", "123+contrib@users.noreply.github.com") == 0, "기여자 신원은 그 사람 것이다"
