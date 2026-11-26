@@ -12752,6 +12752,14 @@ find = "_DIGIT = {\"0\": \"o\", \"1\": \"l\", \"2\": \"\", \"3\": \"o\", \"4\": 
 replace = "_DIGIT = {c: \"\" for c in \"0123456789\"}"
 
 [[mutation]]
+id = "josa-percent-read-as-digit"
+why = "'%' 를 건너뛰고 앞 숫자를 읽으면 '3%은'·'3%으로' 가 된다(퍼센트는 받침이 없다)"
+guards = ["tests/test_josa.py::test_josa_rieul_and_readings"]
+file = "src/sectorflow/josa.py"
+find = "        if ch == \"%\":  # 퍼센트 — 받침 없음"
+replace = "        if False:  # 퍼센트 — 받침 없음"
+
+[[mutation]]
 id = "headline-picks-own-dominant"
 why = "지도가 가장 큰 주체를 따로 고르면 다이제스트·화면과 같은 날 다른 주체를 말할 수 있다(같으면 키가 큰 쪽 규칙 등)"
 guards = ["tests/test_flowmap.py::test_headline_uses_summary"]
