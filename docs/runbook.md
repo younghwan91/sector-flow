@@ -104,6 +104,19 @@
 
 폴더 50개를 `--jobs 1` 로 다시 만들면 약 95분이다(위 하루치로 잰 추정). 2026-11-08 운영 재구성 48일은 `--jobs` 병렬로 약 19분 걸렸다(`REBUILT.txt` 시각).
 
+## 판 내기(릴리스·PyPI)
+
+`pyproject.toml` 판과 `CHANGELOG.md` 절을 올리고 PR 로 main 에 넣은 뒤, 그 커밋에 `git tag v<판> && git push origin v<판>`.
+[`release.yml`](../.github/workflows/release.yml) 이 GitHub Release(wheel·sdist·데모 GIF)를 만들고 이어서 같은 판을 PyPI 에 올린다 —
+토큰 없이 신뢰 게시(OIDC)다. PyPI 설명은 README 를 링크만 절대 주소로 바꿔 싣는다(`hatch_build.py` `PypiReadme`).
+
+**처음 한 번(소유자)** — PyPI 에는 API 가 없어 손으로 한다:
+1. pypi.org → Account settings → Publishing → *Add a new pending publisher*: PyPI 프로젝트 `sector-flow`, 소유자 `younghwan91`,
+   레포 `sector-flow`, 워크플로 `release.yml`, 환경 `pypi`.
+2. GitHub 레포 Settings → Environments → `pypi` 를 만든다(보호 규칙은 선택 — 승인자를 두면 게시 전에 한 번 멈춘다).
+
+PyPI 에 한 번 올라간 판 번호는 지워도 다시 못 쓴다. 게시가 실패하면 판을 올려 새 태그로 다시 낸다.
+
 ## 운영 사건 원장
 
 **운영 사건 원장(`reports/events.jsonl`)** — 폴더 바꿔 끼우기가 INCOMPLETE·검증 실패 흔적과 mtime 을 지우고

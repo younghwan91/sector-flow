@@ -13616,6 +13616,38 @@ find = '    tags: ["v*"]'
 replace = '    branches: [main]'
 
 [[mutation]]
+id = "pypi-publishes-without-release-gate"
+why = "PyPI 게시가 Release(태그가 main 위·판 번호 일치 확인)를 기다리지 않는다 — 검사를 안 지난 판이 PyPI 에 나간다."
+guards = ["tests/test_release.py::test_pypi_publishes_after_the_release_with_oidc_only_in_its_own_job"]
+file = ".github/workflows/release.yml"
+find = '    needs: release'
+replace = '    needs: []'
+
+[[mutation]]
+id = "pypi-oidc-granted-to-every-job"
+why = "id-token 권한이 워크플로 전체에 퍼진다 — Release 잡도 PyPI 신원을 얻는다."
+guards = ["tests/test_release.py::test_pypi_publishes_after_the_release_with_oidc_only_in_its_own_job"]
+file = ".github/workflows/release.yml"
+find = "permissions:\n  contents: write"
+replace = "permissions:\n  contents: write\n  id-token: write"
+
+[[mutation]]
+id = "pypi-readme-left-relative"
+why = "PyPI 설명의 그림·링크가 상대 경로로 남아 깨진다."
+guards = ["tests/test_release.py::test_pypi_readme_has_no_relative_links"]
+file = "hatch_build.py"
+find = "    return _REL.sub(sub, md)"
+replace = "    return md"
+
+[[mutation]]
+id = "sector-flow-command-points-elsewhere"
+why = "`uvx sector-flow --demo` 가 터미널 화면이 아닌 다른 것을 부른다."
+guards = ["tests/test_release.py::test_sector_flow_command_is_the_terminal_screen"]
+file = "pyproject.toml"
+find = 'sector-flow = "sectorflow.tui.flow_app:main"'
+replace = 'sector-flow = "sectorflow.demo:main"'
+
+[[mutation]]
 id = "changelog-misses-current-version"
 why = "판을 올렸는데 CHANGELOG 에 그 판 절이 없다 — 태그를 밀면 Release 가 본문 없이 멈춘다."
 guards = ["tests/test_release.py::test_changelog_has_a_section_for_the_current_version"]

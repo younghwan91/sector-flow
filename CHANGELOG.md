@@ -3,6 +3,10 @@
 판마다 무엇이 바뀌었나. 태그(`v*`)를 밀면 `.github/workflows/release.yml` 이 이 파일의 그 판 절을 Release 본문으로 쓴다.
 숫자는 동시기 관측이며 예측이 아니다 — 이 기록도 기능만 적는다.
 
+## [Unreleased]
+
+- PyPI 게시 — 태그를 밀면 Release 뒤에 같은 판이 PyPI 에 올라간다(신뢰 게시). `uvx sector-flow --demo` 한 줄로 터미널 화면이 뜬다.
+
 ## [0.2.0] - 2026-11-23
 
 ### 수급 지도
