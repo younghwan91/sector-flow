@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "sector-flow"
 version = "0.2.0"
 description = "코스피·코스닥 섹터 자금흐름 일일 리포트와 터미널 화면(sw-flow·sw-ledger) — 동시기 측정이지 예측이 아니다"
-readme = "README.md"
+dynamic = ["readme"]   # README.md 를 PyPI 용으로 링크만 절대 주소로 바꿔 싣는다(hatch_build.py PypiReadme)
 license = "MIT"
 requires-python = ">=3.11"
 authors = [{ name = "Younghwan Chae", email = "chyohw97@gmail.com" }]
@@ -19,6 +19,8 @@ pg = ["psycopg2-binary>=2.9"]
 dev = ["pytest>=8.0", "pytest-cov>=7.0", "ruff==0.16.2", "hatchling"]
 
 [project.scripts]
+# `uvx sector-flow --demo` 한 줄로 뜨게 — sw-flow 와 같은 화면이다.
+sector-flow = "sectorflow.tui.flow_app:main"
 sw-flow = "sectorflow.tui.flow_app:main"
 sw-ledger = "sectorflow.tui.ledger_app:main"
 # 리포트 생성기 — 파일은 scripts/ 에 두고 wheel 이 sectorflow/_scripts/ 로 복사한다(src/sectorflow/report_cli.py).
@@ -53,6 +55,9 @@ packages = ["src/sectorflow"]
 # 설치본은 원격 글꼴을 부르지 않게 떼어 낸 사본이다(src/sectorflow/offline_templates.py).
 
 [tool.hatch.build.targets.wheel.hooks.custom]
+path = "hatch_build.py"
+
+[tool.hatch.metadata.hooks.custom]
 path = "hatch_build.py"
 
 [tool.ruff.lint]

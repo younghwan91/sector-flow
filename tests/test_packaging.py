@@ -61,16 +61,8 @@ def test_report_entry_points_ship_their_script_and_templates():
 
 def test_hook_ships_offline_templates(tmp_path):
     """훅을 hatchling 없이 흉내 내 돌린다 — 싣는 사본에 자동으로 불러오는 원격 자원이 없어야 한다."""
-    import types
-    sys.modules.setdefault("hatchling", types.ModuleType("hatchling"))
-    for m in ("hatchling.builders", "hatchling.builders.hooks", "hatchling.builders.hooks.plugin"):
-        sys.modules.setdefault(m, types.ModuleType(m))
-    iface = types.ModuleType("hatchling.builders.hooks.plugin.interface")
-    iface.BuildHookInterface = type("BuildHookInterface", (), {})
-    sys.modules.setdefault("hatchling.builders.hooks.plugin.interface", iface)
-    spec = importlib.util.spec_from_file_location("_hb", REPO / "hatch_build.py")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
+    from tests.hatch_stub import load_hatch_build
+    mod = load_hatch_build()
     hook = mod.OfflineTemplates.__new__(mod.OfflineTemplates)
     hook.root, hook.target_name = str(REPO), "wheel"
     data: dict = {"force_include": {}}
